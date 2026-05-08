@@ -15,11 +15,13 @@
 package ufs
 
 import (
+	"fmt"
 	"io/fs"
 )
 
 var (
-	_ FS = (*nestFS)(nil)
+	_ FS             = (*nestFS)(nil)
+	_ fs.ReadDirFS   = (*nestFS)(nil)
 )
 
 // nestFS is a wrapper for a base FS that supports automatic mounting of archives.
@@ -45,13 +47,55 @@ func (fsys *nestFS) Create(name string) (File, error) {
 		return nil, err
 	}
 
-	// TODO: 
+	// TODO:
 	return fsys.fsys.Create(name)
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
-	// TODO: 
+	// TODO:
 	return fsys.fsys.MkdirAll(name, perm)
+}
+
+func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if cFsys, ok := fsys.fsys.(fs.ReadDirFS); ok {
+		return cFsys.ReadDir(name)
+	}
+
+	f, err := fsys.fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	readDirFile, ok := f.(fs.ReadDirFile)
+	if !ok {
+		return nil, &fs.PathError{
+			Op:   "readDir",
+			Path: name,
+			Err:  fmt.Errorf("%s is not a directory", name),
+		}
+	}
+	return readDirFile.ReadDir(-1)
+}
+
+func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
+	if cFsys, ok := fsys.fsys.(fs.StatFS); ok {
+		return cFsys.Stat(name)
+	}
+	f, err := fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Stat()
+}
+
+func (fsys *nestFS) Read(data []byte) (int, error) {
+	if cFsys, ok := fsys.fsys.(fs.File); ok {
+		return cFsys.Read(data)
+	}
+
+	return 0, nil
 }
 
 func newNestFS(name string) (FS, error) {

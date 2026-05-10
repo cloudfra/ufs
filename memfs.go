@@ -62,6 +62,8 @@ type memFile struct {
 }
 
 func (f *memFile) Stat() (fs.FileInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return &fsInfo{
 		name:    path.Base(f.name),
 		size:    int64(len(f.content)),
@@ -73,6 +75,8 @@ func (f *memFile) Stat() (fs.FileInfo, error) {
 }
 
 func (f *memFile) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if len(f.content) == 0 {
 		return 0, io.EOF
 	}
@@ -85,6 +89,8 @@ func (f *memFile) Read(p []byte) (int, error) {
 }
 
 func (f *memFile) ReadAt(p []byte, off int64) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if off >= int64(len(f.content)) {
 		return 0, io.EOF
 	}
@@ -120,6 +126,8 @@ func (f *memFile) WriteString(s string) (int, error) {
 }
 
 func (f *memFile) Seek(offset int64, whence int) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	switch whence {
 	case io.SeekStart:
 		f.offset = offset
@@ -149,6 +157,8 @@ func (f *memFile) Readdir(n int) ([]fs.FileInfo, error) {
 		return nil, pathError("readdir", f.name, fs.ErrInvalid)
 	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	fsys := f.fsys
 	fsys.mu.RLock()
 	defer fsys.mu.RUnlock()

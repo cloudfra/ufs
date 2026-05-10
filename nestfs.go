@@ -16,10 +16,10 @@ package ufs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -37,11 +37,11 @@ func removePathComponent(name string, mountPath string) string {
 }
 
 func getPotentialArchives(name string) []string {
-	components := strings.Split(name, string(os.PathSeparator))
+	components := strings.Split(name, "/")
 	potentials := []string{}
 	for idx, component := range components {
 		if strings.HasSuffix(component, ".d") {
-			potentials = append(potentials, filepath.Join(components[0:idx+1]...))
+			potentials = append(potentials, path.Join(components[0:idx+1]...))
 		}
 	}
 	return potentials
@@ -129,10 +129,11 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *nestFS) Close() error {
+	var errs []error
 	if fsys.fsMap != nil {
 		for mountPath, nfs := range fsys.fsMap {
 			if err := nfs.Close(); err != nil {
-				return fmt.Errorf("cannot close mount %q, %w", mountPath, err)
+				errs = append(errs, fmt.Errorf("cannot close mount %q, %w", mountPath, err))
 			}
 		}
 		fsys.fsMap = nil
@@ -140,11 +141,11 @@ func (fsys *nestFS) Close() error {
 
 	if fsys.fsys != nil {
 		if err := fsys.fsys.Close(); err != nil {
-			return fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err)
+			errs = append(errs, fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err))
 		}
 		fsys.fsys = nil
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (fsys *nestFS) Create(name string) (File, error) {

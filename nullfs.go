@@ -17,6 +17,7 @@ package ufs
 import (
 	"io"
 	"io/fs"
+	"path"
 	"time"
 )
 
@@ -40,7 +41,7 @@ func (n *nullFile) Stat() (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 	}
 	return &fsInfo{
-		name:    n.name,
+		name:    path.Base(n.name),
 		size:    0,
 		mode:    mode,
 		modTime: time.Time{},
@@ -132,7 +133,7 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 	}
 	return &fsInfo{
-		name:    name,
+		name:    path.Base(name),
 		size:    0,
 		mode:    mode,
 		modTime: time.Time{},

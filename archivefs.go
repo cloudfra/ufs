@@ -108,7 +108,7 @@ func newArchiveFSFromFile(file fs.File) (*archiveFS, error) {
 		return nil, err
 	}
 	ctx := context.Background()
-	format, _, err := archives.Identify(ctx, stat.Name(), file)
+	format, _, err := archives.Identify(ctx, stat.Name(), io.NewSectionReader(readerAt, 0, stat.Size()))
 	if err != nil && !errors.Is(err, archives.NoMatch) {
 		return nil, err
 	}

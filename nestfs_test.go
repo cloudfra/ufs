@@ -24,6 +24,51 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func dirEntryToNames(entries []fs.DirEntry) []string {
+	result := make([]string, len(entries))
+	for idx, entry := range entries {
+		result[idx] = entry.Name()
+	}
+	return result
+}
+
+func TestNestedFS(t *testing.T) {
+	fsys, err := New("memory://?a=file:///&mounted/null=null://&mounted/angry=angry://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testCases := []struct {
+		dir         string
+		wantEntries []string
+	}{
+		{
+			dir:         ".",
+			wantEntries: []string{"a", "mounted"},
+		},
+		{
+			dir:         "mounted",
+			wantEntries: []string{"angry", "null"},
+		},
+		{
+			dir:         "mounted/null",
+			wantEntries: []string{"."},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.dir, func(t *testing.T) {
+			entries, err := fs.ReadDir(fsys, tc.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := dirEntryToNames(entries)
+			if diff := cmp.Diff(got, tc.wantEntries); diff != "" {
+				t.Errorf("ReadDir(.), got: %v want: %v, diff: %s", got, tc.wantEntries, diff)
+			}
+		})
+	}
+}
+
 func TestNewNestFS(t *testing.T) {
 	fsys, err := newNestFS("memory://")
 	if err != nil {
@@ -159,6 +204,11 @@ func TestRemovePathComponent(t *testing.T) {
 			name:      "",
 			mountPath: "",
 			want:      "",
+		},
+		{
+			name:      ".",
+			mountPath: "abc/def",
+			want:      "abc/def",
 		},
 		{
 			name:      "a/b/c",

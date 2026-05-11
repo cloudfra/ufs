@@ -20,19 +20,24 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
 var (
-	_ FS            = (*nestFS)(nil)
-	_ fs.ReadDirFS  = (*nestFS)(nil)
-	_ fs.ReadFileFS = (*nestFS)(nil)
-	_ fs.ReadLinkFS = (*nestFS)(nil)
-	_ fs.GlobFS     = (*nestFS)(nil)
-	_ fs.StatFS     = (*nestFS)(nil)
+	_ FS             = (*nestFS)(nil)
+	_ fs.ReadDirFS   = (*nestFS)(nil)
+	_ fs.ReadFileFS  = (*nestFS)(nil)
+	_ fs.ReadLinkFS  = (*nestFS)(nil)
+	_ fs.GlobFS      = (*nestFS)(nil)
+	_ fs.StatFS      = (*nestFS)(nil)
+	_ fs.ReadDirFile = (*virtualReadDirFile)(nil)
 )
 
 func removePathComponent(name string, mountPath string) string {
+	if isCwd(name) {
+		return mountPath
+	}
 	return strings.TrimLeft(strings.TrimPrefix(name, mountPath), "\\/")
 }
 
@@ -52,6 +57,50 @@ func getPotentialArchives(name string) []string {
 type nestFS struct {
 	fsys  FS
 	fsMap map[string]*nestFS
+}
+
+func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error) ([]fs.DirEntry, error) {
+	if err != nil {
+		return nil, err
+	}
+	appendEntry := map[string]fs.DirEntry{}
+	for mountPoint, _ := range fsys.fsMap {
+		dir := removePathComponent(name, mountPoint)
+		if dir != "" {
+			parts := splitPath(dir)
+			mountName := parts[0]
+			appendEntry[mountName] = &virtualDirEntry{
+				name: mountName,
+			}
+		}
+	}
+	for _, entry := range entries {
+		if isMountableArchivePath(entry.Name()) {
+			mountName := entry.Name() + ".d"
+			appendEntry[mountName] = &virtualDirEntry{
+				name: mountName,
+			}
+		}
+	}
+	if len(appendEntry) == 0 {
+		return entries, nil
+	}
+	for _, entry := range entries {
+		delete(appendEntry, entry.Name())
+	}
+
+	for _, entry := range appendEntry {
+		entries = append(entries, entry)
+	}
+	slices.SortFunc(entries, func(left fs.DirEntry, right fs.DirEntry) int {
+		return strings.Compare(left.Name(), right.Name())
+	})
+
+	return entries, nil
+}
+
+func (fsys *nestFS) addMount(name string, mountedFS *nestFS) {
+	fsys.fsMap[name] = mountedFS
 }
 
 func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
@@ -115,6 +164,29 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	return targetFS, targetName, nil
 }
 
+type virtualReadDirFile struct {
+	fsys *nestFS
+	name string
+	base fs.ReadDirFile
+}
+
+func (vrd *virtualReadDirFile) Stat() (fs.FileInfo, error) {
+	return vrd.base.Stat()
+}
+
+func (vrd *virtualReadDirFile) Read(p []byte) (int, error) {
+	return vrd.base.Read(p)
+}
+
+func (vrd *virtualReadDirFile) Close() error {
+	return vrd.base.Close()
+}
+
+func (vrd *virtualReadDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	entries, err := vrd.base.ReadDir(n)
+	return vrd.fsys.appendDirEntry(vrd.name, entries, err)
+}
+
 func (fsys *nestFS) Open(name string) (fs.File, error) {
 	if err := fsys.validPath("open", name); err != nil {
 		return nil, err
@@ -125,7 +197,20 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 
-	return mountFS.fsys.Open(subName)
+	f, err := mountFS.fsys.Open(subName)
+	if err != nil {
+		return nil, err
+	}
+
+	readDirFile, ok := f.(fs.ReadDirFile)
+	if ok {
+		return &virtualReadDirFile{
+			fsys: fsys,
+			name: name,
+			base: readDirFile,
+		}, nil
+	}
+	return f, nil
 }
 
 func (fsys *nestFS) Close() error {
@@ -152,16 +237,24 @@ func (fsys *nestFS) Create(name string) (File, error) {
 		return nil, err
 	}
 
-	// TODO:
-	return fsys.fsys.Create(name)
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return mountFS.fsys.Create(subName)
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
 	if err := fsys.validPath("mkdir", name); err != nil {
 		return err
 	}
-	// TODO:
-	return fsys.fsys.MkdirAll(name, perm)
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return err
+	}
+
+	return mountFS.fsys.MkdirAll(subName, perm)
 }
 
 func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
@@ -170,7 +263,8 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 
 	if cFsys, ok := fsys.fsys.(fs.ReadDirFS); ok {
-		return cFsys.ReadDir(name)
+		entries, err := cFsys.ReadDir(name)
+		return fsys.appendDirEntry(name, entries, err)
 	}
 
 	f, err := fsys.fsys.Open(name)
@@ -183,7 +277,8 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if !ok {
 		return nil, pathError("readDir", name, fmt.Errorf("%s is not a directory", name))
 	}
-	return readDirFile.ReadDir(-1)
+	entries, err := readDirFile.ReadDir(-1)
+	return fsys.appendDirEntry(name, entries, err)
 }
 
 func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
@@ -191,10 +286,16 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 
-	if cFsys, ok := fsys.fsys.(fs.StatFS); ok {
-		return cFsys.Stat(name)
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return nil, err
 	}
-	f, err := fsys.Open(name)
+
+	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
+		return cFsys.Stat(subName)
+	}
+
+	f, err := mountFS.Open(subName)
 	if err != nil {
 		return nil, err
 	}
@@ -222,9 +323,16 @@ func (fsys *nestFS) ReadLink(name string) (string, error) {
 	if err := fsys.validPath("readlink", name); err != nil {
 		return "", err
 	}
-	if cFsys, ok := fsys.fsys.(fs.ReadLinkFS); ok {
-		return cFsys.ReadLink(name)
+
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return "", err
 	}
+
+	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
+		return cFsys.ReadLink(subName)
+	}
+
 	return "", pathError("readlink", name, fs.ErrInvalid)
 }
 
@@ -233,10 +341,15 @@ func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 
-	if cFsys, ok := fsys.fsys.(fs.ReadLinkFS); ok {
-		return cFsys.Lstat(name)
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return nil, err
 	}
-	return fsys.Stat(name)
+
+	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
+		return cFsys.Lstat(subName)
+	}
+	return mountFS.Stat(subName)
 }
 
 func (fsys *nestFS) Glob(pattern string) ([]string, error) {

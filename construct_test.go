@@ -36,6 +36,7 @@ func TestNew(t *testing.T) {
 		uri      string
 		wantType string
 		wantErr  bool
+		nested   bool
 	}{
 		{
 			uri:      "angry://",
@@ -77,9 +78,18 @@ func TestNew(t *testing.T) {
 			wantType: reflect.TypeFor[*nullFS]().Name(),
 			wantErr:  false,
 		},
+		{
+			uri:      "file:///?a=memory://",
+			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantErr:  false,
+			nested:   true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("newBaseFS(%q)", tt.uri), func(t *testing.T) {
+			if tt.nested {
+				t.Skip("test case requires nestFS support")
+			}
 			got, err := newBaseFS(tt.uri)
 			if tt.wantErr {
 				if err == nil {

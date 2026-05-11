@@ -16,12 +16,30 @@ package ufs
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
 )
 
 func New(name string) (FS, error) {
+	u, err := url.Parse(name)
+	if err == nil {
+		bFS, err := newBaseFS(u.Scheme + "://" + u.Path)
+		if err == nil {
+			nFS := makeNestFS(bFS)
+			vals := u.Query()
+			for mountPath, mountURI := range vals {
+				mountFS, err := newBaseFS(mountURI[0])
+				if err != nil {
+					return nil, err
+				}
+				nFS.addMount(mountPath, makeNestFS(mountFS))
+			}
+			return nFS, nil
+		}
+	}
+
 	fsys, err := newBaseFS(name)
 	if err != nil {
 		return nil, err

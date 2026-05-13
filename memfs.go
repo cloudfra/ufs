@@ -73,9 +73,6 @@ func (f *memFile) Stat() (fs.FileInfo, error) {
 }
 
 func (f *memFile) Read(p []byte) (int, error) {
-	if len(f.content) == 0 {
-		return 0, io.EOF
-	}
 	if f.offset >= int64(len(f.content)) {
 		return 0, io.EOF
 	}

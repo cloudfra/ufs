@@ -117,7 +117,7 @@ func (rdf *readDirFile) Stat() (fs.FileInfo, error) {
 }
 
 func (rdf *readDirFile) Read(p []byte) (int, error) {
-	return 0, fmt.Errorf("read '%s: is a directory", rdf.name)
+	return 0, fmt.Errorf("read '%s': is a directory", rdf.name)
 }
 
 func (rdf *readDirFile) Close() error {

@@ -113,14 +113,13 @@ func coerceToReaderAt(file fs.File) (io.ReaderAt, error) {
 	readerAt, ok := file.(io.ReaderAt)
 	if ok {
 		return readerAt, nil
-	} else {
-		// TODO: This is very inefficient because it's reading a nested zip file into memory.
-		data, err := io.ReadAll(file)
-		if err != nil {
-			return nil, err
-		}
-		return bytes.NewReader(data), err
 	}
+	// TODO: This is very inefficient because it's reading a nested zip file into memory.
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	return bytes.NewReader(data), nil
 }
 
 func newArchiveFSFromFile(file fs.File) (*archiveFS, error) {

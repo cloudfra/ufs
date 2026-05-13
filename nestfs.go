@@ -185,8 +185,8 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	return entries, nil
 }
 
-func (fsys *nestFS) addMount(name string, mountedFS *nestFS) {
-	fsys.mounts.put(name, mountedFS)
+func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
+	return fsys.mounts.put(name, mountedFS)
 }
 
 func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
@@ -214,7 +214,9 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	}
 
 	wrapped := makeNestFS(newFS)
-	fsys.addMount(name+archiveDirExt, wrapped)
+	if err := fsys.addMount(name+archiveDirExt, wrapped); err != nil {
+		return nil, err
+	}
 	return wrapped, nil
 }
 

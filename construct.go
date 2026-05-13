@@ -66,7 +66,9 @@ func New(name string) (FS, error) {
 				if err != nil {
 					return nil, err
 				}
-				nFS.addMount(mountPath, makeNestFS(mountFS))
+				if err := nFS.addMount(mountPath, makeNestFS(mountFS)); err != nil {
+					return nil, err
+				}
 			}
 			return nFS, nil
 		}

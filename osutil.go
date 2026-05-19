@@ -22,10 +22,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
+// httpClient is used for all remote archive downloads. The 30-minute timeout
+// is generous but prevents hung downloads from blocking indefinitely.
+var httpClient = &http.Client{Timeout: 30 * time.Minute}
+
 func downloadFile(dir string, uri string) (string, error) {
-	resp, err := http.Get(uri)
+	resp, err := httpClient.Get(uri)
 	if err != nil {
 		return "", err
 	}

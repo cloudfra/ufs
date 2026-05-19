@@ -168,7 +168,19 @@ func (fsys *nullFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
-	return nullDirStat, nil
+	// Consistent with Lstat: "." and trailing-slash names are directories;
+	// everything else is a regular file. nullDirStat is only for the root.
+	if isDirName(name) {
+		return nullDirStat, nil
+	}
+	return &fsInfo{
+		name:    path.Base(name),
+		size:    0,
+		mode:    fs.ModePerm,
+		modTime: unixEpochTime,
+		isDir:   false,
+		sys:     nil,
+	}, nil
 }
 
 func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {

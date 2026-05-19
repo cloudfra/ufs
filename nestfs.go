@@ -23,6 +23,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 )
 
 var (
@@ -42,11 +43,14 @@ func getPotentialArchives(name string) []string {
 }
 
 type mountMap struct {
+	mu       sync.RWMutex
 	m        map[string]*nestFS
 	baseName string
 }
 
 func (m *mountMap) put(name string, fsys *nestFS) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for mountPoint := range m.m {
 		if _, ok := removePathPrefix(mountPoint, name); ok {
 			return pathError("mount", name, fmt.Errorf("mount %q conflicts with %q. You must change the order so that mounting is properly nested. mounts: %s, %+v", name, mountPoint, m.baseName, m.m))
@@ -61,7 +65,8 @@ func (m *mountMap) put(name string, fsys *nestFS) error {
 
 func (m *mountMap) getDirectoryList(name string) []string {
 	name = path.Clean(name)
-	// If there's a mount that should handle the directory listing then we should defer to that.
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if _, ok := m.m[name]; ok {
 		return []string{}
 	}
@@ -72,22 +77,20 @@ func (m *mountMap) getDirectoryList(name string) []string {
 			dirSet[splitPath(subPath)[0]] = nil
 		}
 	}
-
 	dirs := []string{}
 	for dir := range dirSet {
 		dirs = append(dirs, dir)
 	}
-
 	sort.Strings(dirs)
 	return dirs
 }
 
 func (m *mountMap) getMatchesBySubPath(name string) map[string]*nestFS {
 	name = path.Clean(name)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if fsys, ok := m.m[name]; ok {
-		return map[string]*nestFS{
-			"": fsys,
-		}
+		return map[string]*nestFS{"": fsys}
 	}
 	matches := map[string]*nestFS{}
 	for mountPath, subFS := range m.m {
@@ -96,17 +99,13 @@ func (m *mountMap) getMatchesBySubPath(name string) map[string]*nestFS {
 			matches[subPath] = subFS
 		}
 	}
-
 	return matches
 }
 
 func (m *mountMap) getMount(name string) *nestFS {
-	name = path.Clean(name)
-	nFS, ok := m.m[name]
-	if !ok {
-		return nil
-	}
-	return nFS
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.m[path.Clean(name)]
 }
 
 func (m *mountMap) getMountX(name string) (string, string, *nestFS, bool) {
@@ -114,6 +113,8 @@ func (m *mountMap) getMountX(name string) (string, string, *nestFS, bool) {
 	if isCwd(name) {
 		return "", "", nil, false
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	targetMount := ""
 	targetSubPath := ""
 	var targetFS *nestFS
@@ -125,20 +126,25 @@ func (m *mountMap) getMountX(name string) (string, string, *nestFS, bool) {
 			targetFS = subFS
 		}
 	}
-
 	return targetMount, targetSubPath, targetFS, targetFS != nil
 }
 
+// Close closes all mounted sub-filesystems. On error it still closes the
+// remaining mounts and collects all errors.
 func (m *mountMap) Close() error {
-	if m.m != nil {
-		for mountPath, nfs := range m.m {
-			if err := nfs.Close(); err != nil {
-				return fmt.Errorf("cannot close mount %q, %w", mountPath, err)
-			}
-		}
-		m.m = nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.m == nil {
+		return nil
 	}
-	return nil
+	var errs []error
+	for mountPath, nfs := range m.m {
+		if err := nfs.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("cannot close mount %q: %w", mountPath, err))
+		}
+	}
+	m.m = nil
+	return errors.Join(errs...)
 }
 
 func makeMountMap(baseName string) *mountMap {
@@ -150,12 +156,19 @@ func makeMountMap(baseName string) *mountMap {
 
 // nestFS is a wrapper for a base FS that supports automatic mounting of archives.
 // This means that any archive can opened and read automatically. Archives are revealed via $filename.d name pattern.
+// nestFS is safe for concurrent use by multiple goroutines.
 type nestFS struct {
+	mu     sync.RWMutex
 	fsys   FS
 	mounts *mountMap
 }
 
 func (fsys *nestFS) String() string {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+	if fsys.fsys == nil {
+		return "nestFS(closed)"
+	}
 	return fmt.Sprintf("nestFS(%s)", fsys.fsys.String())
 }
 
@@ -199,43 +212,65 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 	return fsys.mounts.put(name, mountedFS)
 }
 
+// mountArchive lazily mounts an archive file under name+archiveDirExt.
+// Uses double-checked locking so concurrent calls for the same archive are safe.
+// Must NOT be called while holding fsys.mu (it is called from getFSAndSubpath,
+// which is called from exported methods that hold fsys.mu.RLock).
 func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
-	if maybeFS := fsys.mounts.getMount(name + archiveDirExt); maybeFS != nil {
+	key := name + archiveDirExt
+
+	// Fast path: already mounted.
+	if maybeFS := fsys.mounts.getMount(key); maybeFS != nil {
 		return maybeFS, nil
 	}
+
+	// Create the archive FS outside any lock — this may be slow.
 	ctx := context.Background()
 	lfs, ok := fsys.fsys.(*localFS)
 	var newFS *archiveFS
+	var err error
 	if ok {
-		absName, err := lfs.getAbsPath(name)
-		if err != nil {
-			return nil, pathError("mount", name, err)
+		absName, absErr := lfs.getAbsPath(name)
+		if absErr != nil {
+			return nil, pathError("mount", name, absErr)
 		}
 		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
-		if err != nil {
-			return nil, pathError("mount", name, err)
-		}
 	} else {
-		f, err := fsys.Open(name)
-		if err != nil {
-			return nil, pathError("mount", name, err)
+		// Use the base FS directly (not nestFS.Open) to avoid re-entrant locking.
+		f, openErr := fsys.fsys.Open(name)
+		if openErr != nil {
+			return nil, pathError("mount", name, openErr)
 		}
 		newFS, err = newArchiveFSFromFile(f)
-		if err != nil {
-			return nil, pathError("mount", name, err)
-		}
+	}
+	if err != nil {
+		return nil, pathError("mount", name, err)
 	}
 
 	wrapped := makeNestFS(newFS)
-	if err := fsys.addMount(name+archiveDirExt, wrapped); err != nil {
-		return nil, err
+
+	// Slow path: store under write lock with double-check to handle races.
+	fsys.mounts.mu.Lock()
+	if existing := fsys.mounts.m[key]; existing != nil {
+		fsys.mounts.mu.Unlock()
+		wrapped.Close() // discard the duplicate we just created
+		return existing, nil
 	}
+	fsys.mounts.m[key] = wrapped
+	fsys.mounts.mu.Unlock()
 	return wrapped, nil
 }
 
+// getFSAndSubpath resolves a path to the responsible nestFS and the sub-path
+// within it, following explicit mounts and lazily mounting archives as needed.
+// Must be called with fsys.mu.RLock held.
 func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	targetFS := fsys
 	targetName := name
+
+	// Phase 1: find the deepest explicit mount that covers name.
+	// Read mounts under the mountMap's own lock (separate from nestFS.mu).
+	fsys.mounts.mu.RLock()
 	for mountPath, subFS := range fsys.mounts.m {
 		subPath, ok := removePathPrefix(name, mountPath)
 		if ok && len(subPath) < len(targetName) {
@@ -243,11 +278,14 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 			targetFS = subFS
 		}
 	}
+	fsys.mounts.mu.RUnlock()
 
+	// Phase 2: check for archive virtual paths and auto-mount them.
 	archiveDirNames := getPotentialArchives(targetName)
 	for _, archiveDirName := range archiveDirNames {
 		archiveName := strings.TrimSuffix(archiveDirName, archiveDirExt)
-		info, err := targetFS.Stat(archiveName)
+		// Use the base FS's Stat directly to avoid re-acquiring nestFS.mu.
+		info, err := targetFS.fsys.Stat(archiveName)
 		if info != nil && err == nil {
 			subPath, ok := removePathPrefix(targetName, archiveDirName)
 			if !ok {
@@ -257,7 +295,10 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 			if err != nil {
 				return nil, "", pathError("mount", name, fmt.Errorf("cannot mount archive %s, %w", archiveName, err))
 			}
-			targetFS, targetName, err := subFS.getFSAndSubpath(subPath)
+			// Recurse into the archive's nestFS. It has its own RLock so we
+			// must not hold any lock from the parent nestFS here — we don't
+			// because mountArchive handles its own locking.
+			targetFS, targetName, err = subFS.getFSAndSubpath(subPath)
 			if err != nil {
 				return nil, "", pathError("mount", name, fmt.Errorf("cannot mount archive %s, %w", archiveName, err))
 			}
@@ -269,6 +310,9 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 }
 
 func (fsys *nestFS) Open(name string) (fs.File, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("open", name); err != nil {
 		return nil, err
 	}
@@ -294,13 +338,17 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *nestFS) Close() error {
+	fsys.mu.Lock()
+	defer fsys.mu.Unlock()
+
 	if err := fsys.mounts.Close(); err != nil {
 		return err
 	}
 
 	if fsys.fsys != nil {
+		name := fsys.fsys.String()
 		if err := fsys.fsys.Close(); err != nil {
-			return fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err)
+			return fmt.Errorf("cannot close file system %q, %w", name, err)
 		}
 		fsys.fsys = nil
 	}
@@ -308,6 +356,9 @@ func (fsys *nestFS) Close() error {
 }
 
 func (fsys *nestFS) Create(name string) (File, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("create", name); err != nil {
 		return nil, err
 	}
@@ -317,10 +368,20 @@ func (fsys *nestFS) Create(name string) (File, error) {
 		return nil, err
 	}
 
+	// Ensure parent directory exists so behaviour is consistent across backends.
+	if dir := path.Dir(subName); !isCwd(dir) {
+		if err := mountFS.fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+			return nil, err
+		}
+	}
+
 	return mountFS.fsys.Create(subName)
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("mkdir", name); err != nil {
 		return err
 	}
@@ -334,6 +395,9 @@ func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
 }
 
 func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("readdir", name); err != nil {
 		return nil, err
 	}
@@ -364,6 +428,9 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("stat", name); err != nil {
 		return nil, err
 	}
@@ -376,7 +443,7 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
 		return cFsys.Stat(subName)
 	}
-	f, err := mountFS.Open(subName)
+	f, err := mountFS.fsys.Open(subName)
 	if err != nil {
 		return nil, err
 	}
@@ -385,6 +452,9 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *nestFS) ReadFile(name string) ([]byte, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("readfile", name); err != nil {
 		return nil, err
 	}
@@ -401,6 +471,9 @@ func (fsys *nestFS) ReadFile(name string) ([]byte, error) {
 }
 
 func (fsys *nestFS) ReadLink(name string) (string, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("readlink", name); err != nil {
 		return "", err
 	}
@@ -418,6 +491,9 @@ func (fsys *nestFS) ReadLink(name string) (string, error) {
 }
 
 func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
+	fsys.mu.RLock()
+	defer fsys.mu.RUnlock()
+
 	if err := fsys.validPath("lstat", name); err != nil {
 		return nil, err
 	}
@@ -430,16 +506,25 @@ func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
 	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
 		return cFsys.Lstat(subName)
 	}
-	return mountFS.Stat(subName)
+	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
+		return cFsys.Stat(subName)
+	}
+	f, err := mountFS.fsys.Open(subName)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Stat()
 }
 
+// Glob always walks through the nestFS layer so patterns match across nested
+// mounts and auto-mounted archive paths.
 func (fsys *nestFS) Glob(pattern string) ([]string, error) {
-	if cFsys, ok := fsys.fsys.(fs.GlobFS); ok {
-		return cFsys.Glob(pattern)
-	}
 	return globFS(fsys, pattern)
 }
 
+// validPath checks both the path format and that the FS is not closed.
+// Must be called with fsys.mu held (at minimum RLock).
 func (fsys *nestFS) validPath(op string, name string) error {
 	if err := validPath(op, name); err != nil {
 		return err

@@ -51,17 +51,45 @@ type gcsFS struct {
 
 // gcsFile represents an opened GCS object for reading, a virtual directory, or
 // a GCS writer for an in-progress Create.
+//
+// Read-mode files load content lazily on the first Read/ReadAt/Seek call to
+// avoid buffering the entire object in memory at Open time.
+// Write-mode files (writer != nil) must be closed to commit data to GCS;
+// calling Read or Seek on a write-mode file returns fs.ErrInvalid.
 type gcsFile struct {
-	name       string
-	content    []byte
-	offset     int64
-	isDir      bool
-	size       int64
-	modTime    time.Time
-	dirEntries []fs.DirEntry
-	dirOffset  int
-	fsys       *gcsFS
-	writer     *storage.Writer
+	name          string
+	objPath       string // GCS object path used for lazy content loading
+	content       []byte
+	contentLoaded bool
+	offset        int64
+	isDir         bool
+	size          int64
+	modTime       time.Time
+	dirEntries    []fs.DirEntry
+	dirOffset     int
+	fsys          *gcsFS
+	writer        *storage.Writer
+}
+
+// ensureContentLoaded fetches the object body from GCS on the first call.
+// Note: for very large objects the content is still fully buffered in memory
+// because the File interface requires io.ReaderAt (random access).
+func (f *gcsFile) ensureContentLoaded() error {
+	if f.contentLoaded {
+		return nil
+	}
+	rc, err := f.fsys.client.Bucket(f.fsys.bucket).Object(f.objPath).NewReader(f.fsys.ctx)
+	if err != nil {
+		return pathError("read", f.name, err)
+	}
+	content, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
+		return pathError("read", f.name, err)
+	}
+	f.content = content
+	f.contentLoaded = true
+	return nil
 }
 
 func (f *gcsFile) Stat() (fs.FileInfo, error) {
@@ -79,11 +107,14 @@ func (f *gcsFile) Stat() (fs.FileInfo, error) {
 }
 
 func (f *gcsFile) Read(p []byte) (int, error) {
+	if f.writer != nil {
+		return 0, pathError("read", f.name, fmt.Errorf("file is open for writing: %w", fs.ErrInvalid))
+	}
 	if f.isDir {
 		return 0, pathError("read", f.name, fs.ErrInvalid)
 	}
-	if len(f.content) == 0 {
-		return 0, io.EOF
+	if err := f.ensureContentLoaded(); err != nil {
+		return 0, err
 	}
 	if f.offset >= int64(len(f.content)) {
 		return 0, io.EOF
@@ -94,8 +125,14 @@ func (f *gcsFile) Read(p []byte) (int, error) {
 }
 
 func (f *gcsFile) ReadAt(p []byte, off int64) (int, error) {
+	if f.writer != nil {
+		return 0, pathError("readat", f.name, fmt.Errorf("file is open for writing: %w", fs.ErrInvalid))
+	}
 	if f.isDir {
 		return 0, pathError("readat", f.name, fs.ErrInvalid)
+	}
+	if err := f.ensureContentLoaded(); err != nil {
+		return 0, err
 	}
 	if off >= int64(len(f.content)) {
 		return 0, io.EOF
@@ -119,6 +156,9 @@ func (f *gcsFile) WriteString(s string) (int, error) {
 }
 
 func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
+	if f.writer != nil {
+		return 0, pathError("seek", f.name, fmt.Errorf("file is open for writing: %w", fs.ErrInvalid))
+	}
 	if f.isDir {
 		return 0, pathError("seek", f.name, fs.ErrInvalid)
 	}
@@ -217,18 +257,11 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 
 	attrs, err := bkt.Object(objPath).Attrs(fsys.ctx)
 	if err == nil {
-		rc, err := bkt.Object(objPath).NewReader(fsys.ctx)
-		if err != nil {
-			return nil, pathError("open", name, err)
-		}
-		content, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return nil, pathError("open", name, err)
-		}
+		// Content is loaded lazily on first Read/ReadAt/Seek to avoid buffering
+		// the entire object in memory at Open time.
 		return &gcsFile{
 			name:    name,
-			content: content,
+			objPath: objPath,
 			isDir:   false,
 			size:    attrs.Size,
 			modTime: attrs.Updated,
@@ -365,16 +398,16 @@ func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
 	if err := validPath("readfile", name); err != nil {
 		return nil, err
 	}
-	f, err := fsys.Open(name)
+	objPath := path.Join(fsys.baseDir, name)
+	rc, err := fsys.client.Bucket(fsys.bucket).Object(objPath).NewReader(fsys.ctx)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, storage.ErrObjectNotExist) {
+			return nil, pathError("readfile", name, fs.ErrNotExist)
+		}
+		return nil, pathError("readfile", name, err)
 	}
-	defer f.Close()
-	gf := f.(*gcsFile)
-	if gf.isDir {
-		return nil, pathError("readfile", name, fs.ErrInvalid)
-	}
-	return gf.content, nil
+	defer rc.Close()
+	return io.ReadAll(rc)
 }
 
 func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {

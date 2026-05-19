@@ -130,7 +130,13 @@ func (f *memFile) WriteString(s string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.content = append(f.content, s...)
+	end := f.offset + int64(len(s))
+	if end > int64(len(f.content)) {
+		f.content = append(f.content, make([]byte, end-int64(len(f.content)))...)
+	}
+	copy(f.content[f.offset:], s)
+	f.offset = end
+
 	now := time.Now()
 	f.modTime = now
 

@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"strings"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -25,10 +26,16 @@ import (
 // [fs.ModePerm] as needed. Existing files in destFS are overwritten. The copy
 // is not atomic: if an error occurs mid-walk, destFS may be partially written.
 //
+// When srcFS is a [nestFS] (returned by [New]), auto-mounted archive virtual
+// paths (e.g. foo.zip.d/...) are skipped to prevent unintentional archive
+// traversal and unexpected destination sizes.
+//
 // dir must satisfy [fs.ValidPath]; use "." to copy the entire file system.
 func Rsync(srcFS fs.FS, destFS FS, dir string) error {
-	// TODO: Prevent archive traversal.
 	return ForEachFilename(srcFS, dir, func(name string) error {
+		if isInsideArchiveMount(name) {
+			return nil
+		}
 		dir, _ := path.Split(name)
 		dir = path.Clean(dir)
 		if err := destFS.MkdirAll(dir, fs.ModePerm); err != nil {
@@ -39,6 +46,19 @@ func Rsync(srcFS fs.FS, destFS FS, dir string) error {
 		}
 		return nil
 	})
+}
+
+// isInsideArchiveMount reports whether name contains a path component that
+// looks like a nestFS archive virtual directory (e.g. "archive.zip.d").
+// This prevents Rsync from traversing auto-mounted archives in the source FS.
+func isInsideArchiveMount(name string) bool {
+	for _, component := range strings.Split(name, unixPathSeparator) {
+		base := strings.TrimSuffix(component, archiveDirExt)
+		if base != component && isMountableArchivePath(base) {
+			return true
+		}
+	}
+	return false
 }
 
 // Copy copies the single file at srcFilename in srcFS to destFilename in destFS.
@@ -66,8 +86,9 @@ func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error
 // ForEachFilename calls f for each file path (not directory) under dir,
 // streaming results without building an intermediate slice. If fsys implements
 // [ForEachFilenameIter], its native implementation is used directly; otherwise
-// the paths are collected via [ListFiles] and iterated. f receives paths
-// relative to dir. The walk stops and returns the first non-nil error from f.
+// the paths are collected via [ListFiles] and iterated. f receives full
+// FS-root-relative paths identical to those returned by [ListFiles] — they are
+// NOT relative to dir. The walk stops and returns the first non-nil error from f.
 func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
 	lf, ok := fsys.(ForEachFilenameIter)
 	if ok {

@@ -18,14 +18,63 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
+// privateIPRanges lists address ranges that must never be fetched to prevent
+// SSRF attacks against cloud metadata services and internal networks.
+var privateIPRanges = func() []net.IPNet {
+	cidrs := []string{
+		"127.0.0.0/8",    // loopback
+		"10.0.0.0/8",     // RFC-1918
+		"172.16.0.0/12",  // RFC-1918
+		"192.168.0.0/16", // RFC-1918
+		"169.254.0.0/16", // link-local / cloud metadata (AWS, GCP, Azure IMDS)
+		"::1/128",        // IPv6 loopback
+		"fe80::/10",      // IPv6 link-local
+	}
+	ranges := make([]net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, network, _ := net.ParseCIDR(cidr)
+		ranges = append(ranges, *network)
+	}
+	return ranges
+}()
+
+func validateRemoteURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL %q: %w", rawURL, err)
+	}
+	host := u.Hostname()
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("cannot resolve host %q: %w", host, err)
+	}
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		for _, r := range privateIPRanges {
+			if r.Contains(ip) {
+				return fmt.Errorf("host %q resolves to a disallowed private address %s", host, addr)
+			}
+		}
+	}
+	return nil
+}
+
 func downloadFile(dir string, uri string) (string, error) {
-	resp, err := http.Get(uri)
+	if err := validateRemoteURL(uri); err != nil {
+		return "", err
+	}
+	resp, err := http.Get(uri) //nolint:gosec // URL is validated by validateRemoteURL above
 	if err != nil {
 		return "", err
 	}

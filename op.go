@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"strings"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -27,17 +28,27 @@ import (
 //
 // dir must satisfy [fs.ValidPath]; use "." to copy the entire file system.
 func Rsync(srcFS fs.FS, destFS FS, dir string) error {
-	// TODO: Prevent archive traversal.
-	return ForEachFilename(srcFS, dir, func(name string) error {
-		dir, _ := path.Split(name)
-		dir = path.Clean(dir)
-		if err := destFS.MkdirAll(dir, fs.ModePerm); err != nil {
+	return fs.WalkDir(srcFS, dir, func(p string, d fs.DirEntry, err error) error {
+		if isCwd(p) {
+			return nil
+		}
+		if err != nil {
 			return err
 		}
-		if err := Copy(srcFS, name, destFS, name); err != nil {
+		if d.IsDir() {
+			// Skip virtual archive-mount directories (foo.zip.d) to prevent
+			// archive contents from being silently extracted into destFS.
+			name := d.Name()
+			if strings.HasSuffix(name, archiveDirExt) && isMountableArchivePath(strings.TrimSuffix(name, archiveDirExt)) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		dirPart, _ := path.Split(p)
+		if err := destFS.MkdirAll(path.Clean(dirPart), fs.ModePerm); err != nil {
 			return err
 		}
-		return nil
+		return Copy(srcFS, p, destFS, p)
 	})
 }
 

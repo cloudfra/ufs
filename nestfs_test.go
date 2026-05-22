@@ -535,6 +535,59 @@ func TestNestFSOperations(t *testing.T) {
 	})
 }
 
+// TestNestFSOpenArchiveFileIsSeekable verifies that files opened from inside
+// a tar archive through nestFS implement io.ReadSeeker (needed for Range requests).
+func TestNestFSOpenArchiveFileIsSeekable(t *testing.T) {
+	fsys, err := newNestFS(cwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+	nfs := fsys.(*nestFS)
+
+	// testassets.tar is a plain tar (no compression) — its entries are sequential streams.
+	f, err := nfs.Open("testing/testassets/archives/testassets.tar.d/index.html")
+	if err != nil {
+		t.Fatalf("Open() = %v, want nil", err)
+	}
+	defer f.Close()
+
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		t.Fatal("file from tar archive does not implement io.ReadSeeker, want ReadSeeker for Range request support")
+	}
+
+	// Read a few bytes to advance the position.
+	buf := make([]byte, 4)
+	if _, err := rs.Read(buf); err != nil {
+		t.Fatalf("Read() = %v", err)
+	}
+
+	// Seek back to beginning.
+	if _, err := rs.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("Seek(0, SeekStart) = %v", err)
+	}
+
+	// Full read from position 0 must return non-empty content.
+	data, err := io.ReadAll(rs)
+	if err != nil {
+		t.Fatalf("ReadAll() after seek = %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("ReadAll() returned 0 bytes after seek, want non-empty")
+	}
+
+	// Also verify io.ReaderAt for ServeContent compatibility.
+	ra, ok := f.(io.ReaderAt)
+	if !ok {
+		t.Fatal("file from tar archive does not implement io.ReaderAt")
+	}
+	p := make([]byte, 4)
+	if _, err := ra.ReadAt(p, 0); err != nil {
+		t.Fatalf("ReadAt(0) = %v", err)
+	}
+}
+
 func TestNestFSValidPathClosed(t *testing.T) {
 	fsys, err := newNestFS("memory://")
 	if err != nil {

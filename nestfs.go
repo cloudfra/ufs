@@ -15,15 +15,28 @@
 package ufs
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"slices"
 	"sort"
 	"strings"
 )
+
+// seekableFile wraps a non-seekable fs.File (e.g. a raw archive entry stream) so
+// the returned file always satisfies io.ReadSeeker and io.ReaderAt, as required by
+// net/http.ServeContent for Range requests.
+type seekableFile struct {
+	*bytes.Reader
+	stat fs.FileInfo
+}
+
+func (s *seekableFile) Close() error               { return nil }
+func (s *seekableFile) Stat() (fs.FileInfo, error) { return s.stat, nil }
 
 var (
 	_ FS        = (*nestFS)(nil)
@@ -290,6 +303,21 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
+	// Buffer non-seekable files (e.g. entries from tar archives) so the caller
+	// always gets io.ReadSeeker + io.ReaderAt, which net/http.ServeContent requires.
+	if _, ok := f.(io.ReadSeeker); !ok {
+		stat, err := f.Stat()
+		if err != nil {
+			f.Close()
+			return nil, err
+		}
+		data, err := io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		return &seekableFile{Reader: bytes.NewReader(data), stat: stat}, nil
+	}
 	return f, nil
 }
 

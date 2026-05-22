@@ -122,7 +122,23 @@ func (f *memFile) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (f *memFile) Write(p []byte) (int, error) {
-	return f.WriteString(string(p))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.content = append(f.content, p...)
+	now := time.Now()
+	f.modTime = now
+
+	if f.fsys != nil {
+		f.fsys.mu.Lock()
+		if node, ok := f.fsys.nodes[f.path]; ok {
+			node.content = bytes.Clone(f.content)
+			node.modTime = now
+		}
+		f.fsys.mu.Unlock()
+	}
+
+	return len(p), nil
 }
 
 func (f *memFile) WriteString(s string) (int, error) {
@@ -289,8 +305,9 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 		prefix = ""
 	}
 
-	var entries []fs.DirEntry
-	seen := make(map[string]struct{})
+	// nodes is a flat map keyed by unique full paths, so each child name is
+	// unique within dir — no dedup map needed.
+	entries := make([]fs.DirEntry, 0, min(len(fsys.nodes), 64))
 	for key, node := range fsys.nodes {
 		if key == cwdPath {
 			continue
@@ -299,10 +316,6 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 		if !ok || strings.Contains(rest, "/") {
 			continue
 		}
-		if _, exists := seen[rest]; exists {
-			continue
-		}
-		seen[rest] = struct{}{}
 		entries = append(entries, fs.FileInfoToDirEntry(node.info()))
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -357,15 +370,17 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 
 	now := time.Now()
 	parts := splitPath(name)
-	accum := ""
+	var b strings.Builder
+	b.Grow(len(name))
 	for i, part := range parts {
 		if part == "" {
 			continue
 		}
 		if i > 0 {
-			accum += "/"
+			b.WriteByte('/')
 		}
-		accum += part
+		b.WriteString(part)
+		accum := b.String()
 		if _, ok := fsys.nodes[accum]; !ok {
 			fsys.nodes[accum] = &memNode{
 				name:    part,
@@ -386,15 +401,17 @@ func (fsys *memFS) ensureParentsLocked(name string, now time.Time) {
 		return
 	}
 	parts := splitPath(dir)
-	accum := ""
+	var b strings.Builder
+	b.Grow(len(dir))
 	for i, part := range parts {
 		if part == "" {
 			continue
 		}
 		if i > 0 {
-			accum += "/"
+			b.WriteByte('/')
 		}
-		accum += part
+		b.WriteString(part)
+		accum := b.String()
 		if _, ok := fsys.nodes[accum]; !ok {
 			fsys.nodes[accum] = &memNode{
 				name:    part,

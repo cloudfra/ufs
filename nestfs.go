@@ -73,7 +73,7 @@ func (m *mountMap) getDirectoryList(name string) []string {
 		}
 	}
 
-	dirs := []string{}
+	dirs := make([]string, 0, len(dirSet))
 	for dir := range dirSet {
 		dirs = append(dirs, dir)
 	}

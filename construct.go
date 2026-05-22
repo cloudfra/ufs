@@ -127,7 +127,15 @@ func nameToURI(name string) (*url.URL, error) {
 func New(name string) (FS, error) {
 	u, err := url.Parse(name)
 	if err == nil {
-		bFS, err := newBaseFS(u.Scheme + "://" + u.Path)
+		baseURI := u.Scheme + "://"
+		// Per RFC 8089, "file://localhost/path" is equivalent to
+		// "file:///path". Only include the host when it is non-empty and
+		// not the special "localhost" authority used by some file URIs.
+		if u.Host != "" && u.Host != "localhost" {
+			baseURI += u.Host
+		}
+		baseURI += u.Path
+		bFS, err := newBaseFS(baseURI)
 		if err == nil {
 			nFS := makeNestFS(bFS)
 			vals := u.Query()

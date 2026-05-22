@@ -434,3 +434,23 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 		})
 	}
 }
+
+func TestNewPreservesHost(t *testing.T) {
+	wd := mustGetwd(t)
+	tarGz := filepath.Join(wd, testAssetsArchivesDir, "testassets.tar.gz")
+	uri := "file://localhost" + tarGz
+
+	fsys, err := New(uri)
+	if err != nil {
+		t.Fatalf("New(%q) = %v, want nil", uri, err)
+	}
+	defer fsys.Close()
+
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		t.Fatalf("ReadDir('.') = %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("ReadDir('.') returned no entries, want at least one")
+	}
+}

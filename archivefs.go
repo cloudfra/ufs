@@ -124,7 +124,8 @@ func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
-	fsys, err := archives.FileSystem(ctx, name, nil)
+	localPath := localFSNormalizePath(name)
+	fsys, err := archives.FileSystem(ctx, localPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}

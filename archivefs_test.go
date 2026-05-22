@@ -307,3 +307,40 @@ func TestArchiveFSReadDirInvalid(t *testing.T) {
 		}
 	}
 }
+
+const testSevenZipArchive = "testing/testassets/archives/testassets.7z"
+
+func TestNewArchiveFSFrom7z(t *testing.T) {
+	fsys, err := newArchiveFSFromLocalFS(context.Background(), testSevenZipArchive)
+	if err != nil {
+		t.Fatalf("newArchiveFSFromLocalFS(.7z) = %v, want nil", err)
+	}
+	defer fsys.Close()
+
+	data, err := fsys.ReadFile("index.html")
+	if err != nil {
+		t.Fatalf("ReadFile(index.html) from .7z = %v, want nil", err)
+	}
+	if len(data) == 0 {
+		t.Error("ReadFile returned empty, want non-empty")
+	}
+}
+
+func TestNestFS7zFileIsSeekable(t *testing.T) {
+	fsys, err := newNestFS(cwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+	nfs := fsys.(*nestFS)
+
+	f, err := nfs.Open("testing/testassets/archives/testassets.7z.d/index.html")
+	if err != nil {
+		t.Fatalf("Open(.7z.d/index.html) = %v", err)
+	}
+	defer f.Close()
+
+	if _, ok := f.(io.ReadSeeker); !ok {
+		t.Fatal("file from .7z does not implement io.ReadSeeker")
+	}
+}

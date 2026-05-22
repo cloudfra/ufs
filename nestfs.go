@@ -218,7 +218,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	}
 	ctx := context.Background()
 	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
+	var newFS FS
 	if ok {
 		absName, err := lfs.getAbsPath(name)
 		if err != nil {
@@ -233,6 +233,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		if err != nil {
 			return nil, pathError("mount", name, err)
 		}
+		defer f.Close()
 		newFS, err = newArchiveFSFromFile(f)
 		if err != nil {
 			return nil, pathError("mount", name, err)

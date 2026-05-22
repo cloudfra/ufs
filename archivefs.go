@@ -20,8 +20,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/bodgit/sevenzip"
 	"github.com/mholt/archives"
 )
 
@@ -123,7 +126,13 @@ func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
 	return fsys.Stat(name)
 }
 
-func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
+// newArchiveFSFromLocalFS opens name as a read-only archive FS.
+// For .7z archives the archive is fully extracted to a temp directory first (see
+// newSevenZipFS). For all other formats archives.FileSystem is used directly.
+func newArchiveFSFromLocalFS(ctx context.Context, name string) (FS, error) {
+	if strings.HasSuffix(strings.ToLower(name), ".7z") {
+		return newSevenZipFS(localFSNormalizePath(name))
+	}
 	localPath := localFSNormalizePath(name)
 	fsys, err := archives.FileSystem(ctx, localPath, nil)
 	if err != nil {
@@ -179,6 +188,74 @@ func makeArchiveFS(fsys fs.FS, name string) *archiveFS {
 		fsys: fsys,
 		name: name,
 	}
+}
+
+// newSevenZipFS extracts the .7z archive at name into a temporary directory and
+// returns a tempMountFS backed by that directory. The temp directory is removed
+// when the returned FS is closed. This is necessary because the 7-Zip format
+// lacks a seekable stream index, making per-entry random access unreliable.
+func newSevenZipFS(name string) (FS, error) {
+	tempDir, cleanup, err := createOSTempDirectory()
+	if err != nil {
+		return nil, fmt.Errorf("cannot create temp dir for .7z %q: %w", name, err)
+	}
+
+	r, err := sevenzip.OpenReader(name)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("cannot open .7z %q: %w", name, err)
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		if err := extractSevenZipEntry(f, tempDir); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("cannot extract %q from %q: %w", f.Name, name, err)
+		}
+	}
+
+	lfs, err := newLocalFS(tempDir)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("cannot create localFS for extracted .7z: %w", err)
+	}
+	return makeTempMountFS(lfs, tempDir, cleanup), nil
+}
+
+// extractSevenZipEntry writes a single entry from a .7z archive to destDir.
+func extractSevenZipEntry(f *sevenzip.File, destDir string) (retErr error) {
+	destPath := filepath.Join(destDir, filepath.FromSlash(f.Name))
+	// Guard against path traversal.
+	if !strings.HasPrefix(filepath.Clean(destPath)+string(os.PathSeparator), filepath.Clean(destDir)+string(os.PathSeparator)) {
+		return fmt.Errorf("path traversal in 7z entry %q", f.Name)
+	}
+
+	if f.FileInfo().IsDir() {
+		return os.MkdirAll(destPath, 0o755)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return err
+	}
+
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := out.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
+
+	_, retErr = io.Copy(out, rc)
+	return
 }
 
 func newTempMountRemoteArchiveFS(name string) (FS, error) {

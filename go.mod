@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	cloud.google.com/go/storage v1.62.1
+	github.com/bodgit/sevenzip v1.6.2
 	github.com/fsouza/fake-gcs-server v1.54.0
 	github.com/go-git/go-git/v5 v5.19.0
 	github.com/google/go-cmp v0.7.0
@@ -30,7 +31,6 @@ require (
 	github.com/STARRY-S/zip v0.2.3 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/bodgit/plumbing v1.3.0 // indirect
-	github.com/bodgit/sevenzip v1.6.2 // indirect
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect

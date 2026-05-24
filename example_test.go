@@ -175,7 +175,7 @@ func ExampleForEachFilename() {
 		f.Close()
 	}
 
-	ForEachFilename(fsys, ".", func(name string) error {
+	ForEachFilename(fsys, ".", true, func(name string) error {
 		fmt.Println(name)
 		return nil
 	})

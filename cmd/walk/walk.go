@@ -38,7 +38,7 @@ func run(dir string) error {
 	if err != nil {
 		return err
 	}
-	return ufs.ForEachFilename(fsys, dir, func(name string) error {
+	return ufs.ForEachFilename(fsys, dir, true, func(name string) error {
 		log.Printf("- %s", name)
 		return nil
 	})

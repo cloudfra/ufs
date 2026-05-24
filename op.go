@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"strings"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -27,8 +28,7 @@ import (
 //
 // dir must satisfy [fs.ValidPath]; use "." to copy the entire file system.
 func Rsync(srcFS fs.FS, destFS FS, dir string) error {
-	// TODO: Prevent archive traversal.
-	return ForEachFilename(srcFS, dir, func(name string) error {
+	return ForEachFilename(srcFS, dir, false, func(name string) error {
 		dir, _ := path.Split(name)
 		dir = path.Clean(dir)
 		if err := destFS.MkdirAll(dir, fs.ModePerm); err != nil {
@@ -63,36 +63,28 @@ func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error
 	return nil
 }
 
-// ForEachFilename calls f for each file path (not directory) under dir,
-// streaming results without building an intermediate slice. If fsys implements
-// [ForEachFilenameIter], its native implementation is used directly; otherwise
-// the paths are collected via [ListFiles] and iterated. f receives paths
-// relative to dir. The walk stops and returns the first non-nil error from f.
-func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
-	lf, ok := fsys.(ForEachFilenameIter)
-	if ok {
-		return lf.ForEachFilename(dir, f)
-	}
-	files, err := ListFiles(fsys, dir)
-	if err != nil {
-		return err
-	}
-	for _, file := range files {
-		if err := f(file); err != nil {
+// ForEachFilename calls f for each file path (not directory) under dir. When
+// traverseArchives is true, virtual archive mounts (*.d directories) are traversed; if fsys
+// implements [ForEachFilenameIter] its native implementation is used, otherwise
+// paths are collected via [ListFiles] and iterated. When traverseArchives is false, *.d
+// directories whose adjacent archive file exists are skipped; real *.d
+// configuration directories are still traversed. The walk stops and returns the
+// first non-nil error from f.
+func ForEachFilename(fsys fs.FS, dir string, traverseArchives bool, f func(string) error) error {
+	if traverseArchives {
+		if lf, ok := fsys.(ForEachFilenameIter); ok {
+			return lf.ForEachFilename(dir, f)
+		}
+		files, err := ListFiles(fsys, dir)
+		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// ForEachFileInfo calls f for each file (not directory) under dir, providing
-// its [fs.FileInfo]. It is the typed companion to [ForEachFilename] and prefers
-// a native [ForEachFileInfoIter] implementation when available, falling back to
-// [fs.WalkDir]. The walk stops and returns the first non-nil error from f.
-func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
-	lf, ok := fsys.(ForEachFileInfoIter)
-	if ok {
-		return lf.ForEachFileInfo(dir, f)
+		for _, file := range files {
+			if err := f(file); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	return fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
 		if isCwd(p) {
@@ -102,6 +94,38 @@ func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
 			return err
 		}
 		if d.IsDir() {
+			if isVirtualArchiveMount(fsys, p) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		return f(p)
+	})
+}
+
+// ForEachFileInfo calls f for each file (not directory) under dir, providing
+// its [fs.FileInfo]. When traverseArchives is true, virtual archive mounts are traversed;
+// if fsys implements [ForEachFileInfoIter] its native implementation is used,
+// otherwise [fs.WalkDir] is used. When traverseArchives is false, *.d directories whose
+// adjacent archive file exists are skipped; real *.d configuration directories
+// are still traversed. The walk stops and returns the first non-nil error from f.
+func ForEachFileInfo(fsys fs.FS, dir string, traverseArchives bool, f func(fs.FileInfo) error) error {
+	if traverseArchives {
+		if lf, ok := fsys.(ForEachFileInfoIter); ok {
+			return lf.ForEachFileInfo(dir, f)
+		}
+	}
+	return fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
+		if isCwd(p) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if !traverseArchives && isVirtualArchiveMount(fsys, p) {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		info, err := fs.Stat(fsys, p)
@@ -110,6 +134,24 @@ func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
 		}
 		return f(info)
 	})
+}
+
+// isVirtualArchiveMount reports whether p is a *.d directory in fsys that has a
+// corresponding adjacent archive file. This distinguishes virtual archive mounts
+// created by nestFS from real *.d configuration directories (e.g. apt sources).
+func isVirtualArchiveMount(fsys fs.FS, p string) bool {
+	if !strings.HasSuffix(p, archiveDirExt) {
+		return false
+	}
+	archivePath := strings.TrimSuffix(p, archiveDirExt)
+	if !isMountableArchivePath(archivePath) {
+		return false
+	}
+	info, err := fs.Stat(fsys, archivePath)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
 // List returns all paths (both files and directories) under dir in lexical

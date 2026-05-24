@@ -318,50 +318,27 @@ func TestRemovePathPrefix(t *testing.T) {
 	}
 }
 
-func TestTrimSlash(t *testing.T) {
+// TestPathFunctions checks trimSlash, splitPath, isCwd, isDirName, and
+// coerceUnix for every entry in pathTestCases in a single pass.
+func TestPathFunctions(t *testing.T) {
 	t.Parallel()
 	for _, tc := range pathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%q", tc.input), func(t *testing.T) {
 			t.Parallel()
 			if got := trimSlash(tc.input); got != tc.wantTrimSlash {
-				t.Errorf("trimSlash(%q) got: %v, want: %v", tc.input, got, tc.wantTrimSlash)
+				t.Errorf("trimSlash(%q) = %q, want %q", tc.input, got, tc.wantTrimSlash)
 			}
-		})
-	}
-}
-
-func TestSplitPath(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			got := splitPath(tc.input)
-			if diff := cmp.Diff(got, tc.wantSplitPath); diff != "" {
-				t.Errorf("splitPath(%q) got: %v, want: %v, diff: %s", tc.input, got, tc.wantTrimSlash, diff)
+			if diff := cmp.Diff(splitPath(tc.input), tc.wantSplitPath); diff != "" {
+				t.Errorf("splitPath(%q) mismatch (-want +got):\n%s", tc.input, diff)
 			}
-		})
-	}
-}
-
-func TestIsCwd(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(fmt.Sprintf("%q", tc.input), func(t *testing.T) {
-			t.Parallel()
 			if got := isCwd(tc.input); got != tc.wantIsCwd {
-				t.Errorf("isCwd(%q) got: %v, want: %v", tc.input, got, tc.wantIsCwd)
+				t.Errorf("isCwd(%q) = %v, want %v", tc.input, got, tc.wantIsCwd)
 			}
-		})
-	}
-}
-
-func TestIsDirName(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(fmt.Sprintf("%q", tc.input), func(t *testing.T) {
-			t.Parallel()
 			if got := isDirName(tc.input); got != tc.wantIsDirName {
-				t.Errorf("isDirName(%q) got: %v, want: %v", tc.input, got, tc.wantIsDirName)
+				t.Errorf("isDirName(%q) = %v, want %v", tc.input, got, tc.wantIsDirName)
+			}
+			if got := coerceUnix(tc.input); got != tc.wantCoerceUnix {
+				t.Errorf("coerceUnix(%q) = %q, want %q", tc.input, got, tc.wantCoerceUnix)
 			}
 		})
 	}
@@ -449,15 +426,3 @@ func TestJoinErrors(t *testing.T) {
 	}
 }
 
-func TestCoerceUnix(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			got := coerceUnix(tc.input)
-			if got != tc.wantCoerceUnix {
-				t.Errorf("coerceUnix(%q) got: %q, want: %q", tc.input, got, tc.wantCoerceUnix)
-			}
-		})
-	}
-}

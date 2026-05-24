@@ -92,17 +92,40 @@ func TestArchiveFSOpen(t *testing.T) {
 	}
 }
 
-func TestArchiveFSOpenInvalid(t *testing.T) {
+// TestArchiveFSInvalidPaths verifies that every mutating and reading operation
+// rejects malformed paths with an error.
+func TestArchiveFSInvalidPaths(t *testing.T) {
 	fsys := mustArchiveFS(t)
-
-	invalidPaths := []string{
-		"/absolute/path",
-		"../relative/path",
-		"invalid/../path",
+	rfs, ok := fsys.(fs.ReadFileFS)
+	if !ok {
+		t.Fatal("archiveFS does not implement fs.ReadFileFS")
 	}
-	for _, path := range invalidPaths {
-		if _, err := fsys.Open(path); err == nil {
-			t.Errorf("Open(%q) succeeded, want error", path)
+	rds, ok := fsys.(fs.ReadDirFS)
+	if !ok {
+		t.Fatal("archiveFS does not implement fs.ReadDirFS")
+	}
+
+	invalidPaths := []string{"/absolute/path", "../relative/path", "invalid/../path"}
+	ops := []struct {
+		name string
+		fn   func(string) error
+	}{
+		{"Open", func(p string) error { _, err := fsys.Open(p); return err }},
+		{"Create", func(p string) error { _, err := fsys.Create(p); return err }},
+		{"MkdirAll", func(p string) error { return fsys.MkdirAll(p, fs.ModePerm) }},
+		{"ReadFile", func(p string) error { _, err := rfs.ReadFile(p); return err }},
+		{"ReadDir", func(p string) error { _, err := rds.ReadDir(p); return err }},
+		{"ReadLink", func(p string) error { _, err := fsys.ReadLink(p); return err }},
+		{"Lstat", func(p string) error { _, err := fsys.Lstat(p); return err }},
+	}
+
+	for _, op := range ops {
+		for _, path := range invalidPaths {
+			t.Run(op.name+"/"+path, func(t *testing.T) {
+				if err := op.fn(path); err == nil {
+					t.Errorf("%s(%q) succeeded, want error", op.name, path)
+				}
+			})
 		}
 	}
 }
@@ -119,21 +142,6 @@ func TestArchiveFSCreate(t *testing.T) {
 	}
 }
 
-func TestArchiveFSCreateInvalid(t *testing.T) {
-	fsys := mustArchiveFS(t)
-
-	invalidPaths := []string{
-		"/absolute/path",
-		"../relative/path",
-		"invalid/../path",
-	}
-	for _, path := range invalidPaths {
-		if _, err := fsys.Create(path); err == nil {
-			t.Errorf("Create(%q) succeeded, want error", path)
-		}
-	}
-}
-
 func TestArchiveFSMkdirAll(t *testing.T) {
 	fsys := mustArchiveFS(t)
 
@@ -143,21 +151,6 @@ func TestArchiveFSMkdirAll(t *testing.T) {
 	}
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("MkdirAll() error = %v, want to wrap fs.ErrPermission", err)
-	}
-}
-
-func TestArchiveFSMkdirAllInvalid(t *testing.T) {
-	fsys := mustArchiveFS(t)
-
-	invalidPaths := []string{
-		"/absolute/path",
-		"../relative/path",
-		"invalid/../path",
-	}
-	for _, path := range invalidPaths {
-		if err := fsys.MkdirAll(path, fs.ModePerm); err == nil {
-			t.Errorf("MkdirAll(%q) succeeded, want error", path)
-		}
 	}
 }
 
@@ -178,57 +171,25 @@ func TestArchiveFSReadFile(t *testing.T) {
 	}
 }
 
-func TestArchiveFSReadFileInvalid(t *testing.T) {
-	fsys := mustArchiveFS(t)
-
-	rfs, ok := fsys.(fs.ReadFileFS)
-	if !ok {
-		t.Fatal("archiveFS does not implement fs.ReadFileFS")
-	}
-
-	invalidPaths := []string{
-		"/absolute/path",
-		"../relative/path",
-		"invalid/../path",
-	}
-	for _, path := range invalidPaths {
-		if _, err := rfs.ReadFile(path); err == nil {
-			t.Errorf("ReadFile(%q) succeeded, want error", path)
-		}
-	}
-}
-
+// TestArchiveFSReadDir verifies that ReadDir returns at least one entry for
+// both the root and a named subdirectory.
 func TestArchiveFSReadDir(t *testing.T) {
 	fsys := mustArchiveFS(t)
-
-	rfs, ok := fsys.(fs.ReadDirFS)
+	rds, ok := fsys.(fs.ReadDirFS)
 	if !ok {
 		t.Fatal("archiveFS does not implement fs.ReadDirFS")
 	}
 
-	entries, err := rfs.ReadDir(cwdPath)
-	if err != nil {
-		t.Fatalf("ReadDir(\".\") = %v, want nil", err)
-	}
-	if len(entries) == 0 {
-		t.Error("ReadDir(\".\") returned no entries, want at least one")
-	}
-}
-
-func TestArchiveFSReadDirSubdir(t *testing.T) {
-	fsys := mustArchiveFS(t)
-
-	rfs, ok := fsys.(fs.ReadDirFS)
-	if !ok {
-		t.Fatal("archiveFS does not implement fs.ReadDirFS")
-	}
-
-	entries, err := rfs.ReadDir("assets")
-	if err != nil {
-		t.Fatalf("ReadDir(\"assets\") = %v, want nil", err)
-	}
-	if len(entries) == 0 {
-		t.Error("ReadDir(\"assets\") returned no entries, want at least one")
+	for _, dir := range []string{cwdPath, "assets"} {
+		t.Run(dir, func(t *testing.T) {
+			entries, err := rds.ReadDir(dir)
+			if err != nil {
+				t.Fatalf("ReadDir(%q) = %v, want nil", dir, err)
+			}
+			if len(entries) == 0 {
+				t.Errorf("ReadDir(%q) returned no entries, want at least one", dir)
+			}
+		})
 	}
 }
 
@@ -241,16 +202,6 @@ func TestArchiveFSReadLink(t *testing.T) {
 	}
 	if !errors.Is(err, fs.ErrInvalid) {
 		t.Errorf("ReadLink() error = %v, want to wrap fs.ErrInvalid", err)
-	}
-}
-
-func TestArchiveFSReadLinkInvalid(t *testing.T) {
-	fsys := mustArchiveFS(t)
-
-	for _, p := range []string{"/absolute/path", "../relative/path", "invalid/../path"} {
-		if _, err := fsys.ReadLink(p); err == nil {
-			t.Errorf("ReadLink(%q) succeeded, want error", p)
-		}
 	}
 }
 
@@ -269,41 +220,11 @@ func TestArchiveFSLstat(t *testing.T) {
 	}
 }
 
-func TestArchiveFSLstatInvalid(t *testing.T) {
-	fsys := mustArchiveFS(t)
-
-	for _, p := range []string{"/absolute/path", "../relative/path", "invalid/../path"} {
-		if _, err := fsys.Lstat(p); err == nil {
-			t.Errorf("Lstat(%q) succeeded, want error", p)
-		}
-	}
-}
-
 func TestArchiveFSStatNonExistent(t *testing.T) {
 	fsys := mustArchiveFS(t)
 
 	_, err := fsys.Stat("nonexistent-file-that-does-not-exist.txt")
 	if err == nil {
 		t.Fatal("Stat() = nil error, want error for nonexistent file")
-	}
-}
-
-func TestArchiveFSReadDirInvalid(t *testing.T) {
-	fsys := mustArchiveFS(t)
-
-	rfs, ok := fsys.(fs.ReadDirFS)
-	if !ok {
-		t.Fatal("archiveFS does not implement fs.ReadDirFS")
-	}
-
-	invalidPaths := []string{
-		"/absolute/path",
-		"../relative/path",
-		"invalid/../path",
-	}
-	for _, path := range invalidPaths {
-		if _, err := rfs.ReadDir(path); err == nil {
-			t.Errorf("ReadDir(%q) succeeded, want error", path)
-		}
 	}
 }

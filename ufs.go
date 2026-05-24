@@ -135,3 +135,4 @@ type ForEachFilenameIter interface {
 	// returns a non-nil error the walk stops and that error is returned.
 	ForEachFilename(dir string, f func(string) error) error
 }
+

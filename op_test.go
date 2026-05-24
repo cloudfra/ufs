@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -37,7 +39,7 @@ func TestRsync(t *testing.T) {
 				t.Errorf("rsync failed with error, %s", err)
 			}
 
-			err := ForEachFilename(srcFS, cwdPath, func(name string) error {
+			err := ForEachFilename(srcFS, cwdPath, true, func(name string) error {
 				srcData, err := fs.ReadFile(srcFS, name)
 				if err != nil {
 					return fmt.Errorf("cannot read srcFS(%q), %w", name, err)
@@ -242,7 +244,7 @@ func TestForEachFilename(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := ForEachFilename(fsys, cwdPath, func(name string) error {
+	err := ForEachFilename(fsys, cwdPath, true, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -277,7 +279,7 @@ func TestForEachFilenameInterface(t *testing.T) {
 	fsys := &forEachFilenameFS{FS: inner, files: want}
 
 	var got []string
-	err := ForEachFilename(fsys, cwdPath, func(name string) error {
+	err := ForEachFilename(fsys, cwdPath, true, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -290,19 +292,116 @@ func TestForEachFilenameInterface(t *testing.T) {
 }
 
 func TestForEachFilenameCallbackError(t *testing.T) {
-	fsys := setupListFS(t)
-	sentinel := errors.New("stop")
-
-	count := 0
-	err := ForEachFilename(fsys, cwdPath, func(_ string) error {
-		count++
-		return sentinel
-	})
-	if !errors.Is(err, sentinel) {
-		t.Errorf("ForEachFilename() = %v, want sentinel error", err)
+	for _, traverseArchives := range []bool{true, false} {
+		t.Run(fmt.Sprintf("traverseArchives=%v", traverseArchives), func(t *testing.T) {
+			fsys := setupListFS(t)
+			sentinel := errors.New("stop")
+			count := 0
+			err := ForEachFilename(fsys, cwdPath, traverseArchives, func(_ string) error {
+				count++
+				return sentinel
+			})
+			if !errors.Is(err, sentinel) {
+				t.Errorf("ForEachFilename(traverseArchives=%v) = %v, want sentinel error", traverseArchives, err)
+			}
+			if count != 1 {
+				t.Errorf("callback called %d times, want 1", count)
+			}
+		})
 	}
-	if count != 1 {
-		t.Errorf("callback called %d times, want 1", count)
+}
+
+func TestForEachFilenameFalseSkipsVirtualMounts(t *testing.T) {
+	// nestFS over cwd exposes virtual *.d directories for archives.
+	// traverseArchives=false should skip them; traverseArchives=true should traverse into them.
+	fsys, err := newNestFS(t.Context(), cwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	archivesDir := "testing/testassets/archives"
+
+	var withBook, noBook []string
+	if err := ForEachFilename(fsys, archivesDir, true, func(name string) error {
+		withBook = append(withBook, name)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ForEachFilename(fsys, archivesDir, false, func(name string) error {
+		noBook = append(noBook, name)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(withBook) <= len(noBook) {
+		t.Errorf("traverseArchives=true returned %d files, traverseArchives=false returned %d; expected more with traverseArchives=true", len(withBook), len(noBook))
+	}
+	for _, name := range noBook {
+		if strings.Contains(name, archiveDirExt+"/") {
+			t.Errorf("traverseArchives=false traversed inside a virtual archive mount: %s", name)
+		}
+	}
+}
+
+func TestForEachFilenameFalsePreservesRealDotDDirs(t *testing.T) {
+	// A .d directory with no adjacent archive is a real config directory and must
+	// not be skipped.
+	fsys, err := newMemFS("memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	if err := fsys.MkdirAll("apt.sources.d", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Create("apt.sources.d/custom.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	var got []string
+	if err := ForEachFilename(fsys, cwdPath, false, func(name string) error {
+		got = append(got, name)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(got, "apt.sources.d/custom.conf") {
+		t.Errorf("ForEachFilename(traverseArchives=false) skipped real .d directory, got: %v", got)
+	}
+}
+
+func TestForEachFilenameFalseNoAdjacentArchive(t *testing.T) {
+	// foo.zip.d exists but foo.zip does not — must not be skipped.
+	fsys, err := newMemFS("memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	if err := fsys.MkdirAll("foo.zip.d", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Create("foo.zip.d/readme.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	var got []string
+	if err := ForEachFilename(fsys, cwdPath, false, func(name string) error {
+		got = append(got, name)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(got, "foo.zip.d/readme.txt") {
+		t.Errorf("ForEachFilename(traverseArchives=false) incorrectly skipped .d directory with no adjacent archive, got: %v", got)
 	}
 }
 
@@ -312,7 +411,7 @@ func TestForEachFileInfo(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var gotNames []string
-	err := ForEachFileInfo(fsys, cwdPath, func(info fs.FileInfo) error {
+	err := ForEachFileInfo(fsys, cwdPath, true, func(info fs.FileInfo) error {
 		gotNames = append(gotNames, info.Name())
 		return nil
 	})
@@ -351,7 +450,7 @@ func TestForEachFileInfoInterface(t *testing.T) {
 	fsys := &forEachFileInfoFS{FS: inner, infos: wantInfos}
 
 	var gotNames []string
-	err := ForEachFileInfo(fsys, cwdPath, func(info fs.FileInfo) error {
+	err := ForEachFileInfo(fsys, cwdPath, true, func(info fs.FileInfo) error {
 		gotNames = append(gotNames, info.Name())
 		return nil
 	})
@@ -365,18 +464,81 @@ func TestForEachFileInfoInterface(t *testing.T) {
 }
 
 func TestForEachFileInfoCallbackError(t *testing.T) {
-	fsys := setupListFS(t)
-	sentinel := errors.New("stop")
+	for _, traverseArchives := range []bool{true, false} {
+		t.Run(fmt.Sprintf("traverseArchives=%v", traverseArchives), func(t *testing.T) {
+			fsys := setupListFS(t)
+			sentinel := errors.New("stop")
+			count := 0
+			err := ForEachFileInfo(fsys, cwdPath, traverseArchives, func(_ fs.FileInfo) error {
+				count++
+				return sentinel
+			})
+			if !errors.Is(err, sentinel) {
+				t.Errorf("ForEachFileInfo(traverseArchives=%v) = %v, want sentinel error", traverseArchives, err)
+			}
+			if count != 1 {
+				t.Errorf("callback called %d times, want 1", count)
+			}
+		})
+	}
+}
 
-	count := 0
-	err := ForEachFileInfo(fsys, cwdPath, func(_ fs.FileInfo) error {
-		count++
-		return sentinel
-	})
-	if !errors.Is(err, sentinel) {
-		t.Errorf("ForEachFileInfo() = %v, want sentinel error", err)
+func TestForEachFileInfoFalseSkipsVirtualMounts(t *testing.T) {
+	fsys, err := newNestFS(t.Context(), cwdPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Errorf("callback called %d times, want 1", count)
+	defer fsys.Close()
+
+	archivesDir := "testing/testassets/archives"
+
+	var withBook, noBook []fs.FileInfo
+	if err := ForEachFileInfo(fsys, archivesDir, true, func(info fs.FileInfo) error {
+		withBook = append(withBook, info)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
+	if err := ForEachFileInfo(fsys, archivesDir, false, func(info fs.FileInfo) error {
+		noBook = append(noBook, info)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(withBook) <= len(noBook) {
+		t.Errorf("traverseArchives=true returned %d files, traverseArchives=false returned %d; expected more with traverseArchives=true", len(withBook), len(noBook))
+	}
+}
+
+func TestForEachFileInfoFalsePreservesRealDotDDirs(t *testing.T) {
+	fsys, err := newMemFS("memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	if err := fsys.MkdirAll("apt.sources.d", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Create("apt.sources.d/custom.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	var gotNames []string
+	if err := ForEachFileInfo(fsys, cwdPath, false, func(info fs.FileInfo) error {
+		gotNames = append(gotNames, info.Name())
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(gotNames, "custom.conf") {
+		t.Errorf("ForEachFileInfo(traverseArchives=false) skipped real .d directory, got: %v", gotNames)
+	}
+}
+
+func containsString(slice []string, s string) bool {
+	return slices.Contains(slice, s)
 }

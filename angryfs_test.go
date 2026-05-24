@@ -47,15 +47,32 @@ func TestNewAngryFS(t *testing.T) {
 	}
 }
 
-func TestAngryFSOpen(t *testing.T) {
-	for _, tc := range testassetFilenameList {
-		t.Run(tc, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			_, err := fsys.Open(tc)
-			if !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("Open(%q) = %v, want %v", tc, err, fs.ErrInvalid)
-			}
-		})
+// TestAngryFSOperations verifies that every FS operation on an angryFS returns
+// fs.ErrInvalid regardless of the path.
+func TestAngryFSOperations(t *testing.T) {
+	ops := []struct {
+		name  string
+		paths []string
+		run   func(FS, string) error
+	}{
+		{"Open", testassetFilenameList, func(f FS, p string) error { _, err := f.Open(p); return err }},
+		{"ReadFile", testassetFilenameList, func(f FS, p string) error { _, err := f.ReadFile(p); return err }},
+		{"ReadLink", testassetFilenameList, func(f FS, p string) error { _, err := f.ReadLink(p); return err }},
+		{"Lstat", testassetFilenameList, func(f FS, p string) error { _, err := f.Lstat(p); return err }},
+		{"Stat", testassetFilenameList, func(f FS, p string) error { _, err := f.Stat(p); return err }},
+		{"Create", testassetCreateFileList, func(f FS, p string) error { _, err := f.Create(p); return err }},
+		{"MkdirAll", []string{"a", "a/b", "a/b/c", "abc", "null"}, func(f FS, p string) error { return f.MkdirAll(p, fs.ModePerm) }},
+		{"ReadDir", toMapKeys(testassetDirList), func(f FS, p string) error { _, err := f.ReadDir(p); return err }},
+	}
+	for _, op := range ops {
+		for _, path := range op.paths {
+			t.Run(op.name+"/"+path, func(t *testing.T) {
+				fsys := mustAngryFS(t)
+				if err := op.run(fsys, path); !errors.Is(err, fs.ErrInvalid) {
+					t.Errorf("%s(%q) = %v, want %v", op.name, path, err, fs.ErrInvalid)
+				}
+			})
+		}
 	}
 }
 
@@ -63,61 +80,6 @@ func TestAngryFSClose(t *testing.T) {
 	fsys := mustAngryFS(t)
 	if err := fsys.Close(); err != fs.ErrInvalid {
 		t.Errorf("Close() = %v, want %v", err, fs.ErrInvalid)
-	}
-}
-
-func TestAngryFSMkdirAll(t *testing.T) {
-	for _, tc := range []string{"a", "a/b", "a/b/c", "abc", "null"} {
-		t.Run(tc, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			if err := fsys.MkdirAll(tc, fs.ModePerm); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("MkdirAll(%q) = %v, want %v", tc, err, fs.ErrInvalid)
-			}
-		})
-	}
-}
-
-func TestAngryFSReadFile(t *testing.T) {
-	for _, tc := range testassetFilenameList {
-		t.Run(tc, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			if _, err := fsys.ReadFile(tc); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("ReadFile(%q) = %v, want %v", tc, err, fs.ErrInvalid)
-			}
-		})
-	}
-}
-
-func TestAngryFSReadLink(t *testing.T) {
-	for _, tc := range testassetFilenameList {
-		t.Run(tc, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			if _, err := fsys.ReadLink(tc); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("ReadLink(%q) = %v, want %v", tc, err, fs.ErrInvalid)
-			}
-		})
-	}
-}
-
-func TestAngryFSLstat(t *testing.T) {
-	for _, tc := range testassetFilenameList {
-		t.Run(tc, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			if _, err := fsys.Lstat(tc); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("Lstat(%q) = %v, want %v", tc, err, fs.ErrInvalid)
-			}
-		})
-	}
-}
-
-func TestAngryFSReadDir(t *testing.T) {
-	for tcDirName := range testassetDirList {
-		t.Run(tcDirName, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			if _, err := fsys.ReadDir(tcDirName); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("ReadDir(%q) = %v, want %v", tcDirName, err, fs.ErrInvalid)
-			}
-		})
 	}
 }
 
@@ -132,32 +94,10 @@ func TestAngryFSGlob(t *testing.T) {
 	}
 }
 
-func TestAngryFSCreate(t *testing.T) {
-	for _, tc := range testassetCreateFileList {
-		t.Run(tc, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			if _, err := fsys.Create(tc); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("Create(%q) = %v, want %v", tc, err, fs.ErrInvalid)
-			}
-		})
-	}
-}
-
 func TestAngryFSString(t *testing.T) {
 	fsys := mustAngryFS(t)
 	if got := fsys.String(); got != angryFSPrefix {
 		t.Errorf("String() got: %q, want %q", got, angryFSPrefix)
-	}
-}
-
-func TestAngryFSStat(t *testing.T) {
-	for _, tc := range testassetFilenameList {
-		t.Run(tc, func(t *testing.T) {
-			fsys := mustAngryFS(t)
-			if _, err := fsys.Stat(tc); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("Stat(%q) = %v, want %v", tc, err, fs.ErrInvalid)
-			}
-		})
 	}
 }
 

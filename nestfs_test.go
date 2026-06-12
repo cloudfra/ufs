@@ -304,6 +304,20 @@ func TestNestFSReadDir(t *testing.T) {
 	}
 }
 
+func TestNestFSReadDirNonExistent(t *testing.T) {
+	fsys, err := newNestFS(t.Context(), "memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	nfs := fsys.(*nestFS)
+	_, err = nfs.ReadDir("does/not/exist")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("ReadDir(does/not/exist) = %v, want fs.ErrNotExist", err)
+	}
+}
+
 func TestNestFSReadDirOnFile(t *testing.T) {
 	fsys, err := newNestFS(t.Context(), "memory://")
 	if err != nil {

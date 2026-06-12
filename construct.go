@@ -128,7 +128,7 @@ func nameToURI(name string) (*url.URL, error) {
 func New(ctx context.Context, name string) (FS, error) {
 	u, err := url.Parse(name)
 	if err == nil {
-		bFS, err := newBaseFS(ctx, u.Scheme+"://"+u.Path)
+		bFS, err := newBaseFS(ctx, u.Scheme+"://"+u.Host+u.Path)
 		if err == nil {
 			nFS := makeNestFS(ctx, bFS)
 			vals := u.Query()

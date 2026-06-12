@@ -17,6 +17,7 @@ package ufs
 import (
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,6 +31,33 @@ func TestNewBaseFSInvalid(t *testing.T) {
 	}
 	if _, ok := err.(*fs.PathError); !ok {
 		t.Errorf("newBaseFS(unknown://) returned %T, want *fs.PathError", err)
+	}
+}
+
+// TestNewBaseFSNameForGCSWithNestedMounts verifies that the base-FS name
+// derived from a CreateURI-built URI keeps the bucket (host) for gs:// URIs,
+// so that nested mounts don't get dropped and the query string isn't folded
+// into the GCS object prefix.
+func TestNewBaseFSNameForGCSWithNestedMounts(t *testing.T) {
+	uri, err := CreateURI("gs://bucket/prefix", map[string]string{
+		"tmp": "memory://",
+	})
+	if err != nil {
+		t.Fatalf("CreateURI() = %v, want nil", err)
+	}
+
+	u, err := url.Parse(uri)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) = %v, want nil", uri, err)
+	}
+
+	baseName := u.Scheme + "://" + u.Host + u.Path
+	bucket, baseDir, err := parseGCSPath(baseName, "init")
+	if err != nil {
+		t.Fatalf("parseGCSPath(%q) = %v, want nil", baseName, err)
+	}
+	if bucket != "bucket" || baseDir != "prefix" {
+		t.Errorf("parseGCSPath(%q) = (%q, %q), want (%q, %q)", baseName, bucket, baseDir, "bucket", "prefix")
 	}
 }
 

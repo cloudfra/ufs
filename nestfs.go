@@ -198,7 +198,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 		}
 	}
 	if len(appendEntry) == 0 {
-		return entries, nil
+		return entries, err
 	}
 	for _, entry := range entries {
 		delete(appendEntry, entry.Name())

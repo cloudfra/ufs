@@ -108,7 +108,7 @@ presubmit: lint check
 
 testing/testassets/archives/nodir-testassets.zip: $(TEST_FILE_ASSETS)
 	mkdir -p $(dir $@)
-	cd testing/testassets/files/assets/onetwothree/; $(ZIP) -qr9 ../../../archives/nodir-testassets.zip 1.txt 2.txt 3.txt
+	cd testing/testassets/files/assets/; $(ZIP) -qr9 ../../archives/nodir-testassets.zip onetwothree/1.txt onetwothree/2.txt onetwothree/3.txt 1.txt 2.txt sixseven/6.txt sixseven/7.txt
 
 testing/testassets/archives/single-testassets.zip: $(TEST_FILE_ASSETS)
 	mkdir -p $(dir $@)
@@ -118,21 +118,21 @@ testing/testassets/archives/nested-testassets.zip: $(TEST_FILE_ASSETS) testing/t
 	mkdir -p $(dir $@)
 	cd testing/testassets/files/; $(ZIP) -qr9 ../archives/nested-testassets.zip .; $(ZIP) -qr9j ../archives/nested-testassets.zip ../archives/single-testassets.zip
 
-testing/testassets/archives/testassets.tar.gz:
-	mkdir -p $(dir $@)
-	cd testing/testassets/files/; $(TAR) -I 'gzip -9' -cf ../archives/testassets.tar.gz *
+testing/testassets/archives/testassets.tar.gz: testing/testassets/archives/testassets.tar
+	gzip -9 -k -f $<
+	touch $@
 
-testing/testassets/archives/testassets.tar.bz2:
-	mkdir -p $(dir $@)
-	cd testing/testassets/files/; BZIP=-9 $(TAR) cjf ../archives/testassets.tar.bz2 *
+testing/testassets/archives/testassets.tar.bz2: testing/testassets/archives/testassets.tar
+	bzip2 -9 -k -f $<
+	touch $@
 
-testing/testassets/archives/testassets.tar.xz:
-	mkdir -p $(dir $@)
-	cd testing/testassets/files/; $(TAR) cJf ../archives/testassets.tar.xz *
+testing/testassets/archives/testassets.tar.xz: testing/testassets/archives/testassets.tar
+	xz -9 -k -f $<
+	touch $@
 
-testing/testassets/archives/testassets.tar.lz4:
-	mkdir -p $(dir $@)
-	cd testing/testassets/files/; $(TAR) cf ../archives/testassets.tar.lz4 -I 'lz4' *
+testing/testassets/archives/testassets.tar.lz4: testing/testassets/archives/testassets.tar
+	lz4 -9 -f $< $@
+	touch $@
 
 testing/testassets/archives/testassets.tar:
 	mkdir -p $(dir $@)

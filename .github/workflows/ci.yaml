@@ -57,6 +57,8 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Test Assets
+        run: make testassets archiveassets
       - name: Build
         run: make all -j8
       - name: Test

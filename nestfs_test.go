@@ -237,6 +237,21 @@ func TestNestFSFull(t *testing.T) {
 		"testassets.tar.xz",
 		"testassets.tar.xz.d",
 	})
+	assertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d", []string{
+		"1.txt",
+		"2.txt",
+		"onetwothree",
+		"sixseven",
+	})
+	assertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d/onetwothree", []string{
+		"1.txt",
+		"2.txt",
+		"3.txt",
+	})
+	assertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d/sixseven", []string{
+		"6.txt",
+		"7.txt",
+	})
 }
 
 func TestNestedFS(t *testing.T) {

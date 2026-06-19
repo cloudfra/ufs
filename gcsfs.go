@@ -44,10 +44,11 @@ var (
 )
 
 type gcsFS struct {
-	ctx     context.Context
-	bucket  string
-	baseDir string
-	client  *storage.Client
+	ctx          context.Context
+	bucket       string
+	baseDir      string
+	client       *storage.Client
+	subscription string
 }
 
 // gcsFile represents an opened GCS object for reading, a virtual directory, or
@@ -192,11 +193,15 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 }
 
 func (fsys *gcsFS) URI() *url.URL {
+	vals := url.Values{"ro": {"true"}}
+	if fsys.subscription != "" {
+		vals.Set("subscription", fsys.subscription)
+	}
 	return &url.URL{
 		Scheme:   "gs",
 		Host:     fsys.bucket,
 		Path:     "/" + fsys.baseDir,
-		RawQuery: "ro=true",
+		RawQuery: vals.Encode(),
 	}
 }
 
@@ -514,11 +519,16 @@ func newGCSFSWithClient(ctx context.Context, gcsClient *storage.Client, name str
 	if err != nil {
 		return nil, err
 	}
+	var subscription string
+	if u, err := url.Parse(name); err == nil {
+		subscription = u.Query().Get("subscription")
+	}
 	return &gcsFS{
-		ctx:     ctx,
-		client:  gcsClient,
-		bucket:  bucket,
-		baseDir: objectDir,
+		ctx:          ctx,
+		client:       gcsClient,
+		bucket:       bucket,
+		baseDir:      objectDir,
+		subscription: subscription,
 	}, nil
 }
 
@@ -548,15 +558,19 @@ func gcsJoin(parts ...string) string {
 	return prefix + path
 }
 
-func parseGCSPath(path string, op string) (string, string, error) {
-	after, ok := strings.CutPrefix(path, "gs://")
+func parseGCSPath(p string, op string) (string, string, error) {
+	raw := p
+	// Strip query string before parsing bucket/prefix.
+	if idx := strings.IndexByte(p, '?'); idx >= 0 {
+		p = p[:idx]
+	}
+	after, ok := strings.CutPrefix(p, "gs://")
 	if !ok {
-
-		return "", "", pathError(op, path, fmt.Errorf("'%s' does not contain the gs:// prefix", path))
+		return "", "", pathError(op, raw, fmt.Errorf("'%s' does not contain the gs:// prefix", raw))
 	}
 	parts := strings.SplitN(after, "/", 2)
 	if len(parts) == 0 || parts[0] == "" {
-		return "", "", pathError(op, path, fmt.Errorf("'%s' does not have a bucket name", path))
+		return "", "", pathError(op, raw, fmt.Errorf("'%s' does not have a bucket name", raw))
 	}
 	if len(parts) == 2 {
 		return parts[0], parts[1], nil

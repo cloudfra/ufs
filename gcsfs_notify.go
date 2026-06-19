@@ -51,7 +51,7 @@ func (fsys *gcsFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 	}
 	projectID := parts[0]
 
-	psClient, err := pubsub.NewClient(ctx, projectID)
+	psClient, err := pubsub.NewClient(ctx, projectID, fsys.psClientOpts...)
 	if err != nil {
 		return nil, pathError("watch", name, err)
 	}

@@ -49,6 +49,7 @@ type gcsFS struct {
 	baseDir      string
 	client       *storage.Client
 	subscription string
+	psClientOpts []option.ClientOption
 }
 
 // gcsFile represents an opened GCS object for reading, a virtual directory, or

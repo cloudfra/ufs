@@ -32,3 +32,12 @@ go.work.sum
 # .vscode/
 build/
 bin/
+
+# Archives
+*.7z
+*.bz2
+*.gz
+*.lz4
+*.tar
+*.xz
+*.zip

@@ -427,7 +427,7 @@ func assertContains(t *testing.T, fsys FS, name string, substr string) {
 	t.Helper()
 	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
-		t.Fatal(err)
+		t.Error(err)
 	}
 	if !strings.Contains(string(data), substr) {
 		t.Errorf("%q does not contain %q, (len: %d) %q", name, substr, len(data), string(data))

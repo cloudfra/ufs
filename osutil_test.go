@@ -281,6 +281,12 @@ func testArchiveServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/trailing-slash/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("bad"))
 	})
+	mux.HandleFunc("/redirect-to-traversal", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/../../etc/passwd", http.StatusFound)
+	})
+	mux.HandleFunc("/../../etc/passwd", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("root:x:0:0"))
+	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts
@@ -391,6 +397,36 @@ func TestDownloadFile(t *testing.T) {
 		}
 	})
 
+	t.Run("path stays inside download dir", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/testassets.zip")
+		if err != nil {
+			t.Fatalf("downloadFileWith() = %v", err)
+		}
+		absDir, _ := filepath.Abs(dir)
+		absPath, _ := filepath.Abs(path)
+		rel, err := filepath.Rel(absDir, absPath)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			t.Errorf("downloaded file %q escapes download dir %q (rel=%q)", absPath, absDir, rel)
+		}
+	})
+
+	t.Run("redirect to traversal path", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/redirect-to-traversal")
+		if err != nil {
+			return
+		}
+		absDir, _ := filepath.Abs(dir)
+		absPath, _ := filepath.Abs(path)
+		rel, _ := filepath.Rel(absDir, absPath)
+		if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			t.Errorf("traversal redirect produced path %q outside dir %q", absPath, absDir)
+		}
+	})
+
 	t.Run("file content matches", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
@@ -493,6 +529,53 @@ func TestDownloadFileAndMountStat(t *testing.T) {
 	}
 	if info.Size() == 0 {
 		t.Error("Stat(\"index.html\").Size() = 0, want > 0")
+	}
+}
+
+func TestDownloadFilePathContainment(t *testing.T) {
+	t.Parallel()
+
+	body := []byte("test content")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/safe.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(body)
+	})
+	mux.HandleFunc("/..%2F..%2Fetc%2Fpasswd", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(body)
+	})
+	mux.HandleFunc("/redirect-dotdot", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/../../../tmp/pwned.txt", http.StatusFound)
+	})
+	mux.HandleFunc("/../../../tmp/pwned.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(body)
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	client := ts.Client()
+
+	tests := []struct {
+		name    string
+		urlPath string
+	}{
+		{"safe filename", "/safe.txt"},
+		{"encoded traversal", "/..%2F..%2Fetc%2Fpasswd"},
+		{"redirect to dotdot", "/redirect-dotdot"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path, err := downloadFileWith(t.Context(), client, dir, ts.URL+tc.urlPath)
+			if err != nil {
+				t.Logf("correctly rejected: %v", err)
+				return
+			}
+			absDir, _ := filepath.Abs(dir)
+			absPath, _ := filepath.Abs(path)
+			if !strings.HasPrefix(absPath, absDir+string(os.PathSeparator)) {
+				t.Errorf("downloaded path %q is outside target dir %q", absPath, absDir)
+			}
+		})
 	}
 }
 

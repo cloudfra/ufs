@@ -156,7 +156,18 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if err != nil {
 		return "", err
 	}
-	archiveFilename := filepath.Join(dir, filename)
+	baseDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("invalid download directory %q: %w", dir, err)
+	}
+	archiveFilename, err := filepath.Abs(filepath.Join(baseDir, filename))
+	if err != nil {
+		return "", fmt.Errorf("invalid archive filename %q: %w", filename, err)
+	}
+	rel, err := filepath.Rel(baseDir, archiveFilename)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("resolved path %q escapes download directory %q", archiveFilename, baseDir)
+	}
 
 	f, err := os.Create(archiveFilename)
 	if err != nil {

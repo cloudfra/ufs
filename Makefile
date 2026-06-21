@@ -114,9 +114,9 @@ testing/testassets/archives/single-testassets.zip: $(TEST_FILE_ASSETS)
 	mkdir -p $(dir $@)
 	cd testing/testassets/files/; $(ZIP) -qr9 ../archives/single-testassets.zip .
 
-testing/testassets/archives/nested-testassets.zip: $(TEST_FILE_ASSETS) testing/testassets/archives/single-testassets.zip
+testing/testassets/archives/nested-testassets.zip: $(TEST_FILE_ASSETS) testing/testassets/archives/single-testassets.zip testing/testassets/archives/testassets.7z
 	mkdir -p $(dir $@)
-	cd testing/testassets/files/; $(ZIP) -qr9 ../archives/nested-testassets.zip .; $(ZIP) -qr9j ../archives/nested-testassets.zip ../archives/single-testassets.zip
+	cd testing/testassets/files/; $(ZIP) -qr9 ../archives/nested-testassets.zip .; $(ZIP) -qr9j ../archives/nested-testassets.zip ../archives/single-testassets.zip ../archives/testassets.7z
 
 testing/testassets/archives/testassets.tar.gz: testing/testassets/archives/testassets.tar
 	gzip -9 -k -f $<

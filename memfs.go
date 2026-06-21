@@ -75,6 +75,9 @@ type memFS struct {
 	mu    sync.RWMutex
 	name  string
 	nodes map[string]*memNode
+
+	watchersMu sync.RWMutex
+	watchers   []*memWatcher
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -145,6 +148,7 @@ func (f *memFile) WriteString(s string) (int, error) {
 			node.modTime = now
 		}
 		f.fsys.mu.Unlock()
+		f.fsys.notify(NotifyWrite, f.path)
 	}
 
 	return len(s), nil
@@ -322,6 +326,13 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
+	fsys.watchersMu.Lock()
+	for _, mw := range fsys.watchers {
+		mw.cancel()
+	}
+	fsys.watchers = nil
+	fsys.watchersMu.Unlock()
+
 	fsys.mu.Lock()
 	fsys.nodes = nil
 	fsys.mu.Unlock()
@@ -339,6 +350,7 @@ func (fsys *memFS) Create(name string) (File, error) {
 	defer fsys.mu.Unlock()
 
 	now := time.Now()
+	_, existed := fsys.nodes[name]
 	node := &memNode{
 		name:    path.Base(name),
 		mode:    fs.ModePerm,
@@ -346,6 +358,12 @@ func (fsys *memFS) Create(name string) (File, error) {
 	}
 	fsys.nodes[name] = node
 	fsys.ensureParentsLocked(name, now)
+
+	if existed {
+		fsys.notify(NotifyWrite, name)
+	} else {
+		fsys.notify(NotifyCreate, name)
+	}
 
 	return &memFile{
 		fsys:    fsys,
@@ -368,6 +386,7 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 	now := time.Now()
 	parts := splitPath(name)
 	accum := ""
+	var created []string
 	for i, part := range parts {
 		if part == "" {
 			continue
@@ -383,7 +402,11 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 				modTime: now,
 				isDir:   true,
 			}
+			created = append(created, accum)
 		}
+	}
+	for _, p := range created {
+		fsys.notify(NotifyCreate, p)
 	}
 	return nil
 }
@@ -563,6 +586,7 @@ func (fsys *memFS) Remove(name string) error {
 		}
 	}
 	delete(fsys.nodes, name)
+	fsys.notify(NotifyRemove, name)
 	return nil
 }
 
@@ -572,11 +596,16 @@ func (fsys *memFS) RemoveAll(name string) error {
 	}
 	if name == cwdPath {
 		fsys.mu.Lock()
-		defer fsys.mu.Unlock()
+		var removed []string
 		for key := range fsys.nodes {
 			if key != cwdPath {
+				removed = append(removed, key)
 				delete(fsys.nodes, key)
 			}
+		}
+		fsys.mu.Unlock()
+		for _, p := range removed {
+			fsys.notify(NotifyRemove, p)
 		}
 		return nil
 	}
@@ -584,12 +613,17 @@ func (fsys *memFS) RemoveAll(name string) error {
 		return err
 	}
 	fsys.mu.Lock()
-	defer fsys.mu.Unlock()
+	var removed []string
 	prefix := name + "/"
 	for key := range fsys.nodes {
 		if key == name || strings.HasPrefix(key, prefix) {
+			removed = append(removed, key)
 			delete(fsys.nodes, key)
 		}
+	}
+	fsys.mu.Unlock()
+	for _, p := range removed {
+		fsys.notify(NotifyRemove, p)
 	}
 	return nil
 }

@@ -707,6 +707,55 @@ func TestNestFSValidPathClosed(t *testing.T) {
 	}
 }
 
+func TestNestFSStaleArchiveMountPruned(t *testing.T) {
+	tmpDir := t.TempDir()
+	zipPath := createZipFromDir(t, testAssetsFilesDir)
+
+	destZip := tmpDir + "/testassets.zip"
+	data, err := os.ReadFile(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destZip, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys, err := newNestFS(t.Context(), "file://"+tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	entries, err := fs.ReadDir(fsys, cwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := dirEntryListToNames(entries)
+	if diff := cmp.Diff(got, []string{"testassets.zip", "testassets.zip.d"}); diff != "" {
+		t.Fatalf("before remove: %s", diff)
+	}
+
+	// Read a file inside the archive to ensure the mount is live.
+	if _, err := fs.ReadFile(fsys, "testassets.zip.d/index.html"); err != nil {
+		t.Fatalf("read through archive mount: %v", err)
+	}
+
+	// Remove the archive file.
+	if err := os.Remove(destZip); err != nil {
+		t.Fatal(err)
+	}
+
+	// The next directory listing should no longer show the .d entry.
+	entries, err = fs.ReadDir(fsys, cwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = dirEntryListToNames(entries)
+	if diff := cmp.Diff(got, []string{}); diff != "" {
+		t.Errorf("after remove: still shows stale mount: %s", diff)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Polyfill test stubs
 //

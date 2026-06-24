@@ -159,6 +159,15 @@ func (m *mountMap) getClosestMount(name string) (string, string, *nestFS, bool) 
 	return targetMount, targetSubPath, targetFS, targetFS != nil
 }
 
+func (m *mountMap) remove(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if nfs, ok := m.m[name]; ok {
+		nfs.Close()
+		delete(m.m, name)
+	}
+}
+
 func (m *mountMap) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -234,6 +243,13 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 
 	dirs := fsys.mounts.getDirectoryList(name)
 	for _, dir := range dirs {
+		if strings.HasSuffix(dir, archiveDirExt) && isMountableArchivePath(strings.TrimSuffix(dir, archiveDirExt)) {
+			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
+			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
+				fsys.mounts.remove(path.Join(name, dir))
+				continue
+			}
+		}
 		appendEntry[dir] = makeVirtualDirEntry(dir)
 	}
 

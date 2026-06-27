@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Checkout
         # https://github.com/actions/checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Setup Go
         # https://github.com/actions/setup-go
         uses: actions/setup-go@v6
@@ -47,11 +47,39 @@ jobs:
           name: linux-build-bin
           retention-days: 1
           path: linux-build-bin.zip
+  build-windows-root:
+    runs-on: ["self-hosted", "windows", "root"]
+    steps:
+      - name: Service Status
+        run: |
+          Get-Service actions.runner.* | Select-Object Name, Status
+      - name: Verify administrator privileges
+        run: |
+          $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+          $isAdmin   = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          Write-Host "Running as: $($identity.Name)"
+          Write-Host "Elevated:   $isAdmin"
+          if (-not $isAdmin) {
+            Write-Error "This job is not running with administrator privileges."
+            exit 1
+          }
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+      - name: Test Assets
+        run: make testassets archiveassets
+      - name: Test
+        run: make test-norace
   build-windows:
     runs-on: ["self-hosted", "windows"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
@@ -76,6 +104,7 @@ jobs:
           retention-days: 1
           path: windows-build-bin.zip
   package:
+    if: false
     needs: [build-linux, build-windows]
     runs-on: ["self-hosted", "linux"]
     permissions:

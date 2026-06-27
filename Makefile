@@ -90,6 +90,9 @@ check: $(TEST_ASSETS)
 	CGO_ENABLED=0 go test ./...
 	CGO_ENABLED=1 go test -race ./...
 
+test-norace: $(TEST_ASSETS)
+	CGO_ENABLED=0 go test ./...
+
 test-deflake:
 	CGO_ENABLED=1 go test -race -count $(GO_TEST_COUNT) ./...
 
@@ -249,4 +252,4 @@ deps:
 	$(GO) mod tidy
 	$(GO) mod download
 
-.PHONY: all build presubmit lint test check test-100 clean deps testassets
+.PHONY: all build presubmit lint test check test-norace test-100 clean deps testassets

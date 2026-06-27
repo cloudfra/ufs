@@ -74,7 +74,7 @@ jobs:
       - name: Test Assets
         run: make testassets archiveassets
       - name: Test
-        run: make test-norace
+        run: make test
   build-windows:
     runs-on: ["self-hosted", "windows"]
     steps:

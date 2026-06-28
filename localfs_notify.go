@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -179,8 +180,19 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	}
 
 	if ev.Has(fsnotify.Remove) || ev.Has(fsnotify.Rename) {
-		// Best-effort removal; fsnotify may have already cleaned it up.
-		_ = lw.watcher.Remove(ev.Name)
+		// fsnotify auto-cleans watches when paths are deleted. We used to call
+		// Remove synchronously but on Windows during rapid create/delete churn
+		// it can hang (watch already removed or handle transient lock), blocking
+		// the event loop. Use a goroutine with short timeout as a safety net.
+		done := make(chan struct{})
+		go func() {
+			_ = lw.watcher.Remove(ev.Name)
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 
 	lw.hook(op, rel)

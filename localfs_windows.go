@@ -17,10 +17,18 @@
 package ufs
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+)
+
+var (
+	_ ForEachFilenameIter = (*localFS)(nil)
+	_ ForEachFileInfoIter = (*localFS)(nil)
+	_ ListFilenames       = (*localFS)(nil)
 )
 
 // localFSNormalizePath strips the "file://" URI prefix and converts a
@@ -85,4 +93,125 @@ func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
 		isDir:   true,
 		sys:     fi.Sys(),
 	}
+}
+
+func (fsys *localFS) mftScanPaths(dir string) ([]string, error) {
+	scanner, err := newMFTScanner(fsys.osFS.Name())
+	if err != nil {
+		return nil, errMFTUnavailable
+	}
+	records, err := scanner.enumSubtree()
+	if err != nil {
+		// Any enumSubtree failure (access denied, USN journal inactive, etc.)
+		// signals that MFT is unusable for this FS; fall back to WalkDir.
+		return nil, errMFTUnavailable
+	}
+	paths := scanner.buildPaths(records)
+	if len(paths) == 0 {
+		// MFT scan succeeded but returned no files — USN journal may be
+		// inactive or the volume root reference didn't match. Fall back to
+		// WalkDir so callers still see correct results.
+		return nil, errMFTUnavailable
+	}
+	if isCwd(dir) {
+		return paths, nil
+	}
+	prefix := dir + "/"
+	var filtered []string
+	for _, p := range paths {
+		if strings.HasPrefix(p, prefix) {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered, nil
+}
+
+func (fsys *localFS) ForEachFilename(dir string, f func(string) error) error {
+	paths, err := fsys.mftScanPaths(dir)
+	if errors.Is(err, errMFTUnavailable) {
+		return fsys.forEachFilenameWalkDir(dir, f)
+	}
+	if err != nil {
+		return err
+	}
+	sort.Strings(paths)
+	for _, p := range paths {
+		if err := f(p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (fsys *localFS) forEachFilenameWalkDir(dir string, f func(string) error) error {
+	return fs.WalkDir(fsys, dir, func(name string, d fs.DirEntry, err error) error {
+		if skip, err := excludeDirs(name, d, err); skip {
+			return err
+		}
+		return f(name)
+	})
+}
+
+func (fsys *localFS) ForEachFileInfo(dir string, f func(fs.FileInfo) error) error {
+	paths, err := fsys.mftScanPaths(dir)
+	if errors.Is(err, errMFTUnavailable) {
+		return fsys.forEachFileInfoWalkDir(dir, f)
+	}
+	if err != nil {
+		return err
+	}
+	sort.Strings(paths)
+	absRoot := fsys.osFS.Name()
+	for _, p := range paths {
+		info, statErr := os.Stat(filepath.Join(absRoot, filepath.FromSlash(p)))
+		if statErr != nil {
+			return statErr
+		}
+		if err := f(info); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (fsys *localFS) forEachFileInfoWalkDir(dir string, f func(fs.FileInfo) error) error {
+	return fs.WalkDir(fsys, dir, func(name string, d fs.DirEntry, err error) error {
+		if skip, err := excludeDirs(name, d, err); skip {
+			return err
+		}
+		info, statErr := fs.Stat(fsys, name)
+		if statErr != nil {
+			return statErr
+		}
+		return f(info)
+	})
+}
+
+func (fsys *localFS) ListFilenames(dir string) ([]string, error) {
+	paths, err := fsys.mftScanPaths(dir)
+	if errors.Is(err, errMFTUnavailable) {
+		return fsys.listFilenamesWalkDir(dir)
+	}
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func (fsys *localFS) listFilenamesWalkDir(dir string) ([]string, error) {
+	var items []string
+	err := fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
+		if isCwd(p) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			items = append(items, p)
+		}
+		return nil
+	})
+	return items, err
 }

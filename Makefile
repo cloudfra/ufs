@@ -93,6 +93,9 @@ check: $(TEST_ASSETS)
 test-deflake:
 	CGO_ENABLED=1 go test -race -count $(GO_TEST_COUNT) ./...
 
+test-root:
+	CGO_ENABLED=1 go test -race -tags root ./...
+
 bin/go/%: $(ASSETS)
 	GOOS=$(firstword $(subst _, ,$(notdir $(abspath $(dir $@))))) GOARCH=$(word 2, $(subst _, ,$(notdir $(abspath $(dir $@))))) GOARM=$(subst v,,$(word 3, $(subst _, ,$(notdir $(abspath $(dir $@)))))) CGO_ENABLED=0 \
 		$(GO) build -o $@ \
@@ -249,4 +252,4 @@ deps:
 	$(GO) mod tidy
 	$(GO) mod download
 
-.PHONY: all build presubmit lint test check test-100 clean deps testassets
+.PHONY: all build presubmit lint test check test-100 test-deflake test-root clean deps testassets

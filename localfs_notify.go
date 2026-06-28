@@ -145,13 +145,17 @@ func (lw *localWatcher) loop(ctx context.Context) {
 
 	for {
 		select {
-		case <-ctx.Done():
-			return
 		case ev, ok := <-lw.watcher.Events:
 			if !ok {
 				return
 			}
-			lw.handleEvent(ev)
+			// After cancellation keep draining so watcher.Close() isn't
+			// blocked by a full channel; just skip processing.
+			select {
+			case <-ctx.Done():
+			default:
+				lw.handleEvent(ev)
+			}
 		case _, ok := <-lw.watcher.Errors:
 			if !ok {
 				return

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -57,18 +58,17 @@ func (c *eventCollector) waitFor(t *testing.T, deadline time.Duration, match fun
 	defer timer.Stop()
 	for {
 		c.mu.Lock()
-		for _, ev := range c.events {
-			if match(ev) {
-				c.mu.Unlock()
-				return
-			}
-		}
+		found := slices.ContainsFunc(c.events, match)
 		c.mu.Unlock()
+		if found {
+			return
+		}
 		select {
 		case <-timer.C:
 			c.mu.Lock()
-			t.Fatalf("timed out waiting for matching event; collected: %v", c.events)
+			events := c.events
 			c.mu.Unlock()
+			t.Fatalf("timed out waiting for matching event; collected: %v", events)
 			return
 		case <-c.ch:
 		}
@@ -78,12 +78,7 @@ func (c *eventCollector) waitFor(t *testing.T, deadline time.Duration, match fun
 func (c *eventCollector) hasEvent(match func(notifyEvent) bool) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, ev := range c.events {
-		if match(ev) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(c.events, match)
 }
 
 const eventDeadline = 5 * time.Second
@@ -360,11 +355,9 @@ func TestWatchRaceConcurrentClose(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = closer.Close()
-		}()
+		})
 	}
 	wg.Wait()
 }

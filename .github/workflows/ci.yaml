@@ -77,6 +77,8 @@ jobs:
         run: make testassets archiveassets
       - name: Test
         run: make test
+      - name: Test (Root)
+        run: make test-root
   build-windows:
     runs-on: ["self-hosted", "windows"]
     steps:

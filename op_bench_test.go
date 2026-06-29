@@ -41,6 +41,7 @@ func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { lfs.Close() })
 	for i := range nFiles {
 		level := i % depth
 		subdir := ""

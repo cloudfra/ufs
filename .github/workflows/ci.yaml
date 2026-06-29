@@ -81,6 +81,24 @@ jobs:
         run: make test-root
       - name: Benchmark (Root)
         run: make bench-root
+      - name: Debug open file handles (on failure)
+        if: failure()
+        run: |
+          # localFS keeps an os.Root handle to its directory open until Close()
+          # is called. If a benchmark or test leaks one, Windows blocks TempDir
+          # cleanup with "file is being used by another process". This step
+          # shows which Go processes are still alive and what remains in the
+          # system temp directory so the leaking caller can be identified.
+          Write-Host "=== Running Go / test processes ==="
+          Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match "^(go|testbinary|.*\.test)$" } |
+            Select-Object Id, Name, CPU, WorkingSet |
+            Format-Table -AutoSize
+          Write-Host "=== Recent entries in SystemTemp ==="
+          Get-ChildItem -Path "$env:SystemRoot\SystemTemp" -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-1) } |
+            Select-Object Name, LastWriteTime |
+            Format-Table -AutoSize
   build-windows:
     runs-on: ["self-hosted", "windows"]
     steps:

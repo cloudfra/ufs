@@ -146,7 +146,7 @@ func TestParseUSNRecordV2Invalid(t *testing.T) {
 	})
 	t.Run("exactly_header_zero_length_name", func(t *testing.T) {
 		t.Parallel()
-		// FileNameLength=0, FileNameOffset=64: nameStart==nameEnd → nil
+		// FileNameLength=0, FileNameOffset=60: nameStart==nameEnd → nil
 		data := make([]byte, usnRecordV2HeaderSize)
 		binary.LittleEndian.PutUint16(data[56:], 0)                    // FileNameLength
 		binary.LittleEndian.PutUint16(data[58:], usnRecordV2HeaderSize) // FileNameOffset

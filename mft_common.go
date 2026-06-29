@@ -21,7 +21,7 @@ import (
 
 const (
 	fileAttributeDirectory = 0x10
-	usnRecordV2HeaderSize  = 64
+	usnRecordV2HeaderSize  = 60 // USN_RECORD_V2 fixed header; FileName starts at byte 60
 )
 
 // mftRecordNumber extracts the 48-bit MFT record number from a file reference,

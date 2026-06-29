@@ -79,6 +79,8 @@ jobs:
         run: make test
       - name: Test (Root)
         run: make test-root
+      - name: Benchmark (Root)
+        run: CGO_ENABLED=1 go test -bench=. -benchmem -benchtime=3s -tags root ./...
   build-windows:
     runs-on: ["self-hosted", "windows"]
     steps:

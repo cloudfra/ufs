@@ -38,15 +38,15 @@ import (
 // Administrator (elevated) privileges. It calls t.Fatal immediately if not,
 // giving a clear error rather than a cryptic access-denied from a syscall.
 // Call this at the top of every test in this file.
-func requireAdmin(t *testing.T) {
-	t.Helper()
+func requireAdmin(tb testing.TB) {
+	tb.Helper()
 	token, err := windows.OpenCurrentProcessToken()
 	if err != nil {
-		t.Fatalf("cannot open process token to check elevation: %v", err)
+		tb.Fatalf("cannot open process token to check elevation: %v", err)
 	}
 	defer token.Close()
 	if !token.IsElevated() {
-		t.Fatal("test requires Windows Administrator privileges; re-run as Administrator with: go test -tags root ./...")
+		tb.Fatal("test requires Windows Administrator privileges; re-run as Administrator with: go test -tags root ./...")
 	}
 }
 

@@ -42,6 +42,13 @@ var (
 		isDir:   true,
 		sys:     nil,
 	}
+
+	nullDeviceInfo = deviceInfo{
+		name:        "null",
+		deviceType:  "null",
+		threadCount: 1,
+	}
+	nullDeviceInfoMap = newDeviceInfoMap(nullDeviceInfo)
 )
 
 type nullFile struct {
@@ -117,6 +124,10 @@ func (vrd *nullReadDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 
 type nullFS struct {
 	name string
+}
+
+func (fsys *nullFS) getDeviceInfo() map[string]deviceInfo {
+	return nullDeviceInfoMap
 }
 
 func (fsys *nullFS) URI() *url.URL {

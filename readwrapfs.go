@@ -27,6 +27,10 @@ type readWrapFS struct {
 	fsys fs.FS
 }
 
+func (fsys *readWrapFS) getDeviceInfo() map[string]deviceInfo {
+	return getDeviceInfoOrDefault(fsys.fsys)
+}
+
 func (s *readWrapFS) URI() *url.URL {
 	return nil
 }

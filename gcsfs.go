@@ -193,6 +193,14 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
+func (fsys *gcsFS) getDeviceInfo() map[string]deviceInfo {
+	return newDeviceInfoMap(deviceInfo{
+		name:        "gs://" + fsys.bucket,
+		deviceType:  "network",
+		threadCount: 1,
+	})
+}
+
 func (fsys *gcsFS) URI() *url.URL {
 	vals := url.Values{"ro": {"true"}}
 	if fsys.subscription != "" {

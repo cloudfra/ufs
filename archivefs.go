@@ -33,6 +33,13 @@ var (
 	_ FS = (*archiveFS)(nil)
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
+
+	archiveDeviceInfo = deviceInfo{
+		name:        "archive",
+		deviceType:  "archive",
+		threadCount: 1,
+	}
+	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
 )
 
 func isArchiveFSUri(name string) bool {
@@ -52,6 +59,10 @@ func isMountableArchivePath(name string) bool {
 type archiveFS struct {
 	fsys fs.FS
 	name string
+}
+
+func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
+	return archiveDeviceInfoMap
 }
 
 func (fsys *archiveFS) URI() *url.URL {

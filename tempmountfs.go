@@ -31,6 +31,10 @@ type tempMountFS struct {
 	closer func() error
 }
 
+func (fsys *tempMountFS) getDeviceInfo() map[string]deviceInfo {
+	return fsys.lfs.getDeviceInfo()
+}
+
 func (fsys *tempMountFS) URI() *url.URL {
 	u, _ := url.Parse(fsys.uri)
 	return u

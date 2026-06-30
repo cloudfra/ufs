@@ -43,8 +43,9 @@ type FSArgs struct {
 }
 
 var (
-	_ FS        = (*nestFS)(nil)
-	_ fs.GlobFS = (*nestFS)(nil)
+	_ FS            = (*nestFS)(nil)
+	_ fs.GlobFS     = (*nestFS)(nil)
+	_ deviceInfoGet = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -62,6 +63,16 @@ type mountMap struct {
 	mu       sync.RWMutex
 	m        map[string]*nestFS
 	baseName string
+}
+
+func (m *mountMap) getDeviceInfo() map[string]deviceInfo {
+	combined := map[string]deviceInfo{}
+	m.mu.RLock()
+	for mountPoint, fsys := range m.m {
+		combined = combineDeviceInfo(combined, mountPoint, fsys.getDeviceInfo())
+	}
+	m.mu.RUnlock()
+	return combined
 }
 
 func (m *mountMap) put(name string, fsys *nestFS) error {
@@ -196,6 +207,11 @@ type nestFS struct {
 	ctx    context.Context
 	mounts *mountMap
 	args   FSArgs
+}
+
+func (fsys *nestFS) getDeviceInfo() map[string]deviceInfo {
+	base := fsys.fsys.getDeviceInfo()
+	return combineDeviceInfo(base, "", fsys.mounts.getDeviceInfo())
 }
 
 func (fsys *nestFS) URI() *url.URL {

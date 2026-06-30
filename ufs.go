@@ -92,6 +92,8 @@ type ReadFS interface {
 
 	fmt.Stringer
 
+	deviceInfoGet
+
 	// URI returns the [*url.URL] that identifies this file system. The
 	// returned URL can be passed (via its String method) to [New] to
 	// reconstruct an equivalent file system. Wrappers such as nestFS merge

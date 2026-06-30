@@ -43,6 +43,11 @@ type localFS struct {
 	osFS *os.Root
 }
 
+func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
+	// TODO: This method will be broken out into OS platform specific configs to determine what the mapping should be. Since linux has multiple mappings in a directory structure we'll need to add the relevant ones here.
+	return defaultDeviceMap
+}
+
 func (fsys *localFS) URI() *url.URL {
 	return &url.URL{Scheme: "file", Path: coerceUnix(fsys.osFS.Name())}
 }

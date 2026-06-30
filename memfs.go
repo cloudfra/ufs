@@ -226,6 +226,14 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
+func (fsys *memFS) getDeviceInfo() map[string]deviceInfo {
+	return newDeviceInfoMap(deviceInfo{
+		name:        fsys.name,
+		deviceType:  "memory",
+		threadCount: 2,
+	})
+}
+
 func (fsys *memFS) URI() *url.URL {
 	u, _ := url.Parse(fsys.name)
 	return u

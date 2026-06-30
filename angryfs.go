@@ -30,10 +30,21 @@ var (
 	_ fs.GlobFS = (*angryFS)(nil)
 
 	errAngry = fs.ErrInvalid
+
+	angryDeviceInfo = deviceInfo{
+		name:        "angry",
+		deviceType:  "angry",
+		threadCount: 1,
+	}
+	angryDeviceInfoMap = newDeviceInfoMap(angryDeviceInfo)
 )
 
 type angryFS struct {
 	name string
+}
+
+func (fsys *angryFS) getDeviceInfo() map[string]deviceInfo {
+	return angryDeviceInfoMap
 }
 
 func (fsys *angryFS) URI() *url.URL {

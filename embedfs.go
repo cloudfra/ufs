@@ -23,11 +23,21 @@ import (
 
 const embedFSPrefix = "embed://"
 
-var _ FS = (*embedFS)(nil)
+var (
+	_ FS = (*embedFS)(nil)
+)
 
 type embedFS struct {
 	name string
 	fsys embed.FS
+}
+
+func (fsys *embedFS) getDeviceInfo() map[string]deviceInfo {
+	return newDeviceInfoMap(deviceInfo{
+		name:        "/dev/embed/" + fsys.name,
+		deviceType:  "memory",
+		threadCount: 1,
+	})
 }
 
 func (fsys *embedFS) URI() *url.URL {

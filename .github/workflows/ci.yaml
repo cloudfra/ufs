@@ -38,6 +38,19 @@ jobs:
         run: make test
       - name: Test (Deflake)
         run: make test-deflake
+      - name: Coverage
+        run: make coverage.txt
+      - name: Upload Coverage to Codecov
+        # https://github.com/codecov/codecov-action
+        # Requires a CODECOV_TOKEN repo secret to be configured; until then
+        # this step uploads nothing but doesn't fail the build.
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.txt
+          flags: unittests
+          fail_ci_if_error: false
+          verbose: true
       - name: Zip binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: cd bin/go && zip -qr9 ../../linux-build-bin.zip . -x 'windows_*' -x 'windows_*/*'

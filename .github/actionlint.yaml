@@ -1,0 +1,7 @@
+self-hosted-runner:
+  # Custom labels used by this repo's self-hosted runners (see
+  # .github/workflows/ci.yaml). Declared here so actionlint doesn't flag
+  # them as unknown GitHub-hosted runner labels.
+  labels:
+    - large
+    - root

@@ -1,6 +1,9 @@
 # ufs
 
 <img src="logo.png" alt="Logo" width="64" height="64" />
+
+[![CI](https://github.com/cloudfra/ufs/actions/workflows/ci.yaml/badge.svg)](https://github.com/cloudfra/ufs/actions/workflows/ci.yaml) [![Go Reference](https://pkg.go.dev/badge/github.com/cloudfra/ufs.svg)](https://pkg.go.dev/github.com/cloudfra/ufs)
+
 Unified File System (UFS) is a Go library that allows apps to access multiple
 storage backends through a single fs.FS-based API. It provides a factory
 constructor (ufs.New) that dispatches to the appropriate implementation based on
@@ -83,6 +86,14 @@ make build
 ```bash
 ANTHROPIC_AUTH_TOKEN="ollama" ANTHROPIC_API_KEY="" ANTHROPIC_BASE_URL="http://mega:11434" claude --model qwen3.6:35b
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+See [SECURITY.md](SECURITY.md).
 
 ## License
 

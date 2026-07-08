@@ -12,4 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-*.zip diff=zip
+extends: default
+
+rules:
+  # GitHub Actions' "on:" trigger key is a valid YAML 1.1 boolean literal,
+  # and every workflow in this repo uses it bare rather than quoting "on" -
+  # only flag literal true/false/yes/no scalar values, not keys.
+  truthy:
+    check-keys: false
+  # No YAML in this repo uses a "---" document-start marker.
+  document-start: disable

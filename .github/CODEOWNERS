@@ -1,0 +1,4 @@
+# Default owner for everything in this repo.
+# TODO: switch to @cloudfra/maintainers once that team exists in the org
+# (currently `gh api orgs/cloudfra/teams` returns no teams).
+* @jeremyje

@@ -1,4 +1,4 @@
-# Copyright 2026 Jeremy Edwards
+# Copyright 2026 Cloudfra
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,15 +13,35 @@
 # limitations under the License.
 
 name: CI
+
 on:
   push:
     tags: ["v*"]
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Set the job key. The key is displayed as the job name
+  # when a job name is not provided
   build-linux:
+    name: "Build Linux"
     runs-on: ["self-hosted", "linux", "large"]
+    # container:
+    #   image: docker.io/cloudfra/ci-core:canary # Maybe
+    permissions:
+      contents: write
+      packages: write
+      checks: write
+      # Required by actions/upload-code-coverage below.
+      # https://docs.github.com/en/code-security/how-tos/maintain-quality-code/set-up-code-coverage
+      code-quality: write
+    timeout-minutes: 20
     steps:
       - name: Checkout
         # https://github.com/actions/checkout
@@ -50,7 +70,11 @@ jobs:
           retention-days: 1
           path: linux-build-bin.zip
   build-windows-root:
+    name: "Build Windows"
     runs-on: ["self-hosted", "windows", "root"]
+    permissions:
+      contents: read
+    timeout-minutes: 20
     steps:
       - name: Service Status
         run: |
@@ -78,7 +102,11 @@ jobs:
       - name: Test
         run: make test
   build-windows:
-    runs-on: ["self-hosted", "windows"]
+    name: "Build Windows"
+    runs-on: ["self-hosted", "windows", "large"]
+    permissions:
+      contents: read
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7

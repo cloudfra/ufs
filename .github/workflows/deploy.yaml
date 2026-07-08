@@ -44,7 +44,7 @@ jobs:
       - name: Upload binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-build-bin
           retention-days: 1
@@ -102,7 +102,7 @@ jobs:
           zip -qr9 ../../windows-build-bin.zip windows_*
       - name: Upload binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-build-bin
           retention-days: 1
@@ -131,7 +131,7 @@ jobs:
       - name: Zip binaries
         run: cd bin/go && zip -qr9 ../../ufs-binaries.zip .
       - name: Upload zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ufs-binaries
           path: ufs-binaries.zip

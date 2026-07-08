@@ -116,11 +116,11 @@ jobs:
     steps:
       - name: Download Linux binaries
         # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: linux-build-bin
       - name: Download Windows binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-build-bin
       - name: Extract binaries

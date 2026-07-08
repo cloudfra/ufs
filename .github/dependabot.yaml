@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+<<<<<<<< HEAD:.github/dependabot.yaml
 # To get started with Dependabot version updates, you'll need to specify which
 # package ecosystems to update and where the package manifests are located.
 # Please see the documentation for all configuration options:
@@ -41,3 +42,14 @@ updates:
     directory: "/install/terraform"
     schedule:
       interval: "weekly"
+========
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+>>>>>>>> 3ec9d9f (Prepare the new build style):codecov.yml

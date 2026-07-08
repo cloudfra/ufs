@@ -32,7 +32,7 @@ var (
 		threadCount: 1,
 	}
 
-	// defaultDeviceMap is the default response when a device mapping is not explictly configured for FS.
+	// defaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
 	defaultDeviceMap = map[string]deviceInfo{
 		".": defaultDeviceInfo,
 	}

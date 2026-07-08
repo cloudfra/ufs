@@ -137,7 +137,7 @@ jobs:
           path: ufs-binaries.zip
       - name: Delete intermediate artifacts
         # https://github.com/GeekyEggo/delete-artifact
-        uses: geekyeggo/delete-artifact@v5
+        uses: geekyeggo/delete-artifact@v6
         with:
           name: |
             linux-build-bin

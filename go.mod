@@ -3,7 +3,7 @@ module github.com/cloudfra/ufs
 go 1.26.2
 
 require (
-	cloud.google.com/go/pubsub/v2 v2.5.1
+	cloud.google.com/go/pubsub/v2 v2.6.1
 	cloud.google.com/go/storage v1.63.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/fsouza/fake-gcs-server v1.54.0
@@ -77,7 +77,6 @@ require (
 	github.com/stangelandcl/ppmd v0.1.1 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	go.einride.tech/aip v0.83.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.44.0 // indirect

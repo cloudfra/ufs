@@ -46,6 +46,25 @@ jobs:
             ./.cache/*
             ./third_party/*
 
+  # https://github.com/marketplace/actions/run-hadolint-with-reviewdog
+  hadolint:
+    name: runner / hadolint
+    runs-on: ubuntu-latest
+    # reporter: github-pr-review below posts inline PR review comments.
+    permissions:
+      contents: read
+      pull-requests: write
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+      - name: hadolint
+        # https://github.com/reviewdog/action-hadolint
+        uses: reviewdog/action-hadolint@v1
+        with:
+          github_token: ${{ secrets.github_token }}
+          reporter: github-pr-review  # Default is github-pr-check
+
   # plettich/action-codespell is unmaintained (last updated 2024-12) and its
   # Dockerfile floats on `alpine:latest`, which broke `pip install codespell`
   # once Alpine picked up a PEP 668 externally-managed Python. Use the
@@ -86,7 +105,7 @@ jobs:
         uses: reviewdog/action-yamllint@v1
         with:
           github_token: ${{ secrets.github_token }}
-          reporter: github-pr-review # Default is github-pr-check
+          reporter: github-pr-review  # Default is github-pr-check
           # Workflow/dependabot/actionlint config - the YAML this repo owns
           # and maintains. third_party is vendored upstream sources, same
           # exclusion the misspell/codespell jobs above already apply.

@@ -83,7 +83,6 @@ lint:
 	go fmt ./...
 	go vet ./...
 
-
 test: check
 
 check: $(TEST_ASSETS)
@@ -105,6 +104,16 @@ build: $(ALL_BINARIES) $(ASSETS)
 testassets: $(TEST_ASSETS)
 archiveassets: $(TEST_ARCHIVE_ASSETS)
 presubmit: lint check
+
+system-info:
+	@echo "Number of Processors"
+	@echo "$(shell nproc)"
+	@echo ""
+	@echo "Kernel Version"
+	@uname -a
+	@echo ""
+	@echo "Storage Metrics"
+	@df -h
 
 testing/testassets/archives/nodir-testassets.zip: $(TEST_FILE_ASSETS)
 	mkdir -p $(dir $@)

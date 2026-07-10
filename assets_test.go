@@ -18,6 +18,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -53,7 +54,9 @@ func TestAssets(t *testing.T) {
 					return nil, err
 				}
 				if err := copyFSToFS(os.DirFS(testAssetsFilesDir), fsys); err != nil {
-					fsys.Close()
+					if closeErr := fsys.Close(); closeErr != nil {
+						return nil, joinErrors(err, fmt.Errorf("failed to close FS after error: %v", closeErr))
+					}
 					return nil, err
 				}
 				return fsys, nil
@@ -75,7 +78,11 @@ func TestAssets(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create FS: %v", err)
 			}
-			defer fsys.Close()
+			defer func() {
+				if err := fsys.Close(); err != nil {
+					t.Errorf("failed to close FS: %v", err)
+				}
+			}()
 
 			for filePath, wantData := range wantFiles {
 				t.Run(filePath, func(t *testing.T) {

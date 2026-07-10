@@ -113,7 +113,9 @@ var (
 			createFS: func(tb testing.TB) FS {
 				inner := makeNullFS(nullFSPrefix)
 				tb.Cleanup(func() {
-					inner.Close()
+					if err := inner.Close(); err != nil {
+						tb.Fatalf("failed to close inner FS: %v", err)
+					}
 				})
 				return ReadOnly(inner)
 			},

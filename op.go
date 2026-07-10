@@ -18,6 +18,8 @@ import (
 	"io"
 	"io/fs"
 	"path"
+
+	"github.com/google/martian/v3/log"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -49,14 +51,21 @@ func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error
 	if err != nil {
 		return err
 	}
-	defer sfp.Close()
+	defer func() {
+		if err := sfp.Close(); err != nil {
+			log.Errorf("failed to close source file %q: %v", srcFilename, err)
+		}
+	}()
 
 	dfp, err := destFS.Create(destFilename)
 	if err != nil {
 		return err
 	}
-	defer dfp.Close()
-
+	defer func() {
+		if err := dfp.Close(); err != nil {
+			log.Errorf("failed to close destination file %q: %v", destFilename, err)
+		}
+	}()
 	if _, err := io.Copy(dfp, sfp); err != nil {
 		return err
 	}

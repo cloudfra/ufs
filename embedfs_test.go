@@ -63,7 +63,11 @@ func TestEmbedFSOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() = %v, want nil", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("failed to close file: %v", err)
+		}
+	}()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -82,7 +86,11 @@ func TestEmbedFSOpenDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(dir) = %v, want nil", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Fatalf("failed to close file: %v", err)
+		}
+	}()
 
 	info, err := f.Stat()
 	if err != nil {

@@ -96,19 +96,19 @@ func (fsys *tempMountFS) RemoveAll(name string) error {
 func newTempMountFS(uri string, prepare func(string) error) (FS, error) {
 	tempDir, cleanup, err := createOSTempDirectory()
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("cannot create temp directory, %w", err)
+		cleanupErr := cleanup()
+		return nil, joinErrors(fmt.Errorf("cannot create temp directory, %w", err), cleanupErr)
 	}
 
 	if err := prepare(tempDir); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("cannot prepare temp directory %s, %w", uri, err)
+		cleanupErr := cleanup()
+		return nil, joinErrors(fmt.Errorf("cannot prepare temp directory %s, %w", uri, err), cleanupErr)
 	}
 
 	lfs, err := newLocalFS(tempDir)
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("cannot create local fs for temp directory %s, %w", uri, err)
+		cleanupErr := cleanup()
+		return nil, joinErrors(fmt.Errorf("cannot create local fs for temp directory %s, %w", uri, err), cleanupErr)
 	}
 
 	return makeTempMountFS(lfs.(*localFS), uri, tempDir, cleanup), nil

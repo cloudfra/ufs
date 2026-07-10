@@ -11,7 +11,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/mholt/archives v0.1.5
 	github.com/xyproto/randomstring v1.2.0
-	google.golang.org/api v0.287.1
+	google.golang.org/api v0.288.0
 	google.golang.org/grpc v1.82.0
 )
 
@@ -102,6 +102,4 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
-ignore (
-  ./build
-)
+ignore ./build

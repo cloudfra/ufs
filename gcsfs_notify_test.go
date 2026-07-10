@@ -247,30 +247,34 @@ const (
 	testSubscription = "projects/test-project/subscriptions/gcs-events-sub"
 )
 
-func newPstestGCSFS(t *testing.T, bucket, baseDir string) (*gcsFS, *pstest.Server) {
-	t.Helper()
+func newPstestGCSFS(tb testing.TB, bucket, baseDir string) (*gcsFS, *pstest.Server) {
+	tb.Helper()
 	srv := pstest.NewServer()
-	t.Cleanup(func() { srv.Close() })
+	tb.Cleanup(func() { srv.Close() })
 
-	conn, err := grpc.Dial(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
-	t.Cleanup(func() { conn.Close() })
+	tb.Cleanup(func() {
+		if err := conn.Close(); err != nil {
+			tb.Logf("failed to close gRPC connection: %v", err)
+		}
+	})
 
-	ctx := t.Context()
+	ctx := tb.Context()
 	psClient, err := pubsub.NewClient(ctx, testProject, option.WithGRPCConn(conn))
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	// Keep the admin client open so the shared gRPC connection stays alive.
-	t.Cleanup(func() { psClient.Close() })
+	tb.Cleanup(func() { psClient.Close() })
 
 	_, err = psClient.TopicAdminClient.CreateTopic(ctx, &pb.Topic{
 		Name: testTopic,
 	})
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 
 	_, err = psClient.SubscriptionAdminClient.CreateSubscription(ctx, &pb.Subscription{
@@ -278,7 +282,7 @@ func newPstestGCSFS(t *testing.T, bucket, baseDir string) (*gcsFS, *pstest.Serve
 		Topic: testTopic,
 	})
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 
 	fsys := &gcsFS{

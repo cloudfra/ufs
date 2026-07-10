@@ -174,7 +174,9 @@ func (m *mountMap) remove(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if nfs, ok := m.m[name]; ok {
-		nfs.Close()
+		if err := nfs.Close(); err != nil {
+			fmt.Printf("failed to close mount %q, %v\n", name, err)
+		}
 		delete(m.m, name)
 	}
 }
@@ -681,8 +683,12 @@ func (f *nestFile) Close() error {
 	f.buf = nil
 	if f.tmpFile != nil {
 		name := f.tmpFile.Name()
-		f.tmpFile.Close()
-		os.Remove(name)
+		if err := f.tmpFile.Close(); err != nil {
+			return err
+		}
+		if err := os.Remove(name); err != nil {
+			return err
+		}
 		f.tmpFile = nil
 	}
 	return f.File.Close()
@@ -739,20 +745,20 @@ func polyfillSeekReadAtMemory(nf *nestFile, f fs.File) error {
 func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 	tmp, err := os.CreateTemp("", "ufs-polyfill-*.tmp")
 	if err != nil {
-		f.Close()
-		return err
+		fCloseErr := f.Close()
+		return joinErrors(err, fCloseErr)
 	}
 	if _, err := io.Copy(tmp, f); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		f.Close()
-		return err
+		closeErr := tmp.Close()
+		removeErr := os.Remove(tmp.Name())
+		fCloseErr := f.Close()
+		return joinErrors(err, closeErr, removeErr, fCloseErr)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		f.Close()
-		return err
+		closeErr := tmp.Close()
+		removeErr := os.Remove(tmp.Name())
+		fCloseErr := f.Close()
+		return joinErrors(err, closeErr, removeErr, fCloseErr)
 	}
 	nf.tmpFile = tmp
 	nf.seekFunc = tmp.Seek

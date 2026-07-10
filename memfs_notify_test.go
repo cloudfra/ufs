@@ -154,15 +154,15 @@ func TestMemWatchCloseStopsDelivery(t *testing.T) {
 	}
 
 	if err := closer.Close(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to close watcher: %v", err)
 	}
 	// Idempotent close.
 	if err := closer.Close(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to close watcher: %v", err)
 	}
 
 	if _, err := fsys.Create("after.txt"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to create file: %v", err)
 	}
 
 	time.Sleep(200 * time.Millisecond)
@@ -191,7 +191,7 @@ func TestMemWatchCtxCancellation(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	if _, err := fsys.Create("post_cancel.txt"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to create file: %v", err)
 	}
 
 	time.Sleep(200 * time.Millisecond)
@@ -239,7 +239,7 @@ func TestMemWatchCreateOverwrite(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
 	if _, err := fsys.Create("file.txt"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to create file: %v", err)
 	}
 
 	ec := newEventCollector()
@@ -250,7 +250,11 @@ func TestMemWatchCreateOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("failed to close watcher: %v", err)
+		}
+	}()
 
 	// Create again should fire a Write event (overwrite).
 	if _, err := fsys.Create("file.txt"); err != nil {
@@ -303,11 +307,11 @@ func TestMemWatchRaceConcurrentClose(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_ = closer.Close()
-		}()
+		wg.Go(func() {
+			if err := closer.Close(); err != nil {
+				t.Errorf("failed to close watcher: %v", err)
+			}
+		})
 	}
 	wg.Wait()
 }
@@ -326,13 +330,13 @@ func TestMemWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := range 50 {
-			fsys.Create(fmt.Sprintf("churn_%d.txt", i))
+			if _, err := fsys.Create(fmt.Sprintf("churn_%d.txt", i)); err != nil {
+				t.Fatalf("failed to create file: %v", err)
+			}
 		}
-	}()
+	})
 
 	time.Sleep(5 * time.Millisecond)
 	if err := closer.Close(); err != nil {
@@ -352,21 +356,25 @@ func TestMemWatchRaceConcurrentFileCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("failed to close watcher: %v", err)
+		}
+	}()
 
 	const writers = 5
 	const filesPerWriter = 10
 
 	var wg sync.WaitGroup
 	for w := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for f := range filesPerWriter {
 				name := fmt.Sprintf("w%d_f%d.txt", w, f)
-				fsys.Create(name)
+				if _, err := fsys.Create(name); err != nil {
+					t.Fatalf("failed to create file: %v", err)
+				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

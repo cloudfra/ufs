@@ -411,8 +411,12 @@ func TestNestFSStat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	io.WriteString(wf, "hello")
-	wf.Close()
+	if _, err := io.WriteString(wf, "hello"); err != nil {
+		t.Fatalf("failed to write to statme.txt: %v", err)
+	}
+	if err := wf.Close(); err != nil {
+		t.Fatalf("failed to close statme.txt: %v", err)
+	}
 
 	info, err := nfs.Stat("statme.txt")
 	if err != nil {
@@ -562,12 +566,16 @@ func TestNestFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child.Close()
+	if err := child.Close(); err != nil {
+		t.Errorf("failed to close child.txt: %v", err)
+	}
 	keep, err := nfs.Create("keep.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	keep.Close()
+	if err := keep.Close(); err != nil {
+		t.Errorf("failed to close keep.txt: %v", err)
+	}
 
 	t.Run("subtree", func(t *testing.T) {
 		if err := fsys.RemoveAll("sub"); err != nil {
@@ -808,7 +816,7 @@ func newTestStringWriterFile(name, content string) *testStringWriterFile {
 
 func (f *testStringWriterFile) WriteString(s string) (int, error) {
 	f.stringWriterCalled = true
-	return f.testWriterFile.Write([]byte(s))
+	return f.Write([]byte(s))
 }
 
 // testSeekerFile implements fs.File + io.Seeker + io.ReaderAt (all via bytes.Reader).

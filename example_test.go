@@ -128,10 +128,17 @@ func ExampleListFiles() {
 	fsys, _ := New(ctx, "memory://")
 	defer fsys.Close()
 
-	fsys.MkdirAll("subdir", fs.ModePerm)
+	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
+		log.Fatalf("failed to create directory: %v", err)
+	}
 	for _, name := range []string{"a.txt", "b.txt", "subdir/c.txt"} {
-		f, _ := fsys.Create(name)
-		f.Close()
+		f, err := fsys.Create(name)
+		if err != nil {
+			log.Fatalf("failed to create file: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			log.Fatalf("failed to close file: %v", err)
+		}
 	}
 
 	files, _ := ListFiles(fsys, ".")
@@ -148,11 +155,22 @@ func ExampleListFiles() {
 func ExampleList() {
 	ctx := context.Background()
 	fsys, _ := New(ctx, "memory://")
-	defer fsys.Close()
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			log.Fatalf("failed to close FS: %v", err)
+		}
+	}()
 
-	fsys.MkdirAll("subdir", fs.ModePerm)
-	f, _ := fsys.Create("subdir/c.txt")
-	f.Close()
+	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
+		log.Fatalf("failed to create directory: %v", err)
+	}
+	f, err := fsys.Create("subdir/c.txt")
+	if err != nil {
+		log.Fatalf("cannot create file: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		log.Fatalf("failed to close file: %v", err)
+	}
 
 	entries, _ := List(fsys, ".")
 	for _, p := range entries {

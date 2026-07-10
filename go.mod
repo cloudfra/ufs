@@ -103,4 +103,7 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
-ignore ./build
+ignore (
+	./build
+	./third_party
+)

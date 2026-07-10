@@ -146,8 +146,11 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("WARNING: failed to close response body: %v", err)
+		}
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return "", fmt.Errorf("download %q failed with status %d", uri, resp.StatusCode)
 	}

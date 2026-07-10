@@ -496,7 +496,7 @@ func BenchmarkMemFSReadDir(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		if _, err := fs.ReadDir(fsys, "."); err != nil {
 			b.Fatal(err)
 		}
@@ -523,14 +523,18 @@ func BenchmarkMemFSCreate(b *testing.B) {
 func BenchmarkMemFSRemoveAll(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
 	fsys.MkdirAll(".", fs.ModePerm)
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		name := fmt.Sprintf("subdir_%d/file", i)
 		f, err := fsys.Create(name)
 		if err != nil {
 			b.Fatal(err)
 		}
-		f.Write([]byte("x"))
-		f.Close()
+		if _, err := f.Write([]byte("x")); err != nil {
+			b.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			b.Fatal(err)
+		}
 	}
 
 	b.ResetTimer()
@@ -539,14 +543,17 @@ func BenchmarkMemFSRemoveAll(b *testing.B) {
 			b.Fatal(err)
 		}
 		// Rebuild for next iteration
-		for i := 0; i < 5000; i++ {
+		for i := range 5000 {
 			name := fmt.Sprintf("subdir_%d/file", i)
 			f, err := fsys.Create(name)
 			if err != nil {
 				b.Fatal(err)
 			}
 			f.Write([]byte("x"))
-			f.Close()
+
+			if err := f.Close(); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }
@@ -559,7 +566,7 @@ func BenchmarkNestFSReadDir(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		data := bytes.Repeat([]byte("Nest"), 128)
 		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
@@ -569,12 +576,14 @@ func BenchmarkNestFSReadDir(b *testing.B) {
 	nfs := makeNestFS(context.Background(), lfs)
 
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		if _, err := nfs.ReadDir("."); err != nil {
 			b.Fatal(err)
 		}
 	}
-	nfs.Close()
+	if err := nfs.Close(); err != nil {
+		b.Errorf("failed to close nfs: %v", err)
+	}
 }
 
 func BenchmarkNestFSReadFile(b *testing.B) {
@@ -583,7 +592,7 @@ func BenchmarkNestFSReadFile(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		data := bytes.Repeat([]byte("Nest"), 128)
 		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
@@ -593,12 +602,14 @@ func BenchmarkNestFSReadFile(b *testing.B) {
 	nfs := makeNestFS(context.Background(), lfs)
 
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		if _, err := nfs.ReadFile("file_42.dat"); err != nil {
 			b.Fatal(err)
 		}
 	}
-	nfs.Close()
+	if err := nfs.Close(); err != nil {
+		b.Errorf("failed to close nfs: %v", err)
+	}
 }
 
 // --- localFS benchmarks ---
@@ -610,16 +621,20 @@ func BenchmarkLocalFSReadDir(b *testing.B) {
 		b.Fatal(err)
 	}
 	data := bytes.Repeat([]byte("LocData"), 64) // ~600B each
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
 			b.Fatal(err)
 		}
 	}
-	defer lfs.Close()
+	defer func() {
+		if err := lfs.Close(); err != nil {
+			b.Errorf("failed to close lfs: %v", err)
+		}
+	}()
 
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		if _, err := lfs.ReadDir("."); err != nil {
 			b.Fatal(err)
 		}
@@ -633,16 +648,20 @@ func BenchmarkLocalFSListFiles(b *testing.B) {
 		b.Fatal(err)
 	}
 	data := bytes.Repeat([]byte("L"), 512)
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
 			b.Fatal(err)
 		}
 	}
-	defer lfs.Close()
+	defer func() {
+		if err := lfs.Close(); err != nil {
+			b.Errorf("failed to close lfs: %v", err)
+		}
+	}()
 
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		if _, err := ListFiles(lfs, "."); err != nil {
 			b.Fatal(err)
 		}

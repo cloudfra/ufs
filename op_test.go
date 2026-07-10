@@ -121,12 +121,27 @@ func setupListFS(t *testing.T) FS {
 // --- Copy ---
 
 func TestCopy(t *testing.T) {
-	src, _ := newMemFS("memory://src")
-	dst, _ := newMemFS("memory://dst")
-	defer src.Close()
-	defer dst.Close()
+	src, err := newMemFS("memory://src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst, err := newMemFS("memory://dst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := src.Close(); err != nil {
+			t.Errorf("failed to close src FS: %v", err)
+		}
+		if err := dst.Close(); err != nil {
+			t.Errorf("failed to close dst FS: %v", err)
+		}
+	}()
 
-	f, _ := src.Create("hello.txt")
+	f, err := src.Create("hello.txt")
+	if err != nil {
+		t.Errorf("failed to create file in srcFS: %v", err)
+	}
 	f.WriteString("hello world")
 	f.Close()
 
@@ -138,7 +153,11 @@ func TestCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(copy.txt) = %v, want nil", err)
 	}
-	defer rf.Close()
+	defer func() {
+		if err := rf.Close(); err != nil {
+			t.Errorf("failed to close rf: %v", err)
+		}
+	}()
 	data, err := io.ReadAll(rf)
 	if err != nil {
 		t.Fatalf("ReadAll() = %v, want nil", err)
@@ -149,9 +168,19 @@ func TestCopy(t *testing.T) {
 }
 
 func TestCopyOpenError(t *testing.T) {
-	src, _ := newAngryFS("angry://")
-	dst, _ := newMemFS("memory://dst")
-	defer dst.Close()
+	src, err := newAngryFS("angry://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst, err := newMemFS("memory://dst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := dst.Close(); err != nil {
+			t.Errorf("failed to close dst FS: %v", err)
+		}
+	}()
 
 	if err := Copy(src, "file.txt", dst, "file.txt"); err == nil {
 		t.Error("Copy with angry src succeeded, want error")
@@ -159,13 +188,31 @@ func TestCopyOpenError(t *testing.T) {
 }
 
 func TestCopyCreateError(t *testing.T) {
-	src, _ := newMemFS("memory://src")
-	defer src.Close()
-	f, _ := src.Create("file.txt")
+	src, err := newMemFS("memory://src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := src.Close(); err != nil {
+			t.Errorf("failed to close src FS: %v", err)
+		}
+	}()
+	f, err := src.Create("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.WriteString("data")
 	f.Close()
 
-	dst, _ := newAngryFS("angry://")
+	dst, err := newAngryFS("angry://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := dst.Close(); err == nil {
+			t.Error("want angryFS to fail Close(), got nil error")
+		}
+	}()
 	if err := Copy(src, "file.txt", dst, "file.txt"); err == nil {
 		t.Error("Copy with angry dst succeeded, want error")
 	}
@@ -225,8 +272,16 @@ func (lf *listFilenamesFS) ListFilenames(_ string) ([]string, error) {
 }
 
 func TestListFilesInterface(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
-	defer inner.Close()
+	inner, err := newMemFS("memory://test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := inner.Close(); err != nil {
+			t.Errorf("failed to close inner FS: %v", err)
+		}
+	}()
+
 	want := []string{"fast.txt", "path.txt"}
 	fsys := &listFilenamesFS{FS: inner, files: want}
 
@@ -275,7 +330,12 @@ func (f *forEachFilenameFS) ForEachFilename(_ string, fn func(string) error) err
 
 func TestForEachFilenameInterface(t *testing.T) {
 	inner, _ := newMemFS("memory://test")
-	defer inner.Close()
+	defer func() {
+		if err := inner.Close(); err != nil {
+			t.Errorf("failed to close inner FS: %v", err)
+		}
+	}()
+
 	want := []string{"fast.txt", "path.txt"}
 	fsys := &forEachFilenameFS{FS: inner, files: want}
 
@@ -346,7 +406,12 @@ func (f *forEachFileInfoFS) ForEachFileInfo(_ string, fn func(fs.FileInfo) error
 
 func TestForEachFileInfoInterface(t *testing.T) {
 	inner, _ := newMemFS("memory://test")
-	defer inner.Close()
+	defer func() {
+		if err := inner.Close(); err != nil {
+			t.Errorf("failed to close inner FS: %v", err)
+		}
+	}()
+
 	wantInfos := []fs.FileInfo{
 		&fsInfo{name: "fast.txt", size: 10, mode: fs.ModePerm},
 		&fsInfo{name: "path.txt", size: 20, mode: fs.ModePerm},

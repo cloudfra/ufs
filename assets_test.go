@@ -138,7 +138,11 @@ func createZipFromDir(tb testing.TB, dir string) string {
 		tb.Fatalf("createZipFromDir: CreateTemp: %v", err)
 	}
 	tmpName := tmp.Name()
-	tb.Cleanup(func() { os.Remove(tmpName) })
+	tb.Cleanup(func() {
+		if err := os.Remove(tmpName); err != nil {
+			tb.Fatalf("createZipFromDir: Cleanup: %v", err)
+		}
+	})
 
 	zw := zip.NewWriter(tmp)
 	err = fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
@@ -153,7 +157,11 @@ func createZipFromDir(tb testing.TB, dir string) string {
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				tb.Errorf("createZipFromDir: failed to close file: %v", err)
+			}
+		}()
 		_, err = io.Copy(w, f)
 		return err
 	})

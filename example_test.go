@@ -35,8 +35,12 @@ func ExampleNew_memory() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	f.WriteString("hello, world")
-	f.Close()
+	if _, err := f.WriteString("hello, world"); err != nil {
+		log.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		log.Fatal(err)
+	}
 
 	data, err := fsys.ReadFile("hello.txt")
 	if err != nil {
@@ -62,11 +66,17 @@ func ExampleNew_null() {
 		log.Fatal(err)
 	}
 	n, writeErr := f.WriteString("this data is discarded")
-	f.Close()
 	fmt.Printf("wrote %d bytes, err=%v\n", n, writeErr)
 
+	if err := f.Close(); err != nil {
+		log.Fatal(err)
+	}
+
 	// ReadFile always returns an empty byte slice, not an error.
-	data, _ := fsys.ReadFile("discard.txt")
+	data, err := fsys.ReadFile("discard.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Printf("read %d bytes\n", len(data))
 	// Output:
 	// wrote 22 bytes, err=<nil>
@@ -76,20 +86,37 @@ func ExampleNew_null() {
 // ExampleCopy shows copying a single file between two file systems.
 func ExampleCopy() {
 	ctx := context.Background()
-	src, _ := New(ctx, "memory://")
-	dst, _ := New(ctx, "memory://")
+	src, err := New(ctx, "memory://")
+	if err != nil {
+		log.Fatalf("failed to create source FS: %v", err)
+	}
+	dst, err := New(ctx, "memory://")
+	if err != nil {
+		log.Fatalf("failed to create destination FS: %v", err)
+	}
 	defer src.Close()
 	defer dst.Close()
 
-	f, _ := src.Create("hello.txt")
-	f.WriteString("hello")
-	f.Close()
+	f, err := src.Create("hello.txt")
+	if err != nil {
+		log.Fatalf("failed to create file in source FS: %v", err)
+	}
+
+	if _, err = f.WriteString("hello"); err != nil {
+		log.Fatalf("failed to write to file in source FS: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		log.Fatalf("failed to close file in source FS: %v", err)
+	}
 
 	if err := Copy(src, "hello.txt", dst, "copy.txt"); err != nil {
 		log.Fatal(err)
 	}
 
-	data, _ := dst.ReadFile("copy.txt")
+	data, err := dst.ReadFile("copy.txt")
+	if err != nil {
+		log.Fatalf("failed to read copied file: %v", err)
+	}
 	fmt.Println(string(data))
 	// Output: hello
 }
@@ -97,23 +124,39 @@ func ExampleCopy() {
 // ExampleRsync shows recursively mirroring all files from one FS into another.
 func ExampleRsync() {
 	ctx := context.Background()
-	src, _ := New(ctx, "memory://")
-	dst, _ := New(ctx, "memory://")
+	src, err := New(ctx, "memory://")
+	if err != nil {
+		log.Fatalf("failed to create source FS: %v", err)
+	}
+	dst, err := New(ctx, "memory://")
+	if err != nil {
+		log.Fatalf("failed to create destination FS: %v", err)
+	}
 	defer src.Close()
 	defer dst.Close()
 
 	src.MkdirAll("subdir", fs.ModePerm)
 	for _, name := range []string{"a.txt", "subdir/b.txt"} {
-		f, _ := src.Create(name)
-		f.WriteString("content")
-		f.Close()
+		f, err := src.Create(name)
+		if err != nil {
+			log.Fatalf("failed to create file: %v", err)
+		}
+		if _, err := f.WriteString("content"); err != nil {
+			log.Fatalf("failed to write to file: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			log.Fatalf("failed to close file: %v", err)
+		}
 	}
 
 	if err := Rsync(src, dst, "."); err != nil {
 		log.Fatal(err)
 	}
 
-	files, _ := ListFiles(dst, ".")
+	files, err := ListFiles(dst, ".")
+	if err != nil {
+		log.Fatalf("failed to list files: %v", err)
+	}
 	for _, p := range files {
 		fmt.Println(p)
 	}
@@ -125,8 +168,15 @@ func ExampleRsync() {
 // ExampleListFiles shows listing only files (no directories) under a path.
 func ExampleListFiles() {
 	ctx := context.Background()
-	fsys, _ := New(ctx, "memory://")
-	defer fsys.Close()
+	fsys, err := New(ctx, "memory://")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			log.Fatalf("failed to close FS: %v", err)
+		}
+	}()
 
 	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
 		log.Fatalf("failed to create directory: %v", err)
@@ -141,7 +191,10 @@ func ExampleListFiles() {
 		}
 	}
 
-	files, _ := ListFiles(fsys, ".")
+	files, err := ListFiles(fsys, ".")
+	if err != nil {
+		log.Fatalf("failed to list files: %v", err)
+	}
 	for _, p := range files {
 		fmt.Println(p)
 	}
@@ -154,7 +207,10 @@ func ExampleListFiles() {
 // ExampleList shows listing all entries including directories.
 func ExampleList() {
 	ctx := context.Background()
-	fsys, _ := New(ctx, "memory://")
+	fsys, err := New(ctx, "memory://")
+	if err != nil {
+		log.Fatal(err)
+	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
 			log.Fatalf("failed to close FS: %v", err)
@@ -172,7 +228,10 @@ func ExampleList() {
 		log.Fatalf("failed to close file: %v", err)
 	}
 
-	entries, _ := List(fsys, ".")
+	entries, err := List(fsys, ".")
+	if err != nil {
+		log.Fatalf("failed to list entries: %v", err)
+	}
 	for _, p := range entries {
 		fmt.Println(p)
 	}
@@ -185,18 +244,32 @@ func ExampleList() {
 // which saves memory for large trees.
 func ExampleForEachFilename() {
 	ctx := context.Background()
-	fsys, _ := New(ctx, "memory://")
-	defer fsys.Close()
+	fsys, err := New(ctx, "memory://")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			log.Fatalf("failed to close FS: %v", err)
+		}
+	}()
 
 	for _, name := range []string{"a.txt", "b.txt"} {
-		f, _ := fsys.Create(name)
-		f.Close()
+		f, err := fsys.Create(name)
+		if err != nil {
+			log.Fatalf("failed to create file: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			log.Fatalf("failed to close file: %v", err)
+		}
 	}
 
-	ForEachFilename(fsys, ".", func(name string) error {
+	if err := ForEachFilename(fsys, ".", func(name string) error {
 		fmt.Println(name)
 		return nil
-	})
+	}); err != nil {
+		log.Fatalf("failed to iterate over filenames: %v", err)
+	}
 	// Output:
 	// a.txt
 	// b.txt
@@ -217,7 +290,11 @@ func ExampleCreateURI() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer fsys.Close()
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			log.Fatalf("failed to close FS: %v", err)
+		}
+	}()
 	fmt.Println(fsys.URI())
 	// Output:
 	// memory:

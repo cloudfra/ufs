@@ -267,7 +267,9 @@ func testArchiveServer(t *testing.T) *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/testassets.zip", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/zip")
-		w.Write(zipData)
+		if _, err := w.Write(zipData); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
 	})
 	mux.HandleFunc("/404.zip", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -279,13 +281,17 @@ func testArchiveServer(t *testing.T) *httptest.Server {
 		http.Redirect(w, r, "/testassets.zip", http.StatusFound)
 	})
 	mux.HandleFunc("/trailing-slash/", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("bad"))
+		if _, err := w.Write([]byte("bad")); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
 	})
 	mux.HandleFunc("/redirect-to-traversal", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/../../etc/passwd", http.StatusFound)
 	})
 	mux.HandleFunc("/../../etc/passwd", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("root:x:0:0"))
+		if _, err := w.Write([]byte("root:x:0:0")); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)

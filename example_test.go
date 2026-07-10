@@ -94,8 +94,16 @@ func ExampleCopy() {
 	if err != nil {
 		log.Fatalf("failed to create destination FS: %v", err)
 	}
-	defer src.Close()
-	defer dst.Close()
+	defer func() {
+		if err := src.Close(); err != nil {
+			log.Fatalf("failed to close source FS: %v", err)
+		}
+	}()
+	defer func() {
+		if err := dst.Close(); err != nil {
+			log.Fatalf("failed to close destination FS: %v", err)
+		}
+	}()
 
 	f, err := src.Create("hello.txt")
 	if err != nil {
@@ -132,10 +140,20 @@ func ExampleRsync() {
 	if err != nil {
 		log.Fatalf("failed to create destination FS: %v", err)
 	}
-	defer src.Close()
-	defer dst.Close()
+	defer func() {
+		if err := src.Close(); err != nil {
+			log.Fatalf("failed to close source FS: %v", err)
+		}
+	}()
+	defer func() {
+		if err := dst.Close(); err != nil {
+			log.Fatalf("failed to close destination FS: %v", err)
+		}
+	}()
 
-	src.MkdirAll("subdir", fs.ModePerm)
+	if err := src.MkdirAll("subdir", fs.ModePerm); err != nil {
+		log.Fatalf("failed to create directory: %v", err)
+	}
 	for _, name := range []string{"a.txt", "subdir/b.txt"} {
 		f, err := src.Create(name)
 		if err != nil {

@@ -58,7 +58,9 @@ func TestNewArchiveFSFromLocalFS(t *testing.T) {
 	if fsys == nil {
 		t.Fatal("fsys is nil")
 	}
-	fsys.Close()
+	if err := fsys.Close(); err != nil {
+		t.Errorf("failed to close archive FS: %v", err)
+	}
 }
 
 func TestNewArchiveFSFromLocalFSInvalid(t *testing.T) {

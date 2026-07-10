@@ -39,7 +39,9 @@ func TestCreateOSTempDirectory(t *testing.T) {
 	if !strings.Contains(dir, "goapp") {
 		t.Errorf("'%s' does not contain 'goapp'", dir)
 	}
-	cleanup()
+	if err := cleanup(); err != nil {
+		t.Errorf("failed to cleanup temp directory: %v", err)
+	}
 	if osExists(dir) {
 		t.Errorf("'%s' exists when it should not", dir)
 	}
@@ -544,16 +546,22 @@ func TestDownloadFilePathContainment(t *testing.T) {
 	body := []byte("test content")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/safe.txt", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(body)
+		if _, err := w.Write(body); err != nil {
+			t.Logf("failed to write response: %v", err)
+		}
 	})
 	mux.HandleFunc("/..%2F..%2Fetc%2Fpasswd", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(body)
+		if _, err := w.Write(body); err != nil {
+			t.Logf("failed to write response: %v", err)
+		}
 	})
 	mux.HandleFunc("/redirect-dotdot", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/../../../tmp/pwned.txt", http.StatusFound)
 	})
 	mux.HandleFunc("/../../../tmp/pwned.txt", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(body)
+		if _, err := w.Write(body); err != nil {
+			t.Logf("failed to write response: %v", err)
+		}
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)

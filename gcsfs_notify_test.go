@@ -250,7 +250,11 @@ const (
 func newPstestGCSFS(tb testing.TB, bucket, baseDir string) (*gcsFS, *pstest.Server) {
 	tb.Helper()
 	srv := pstest.NewServer()
-	tb.Cleanup(func() { srv.Close() })
+	tb.Cleanup(func() {
+		if err := srv.Close(); err != nil {
+			tb.Logf("failed to close pstest server: %v", err)
+		}
+	})
 
 	conn, err := grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

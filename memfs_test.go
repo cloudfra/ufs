@@ -371,8 +371,12 @@ func TestMemFSReadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.WriteString("hello world")
-	f.Close()
+	if _, err := f.WriteString("hello world"); err != nil {
+		t.Fatalf("failed to write to file: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close file: %v", err)
+	}
 
 	rfs := fsys.(fs.ReadFileFS)
 
@@ -405,7 +409,9 @@ func TestMemFSReadLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, _ := fsys.Create("file.txt")
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close file: %v", err)
+	}
 
 	lfs := fsys.(fs.ReadLinkFS)
 
@@ -504,10 +510,14 @@ func TestMemFSReadDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fsys.MkdirAll("docs", fs.ModePerm)
+	if err := fsys.MkdirAll("docs", fs.ModePerm); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
+	}
 	for _, name := range []string{"a.txt", "b.txt"} {
 		f, _ := fsys.Create("docs/" + name)
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatalf("failed to close file: %v", err)
+		}
 	}
 
 	dfs := fsys.(fs.ReadDirFS)

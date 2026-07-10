@@ -484,7 +484,11 @@ func setupNestFSWithArchive(t *testing.T) FS {
 		t.Fatal(err)
 	}
 	nfs := makeNestFS(t.Context(), lfs)
-	t.Cleanup(func() { nfs.Close() })
+	t.Cleanup(func() {
+		if err := nfs.Close(); err != nil {
+			t.Errorf("failed to close nest FS: %v", err)
+		}
+	})
 	return nfs
 }
 
@@ -766,7 +770,11 @@ type noRemoverFS struct{ fs.FS }
 
 func TestRemoveFallback(t *testing.T) {
 	inner, _ := newMemFS("memory://test")
-	defer inner.Close()
+	defer func() {
+		if err := inner.Close(); err != nil {
+			t.Errorf("failed to close inner FS: %v", err)
+		}
+	}()
 
 	err := Remove(&noRemoverFS{inner}, "any.txt")
 	if !errors.Is(err, fs.ErrPermission) {
@@ -832,7 +840,11 @@ func TestRemoveAllRoot(t *testing.T) {
 
 func TestRemoveAllFallback(t *testing.T) {
 	inner, _ := newMemFS("memory://test")
-	defer inner.Close()
+	defer func() {
+		if err := inner.Close(); err != nil {
+			t.Errorf("failed to close inner FS: %v", err)
+		}
+	}()
 
 	err := RemoveAll(&noRemoverFS{inner}, "dir")
 	if !errors.Is(err, fs.ErrPermission) {

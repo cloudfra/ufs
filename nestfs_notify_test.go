@@ -78,7 +78,9 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close file: %v", err)
+	}
 
 	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
 		return ev.op == NotifyCreate && ev.path == "sub/inside.txt"
@@ -89,7 +91,9 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close file: %v", err)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -106,7 +110,11 @@ func TestNestFSWatchUnsupportedBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	nfs := makeNestFS(t.Context(), inner)
-	defer nfs.Close()
+	defer func() {
+		if err := nfs.Close(); err != nil {
+			t.Errorf("failed to close nestFS: %v", err)
+		}
+	}()
 
 	_, err = nfs.Watch(t.Context(), ".", func(NotifyOp, string) {})
 	if err == nil {

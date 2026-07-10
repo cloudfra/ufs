@@ -247,9 +247,9 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 			return nil, pathError("open", name, err)
 		}
 		content, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			return nil, pathError("open", name, err)
+		closeErr := rc.Close()
+		if err != nil || closeErr != nil {
+			return nil, joinErrors(pathError("open", name, err), closeErr)
 		}
 		return &gcsFile{
 			name:    name,

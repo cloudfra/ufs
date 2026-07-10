@@ -297,7 +297,11 @@ func TestMemFSDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dir.Close()
+	defer func() {
+		if err := dir.Close(); err != nil {
+			t.Errorf("failed to close directory: %v", err)
+		}
+	}()
 
 	// Stat directory
 	info, err := dir.Stat()
@@ -342,7 +346,11 @@ func TestMemFSFilePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f2.Close()
+	defer func() {
+		if err := f2.Close(); err != nil {
+			t.Errorf("failed to close file: %v", err)
+		}
+	}()
 
 	data, err := io.ReadAll(f2)
 	if err != nil {
@@ -425,10 +433,17 @@ func TestMemFSLstat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fsys.MkdirAll("mydir", fs.ModePerm)
-	f, _ := fsys.Create("mydir/file.txt")
+	if err := fsys.MkdirAll("mydir", fs.ModePerm); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
+	}
+	f, err := fsys.Create("mydir/file.txt")
+	if err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
 	f.WriteString("data")
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Errorf("failed to close file: %v", err)
+	}
 
 	lfs := fsys.(fs.ReadLinkFS)
 
@@ -608,7 +623,11 @@ func TestMemFSReaddirAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dir.Close()
+	defer func() {
+		if err := dir.Close(); err != nil {
+			t.Errorf("failed to close directory: %v", err)
+		}
+	}()
 
 	rdf, ok := dir.(fs.ReadDirFile)
 	if !ok {
@@ -643,7 +662,11 @@ func TestMemFSReaddirPaginated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dir.Close()
+	defer func() {
+		if err := dir.Close(); err != nil {
+			t.Errorf("failed to close directory: %v", err)
+		}
+	}()
 
 	rdf, ok := dir.(fs.ReadDirFile)
 	if !ok {
@@ -774,10 +797,19 @@ func TestMemFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("failed to close memFS: %v", err)
+		}
+	}()
 
-	f, _ := fsys.Create("hello.txt")
-	f.Close()
+	f, err := fsys.Create("hello.txt")
+	if err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Errorf("failed to close file: %v", err)
+	}
 
 	t.Run("file_exists", func(t *testing.T) {
 		if err := fsys.Remove("hello.txt"); err != nil {
@@ -801,16 +833,25 @@ func TestMemFSRemove(t *testing.T) {
 	})
 
 	t.Run("empty_dir_ok", func(t *testing.T) {
-		fsys.MkdirAll("emptydir", fs.ModePerm)
+		if err := fsys.MkdirAll("emptydir", fs.ModePerm); err != nil {
+			t.Errorf("failed to create directory: %v", err)
+		}
 		if err := fsys.Remove("emptydir"); err != nil {
 			t.Errorf("Remove(empty dir) = %v, want nil", err)
 		}
 	})
 
 	t.Run("non_empty_dir_fails", func(t *testing.T) {
-		fsys.MkdirAll("nonempty", fs.ModePerm)
-		g, _ := fsys.Create("nonempty/child.txt")
-		g.Close()
+		if err := fsys.MkdirAll("nonempty", fs.ModePerm); err != nil {
+			t.Errorf("failed to create directory: %v", err)
+		}
+		g, err := fsys.Create("nonempty/child.txt")
+		if err != nil {
+			t.Errorf("failed to create file in non-empty dir: %v", err)
+		}
+		if err := g.Close(); err != nil {
+			t.Errorf("failed to close file: %v", err)
+		}
 		if err := fsys.Remove("nonempty"); err == nil {
 			t.Error("Remove(non-empty dir) succeeded, want error")
 		}
@@ -826,8 +867,13 @@ func TestMemFSRemoveAll(t *testing.T) {
 
 	fsys.MkdirAll("a/b", fs.ModePerm)
 	for _, name := range []string{"a/b/x.txt", "a/y.txt", "z.txt"} {
-		g, _ := fsys.Create(name)
-		g.Close()
+		g, err := fsys.Create(name)
+		if err != nil {
+			t.Fatalf("failed to create file %q: %v", name, err)
+		}
+		if err := g.Close(); err != nil {
+			t.Errorf("failed to close file: %v", err)
+		}
 	}
 
 	t.Run("subtree", func(t *testing.T) {
@@ -850,15 +896,27 @@ func TestMemFSRemoveAll(t *testing.T) {
 
 	t.Run("root_clears_content", func(t *testing.T) {
 		fsys2 := makeMemFS(memFSPrefix)
-		defer fsys2.Close()
-		fsys2.MkdirAll("dir", fs.ModePerm)
+		defer func() {
+			if err := fsys2.Close(); err != nil {
+				t.Errorf("failed to close memFS: %v", err)
+			}
+		}()
+
+		if err := fsys2.MkdirAll("dir", fs.ModePerm); err != nil {
+			t.Fatalf("failed to create directory: %v", err)
+		}
 		h, _ := fsys2.Create("file.txt")
-		h.Close()
+		if err := h.Close(); err != nil {
+			t.Errorf("failed to close file: %v", err)
+		}
 
 		if err := fsys2.RemoveAll(cwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)
 		}
-		entries, _ := fsys2.ReadDir(cwdPath)
+		entries, err := fsys2.ReadDir(cwdPath)
+		if err != nil {
+			t.Errorf("failed to read directory: %v", err)
+		}
 		if len(entries) != 0 {
 			t.Errorf("after RemoveAll('.'), FS still has %d entries", len(entries))
 		}

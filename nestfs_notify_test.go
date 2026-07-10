@@ -24,7 +24,11 @@ import (
 func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 	inner := makeMemFS("memory:")
 	nfs := makeNestFS(t.Context(), inner)
-	defer nfs.Close()
+	defer func() {
+		if err := nfs.Close(); err != nil {
+			t.Errorf("failed to close nestFS: %v", err)
+		}
+	}()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -53,7 +57,11 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	nfs := makeNestFS(t.Context(), inner)
-	defer nfs.Close()
+	defer func() {
+		if err := nfs.Close(); err != nil {
+			t.Errorf("failed to close nestFS: %v", err)
+		}
+	}()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())

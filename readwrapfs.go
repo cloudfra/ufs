@@ -31,73 +31,73 @@ func (fsys *readWrapFS) getDeviceInfo() map[string]deviceInfo {
 	return getDeviceInfoOrDefault(fsys.fsys)
 }
 
-func (s *readWrapFS) URI() *url.URL {
+func (fsys *readWrapFS) URI() *url.URL {
 	return nil
 }
 
-func (s *readWrapFS) String() string {
-	return fmt.Sprintf("readWrapFS(%T)", s.fsys)
+func (fsys *readWrapFS) String() string {
+	return fmt.Sprintf("readWrapFS(%T)", fsys.fsys)
 }
 
-func (s *readWrapFS) Open(name string) (fs.File, error) {
+func (fsys *readWrapFS) Open(name string) (fs.File, error) {
 	if err := validPath("open", name); err != nil {
 		return nil, err
 	}
-	return s.fsys.Open(name)
+	return fsys.fsys.Open(name)
 }
 
-func (s *readWrapFS) Close() error {
-	if c, ok := s.fsys.(io.Closer); ok {
+func (fsys *readWrapFS) Close() error {
+	if c, ok := fsys.fsys.(io.Closer); ok {
 		return c.Close()
 	}
 	return nil
 }
 
-func (s *readWrapFS) ReadDir(name string) ([]fs.DirEntry, error) {
+func (fsys *readWrapFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err := validPath("readdir", name); err != nil {
 		return nil, err
 	}
-	if rdfs, ok := s.fsys.(fs.ReadDirFS); ok {
+	if rdfs, ok := fsys.fsys.(fs.ReadDirFS); ok {
 		return rdfs.ReadDir(name)
 	}
-	return fs.ReadDir(s.fsys, name)
+	return fs.ReadDir(fsys.fsys, name)
 }
 
-func (s *readWrapFS) ReadFile(name string) ([]byte, error) {
+func (fsys *readWrapFS) ReadFile(name string) ([]byte, error) {
 	if err := validPath("readfile", name); err != nil {
 		return nil, err
 	}
-	if rffs, ok := s.fsys.(fs.ReadFileFS); ok {
+	if rffs, ok := fsys.fsys.(fs.ReadFileFS); ok {
 		return rffs.ReadFile(name)
 	}
-	return fs.ReadFile(s.fsys, name)
+	return fs.ReadFile(fsys.fsys, name)
 }
 
-func (s *readWrapFS) Stat(name string) (fs.FileInfo, error) {
+func (fsys *readWrapFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
-	if sfs, ok := s.fsys.(fs.StatFS); ok {
+	if sfs, ok := fsys.fsys.(fs.StatFS); ok {
 		return sfs.Stat(name)
 	}
-	return fs.Stat(s.fsys, name)
+	return fs.Stat(fsys.fsys, name)
 }
 
-func (s *readWrapFS) Lstat(name string) (fs.FileInfo, error) {
+func (fsys *readWrapFS) Lstat(name string) (fs.FileInfo, error) {
 	if err := validPath("lstat", name); err != nil {
 		return nil, err
 	}
-	if rlfs, ok := s.fsys.(fs.ReadLinkFS); ok {
+	if rlfs, ok := fsys.fsys.(fs.ReadLinkFS); ok {
 		return rlfs.Lstat(name)
 	}
-	return s.Stat(name)
+	return fsys.Stat(name)
 }
 
-func (s *readWrapFS) ReadLink(name string) (string, error) {
+func (fsys *readWrapFS) ReadLink(name string) (string, error) {
 	if err := validPath("readlink", name); err != nil {
 		return "", err
 	}
-	if rlfs, ok := s.fsys.(fs.ReadLinkFS); ok {
+	if rlfs, ok := fsys.fsys.(fs.ReadLinkFS); ok {
 		return rlfs.ReadLink(name)
 	}
 	return "", pathError("readlink", name, fs.ErrInvalid)

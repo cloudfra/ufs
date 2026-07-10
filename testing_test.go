@@ -43,7 +43,7 @@ var (
 	angryFSTestCase = fsTestCase{
 		name: "angryFS",
 		createFS: func(tb testing.TB) FS {
-			return makeAngryFS(angryFSPrefix)
+			return mustAngryFS(tb)
 		},
 		wantString: angryFSPrefix,
 	}
@@ -247,13 +247,13 @@ func mkdirForTest(tb testing.TB, fsys FS, dirs ...string) {
 	}
 }
 
-func newFSFuncWithoutContext(fn func(name string) (FS, error)) func(ctx context.Context, name string) (FS, error) {
-	return func(ctx context.Context, name string) (FS, error) {
+func newFSFuncWithoutContext(fn func(name string) (FS, error)) func(context.Context, string) (FS, error) {
+	return func(_ context.Context, name string) (FS, error) {
 		return fn(name)
 	}
 }
 
-func mustFS(tb testing.TB, newFSFunc func(ctx context.Context, name string) (FS, error), name string) FS {
+func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
 	tb.Helper()
 
 	fsys, err := newFSFunc(tb.Context(), name)
@@ -345,12 +345,18 @@ func TestFSReadFile(t *testing.T) {
 	}
 }
 
-func verifyReadOnlyFS(t *testing.T, fsys fs.FS) {
-	t.Helper()
-}
-
 func verifyFS(t *testing.T, fsys FS) {
 	verifyReadOnlyFS(t, fsys)
+}
+
+func verifyReadOnlyFS(t *testing.T, fsys fs.FS) {
+	t.Helper()
+	if fsys == nil {
+		t.Fatal("file system is nil")
+	}
+	if _, ok := fsys.(ReadFS); !ok {
+		t.Errorf("file system does not implement ReadFS")
+	}
 }
 
 func TestReadOnlyFS(t *testing.T) {

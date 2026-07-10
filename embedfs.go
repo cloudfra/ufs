@@ -98,7 +98,7 @@ func (fsys *embedFS) Create(name string) (File, error) {
 	return nil, pathError("create", name, fmt.Errorf("embedFS is read-only, cannot create file %q: %w", name, fs.ErrPermission))
 }
 
-func (fsys *embedFS) MkdirAll(name string, perm fs.FileMode) error {
+func (fsys *embedFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}

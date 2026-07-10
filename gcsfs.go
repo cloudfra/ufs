@@ -378,7 +378,7 @@ func (fsys *gcsFS) Create(name string) (File, error) {
 	}, nil
 }
 
-func (fsys *gcsFS) MkdirAll(name string, perm fs.FileMode) error {
+func (fsys *gcsFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}

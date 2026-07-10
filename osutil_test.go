@@ -265,26 +265,26 @@ func testArchiveServer(t *testing.T) *httptest.Server {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/testassets.zip", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/testassets.zip", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/zip")
 		w.Write(zipData)
 	})
-	mux.HandleFunc("/404.zip", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/404.zip", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	})
-	mux.HandleFunc("/500.zip", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/500.zip", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 	})
 	mux.HandleFunc("/redirect-to-archive", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/testassets.zip", http.StatusFound)
 	})
-	mux.HandleFunc("/trailing-slash/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/trailing-slash/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("bad"))
 	})
 	mux.HandleFunc("/redirect-to-traversal", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/../../etc/passwd", http.StatusFound)
 	})
-	mux.HandleFunc("/../../etc/passwd", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/../../etc/passwd", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("root:x:0:0"))
 	})
 	ts := httptest.NewServer(mux)
@@ -537,16 +537,16 @@ func TestDownloadFilePathContainment(t *testing.T) {
 
 	body := []byte("test content")
 	mux := http.NewServeMux()
-	mux.HandleFunc("/safe.txt", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/safe.txt", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(body)
 	})
-	mux.HandleFunc("/..%2F..%2Fetc%2Fpasswd", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/..%2F..%2Fetc%2Fpasswd", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(body)
 	})
 	mux.HandleFunc("/redirect-dotdot", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/../../../tmp/pwned.txt", http.StatusFound)
 	})
-	mux.HandleFunc("/../../../tmp/pwned.txt", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/../../../tmp/pwned.txt", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(body)
 	})
 	ts := httptest.NewServer(mux)

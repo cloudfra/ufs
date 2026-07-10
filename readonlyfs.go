@@ -40,7 +40,7 @@ func (fsys *readOnlyFS) Create(name string) (File, error) {
 	return nil, pathError("create", name, fs.ErrPermission)
 }
 
-func (fsys *readOnlyFS) MkdirAll(name string, perm fs.FileMode) error {
+func (fsys *readOnlyFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}

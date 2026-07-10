@@ -84,7 +84,7 @@ func (fsys *angryFS) Create(name string) (File, error) {
 	return nil, pathError("create", name, errAngry)
 }
 
-func (fsys *angryFS) MkdirAll(name string, perm fs.FileMode) error {
+func (fsys *angryFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (fsys *angryFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	return nil, pathError("readdir", name, errAngry)
 }
 
-func (fsys *angryFS) Glob(pattern string) ([]string, error) {
+func (fsys *angryFS) Glob(_ string) ([]string, error) {
 	return nil, errAngry
 }
 

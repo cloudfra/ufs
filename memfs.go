@@ -285,7 +285,7 @@ func (fsys *memFS) openDir(name string) (*memDirFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	var mode fs.FileMode = fs.ModeDir | fs.ModePerm
+	mode := fs.ModeDir | fs.ModePerm
 	var modTime time.Time
 	fsys.mu.RLock()
 	if node, ok := fsys.nodes[name]; ok {

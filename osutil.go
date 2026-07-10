@@ -54,7 +54,7 @@ func newHTTPClient() *http.Client {
 // established. It rejects connections to private/loopback IPs, defeating DNS
 // rebinding attacks where a hostname resolves to a public IP during
 // pre-validation but to a private IP at actual connect time.
-func dialControl(network, address string, _ syscall.RawConn) error {
+func dialControl(_ string, address string, _ syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf("invalid dial address %q: %w", address, err)

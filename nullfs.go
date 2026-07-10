@@ -73,7 +73,7 @@ func (n *nullFile) Stat() (fs.FileInfo, error) {
 	}, nil
 }
 
-func (n *nullFile) Read(p []byte) (int, error) {
+func (n *nullFile) Read(_ []byte) (int, error) {
 	return 0, io.EOF
 }
 
@@ -85,11 +85,11 @@ func (n *nullFile) Write(p []byte) (n2 int, err error) {
 	return len(p), nil
 }
 
-func (n *nullFile) Seek(offset int64, whence int) (int64, error) {
+func (n *nullFile) Seek(_ int64, _ int) (int64, error) {
 	return 0, nil
 }
 
-func (n *nullFile) ReadAt(p []byte, off int64) (int, error) {
+func (n *nullFile) ReadAt(_ []byte, _ int64) (int, error) {
 	return 0, io.EOF
 }
 
@@ -109,7 +109,7 @@ func (vrd *nullReadDirFile) Stat() (fs.FileInfo, error) {
 	return nullDirStat, nil
 }
 
-func (vrd *nullReadDirFile) Read(p []byte) (int, error) {
+func (vrd *nullReadDirFile) Read(_ []byte) (int, error) {
 	return 0, &fs.PathError{Op: "read", Path: ".", Err: errors.New("is a directory")}
 }
 
@@ -117,7 +117,7 @@ func (vrd *nullReadDirFile) Close() error {
 	return nil
 }
 
-func (vrd *nullReadDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+func (vrd *nullReadDirFile) ReadDir(_ int) ([]fs.DirEntry, error) {
 	return []fs.DirEntry{}, nil
 }
 
@@ -163,7 +163,7 @@ func (fsys *nullFS) Create(name string) (File, error) {
 	return newNullFile(name), nil
 }
 
-func (fsys *nullFS) MkdirAll(name string, perm fs.FileMode) error {
+func (fsys *nullFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}
@@ -219,7 +219,7 @@ func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	return []fs.DirEntry{}, nil
 }
 
-func (fsys *nullFS) Glob(pattern string) ([]string, error) {
+func (fsys *nullFS) Glob(_ string) ([]string, error) {
 	return []string{}, nil
 }
 

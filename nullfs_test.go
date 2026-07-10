@@ -361,7 +361,11 @@ func TestNullFSRemoveAll(t *testing.T) {
 }
 
 func mustNullFS(tb testing.TB) *nullFS {
-	return makeNullFS(nullFSPrefix)
+	fsys := makeNullFS(nullFSPrefix)
+	if fsys == nil {
+		tb.Fatal("makeNullFS() returned nil")
+	}
+	return fsys
 }
 
 func TestNullFileStatBaseName(t *testing.T) {

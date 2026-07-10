@@ -112,7 +112,7 @@ func (fsys *archiveFS) Create(name string) (File, error) {
 	return nil, pathError("create", name, fmt.Errorf("archiveFS mounts are read-only, cannot create file, %q, %w", name, fs.ErrPermission))
 }
 
-func (fsys *archiveFS) MkdirAll(name string, perm fs.FileMode) error {
+func (fsys *archiveFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}

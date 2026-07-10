@@ -37,7 +37,7 @@ func TestNewTempMountFS(t *testing.T) {
 }
 
 func TestTempMountFSFileSystem(t *testing.T) {
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
+	testFileSystem(t, func(_ context.Context, name string) (FS, error) {
 		return newTempMountFS(name, func(string) error { return nil })
 	}, "temp://")
 }

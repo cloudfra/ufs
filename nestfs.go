@@ -773,10 +773,10 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 		return nil, err
 	}
 	if readOnly {
-		nf.writeFunc = func(p []byte) (int, error) {
+		nf.writeFunc = func(_ []byte) (int, error) {
 			return 0, fs.ErrInvalid
 		}
-		nf.writeStringFunc = func(s string) (int, error) {
+		nf.writeStringFunc = func(_ string) (int, error) {
 			return 0, fs.ErrInvalid
 		}
 		return nf, nil
@@ -784,7 +784,7 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 	if w, ok := f.(io.Writer); ok {
 		nf.writeFunc = w.Write
 	} else {
-		nf.writeFunc = func(p []byte) (int, error) {
+		nf.writeFunc = func(_ []byte) (int, error) {
 			return 0, fs.ErrInvalid
 		}
 	}
@@ -795,7 +795,7 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 			return nf.writeFunc([]byte(s))
 		}
 	} else {
-		nf.writeStringFunc = func(s string) (int, error) {
+		nf.writeStringFunc = func(_ string) (int, error) {
 			return 0, fs.ErrInvalid
 		}
 	}

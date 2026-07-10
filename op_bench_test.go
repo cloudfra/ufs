@@ -327,7 +327,7 @@ func BenchmarkForEachFilenameSmall(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		count := 0
-		if err := ForEachFilename(lfs, ".", func(name string) error {
+		if err := ForEachFilename(lfs, ".", func(_ string) error {
 			count++
 			return nil
 		}); err != nil {
@@ -342,7 +342,7 @@ func BenchmarkForEachFilenameMedium(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		count := 0
-		if err := ForEachFilename(lfs, ".", func(name string) error {
+		if err := ForEachFilename(lfs, ".", func(_ string) error {
 			count++
 			return nil
 		}); err != nil {
@@ -359,7 +359,7 @@ func BenchmarkWalkSmall(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		count := 0
-		if err := Walk(lfs, ".", WalkArgs{}, func(name string) error {
+		if err := Walk(lfs, ".", WalkArgs{}, func(_ string) error {
 			count++
 			return nil
 		}); err != nil {
@@ -374,7 +374,7 @@ func BenchmarkWalkMedium(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		count := 0
-		if err := Walk(lfs, ".", WalkArgs{}, func(name string) error {
+		if err := Walk(lfs, ".", WalkArgs{}, func(_ string) error {
 			count++
 			return nil
 		}); err != nil {
@@ -389,7 +389,7 @@ func BenchmarkWalkWithExcludes(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		count := 0
-		if err := Walk(lfs, ".", WalkArgs{ExcludeDirectory: []string{"d1", "d2"}}, func(name string) error {
+		if err := Walk(lfs, ".", WalkArgs{ExcludeDirectory: []string{"d1", "d2"}}, func(_ string) error {
 			count++
 			return nil
 		}); err != nil {

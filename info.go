@@ -115,7 +115,7 @@ func (rdf *readDirFile) Stat() (fs.FileInfo, error) {
 	return fs.Stat(rdf.fsys, rdf.name)
 }
 
-func (rdf *readDirFile) Read(p []byte) (int, error) {
+func (rdf *readDirFile) Read(_ []byte) (int, error) {
 	return 0, &fs.PathError{Op: "read", Path: rdf.name, Err: errors.New("is a directory")}
 }
 
@@ -123,7 +123,7 @@ func (rdf *readDirFile) Close() error {
 	return nil
 }
 
-func (rdf *readDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+func (rdf *readDirFile) ReadDir(_ int) ([]fs.DirEntry, error) {
 	return rdf.fsys.ReadDir(rdf.name)
 }
 

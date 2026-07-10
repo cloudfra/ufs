@@ -23,9 +23,7 @@ import (
 
 const embedFSPrefix = "embed://"
 
-var (
-	_ FS = (*embedFS)(nil)
-)
+var _ FS = (*embedFS)(nil)
 
 type embedFS struct {
 	name string

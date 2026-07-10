@@ -184,7 +184,6 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 
 func createOSTempDirectory() (string, func() error, error) {
 	tmpDir, err := os.MkdirTemp(os.TempDir(), "goapp")
-
 	if err != nil {
 		return "", func() error { return nil }, fmt.Errorf("cannot create temp directory, %w", err)
 	}

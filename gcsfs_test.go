@@ -28,9 +28,7 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-var (
-	fakeUpdatedTime = mustTime("2006-01-02T15:04:05Z")
-)
+var fakeUpdatedTime = mustTime("2006-01-02T15:04:05Z")
 
 func TestIsGCSFSUri(t *testing.T) {
 	testCases := []struct {

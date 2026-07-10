@@ -21,9 +21,12 @@ import (
 )
 
 var (
-	_ FileInfo    = (*fsInfo)(nil)
+	_ FileInfo = (*fsInfo)(nil)
+
 	_ fs.DirEntry = (*virtualDirEntry)(nil)
 	_ fs.FileInfo = (*virtualDirEntry)(nil)
+
+	_ fs.ReadDirFile = (*readDirFile)(nil)
 
 	unixEpochTime = time.Time{}
 )
@@ -102,10 +105,6 @@ func makeVirtualDirEntry(name string) *virtualDirEntry {
 		name: name,
 	}
 }
-
-var (
-	_ fs.ReadDirFile = (*readDirFile)(nil)
-)
 
 type readDirFile struct {
 	fsys ReadFS

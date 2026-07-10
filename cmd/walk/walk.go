@@ -22,11 +22,10 @@ import (
 	"github.com/cloudfra/ufs"
 )
 
-var (
-	dirFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
-)
+var dirFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
 
 func main() {
+	flag.Parse()
 	if err := run(*dirFlag); err != nil {
 		log.Printf("ERROR: %s", err)
 	}

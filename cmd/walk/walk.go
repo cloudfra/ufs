@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package main is the walk application for traversing through a virtual file system.
+package main
 
 import (
 	"context"
@@ -22,11 +23,10 @@ import (
 	"github.com/cloudfra/ufs"
 )
 
-var (
-	dirFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
-)
+var dirFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
 
 func main() {
+	flag.Parse()
 	if err := run(*dirFlag); err != nil {
 		log.Printf("ERROR: %s", err)
 	}

@@ -20,9 +20,7 @@ import (
 	"net/url"
 )
 
-var (
-	_ localFSInterface = (*tempMountFS)(nil)
-)
+var _ localFSInterface = (*tempMountFS)(nil)
 
 type tempMountFS struct {
 	lfs    FS

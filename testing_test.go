@@ -128,9 +128,9 @@ var (
 	}
 
 	testassetDirList = map[string][]string{
-		cwdPath:    []string{},
-		"files":    []string{},
-		"archives": []string{},
+		cwdPath:    {},
+		"files":    {},
+		"archives": {},
 	}
 
 	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}

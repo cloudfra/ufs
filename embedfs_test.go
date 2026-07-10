@@ -210,7 +210,8 @@ func TestEmbedFSTestFS(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	if err := fstest.TestFS(fsys,
+	if err := fstest.TestFS(
+		fsys,
 		"testing/testassets/files/index.html",
 		"testing/testassets/files/site.js",
 	); err != nil {

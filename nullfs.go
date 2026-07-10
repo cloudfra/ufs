@@ -103,8 +103,7 @@ func newNullFile(name string) *nullFile {
 	}
 }
 
-type nullReadDirFile struct {
-}
+type nullReadDirFile struct{}
 
 func (vrd *nullReadDirFile) Stat() (fs.FileInfo, error) {
 	return nullDirStat, nil

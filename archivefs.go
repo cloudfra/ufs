@@ -194,20 +194,20 @@ func makeArchiveFS(fsys fs.FS, name string) *archiveFS {
 func newTempMountRemoteArchiveFS(ctx context.Context, name string) (FS, error) {
 	tempDir, cleanup, err := createOSTempDirectory()
 	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("cannot create temp directory, %w", err)
+		cleanupErr := cleanup()
+		return nil, fmt.Errorf("cannot create temp directory, %w", joinErrors(err, cleanupErr))
 	}
 
 	filename, err := downloadFile(ctx, tempDir, name)
 	if err != nil {
-		cleanup()
-		return nil, err
+		cleanupErr := cleanup()
+		return nil, joinErrors(err, cleanupErr)
 	}
 
 	fsys, err := newArchiveFSFromLocalFS(ctx, filename)
 	if err != nil {
-		cleanup()
-		return nil, err
+		cleanupErr := cleanup()
+		return nil, fmt.Errorf("cannot create archive FS from local file, %w", joinErrors(err, cleanupErr))
 	}
 	return makeTempMountFS(fsys, name, tempDir, cleanup), nil
 }

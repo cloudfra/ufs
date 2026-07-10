@@ -42,7 +42,11 @@ func mustArchiveFS(t *testing.T) FS {
 	if err != nil {
 		t.Fatalf("newArchiveFSFromLocalFS(%q) = %v, want nil", testArchive, err)
 	}
-	t.Cleanup(func() { fsys.Close() })
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("failed to close archive FS: %v", err)
+		}
+	})
 	return fsys
 }
 
@@ -81,7 +85,11 @@ func TestArchiveFSOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(\"index.html\") = %v, want nil", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("failed to close file: %v", err)
+		}
+	}()
 
 	data, err := io.ReadAll(f)
 	if err != nil {

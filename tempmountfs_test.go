@@ -121,7 +121,11 @@ func TestTempMountFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("failed to close temp mount FS: %v", err)
+		}
+	}()
 
 	if err := fsys.MkdirAll("sub/dir", fs.ModePerm); err != nil {
 		t.Fatal(err)
@@ -130,12 +134,16 @@ func TestTempMountFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child.Close()
+	if err := child.Close(); err != nil {
+		t.Errorf("failed to close child file: %v", err)
+	}
 	keep, err := fsys.Create("keep.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	keep.Close()
+	if err := keep.Close(); err != nil {
+		t.Errorf("failed to close keep file: %v", err)
+	}
 
 	t.Run("subtree", func(t *testing.T) {
 		if err := fsys.RemoveAll("sub"); err != nil {

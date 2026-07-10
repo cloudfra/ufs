@@ -83,6 +83,7 @@ jobs:
           path: linux-build-bin.zip
   build-windows-root:
     runs-on: ["self-hosted", "windows", "root"]
+    timeout-minutes: 10
     steps:
       - name: Service Status
         run: |
@@ -125,6 +126,11 @@ jobs:
           cache: false
       - name: Test Assets
         run: make testassets archiveassets
+      - name: Prepare Build
+        run: |
+          make clean
+          make deps
+          make tools -j"$(nproc)"
       - name: Build
         run: make all -j8
       - name: Test
@@ -149,6 +155,7 @@ jobs:
     runs-on: ["self-hosted", "linux"]
     permissions:
       actions: write
+    timeout-minutes: 5
     steps:
       - name: Download Linux binaries
         # https://github.com/actions/download-artifact

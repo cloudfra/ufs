@@ -14,6 +14,7 @@
 
 include Makefile_testassets.mk
 
+GO_PACKAGE = github.com/cloudfra/ufs
 GO = go
 RM = rm
 ZIP = zip
@@ -82,9 +83,11 @@ clean:
 	rm -rf bin/
 	rm -rf testing/testassets/
 
+tools:
+
 deps:
 	$(GO) get -u ./...
 	$(GO) mod tidy
 	$(GO) mod download
 
-.PHONY: all build presubmit lint test check test-100 clean deps
+.PHONY: all build presubmit lint test check test-100 clean deps tools

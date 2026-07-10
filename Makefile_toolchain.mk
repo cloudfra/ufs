@@ -180,7 +180,7 @@ endif
 
 $(VIZB):
 	# https://github.com/goptics/vizb
-	GOBIN=$(TOOLCHAIN_BIN) $(GO_WITH_PROXY) install github.com/goptics/vizb@latest
+	GOBIN=$(TOOLCHAIN_BIN) $(GO_WITH_PROXY) install github.com/goptics/vizb@v0.14.1
 
 build/archives/terraform.zip:
 	mkdir -p $(ARCHIVES_DIR)/

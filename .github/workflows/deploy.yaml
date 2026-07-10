@@ -27,13 +27,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Set the job key. The key is displayed as the job name
-  # when a job name is not provided
   build-linux:
     name: "Build Linux"
     runs-on: ["self-hosted", "linux", "large"]
-    # container:
-    #   image: docker.io/cloudfra/ci-core:canary # Maybe
     permissions:
       contents: write
       packages: write
@@ -46,30 +42,183 @@ jobs:
       - name: Fix mod cache permissions
         run: |
           chmod -R u+w "$GITHUB_WORKSPACE/build/toolchain" 2>/dev/null || true
-
       - name: Checkout code
         # https://github.com/actions/checkout
         uses: actions/checkout@v7
-
       - name: Setup Go
         # https://github.com/actions/setup-go
         uses: actions/setup-go@v6
         with:
           go-version: stable
           cache: false
-
       - name: System Information
         run: make system-info
-
       # - name: Container Fix
       #   run: git config --system --add safe.directory /__w/
+      - name: Clean
+        run: make clean
+      - name: Download Dependencies
+        run: make deps
+      - name: Install Toolchain
+        run: make tools -j"$(nproc)"
 
-      - name: Build
-        run: make build -j$(nproc)
+      - name: Lint
+        run: make lint
       - name: Test
         run: make test
       - name: Test (Deflake)
         run: make test-deflake
+      - name: Coverage
+        run: make coverage.txt coverage.xml
+      - name: Push Code Coverage
+        # https://github.com/codecov/codecov-action
+        uses: codecov/codecov-action@v7
+        with:
+          name: codecov-umbrella
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.txt
+          flags: unittests
+          fail_ci_if_error: true
+          verbose: true
+      - name: Upload Coverage Report
+        # https://github.com/actions/upload-code-coverage
+        # https://docs.github.com/en/code-security/how-tos/maintain-quality-code/set-up-code-coverage#step-2-upload-the-coverage-report
+        # Requires: code-quality: write
+        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: coverage.xml
+          language: Go
+          label: code-coverage/gotest
+
+      - name: Benchmark
+        run: make benchmark.html
+      - name: Publish Benchmark (7 Days)
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-linux.html
+          path: |
+            benchmark.html
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Build Binaries
+        run: make all -j"$(nproc)"
+
+      - name: Set up Docker Buildx (Scan)
+        # https://github.com/docker/setup-buildx-action
+        # Runs unconditionally (including on pull requests), unlike the
+        # push-pipeline Buildx setup below - vulnerability scanning needs to
+        # catch issues before merge, not just before a release push.
+        uses: docker/setup-buildx-action@v4
+
+      - name: Scan Container Image
+        # Builds a local single-arch image with --load purely so trivy has
+        # something to scan; independent of the multi-arch push pipeline
+        # further down, which never loads images into the local daemon.
+        run: make scan-images
+
+      - name: Install Signing Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osslsigncode binutils openssl
+
+      - name: Release Package
+        if: ${{ github.event_name != 'pull_request' }}
+        run: make build/packages/release.tar.gz
+
+      - name: Create Release Binaries
+        run: make release-binaries
+
+      - name: Login to GitHub Container Registry
+        # https://github.com/docker/login-action#github-packages-docker-registry
+        uses: docker/login-action@v4
+        if: ${{ github.event_name != 'pull_request' }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        # https://github.com/docker/login-action#github-packages-docker-registry
+        uses: docker/login-action@v4
+        if: ${{ github.event_name != 'pull_request' }}
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Set up QEMU
+        # https://github.com/docker/setup-qemu-action
+        uses: docker/setup-qemu-action@v4
+        if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Set up Docker Buildx
+        # https://github.com/docker/setup-buildx-action
+        uses: docker/setup-buildx-action@v4
+        if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Publish Binaries (Pull Request)
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@v7
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          name: commit-binaries-${{ github.sha }}
+          path: |
+            build/bin/linux/amd64/walk
+            build/bin/windows/amd64/walk.exe
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Publish Binaries (7 Days)
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@v7
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' }}
+        with:
+          name: commit-binaries-${{ github.sha }}
+          path: |
+            build/bin/linux/amd64/walk
+            build/bin/windows/amd64/walk.exe
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Create Release
+        # https://github.com/softprops/action-gh-release
+        uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            LICENSE
+            build/packages/release.tar.gz
+            build/release/walk-darwin_arm64
+            build/release/walk-linux_amd64
+            build/release/walk-linux_arm64
+            build/release/walk-windows_amd64.exe
+            build/release/walk-windows_arm64.exe
+
+      - name: Push Images (Commit)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' }}
+        run: |
+          make REGISTRY=docker.io/cloudfra linux-images windows-images
+          make build/packages/release.tar.gz
+
+      - name: Push Images (Release)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          make DOCKER_PUSH=--push REGISTRY=docker.io/cloudfra images
+          make DOCKER_PUSH=--push REGISTRY=ghcr.io/cloudfra images
+          make build/packages/release.tar.gz
+
+      - name: Push Images (Latest)
+        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-')
+        run: |
+          make DOCKER_PUSH=--push REGISTRY=docker.io/cloudfra images
+          make DOCKER_PUSH=--push REGISTRY=ghcr.io/cloudfra images
+
       - name: Zip binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: cd bin/go && zip -qr9 ../../linux-build-bin.zip . -x 'windows_*' -x 'windows_*/*'
@@ -81,8 +230,11 @@ jobs:
           name: linux-build-bin
           retention-days: 1
           path: linux-build-bin.zip
+
   build-windows-root:
     runs-on: ["self-hosted", "windows", "root"]
+    permissions:
+      contents: read
     timeout-minutes: 10
     steps:
       - name: Service Status
@@ -106,10 +258,9 @@ jobs:
         with:
           go-version: stable
           cache: false
-      - name: Test Assets
-        run: make testassets archiveassets
       - name: Test
         run: make test
+
   build-windows:
     name: "Build Windows"
     runs-on: ["self-hosted", "windows", "large"]
@@ -124,19 +275,38 @@ jobs:
         with:
           go-version: stable
           cache: false
-      - name: Test Assets
-        run: make testassets archiveassets
-      - name: Prepare Build
-        run: |
-          make clean
-          make deps
-          make tools -j"$(nproc)"
-      - name: Build
-        run: make all -j8
+
+      - name: Clean
+        run: make clean
+      - name: Download Dependencies
+        run: make deps
+      - name: Install Toolchain
+        run: make tools -j"$(nproc)"
+
+      - name: Lint
+        run: make lint
       - name: Test
         run: make test
-      - name: Test (Race Test)
+      - name: Test (Deflake)
         run: make GO_TEST_COUNT=5 test-deflake
+      - name: Coverage
+        run: make coverage.txt coverage.xml
+
+      - name: Benchmark
+        run: make benchmark.html
+      - name: Publish Benchmark (7 Days)
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-windows.html
+          path: |
+            benchmark.html
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Build
+        run: make windows-binaries -j"$(nproc)"
+
       - name: Zip binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -149,13 +319,14 @@ jobs:
           name: windows-build-bin
           retention-days: 1
           path: windows-build-bin.zip
+
   package:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build-linux, build-windows]
-    runs-on: ["self-hosted", "linux"]
+    runs-on: ["self-hosted", "linux", "large"]
     permissions:
       actions: write
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Download Linux binaries
         # https://github.com/actions/download-artifact

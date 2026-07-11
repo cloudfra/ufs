@@ -187,16 +187,10 @@ jobs:
       - name: Push Images (Commit)
         if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' }}
         run: |
-          make REGISTRY=docker.io/cloudfra linux-images windows-images
+          make DOCKER_PUSH="" REGISTRY=docker.io/cloudfra linux-images windows-images
 
       - name: Push Images (Release)
         if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          make DOCKER_PUSH=--push REGISTRY=docker.io/cloudfra images
-          make DOCKER_PUSH=--push REGISTRY=ghcr.io/cloudfra images
-
-      - name: Push Images (Latest)
-        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-')
         run: |
           make DOCKER_PUSH=--push REGISTRY=docker.io/cloudfra images
           make DOCKER_PUSH=--push REGISTRY=ghcr.io/cloudfra images

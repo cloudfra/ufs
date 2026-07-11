@@ -41,6 +41,7 @@ PLAN9_PLATFORMS = # plan9/386 plan9/amd64 plan9/arm/v5 plan9/arm/v6 plan9/arm/v7
 SOLARIS_PLATFORMS = solaris/amd64
 NICHE_PLATFORMS = js/wasm illumos/amd64 aix/ppc64 $(ANDROID_PLATFORMS) $(DARWIN_PLATFORMS) $(IOS_PLATFORMS) $(DRAGONFLY_PLATFORMS) $(FREEBSD_PLATFORMS) $(NETBSD_PLATFORMS) $(OPENBSD_PLATFORMS) $(PLAN9_PLATFORMS) $(SOLARIS_PLATFORMS)
 ALL_PLATFORMS = $(LINUX_PLATFORMS) $(WINDOWS_PLATFORMS) $(NICHE_PLATFORMS)
+RELEASE_PLATFORMS = linux/amd64 linux/amd64 windows/amd64 windows/arm64 darwin/arm64
 
 MAIN_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(MAIN_PLATFORMS),build/bin/$(platform)/$(app)$(if $(findstring windows,$(platform)),.exe,)))
 WINDOWS_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(WINDOWS_PLATFORMS),build/bin/$(platform)/$(app)$(if $(findstring windows,$(platform)),.exe,)))
@@ -48,7 +49,7 @@ ALL_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(ALL_PLATFORMS),bui
 CODESIGN_CERT ?= build/certs/codesign.crt
 CODESIGN_KEY ?= build/certs/codesign.key
 
-RELEASE_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(ALL_PLATFORMS),build/release/$(app)-$(subst /,_,$(platform))$(if $(findstring windows,$(platform)),.exe,)))
+RELEASE_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(RELEASE_PLATFORMS),build/release/$(app)-$(subst /,_,$(platform))$(if $(findstring windows,$(platform)),.exe,)))
 
 WINDOWS_VERSIONS = 1709 1803 1809 1903 1909 2004 20H2 ltsc2022 ltsc2025
 BUILDX_BUILDER = buildx-builder
@@ -77,7 +78,12 @@ build/packages/%-binaries.zip: $(ALL_BINARIES)
 
 release-binaries: $(RELEASE_BINARIES)
 
-build/packages/release.tar.gz: $(ALL_BINARIES)
+build/packages/release.tar.gz: $(RELEASE_BINARIES)
+	mkdir -p $(dir $@)
+	cd build/release/; tar -cvf - * | gzip -9 - > $(REPOSITORY_ROOT)/$@
+	touch $(REPOSITORY_ROOT)/$@
+
+build/packages/all-binaries.tar.gz: $(ALL_BINARIES)
 	mkdir -p $(dir $@)
 	cd build/bin/; tar -cvf - * | gzip -9 - > $(REPOSITORY_ROOT)/$@
 	touch $(REPOSITORY_ROOT)/$@
@@ -181,7 +187,7 @@ clean:
 	rm -rf build/
 	rm -rf output/
 
-presubmit: no-sudo tools lint all test-deflake
+presubmit: no-sudo tools lint all test-deflake release-binaries
 
 ensure-builder:
 	-$(DOCKER) buildx create --name $(BUILDX_BUILDER)

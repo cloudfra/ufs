@@ -221,7 +221,7 @@ jobs:
 
       - name: Zip binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: cd bin/go && zip -qr9 ../../linux-build-bin.zip . -x 'windows_*' -x 'windows_*/*'
+        run: cd build/bin && zip -qr9 ../../linux-build-bin.zip . -x 'windows_*' -x 'windows_*/*'
       - name: Upload binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         # https://github.com/actions/upload-artifact
@@ -310,7 +310,7 @@ jobs:
       - name: Zip binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          cd bin/go
+          cd build/bin
           zip -qr9 ../../windows-build-bin.zip windows_*
       - name: Upload binaries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -339,11 +339,11 @@ jobs:
           name: windows-build-bin
       - name: Extract binaries
         run: |
-          mkdir -p bin/go
-          unzip -oq linux-build-bin.zip -d bin/go
-          unzip -oq windows-build-bin.zip -d bin/go
+          mkdir -p build/bin
+          unzip -oq linux-build-bin.zip -d build/bin
+          unzip -oq windows-build-bin.zip -d build/bin
       - name: Zip binaries
-        run: cd bin/go && zip -qr9 ../../ufs-binaries.zip .
+        run: cd build/bin && zip -qr9 ../../ufs-binaries.zip .
       - name: Upload zip
         uses: actions/upload-artifact@v7
         with:

@@ -101,6 +101,37 @@ func TestLinuxDeviceMapFromReader_NoSameDeviceRedundancy(t *testing.T) {
 	}
 }
 
+func TestLinuxDeviceMapFromReader_InterleavingMounts(t *testing.T) {
+	t.Parallel()
+	// / is HDD, /fast is SSD, /fast/slow goes back to the same HDD as /.
+	// /faster is a distinct mount that shares a prefix with /fast but is NOT under it.
+	const mounts = `/dev/hda1 / ext4 rw 0 0
+/dev/nvme0n1p1 /fast ext4 rw 0 0
+/dev/hda1 /fast/slow ext4 rw 0 0
+/dev/sda1 /faster ext4 rw 0 0
+`
+	got := linuxDeviceMapFromReader("/", strings.NewReader(mounts))
+
+	if di := got["."]; di.name != "/dev/hda1" {
+		t.Errorf("root name = %q, want /dev/hda1", di.name)
+	}
+	if di, ok := got["fast"]; !ok {
+		t.Error("missing fast entry")
+	} else if di.name != "/dev/nvme0n1p1" {
+		t.Errorf("fast name = %q, want /dev/nvme0n1p1", di.name)
+	}
+	if di, ok := got["fast/slow"]; !ok {
+		t.Error("missing fast/slow entry — interleaving back to root device should still appear")
+	} else if di.name != "/dev/hda1" {
+		t.Errorf("fast/slow name = %q, want /dev/hda1", di.name)
+	}
+	if di, ok := got["faster"]; !ok {
+		t.Error("missing faster entry — path-similar prefix must not be confused with parent")
+	} else if di.name != "/dev/sda1" {
+		t.Errorf("faster name = %q, want /dev/sda1", di.name)
+	}
+}
+
 func TestLinuxBaseDevice(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

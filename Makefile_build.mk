@@ -289,9 +289,6 @@ system-info:
 	@df -h
 
 sync-upstream:
-	git fetch origin
-	git add -A
-	git commit -m"Save pending changes."
-	git rebase -i origin/main 
+	-git fetch origin; git add -A; git commit -m"Save pending changes."; git rebase -i origin/main 
 
 .PHONY: all tools assets protos windows-binaries run lint lint-go lint-terraform lint-docker lint-yaml lint-shell lint-vuln bench test tf-test test-deflake ensure-builder docker-images scan-images images linux-images windows-images upgrade-deps deps clean presubmit system-info release-binaries no-sudo sync-upstream

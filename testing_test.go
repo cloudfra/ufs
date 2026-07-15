@@ -305,7 +305,7 @@ func TestFSMkdirAll(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer fsys.Close()
+			defer validateClose(t, fsys)()
 			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
 				t.Errorf("MkdirAll() = %v, want nil", err)
 			}
@@ -320,7 +320,7 @@ func TestFSReadFile(t *testing.T) {
 			wantData := randomString(100)
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer fsys.Close()
+			defer validateClose(t, fsys)()
 			f, err := fsys.Create("readfile_test.txt")
 			if err != nil {
 				t.Fatalf("Create failed: %v", err)
@@ -368,18 +368,12 @@ func TestReadOnlyFS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
+			defer validateClose(t, fsys)()
 			if fsys == nil {
 				t.Fatalf("file system is nil")
 			}
-			defer func() {
-				if err := fsys.Close(); err != nil {
-					t.Errorf("second file system close() failed, %s", err)
-				}
-			}()
 			verifyReadOnlyFS(t, fsys)
-			if err := fsys.Close(); err != nil {
-				t.Errorf("file system failed to close without errors, %s", err)
-			}
+			validateClose(t, fsys)()
 		})
 	}
 }
@@ -391,18 +385,12 @@ func TestFS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
+			defer validateClose(t, fsys)()
 			if fsys == nil {
 				t.Fatalf("file system is nil")
 			}
-			defer func() {
-				if err := fsys.Close(); err != nil {
-					t.Errorf("second file system close() failed, %s", err)
-				}
-			}()
 			verifyFS(t, fsys)
-			if err := fsys.Close(); err != nil {
-				t.Errorf("file system failed to close without errors, %s", err)
-			}
+			validateClose(t, fsys)()
 		})
 	}
 }
@@ -457,6 +445,7 @@ func assertDir(t *testing.T, fsys FS, name string, want []string) {
 	if f, err := fsys.Open(name); err != nil {
 		t.Errorf("cannot open %q, %s", name, err)
 	} else {
+		defer validateClose(t, f)()
 		rdf, ok := f.(fs.ReadDirFile)
 		if ok {
 			if gotEntries, err := rdf.ReadDir(-1); err != nil {
@@ -476,5 +465,27 @@ func assertDir(t *testing.T, fsys FS, name string, want []string) {
 func skipTestOnWindows(tb testing.TB) {
 	if runtime.GOOS == "windows" {
 		tb.Skip("test is not compatible with windows, skipping")
+	}
+}
+
+func validateClose(tb testing.TB, closer io.Closer) func() {
+	return func() {
+		tb.Helper()
+		if closer != nil {
+			if err := closer.Close(); err != nil {
+				tb.Errorf("failed to close %s, %s", closer, err)
+			}
+		}
+	}
+}
+
+func wantCloseError(tb testing.TB, closer io.Closer) func() {
+	return func() {
+		tb.Helper()
+		if closer != nil {
+			if err := closer.Close(); err == nil {
+				tb.Errorf("want %s.Close() error, got nil", closer)
+			}
+		}
 	}
 }

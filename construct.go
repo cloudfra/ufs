@@ -140,10 +140,10 @@ func New(ctx context.Context, name string) (FS, error) {
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])
 				if err != nil {
-					return nil, err
+					return nil, joinErrors(err, nFS.Close())
 				}
 				if err := nFS.addMount(mountPath, mountFS); err != nil {
-					return nil, err
+					return nil, joinErrors(err, mountFS.Close(), nFS.Close())
 				}
 			}
 			return nFS, nil
@@ -216,11 +216,11 @@ func (b *FSBuilder) Build(ctx context.Context) (FS, error) {
 		} else {
 			mountFS, err = openNestFS(ctx, m.uri)
 			if err != nil {
-				return nil, err
+				return nil, joinErrors(err, nFS.Close())
 			}
 		}
 		if err := nFS.addMount(m.path, mountFS); err != nil {
-			return nil, err
+			return nil, joinErrors(err, mountFS.Close(), nFS.Close())
 		}
 	}
 	return nFS, nil

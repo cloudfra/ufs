@@ -242,7 +242,7 @@ func TestFromFSInvalidPaths(t *testing.T) {
 func TestFromFSEmbedFS(t *testing.T) {
 	t.Parallel()
 	fsys := FromFS(embedTestFiles)
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	data, err := fsys.ReadFile("testing/testassets/files/index.html")
 	if err != nil {

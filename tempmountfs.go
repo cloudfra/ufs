@@ -47,10 +47,9 @@ func (fsys *tempMountFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *tempMountFS) Close() error {
-	if err := fsys.lfs.Close(); err != nil {
-		return err
-	}
-	return fsys.closer()
+	closeErr := fsys.lfs.Close()
+	cleanupErr := fsys.closer()
+	return joinErrors(closeErr, cleanupErr)
 }
 
 func (fsys *tempMountFS) Create(name string) (File, error) {

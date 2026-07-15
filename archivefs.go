@@ -17,6 +17,7 @@ package ufs
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"strings"
@@ -57,8 +58,9 @@ func isMountableArchivePath(name string) bool {
 }
 
 type archiveFS struct {
-	fsys fs.FS
-	name string
+	fsys   fs.FS
+	name   string
+	closer io.Closer
 }
 
 func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
@@ -86,6 +88,11 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 
 func (fsys *archiveFS) Close() error {
 	fsys.fsys = nil
+	if fsys.closer != nil {
+		err := fsys.closer.Close()
+		fsys.closer = nil
+		return err
+	}
 	return nil
 }
 
@@ -165,7 +172,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}
-	return makeArchiveFS(fsys, name), nil
+	return makeArchiveFS(fsys, name, nil), nil
 }
 
 func newArchiveFSFromFile(ctx context.Context, file fs.File) (*archiveFS, error) {
@@ -181,13 +188,15 @@ func newArchiveFSFromFile(ctx context.Context, file fs.File) (*archiveFS, error)
 	if err != nil {
 		return nil, err
 	}
-	return makeArchiveFS(afs, stat.Name()), nil
+	result := makeArchiveFS(afs, stat.Name(), file)
+	return result, nil
 }
 
-func makeArchiveFS(fsys fs.FS, name string) *archiveFS {
+func makeArchiveFS(fsys fs.FS, name string, closer io.Closer) *archiveFS {
 	return &archiveFS{
-		fsys: fsys,
-		name: name,
+		fsys:   fsys,
+		name:   name,
+		closer: closer,
 	}
 }
 

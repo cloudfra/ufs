@@ -138,6 +138,7 @@ func TestFSConventions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
+	t.Cleanup(validateClose(t, srcFS))
 	for _, fsysTC := range getReadWriteTestCaseList() {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
@@ -292,8 +293,9 @@ func TestFSReadDir(t *testing.T) {
 				t.Run(fmt.Sprintf("Open/%s", input), func(t *testing.T) {
 					f, err := fsys.Open(input)
 					if err != nil {
-						t.Errorf("cannot ReadDir(%q), got error: %s", input, err)
+						t.Fatalf("cannot ReadDir(%q), got error: %s", input, err)
 					}
+					defer validateClose(t, f)()
 					if rdf, ok := f.(fs.ReadDirFile); ok {
 						entries, err := rdf.ReadDir(-1)
 						if err != nil {

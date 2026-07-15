@@ -46,6 +46,7 @@ func TestNewNestFSInvalid(t *testing.T) {
 
 func TestMountMap(t *testing.T) {
 	mm := makeMountMap("test")
+	defer wantCloseError(t, mm)()
 	mfs := makeMemFS("memory:///")
 	afs := makeAngryFS(angryFSPrefix)
 	nfs := mustNullFS(t)
@@ -214,6 +215,7 @@ func TestNestFSFull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer validateClose(t, fsys)()
 	assertContains(t, fsys, "testing/testassets/files/index.html", "testing/testassets/files/index.html")
 	assertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/site.js", "testing/testassets/files/site.js")
 	assertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/single-testassets.zip.d/index.html", "testing/testassets/files/index.html")
@@ -280,6 +282,7 @@ func TestNestedFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer wantCloseError(t, fsys)()
 	testCases := []struct {
 		dir         string
 		wantEntries []string

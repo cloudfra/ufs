@@ -32,6 +32,7 @@ func TestRsync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
+	t.Cleanup(validateClose(t, srcFS))
 	for _, fsysTC := range getAllRegularTestCaseList() {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
@@ -68,8 +69,10 @@ func TestRsyncAngry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
+	defer validateClose(t, srcFS)()
 
 	destFS := makeAngryFS(angryFSPrefix)
+	defer wantCloseError(t, destFS)()
 
 	if err := Rsync(srcFS, destFS, cwdPath); err == nil {
 		t.Error("rsync expected to fail got nil error")
@@ -81,8 +84,10 @@ func TestRsyncNull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
+	defer validateClose(t, srcFS)()
 
 	destFS := mustNullFS(t)
+	defer validateClose(t, destFS)()
 
 	if err := Rsync(srcFS, destFS, cwdPath); err != nil {
 		t.Errorf("rsync expected to succeed, failed with error: %s", err)

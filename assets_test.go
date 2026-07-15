@@ -78,11 +78,7 @@ func TestAssets(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create FS: %v", err)
 			}
-			defer func() {
-				if err := fsys.Close(); err != nil {
-					t.Errorf("failed to close FS: %v", err)
-				}
-			}()
+			defer validateClose(t, fsys)()
 
 			for filePath, wantData := range wantFiles {
 				t.Run(filePath, func(t *testing.T) {
@@ -164,11 +160,7 @@ func createZipFromDir(tb testing.TB, dir string) string {
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				tb.Errorf("createZipFromDir: failed to close file: %v", err)
-			}
-		}()
+		defer validateClose(tb, f)()
 		_, err = io.Copy(w, f)
 		return err
 	})

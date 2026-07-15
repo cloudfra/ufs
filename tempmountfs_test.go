@@ -92,7 +92,7 @@ func TestTempMountFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	f, err := fsys.Create("remove_me.txt")
 	if err != nil {
@@ -121,11 +121,7 @@ func TestTempMountFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			t.Errorf("failed to close temp mount FS: %v", err)
-		}
-	}()
+	defer validateClose(t, fsys)()
 
 	if err := fsys.MkdirAll("sub/dir", fs.ModePerm); err != nil {
 		t.Fatal(err)
@@ -174,7 +170,7 @@ func TestTempMountFSReadLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	f, err := fsys.Create("target.txt")
 	if err != nil {
@@ -209,7 +205,7 @@ func TestTempMountFSLstat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	f, err := fsys.Create("lstat_file.txt")
 	if err != nil {

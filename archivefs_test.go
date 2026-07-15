@@ -87,11 +87,7 @@ func TestArchiveFSOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(\"index.html\") = %v, want nil", err)
 	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			t.Errorf("failed to close file: %v", err)
-		}
-	}()
+	defer validateClose(t, f)()
 
 	data, err := io.ReadAll(f)
 	if err != nil {

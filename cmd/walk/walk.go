@@ -38,6 +38,11 @@ func run(dir string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			log.Printf("cannot close mounted file system %q, %s", fsys, err)
+		}
+	}()
 	return ufs.ForEachFilename(fsys, dir, func(name string) error {
 		log.Printf("- %s", name)
 		return nil

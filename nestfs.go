@@ -184,15 +184,16 @@ func (m *mountMap) remove(name string) {
 func (m *mountMap) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var errs []error
 	if m.m != nil {
 		for mountPath, nfs := range m.m {
 			if err := nfs.Close(); err != nil {
-				return fmt.Errorf("cannot close mount %q, %w", mountPath, err)
+				errs = append(errs, fmt.Errorf("cannot close mount %q, %w", mountPath, err))
 			}
 		}
 		m.m = nil
 	}
-	return nil
+	return joinErrors(errs...)
 }
 
 func makeMountMap(baseName string) *mountMap {
@@ -347,7 +348,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		}
 		newFS, err = newArchiveFSFromFile(ctx, f)
 		if err != nil {
-			return nil, pathError("mount", name, err)
+			return nil, joinErrors(pathError("mount", name, err), f.Close())
 		}
 	}
 
@@ -415,17 +416,16 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *nestFS) Close() error {
-	if err := fsys.mounts.Close(); err != nil {
-		return err
-	}
+	mountErr := fsys.mounts.Close()
 
+	var baseErr error
 	if fsys.fsys != nil {
 		if err := fsys.fsys.Close(); err != nil {
-			return fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err)
+			baseErr = fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err)
 		}
 		fsys.fsys = nil
 	}
-	return nil
+	return joinErrors(mountErr, baseErr)
 }
 
 func (fsys *nestFS) Create(name string) (File, error) {

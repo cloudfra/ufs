@@ -37,20 +37,23 @@ func TestNewBaseFSInvalid(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	tests := []struct {
-		uri      string
-		wantType string
-		wantErr  bool
-		nested   bool
+		uri               string
+		wantType          string
+		wantErr           bool
+		nested            bool
+		ignoreCloseErrors bool
 	}{
 		{
-			uri:      "angry://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
-			wantErr:  false,
+			uri:               "angry://",
+			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantErr:           false,
+			ignoreCloseErrors: true,
 		},
 		{
-			uri:      "angry://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
-			wantErr:  false,
+			uri:               "angry://",
+			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantErr:           false,
+			ignoreCloseErrors: true,
 		},
 		{
 			uri:      "file://",
@@ -95,6 +98,16 @@ func TestNew(t *testing.T) {
 				t.Skip("test case requires nestFS support")
 			}
 			got, err := newBaseFS(t.Context(), tt.uri)
+			if got != nil {
+				defer func() {
+					if tt.ignoreCloseErrors {
+						wantCloseError(t, got)()
+					} else {
+						validateClose(t, got)()
+					}
+				}()
+			}
+
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("getBaseFS(%q) = %q, want error", tt.uri, got)
@@ -112,6 +125,15 @@ func TestNew(t *testing.T) {
 		})
 		t.Run(fmt.Sprintf("New(%q)", tt.uri), func(t *testing.T) {
 			got, err := New(t.Context(), tt.uri)
+			if got != nil {
+				defer func() {
+					if tt.ignoreCloseErrors {
+						wantCloseError(t, got)()
+					} else {
+						validateClose(t, got)()
+					}
+				}()
+			}
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("getBaseFS(%q) = %q, want error", tt.uri, got)
@@ -137,9 +159,10 @@ func TestNew(t *testing.T) {
 
 func TestCreateURI(t *testing.T) {
 	tests := []struct {
-		name   string
-		mounts map[string]string
-		want   string
+		name              string
+		mounts            map[string]string
+		want              string
+		ignoreCloseErrors bool
 	}{
 		{
 			name:   "memory://",
@@ -147,9 +170,10 @@ func TestCreateURI(t *testing.T) {
 			want:   "memory:",
 		},
 		{
-			name:   "angry://",
-			mounts: map[string]string{},
-			want:   "angry:",
+			name:              "angry://",
+			mounts:            map[string]string{},
+			want:              "angry:",
+			ignoreCloseErrors: true,
 		},
 		{
 			name:   "null://",
@@ -168,7 +192,16 @@ func TestCreateURI(t *testing.T) {
 				"mounted/angry":  "angry://",
 				"mounted/memory": "memory://",
 			},
-			want: "file:///?mounted%2Fangry=angry%3A&mounted%2Fmemory=memory%3A&mounted%2Fnull=null%3A",
+			want:              "file:///?mounted%2Fangry=angry%3A&mounted%2Fmemory=memory%3A&mounted%2Fnull=null%3A",
+			ignoreCloseErrors: true,
+		},
+		{
+			name: "file:///",
+			mounts: map[string]string{
+				"mounted/null":   "null://",
+				"mounted/memory": "memory://",
+			},
+			want: "file:///?mounted%2Fmemory=memory%3A&mounted%2Fnull=null%3A",
 		},
 	}
 	for _, tc := range tests {
@@ -184,6 +217,11 @@ func TestCreateURI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q) got error: %s", got, err)
 			}
+			defer func() {
+				if tc.ignoreCloseErrors {
+					wantCloseError(t, fsys)()
+				}
+			}()
 
 			gotTypeName := reflect.TypeOf(fsys).Name()
 			wantType := reflect.TypeFor[*nestFS]().Name()

@@ -219,12 +219,14 @@ func TestLocalFSRemoveAll(t *testing.T) {
 func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
 	fsys, err := os.OpenRoot(cwdPath)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer validateClose(t, fsys)()
 	f, err := fsys.Open(cwdPath)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer validateClose(t, f)()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
 		t.Fatal(err)

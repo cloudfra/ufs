@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -751,8 +752,15 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 		t.Fatalf("read through archive mount: %v", err)
 	}
 
-	// Remove the archive file.
+	// Remove the archive file. On Windows this mount now holds the archive
+	// file open for its entire lifetime (see newArchiveFSFromLocalFS), so the
+	// OS refuses to delete a file that's actively mounted; the caller must
+	// close the mount first. Unix allows unlinking a file with open handles,
+	// so the rest of this test (stale-mount pruning) only applies there.
 	if err := os.Remove(destZip); err != nil {
+		if runtime.GOOS == "windows" {
+			return
+		}
 		t.Fatal(err)
 	}
 

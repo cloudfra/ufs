@@ -12,7 +12,7 @@ require (
 	github.com/google/martian/v3 v3.3.3
 	github.com/mholt/archives v0.1.5
 	github.com/xyproto/randomstring v1.2.0
-	google.golang.org/api v0.288.0
+	google.golang.org/api v0.289.0
 	google.golang.org/grpc v1.82.0
 )
 

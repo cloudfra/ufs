@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/mholt/archives"
@@ -168,11 +169,34 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
-	fsys, err := archives.FileSystem(ctx, name, nil)
+	info, err := os.Stat(name)
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}
-	return makeArchiveFS(fsys, name, nil), nil
+	if info.IsDir() {
+		fsys, err := archives.FileSystem(ctx, name, nil)
+		if err != nil {
+			return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
+		}
+		return makeArchiveFS(fsys, name, nil), nil
+	}
+
+	// Open the file ourselves and hand archives.FileSystem a stream rather than
+	// a bare path. archives.ArchiveFS.Open re-opens the file with os.Open on every
+	// call when given only a Path, and leaks that handle whenever the opened name
+	// is a directory within the archive (its dirFile.Close is a no-op that never
+	// references the opened file). Passing a Stream makes ArchiveFS reuse this
+	// single file instead, so the only handle to close is the one we own here.
+	file, err := os.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
+	}
+	fsys, err := archives.FileSystem(ctx, name, file)
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
+	}
+	return makeArchiveFS(fsys, name, file), nil
 }
 
 func newArchiveFSFromFile(ctx context.Context, file fs.File) (*archiveFS, error) {

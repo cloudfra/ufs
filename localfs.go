@@ -37,6 +37,7 @@ var (
 type localFSInterface interface {
 	FS
 	fs.GlobFS
+	realAbsPathGet
 }
 
 type localFS struct {

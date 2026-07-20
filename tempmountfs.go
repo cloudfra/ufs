@@ -42,6 +42,10 @@ func (fsys *tempMountFS) String() string {
 	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", fsys.URI(), coerceUnix(fsys.name))
 }
 
+func (fsys *tempMountFS) getAbsPath(name string) (string, error) {
+	return AbsPath(fsys.lfs, name)
+}
+
 func (fsys *tempMountFS) Open(name string) (fs.File, error) {
 	return fsys.lfs.Open(name)
 }

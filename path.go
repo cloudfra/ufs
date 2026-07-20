@@ -18,7 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -97,4 +99,26 @@ func joinErrors(errs ...error) error {
 	default:
 		return errors.Join(nonNil...)
 	}
+}
+
+type realAbsPathGet interface {
+	getAbsPath(name string) (string, error)
+}
+
+// AbsPath returns the absolute path of the file that's accessible outside of the virtual file system.
+//
+// If the virtual file system name resolves to a path that is not accessible outside of the virtual file system, an error is returned.
+func AbsPath(fsys any, name string) (string, error) {
+	if rfs, ok := fsys.(realAbsPathGet); ok {
+		return rfs.getAbsPath(name)
+	}
+	if rfs, ok := fsys.(*os.Root); ok {
+		return filepath.Join(rfs.Name(), name), nil
+	}
+
+	return "", realAbsPathNotSupported(fsys, name)
+}
+
+func realAbsPathNotSupported(fsys any, name string) error {
+	return pathError("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
 }

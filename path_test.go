@@ -17,6 +17,7 @@ package ufs
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -442,6 +443,59 @@ func TestJoinErrors(t *testing.T) {
 			}
 			if tc.wantIsB && !errors.Is(got, errB) {
 				t.Errorf("joinErrors(): errors.Is(result, errB) = false, want true")
+			}
+		})
+	}
+}
+
+func TestAbsPath(t *testing.T) {
+	t.Parallel()
+
+	supportedFS := map[string]bool{
+		"localFS":        true,
+		"tempMountFS":    true,
+		"nestFS.localFS": true,
+	}
+
+	for _, tc := range getAllExceptAngryTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer validateClose(t, fsys)()
+
+			got, err := AbsPath(fsys, "file.txt")
+			if supportedFS[tc.name] {
+				if err != nil {
+					t.Fatalf("AbsPath() returned unexpected error: %v", err)
+				}
+				if !filepath.IsAbs(got) {
+					t.Errorf("AbsPath() = %q, want absolute path", got)
+				}
+
+				baseDir, err := AbsPath(fsys, ".")
+				if err != nil {
+					t.Fatalf("AbsPath(., ) = %v", err)
+				}
+				want := baseDir + string(filepath.Separator) + "file.txt"
+				if got != want {
+					t.Errorf("AbsPath() = %q, want %q", got, want)
+				}
+
+				subPath, err := AbsPath(fsys, "sub/dir/deep.txt")
+				if err != nil {
+					t.Fatalf("AbsPath(sub/dir/deep.txt) = %v", err)
+				}
+				wantSub := baseDir + string(filepath.Separator) + "sub" + string(filepath.Separator) + "dir" + string(filepath.Separator) + "deep.txt"
+				if subPath != wantSub {
+					t.Errorf("AbsPath(sub/dir/deep.txt) = %q, want %q", subPath, wantSub)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("AbsPath() = %q, want error for unsupported FS", got)
+				}
+				if !strings.Contains(err.Error(), "not accessible outside") {
+					t.Errorf("error = %q, want it to mention 'not accessible outside'", err)
+				}
 			}
 		})
 	}

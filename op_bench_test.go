@@ -557,7 +557,7 @@ func BenchmarkMemFSReadDir(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := f.Write([]byte(fmt.Sprintf("data-%d", i))); err != nil {
+		if _, err := fmt.Fprintf(f, "data-%d", i); err != nil {
 			b.Fatal(err)
 		}
 		if err := f.Close(); err != nil {

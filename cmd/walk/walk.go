@@ -44,7 +44,12 @@ func run(dir string) error {
 		}
 	}()
 	return ufs.ForEachFilename(fsys, ".", func(name string) error {
-		log.Printf("- %s", name)
+		absName, err := ufs.AbsPath(fsys, name)
+		if err == nil {
+			log.Printf("%s", absName)
+		} else {
+			log.Printf("ufs://%s", name)
+		}
 		return nil
 	})
 }

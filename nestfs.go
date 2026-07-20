@@ -43,9 +43,10 @@ type FSArgs struct {
 }
 
 var (
-	_ FS            = (*nestFS)(nil)
-	_ fs.GlobFS     = (*nestFS)(nil)
-	_ deviceInfoGet = (*mountMap)(nil)
+	_ FS             = (*nestFS)(nil)
+	_ fs.GlobFS      = (*nestFS)(nil)
+	_ realAbsPathGet = (*nestFS)(nil)
+	_ deviceInfoGet  = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -210,6 +211,13 @@ type nestFS struct {
 	ctx    context.Context
 	mounts *mountMap
 	args   FSArgs
+}
+
+func (fsys *nestFS) getAbsPath(name string) (string, error) {
+	if rfs, ok := fsys.fsys.(*localFS); ok {
+		return rfs.getAbsPath(name)
+	}
+	return "", realAbsPathNotSupported(fsys, name)
 }
 
 func (fsys *nestFS) getDeviceInfo() map[string]deviceInfo {

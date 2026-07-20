@@ -23,11 +23,11 @@ import (
 	"github.com/cloudfra/ufs"
 )
 
-var dirFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
+var pathFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
 
 func main() {
 	flag.Parse()
-	if err := run(*dirFlag); err != nil {
+	if err := run(*pathFlag); err != nil {
 		log.Printf("ERROR: %s", err)
 	}
 }
@@ -43,7 +43,7 @@ func run(dir string) error {
 			log.Printf("cannot close mounted file system %q, %s", fsys, err)
 		}
 	}()
-	return ufs.ForEachFilename(fsys, dir, func(name string) error {
+	return ufs.ForEachFilename(fsys, ".", func(name string) error {
 		log.Printf("- %s", name)
 		return nil
 	})

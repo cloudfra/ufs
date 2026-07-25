@@ -55,6 +55,12 @@ jobs:
         run: make system-info
       # - name: Container Fix
       #   run: git config --system --add safe.directory /__w/
+
+      - name: Install Signing Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y -q install osslsigncode binutils openssl
+
       - name: Clean
         run: make clean
       - name: Download Dependencies
@@ -97,6 +103,7 @@ jobs:
       - name: Publish Benchmark (7 Days)
         # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: benchmark-linux.html
           path: |
@@ -120,25 +127,8 @@ jobs:
         # further down, which never loads images into the local daemon.
         run: make scan-images
 
-      # - name: Install Signing Dependencies
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y osslsigncode binutils openssl
-
       - name: Release Package
         run: make build/packages/release.tar.gz
-
-      - name: Attach Ephemeral Binaries
-        # https://github.com/actions/upload-artifact
-        uses: actions/upload-artifact@v7
-        with:
-          retention-days: ${{ github.ref_type == 'tag' && 1 || github.event_name == 'push' && 7 || 1 }}
-          path: |
-            build/release/walk-darwin_arm64
-            build/release/walk-linux_amd64
-            build/release/walk-linux_arm64
-            build/release/walk-windows_amd64.exe
-            build/release/walk-windows_arm64.exe
 
       - name: Create Release
         # https://github.com/softprops/action-gh-release
@@ -222,6 +212,8 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Download Dependencies
+        run: make deps
       - name: Test
         run: make test
 
@@ -239,6 +231,9 @@ jobs:
         with:
           go-version: stable
           cache: false
+
+      - name: System Information
+        run: make system-info
 
       - name: Clean
         run: make clean
@@ -261,6 +256,7 @@ jobs:
       - name: Publish Benchmark (7 Days)
         # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@v7
+        continue-on-error: true
         with:
           name: benchmark-windows.html
           path: |

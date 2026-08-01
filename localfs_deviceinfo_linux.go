@@ -189,3 +189,38 @@ func linuxRotational(dev string) int {
 	}
 	return 1
 }
+
+// isPathCoveredBy returns true if pathPrefix is a directory ancestor of or equal to targetPath.
+func isPathCoveredBy(targetPath, pathPrefix string) bool {
+	target := filepath.ToSlash(filepath.Clean(targetPath))
+	prefix := filepath.ToSlash(filepath.Clean(pathPrefix))
+	if target == prefix {
+		return true
+	}
+	if strings.HasSuffix(prefix, "/") {
+		return strings.HasPrefix(target, prefix)
+	}
+	return strings.HasPrefix(target, prefix+"/")
+}
+
+// isPathUnder returns true if targetPath is strictly under rootPath.
+func isPathUnder(targetPath, rootPath string) bool {
+	target := filepath.ToSlash(filepath.Clean(targetPath))
+	root := filepath.ToSlash(filepath.Clean(rootPath))
+	if strings.HasSuffix(root, "/") {
+		stripped, _ := strings.CutSuffix(root, "/")
+		return strings.HasPrefix(target, root) && target != stripped
+	}
+	return strings.HasPrefix(target, root+"/")
+}
+
+// relPathUnder returns targetPath relative to rootPath.
+// Assumes isPathUnder(targetPath, rootPath) is true.
+func relPathUnder(targetPath, rootPath string) string {
+	target := filepath.ToSlash(filepath.Clean(targetPath))
+	root := filepath.ToSlash(filepath.Clean(rootPath))
+	if strings.HasSuffix(root, "/") {
+		return strings.TrimPrefix(target, root)
+	}
+	return strings.TrimPrefix(target, root+"/")
+}

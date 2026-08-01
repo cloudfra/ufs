@@ -201,10 +201,6 @@ func osExists(path string) bool {
 }
 
 func osDeleteDirectory(path string) error {
-	if !osExists(path) {
-		return nil
-	}
-
 	if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot delete directory %q, %w", path, err)
 	}
@@ -218,10 +214,6 @@ func tryOSDeleteDirectory(path string) {
 }
 
 func osDeleteFile(path string) error {
-	if !osExists(path) {
-		return nil
-	}
-
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot delete file %q, %w", path, err)
 	}

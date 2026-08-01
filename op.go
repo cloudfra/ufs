@@ -20,6 +20,7 @@ import (
 	"path"
 
 	"github.com/google/martian/v3/log"
+	"golang.org/x/sync/errgroup"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -30,17 +31,33 @@ import (
 // dir must satisfy [fs.ValidPath]; use "." to copy the entire file system.
 func Rsync(srcFS fs.FS, destFS FS, dir string) error {
 	// TODO: Prevent archive traversal.
-	return ForEachFilename(srcFS, dir, func(name string) error {
-		dir, _ := path.Split(name)
-		dir = path.Clean(dir)
-		if err := destFS.MkdirAll(dir, fs.ModePerm); err != nil {
-			return err
-		}
-		if err := Copy(srcFS, name, destFS, name); err != nil {
-			return err
-		}
+	threadCount := getDeviceInfoOrDefault(destFS)["."].threadCount
+	if threadCount <= 1 {
+		return ForEachFilename(srcFS, dir, func(name string) error {
+			dir, _ := path.Split(name)
+			dir = path.Clean(dir)
+			if err := destFS.MkdirAll(dir, fs.ModePerm); err != nil {
+				return err
+			}
+			return Copy(srcFS, name, destFS, name)
+		})
+	}
+
+	var g errgroup.Group
+	g.SetLimit(threadCount)
+	walkErr := ForEachFilename(srcFS, dir, func(name string) error {
+		g.Go(func() error {
+			dir, _ := path.Split(name)
+			dir = path.Clean(dir)
+			if err := destFS.MkdirAll(dir, fs.ModePerm); err != nil {
+				return err
+			}
+			return Copy(srcFS, name, destFS, name)
+		})
 		return nil
 	})
+	groupErr := g.Wait()
+	return joinErrors(walkErr, groupErr)
 }
 
 // Copy copies the single file at srcFilename in srcFS to destFilename in destFS.

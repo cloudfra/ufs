@@ -283,20 +283,36 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
+	if name == cwdPath {
+		return &fsInfo{name: cwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+	}
 	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
 
-	f, err := fsys.Open(name)
-	if err != nil {
-		return nil, err
+	objPath := path.Join(fsys.baseDir, name)
+	attrs, err := fsys.client.Bucket(fsys.bucket).Object(objPath).Attrs(fsys.ctx)
+	if err == nil {
+		return &fsInfo{
+			name:    path.Base(name),
+			size:    attrs.Size,
+			mode:    fs.ModePerm,
+			modTime: attrs.Updated,
+		}, nil
 	}
-	stat, statErr := f.Stat()
-	closeErr := f.Close()
-	if statErr != nil {
-		return nil, joinErrors(statErr, closeErr)
+	if !errors.Is(err, storage.ErrObjectNotExist) {
+		return nil, pathError("stat", name, err)
 	}
-	return stat, closeErr
+
+	// Not a file — check if it's a virtual directory (has objects under it).
+	entries, listErr := fsys.listDir(name)
+	if listErr != nil {
+		return nil, pathError("stat", name, listErr)
+	}
+	if len(entries) == 0 {
+		return nil, pathError("stat", name, fs.ErrNotExist)
+	}
+	return &fsInfo{name: path.Base(name), mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
@@ -434,17 +450,7 @@ func (fsys *gcsFS) ReadLink(name string) (string, error) {
 }
 
 func (fsys *gcsFS) Lstat(name string) (fs.FileInfo, error) {
-	if name != cwdPath {
-		if err := validPath("lstat", name); err != nil {
-			return nil, err
-		}
-	}
-	f, err := fsys.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return f.Stat()
+	return fsys.Stat(name)
 }
 
 func (fsys *gcsFS) Remove(name string) error {

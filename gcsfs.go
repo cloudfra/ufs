@@ -69,6 +69,8 @@ type gcsFile struct {
 	writer     *storage.Writer
 }
 
+func (f *gcsFile) IsDir() bool { return f.isDir }
+
 func (f *gcsFile) Stat() (fs.FileInfo, error) {
 	mode := fs.FileMode(fs.ModePerm)
 	if f.isDir {

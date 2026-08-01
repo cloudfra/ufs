@@ -188,6 +188,30 @@ func TestCombineDeviceInfo(t *testing.T) {
 				"nvme/usb":            fakeUsbDeviceInfo,
 			},
 		},
+		{
+			name: "path boundary not confused by shared prefix",
+			src:  newDeviceInfoMap(fakeHddDeviceInfo),
+			incoming: []mountInfo{
+				{
+					mountPath: "fast",
+					incoming:  newDeviceInfoMap(fakeNvmeDeviceInfo),
+				},
+				{
+					mountPath: "fast/slow",
+					incoming:  newDeviceInfoMap(fakeHddDeviceInfo),
+				},
+				{
+					mountPath: "faster",
+					incoming:  newDeviceInfoMap(fakeUsbDeviceInfo),
+				},
+			},
+			want: map[string]deviceInfo{
+				".":         fakeHddDeviceInfo,
+				"fast":      fakeNvmeDeviceInfo,
+				"fast/slow": fakeHddDeviceInfo,
+				"faster":    fakeUsbDeviceInfo,
+			},
+		},
 	}
 
 	for _, tc := range tests {

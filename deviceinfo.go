@@ -94,7 +94,10 @@ func combineDeviceInfo(src map[string]deviceInfo, mountPath string, incoming map
 func getParentDeviceInfo(m map[string]deviceInfo, mountPath string) deviceInfo {
 	longest := "."
 	for k := range m {
-		if len(k) > len(longest) && strings.HasPrefix(mountPath, k) {
+		if k == "." {
+			continue
+		}
+		if len(k) > len(longest) && strings.HasPrefix(mountPath, k+"/") {
 			longest = k
 		}
 	}

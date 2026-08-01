@@ -103,7 +103,7 @@ func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
 		if skip, err := excludeDirs(name, d, err); skip {
 			return err
 		}
-		info, err := fs.Stat(fsys, name)
+		info, err := d.Info()
 		if err != nil {
 			return err
 		}

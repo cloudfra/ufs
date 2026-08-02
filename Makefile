@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO_PACKAGE = github.com/cloudfra/ufs
 REGISTRY = ghcr.io/cloudfra
 PROTOS =
 TEST_ASSETS =
 ASSETS = $(PROTOS)
+GO_PACKAGE = github.com/cloudfra/ufs
 ALL_APPS = walk
 
 ZIP = zip

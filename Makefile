@@ -18,6 +18,7 @@ TEST_ASSETS =
 ASSETS = $(PROTOS)
 GO_PACKAGE = github.com/cloudfra/ufs
 ALL_APPS = walk
+PRODUCTION=0
 
 ZIP = zip
 RAR = rar

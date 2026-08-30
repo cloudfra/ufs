@@ -91,3 +91,11 @@ output/
 /web.key
 gha-creds-*.json
 
+# Archives
+*.7z
+*.bz2
+*.gz
+*.lz4
+*.tar
+*.xz
+*.zip

@@ -17,7 +17,7 @@ PROTOS =
 TEST_ASSETS =
 ASSETS = $(PROTOS)
 GO_PACKAGE = github.com/cloudfra/ufs
-ALL_APPS = walk
+ALL_APPS = ufsmount walk
 PRODUCTION=0
 
 ZIP = zip

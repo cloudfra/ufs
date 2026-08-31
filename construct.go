@@ -24,6 +24,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // CreateURI constructs a URI understood by [New] that layers additional file
@@ -118,6 +120,33 @@ func nameToURI(name string) (*url.URL, error) {
 //   - A local path pointing to a recognized archive (.zip, .tar, .tar.gz, etc.)
 //     is mounted read-only through the archive's contents.
 //
+// # Alternative input formats
+//
+// In addition to URIs, name may be an fstab-format string or a YAML document.
+// Both formats are auto-detected before falling back to URI parsing.
+//
+// fstab (fields: source, mountpoint, type, options [, dump, pass]):
+//
+//	memory://   .      auto  rw  0  0
+//	null://     cache  auto  ro  0  0
+//
+// The mount point ".", "/", or "none" designates the root filesystem. Leading
+// slashes on other mount points are stripped. The "ro" option wraps the FS with
+// [ReadOnly]; "rw" and "defaults" are recognized but leave the FS writable.
+// Comment lines (starting with #) and blank lines are ignored.
+//
+// YAML (flat list of [MountSpec] entries):
+//
+//	- source: "memory://"
+//	  mountPoint: "."
+//	- source: "null://"
+//	  mountPoint: "cache"
+//	  options:
+//	    readOnly: true
+//
+// If no entry has a root mount point (".", "/", "none", or empty), a read-only
+// null:// filesystem is used as the root.
+//
 // # Nested mounts and archive auto-mounting
 //
 // The returned FS wraps all backends in a nestFS layer. When a directory entry
@@ -127,6 +156,9 @@ func nameToURI(name string) (*url.URL, error) {
 //
 // Use [CreateURI] to pre-configure additional mount points before calling New.
 func New(ctx context.Context, name string) (FS, error) {
+	if specs := parseMountSpec(name); specs != nil {
+		return newFromMountSpec(ctx, specs)
+	}
 	u, err := url.Parse(name)
 	if err == nil {
 		baseURI := *u
@@ -281,4 +313,150 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 		return newLocalFS(name)
 	}
 	return nil, pathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s, %w", name, runtime.GOOS, err))
+}
+
+// MountSpec describes a single mount entry with a source URI, a mount point,
+// and mount options.
+type MountSpec struct {
+	Source     string           `yaml:"source"`
+	MountPoint string          `yaml:"mountPoint"`
+	Options    MountSpecOptions `yaml:"options"`
+}
+
+// MountSpecOptions holds options that apply to a [MountSpec] entry.
+type MountSpecOptions struct {
+	ReadOnly bool `yaml:"readOnly"`
+}
+
+func parseMountSpec(input string) []MountSpec {
+	if specs, err := parseYAMLMountSpec(input); err == nil {
+		return specs
+	}
+	if specs, err := parseFstabMountSpec(input); err == nil {
+		return specs
+	}
+	return nil
+}
+
+func parseYAMLMountSpec(input string) ([]MountSpec, error) {
+	var specs []MountSpec
+	if err := yaml.Unmarshal([]byte(input), &specs); err != nil {
+		return nil, fmt.Errorf("yaml unmarshal: %w", err)
+	}
+	if len(specs) == 0 {
+		return nil, fmt.Errorf("yaml: no mount entries")
+	}
+	for i := range specs {
+		if specs[i].Source == "" {
+			return nil, fmt.Errorf("yaml: entry %d missing source", i)
+		}
+		specs[i].MountPoint = normalizeMountPoint(specs[i].MountPoint)
+	}
+	return specs, nil
+}
+
+func parseFstabMountSpec(input string) ([]MountSpec, error) {
+	var specs []MountSpec
+	for i, line := range strings.Split(input, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			return nil, fmt.Errorf("fstab: line %d has %d fields, need at least 4", i+1, len(fields))
+		}
+		options := fields[3]
+		if !isFstabOptions(options) {
+			return nil, fmt.Errorf("fstab: line %d has unrecognized options %q", i+1, options)
+		}
+
+		specs = append(specs, MountSpec{
+			Source:     fields[0],
+			MountPoint: normalizeMountPoint(fields[1]),
+			Options: MountSpecOptions{
+				ReadOnly: hasFstabOption(options, "ro"),
+			},
+		})
+	}
+	if len(specs) == 0 {
+		return nil, fmt.Errorf("fstab: no mount entries")
+	}
+	return specs, nil
+}
+
+func isFstabOptions(s string) bool {
+	for opt := range strings.SplitSeq(s, ",") {
+		switch opt {
+		case "ro", "rw", "defaults":
+			return true
+		}
+	}
+	return false
+}
+
+func hasFstabOption(s, option string) bool {
+	for opt := range strings.SplitSeq(s, ",") {
+		if opt == option {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeMountPoint(mp string) string {
+	mp = strings.TrimPrefix(mp, "/")
+	if mp == "" || mp == "none" {
+		return cwdPath
+	}
+	return mp
+}
+
+// defaultRootSpec is used when no root mount point is provided.
+var defaultRootSpec = MountSpec{
+	Source:     nullFSPrefix,
+	MountPoint: cwdPath,
+	Options:    MountSpecOptions{ReadOnly: true},
+}
+
+func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
+	var root *MountSpec
+	var mounts []MountSpec
+	for i := range specs {
+		if isCwd(specs[i].MountPoint) {
+			root = &specs[i]
+		} else {
+			mounts = append(mounts, specs[i])
+		}
+	}
+	if root == nil {
+		root = &defaultRootSpec
+	}
+
+	baseFS, err := newBaseFS(ctx, root.Source)
+	if err != nil {
+		return nil, err
+	}
+	var rootFS FS = baseFS
+	if root.Options.ReadOnly {
+		rootFS = ReadOnly(baseFS)
+	}
+	nFS := makeNestFS(ctx, rootFS)
+
+	for _, m := range mounts {
+		mountBaseFS, err := newBaseFS(ctx, m.Source)
+		if err != nil {
+			return nil, joinErrors(err, nFS.Close())
+		}
+		var mountFS FS = mountBaseFS
+		if m.Options.ReadOnly {
+			mountFS = ReadOnly(mountBaseFS)
+		}
+		mountNestFS := makeNestFS(ctx, mountFS)
+		if err := nFS.addMount(m.MountPoint, mountNestFS); err != nil {
+			return nil, joinErrors(err, mountNestFS.Close(), nFS.Close())
+		}
+	}
+
+	return nFS, nil
 }

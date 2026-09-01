@@ -76,6 +76,22 @@ prefix.
 A temporary local-mount wrapper (tempMountFS in tempmountfs.go) provides writable
 scratch space on top of any read-only FS for implementations that need it.
 
+### Host mount
+
+```go
+func HostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer, error)
+```
+
+Mounts a virtual FS at a host directory so the OS can access it like a regular
+file system. On Linux this uses FUSE via go-fuse/v2. Returns an unimplemented
+error on other platforms (Windows support planned).
+
+| File           | Purpose                                                          |
+|:---------------|:-----------------------------------------------------------------|
+| host.go        | Platform-agnostic MountServer interface and HostMount function   |
+| host_other.go  | Stub returning "not implemented" on non-Linux platforms          |
+| fuse_linux.go  | FUSE adapter — bridges ufs.ReadFS/FS to go-fuse InodeEmbedder   |
+
 ### Supporting files
 
 | File                | Purpose                                                      |

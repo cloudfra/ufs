@@ -10,6 +10,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/martian/v3 v3.3.3
+	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/mholt/archives v0.1.5
 	github.com/xyproto/randomstring v1.2.0
 	golang.org/x/sys v0.47.0

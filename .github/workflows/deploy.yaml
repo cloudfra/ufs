@@ -147,6 +147,11 @@ jobs:
             build/release/walk-linux_arm64
             build/release/walk-windows_amd64.exe
             build/release/walk-windows_arm64.exe
+            build/release/ufsmount-darwin_arm64
+            build/release/ufsmount-linux_amd64
+            build/release/ufsmount-linux_arm64
+            build/release/ufsmount-windows_amd64.exe
+            build/release/ufsmount-windows_arm64.exe
 
       - name: Login to GitHub Container Registry
         # https://github.com/docker/login-action#github-packages-docker-registry

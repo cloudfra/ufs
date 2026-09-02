@@ -1,9 +1,15 @@
 # ufsmount
 
 `ufsmount` exposes any `ufs`-supported virtual file system as a regular
-directory on the host using FUSE (Linux only). Files inside the mount
-point can be accessed by any program — `ls`, `cat`, editors, build tools,
-and so on.
+directory on the host. Files inside the mount point can be accessed by
+any program — `ls`, `cat`, editors, build tools, and so on.
+
+The mount mechanism is platform-specific:
+
+| Platform | Backend | Read | Write |
+|----------|---------|------|-------|
+| Linux    | FUSE    | yes  | yes (if the FS supports it) |
+| Windows  | ProjFS  | yes  | no (read-only) |
 
 ## Install
 
@@ -12,6 +18,8 @@ go install github.com/cloudfra/ufs/cmd/ufsmount@latest
 ```
 
 ## Prerequisites
+
+### Linux — FUSE
 
 FUSE must be available on the host:
 
@@ -28,6 +36,21 @@ ls -l /dev/fuse
 
 The user running `ufsmount` must have access to `/dev/fuse` (typically
 via the `fuse` group).
+
+### Windows — ProjFS
+
+Windows Projected File System (ProjFS) must be enabled. It is available
+on Windows 10 version 1809 and later.
+
+Enable it from an elevated PowerShell prompt:
+
+```powershell
+Enable-WindowsOptionalFeature -Online -FeatureName Client-ProjFS
+```
+
+A reboot may be required. See the
+[Microsoft ProjFS documentation](https://learn.microsoft.com/en-us/windows/win32/projfs/enabling-windows-projected-file-system)
+for details.
 
 ## Usage
 
@@ -178,7 +201,49 @@ echo "gone" > /mnt/null/file.txt
 cat /mnt/null/file.txt             # empty (writes discarded)
 ```
 
+### Windows: Mount a local directory (read-only)
+
+On Windows, ProjFS projects the virtual file system as read-only.
+
+```powershell
+mkdir C:\mnt\data
+ufsmount -uri C:\srv\data -mount C:\mnt\data
+```
+
+In another terminal:
+
+```powershell
+dir C:\mnt\data
+type C:\mnt\data\README.md
+```
+
+### Windows: Mount an archive
+
+```powershell
+mkdir C:\mnt\archive
+ufsmount -uri C:\tmp\release.tar.gz -mount C:\mnt\archive
+```
+
+```powershell
+dir C:\mnt\archive
+type C:\mnt\archive\README.md
+```
+
+### Windows: Mount a GCS bucket
+
+```powershell
+mkdir C:\mnt\bucket
+ufsmount -uri gs://my-public-bucket -mount C:\mnt\bucket
+```
+
+```powershell
+dir C:\mnt\bucket
+type C:\mnt\bucket\data\report.csv
+```
+
 ## Supported operations
+
+### Linux (FUSE)
 
 | Operation        | Read-write FS | Read-only FS |
 |------------------|---------------|--------------|
@@ -193,6 +258,27 @@ cat /mnt/null/file.txt             # empty (writes discarded)
 | Rename           | not yet       | not yet      |
 | Symlink / link   | not yet       | not yet      |
 | chmod / chown    | not yet       | not yet      |
+
+### Windows (ProjFS)
+
+ProjFS mounts are always read-only. All file systems — including those
+that implement the read-write `FS` interface — are projected as
+read-only virtual files.
+
+| Operation        | Any FS          |
+|------------------|-----------------|
+| Read file        | yes             |
+| Stat / readdir   | yes             |
+| Create file      | no (bypasses ProjFS, writes to local NTFS) |
+| Write            | no (bypasses ProjFS, writes to local NTFS) |
+| mkdir            | no (bypasses ProjFS, writes to local NTFS) |
+| Remove file      | denied          |
+| Rename           | denied          |
+
+ProjFS intercepts delete and rename operations and denies them.
+New file creation and writes cannot be intercepted by ProjFS — they
+materialize directly to the local NTFS directory rather than being
+routed through the virtual file system.
 
 ## Signals
 

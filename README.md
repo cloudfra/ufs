@@ -50,6 +50,14 @@ func CreateURI(baseName string, nested map[string]string) (string, error)
 | FS        | Read-write FS; extends ReadFS with Create, MkdirAll       |
 | FileInfo  | Name, Size, Mode, ModTime, IsDir, Type, Sys               |
 
+## Host Mount
+
+`ufs.HostMount` exposes any virtual file system as a regular directory on
+the host OS. On Linux it uses FUSE (read-write); on Windows it uses
+[ProjFS](https://learn.microsoft.com/en-us/windows/win32/projfs/projected-file-system)
+(read-only). See [docs/ufsmount.md](docs/ufsmount.md) for the `ufsmount`
+CLI tool and platform-specific setup instructions.
+
 ## Commands
 
 ```bash

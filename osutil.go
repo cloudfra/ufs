@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
@@ -177,7 +178,11 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close downloaded file", "path", archiveFilename, "error", err)
+		}
+	}()
 
 	if _, err := io.Copy(f, io.LimitReader(resp.Body, maxDownloadSize)); err != nil {
 		return "", err

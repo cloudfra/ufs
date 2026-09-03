@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -29,12 +30,16 @@ import (
 )
 
 var (
-	uriFlag   = flag.String("uri", "", "URI of the virtual file system to mount (e.g. memory://, gs://bucket).")
-	mountFlag = flag.String("mount", "", "Path on the host to mount the file system at.")
+	uriFlag     = flag.String("uri", "", "URI of the virtual file system to mount (e.g. memory://, gs://bucket).")
+	mountFlag   = flag.String("mount", "", "Path on the host to mount the file system at.")
+	verboseFlag = flag.Bool("verbose", false, "Enable debug logging for ProjFS/FUSE callbacks.")
 )
 
 func main() {
 	flag.Parse()
+	if *verboseFlag {
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	}
 	if *uriFlag == "" || *mountFlag == "" {
 		flag.Usage()
 		os.Exit(1)
@@ -48,6 +53,7 @@ func run(uri, mountPath string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	slog.Info("opening file system", "uri", uri)
 	fsys, err := ufs.New(ctx, uri)
 	if err != nil {
 		return err
@@ -58,6 +64,7 @@ func run(uri, mountPath string) error {
 		}
 	}()
 
+	slog.Info("mounting file system", "uri", uri, "mountPath", mountPath)
 	server, err := ufs.HostMount(ctx, fsys, mountPath)
 	if err != nil {
 		return fmt.Errorf("cannot mount %q at %q: %w", uri, mountPath, err)

@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	crand "crypto/rand"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -73,6 +74,12 @@ func (c *FaultConfig) clampedErrorRate() float64 {
 	}
 }
 
+func newCryptoRand() *rand.Rand {
+	var seed [32]byte
+	_, _ = crand.Read(seed[:])
+	return rand.New(rand.NewChaCha8(seed))
+}
+
 type faultFS struct {
 	inner     FS
 	cfg       FaultConfig
@@ -89,7 +96,7 @@ func FaultInjector(inner FS, cfg FaultConfig) FS {
 		inner:     inner,
 		cfg:       cfg,
 		errorRate: cfg.clampedErrorRate(),
-		rng:       rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())),
+		rng:       newCryptoRand(),
 	}
 }
 

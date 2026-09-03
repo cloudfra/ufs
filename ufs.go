@@ -77,6 +77,34 @@ type File interface {
 	io.StringWriter
 }
 
+// ExternalPathGet is an optional interface implemented by [FS] backends that
+// can expose a concrete external path for a virtual file. The returned value may
+// be an absolute local path, a URL, or any other identifier that allows
+// callers to access the file outside the virtual file system.
+//
+// This is useful when passing a file to a library or tool that does not
+// understand [fs.FS] or the virtual path abstraction.
+type ExternalPathGet interface {
+	// ExternalPath returns the canonical external path for the file at path.
+	// Implementations that do not support this operation should return an empty
+	// string.
+	ExternalPath(path string) string
+}
+
+// Renamer is an optional interface that a file system may implement to support
+// file and directory renaming. It is embedded in [FS], so every writable backend
+// must implement it.
+type Renamer interface {
+	// Rename moves a file or directory from oldPath to newPath. It returns an
+	// error wrapping [fs.ErrNotExist] if oldPath does not exist, or an error if
+	// newPath already exists. Renaming the root (".") returns [fs.ErrPermission].
+	//
+	// Rename is not guaranteed to be atomic; some backends may implement it as
+	// a copy-and-delete operation. Callers should not assume that the file at
+	// oldPath is deleted if Rename returns an error.
+	Rename(oldPath, newPath string) error
+}
+
 // ReadFS is a read-only file system. In addition to the standard [fs.FS]
 // interface it requires [io.Closer] for lifecycle management, the four
 // extended read interfaces from the standard library, and [fmt.Stringer] so
@@ -93,6 +121,8 @@ type ReadFS interface {
 	fmt.Stringer
 
 	deviceInfoGet
+
+	// TODO: Implement ExternalPathGet
 
 	// URI returns the [*url.URL] that identifies this file system. The
 	// returned URL can be passed (via its String method) to [New] to
@@ -130,6 +160,8 @@ type Remover interface {
 type FS interface {
 	ReadFS
 	Remover
+
+	// TODO: Implement Renamer
 
 	// Create opens a new writable file at name, replacing any existing file at
 	// that path. Parent directories are not created automatically; call

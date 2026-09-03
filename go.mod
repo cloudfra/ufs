@@ -14,7 +14,7 @@ require (
 	github.com/mholt/archives v0.1.5
 	github.com/xyproto/randomstring v1.2.0
 	golang.org/x/sys v0.47.0
-	google.golang.org/api v0.295.0
+	google.golang.org/api v0.296.0
 	google.golang.org/grpc v1.83.2
 	gopkg.in/yaml.v3 v3.0.1
 )

@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"os"
 	"sort"
 	"sync"
 	"unsafe"
@@ -104,8 +105,16 @@ func projfsPath(name utf16Str) string {
 
 func cbDataAttrs(callbackData *prjCallbackData) []any {
 	p := projfsPath(callbackData.FilePathName)
+	var rawPath string
+	if callbackData.FilePathName != nil {
+		rawPath = windows.UTF16PtrToString(callbackData.FilePathName)
+	} else {
+		rawPath = "<nil>"
+	}
 	attrs := []any{
 		"path", p,
+		"rawPath", rawPath,
+		"cbDataSize", callbackData.Size,
 		"commandId", callbackData.CommandId,
 		"flags", fmt.Sprintf("0x%X", callbackData.Flags),
 		"triggeringPID", callbackData.TriggeringProcessId,
@@ -122,16 +131,19 @@ func projfsHRESULT(err error) uintptr {
 	if err == nil {
 		return hresultOK
 	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return hresultFileNotFound
+	var hr uintptr
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		hr = hresultFileNotFound
+	case errors.Is(err, fs.ErrPermission):
+		hr = hresultAccessDenied
+	case errors.Is(err, fs.ErrExist):
+		hr = hresultFileExists
+	default:
+		hr = hresultFail
 	}
-	if errors.Is(err, fs.ErrPermission) {
-		return hresultAccessDenied
-	}
-	if errors.Is(err, fs.ErrExist) {
-		return hresultFileExists
-	}
-	return hresultFail
+	slog.Debug("projfs: error→HRESULT mapping", "error", err, "errorType", fmt.Sprintf("%T", err), "hresult", hresultName(hr))
+	return hr
 }
 
 // projfsEnumSession holds state for an in-progress directory enumeration.
@@ -218,8 +230,9 @@ func getDirEnumCB(callbackData *prjCallbackData, enumerationId *windows.GUID, se
 	)...)
 
 	isRestart := callbackData.Flags&prjCBDataFlagRestartScan != 0
+	returnSingleEntry := callbackData.Flags&prjCBDataFlagReturnSingleEntry != 0
 	if session.entries == nil || isRestart {
-		slog.Debug("projfs: GetDirEnum reading directory", "path", session.path, "isRestart", isRestart)
+		slog.Debug("projfs: GetDirEnum reading directory", "path", session.path, "isRestart", isRestart, "returnSingleEntry", returnSingleEntry)
 		entries, err := s.fsys.ReadDir(session.path)
 		if err != nil {
 			hr := projfsHRESULT(err)
@@ -487,14 +500,66 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 		"fsysType", fmt.Sprintf("%T", fsys),
 	)
 
+	// Log mount path state before we touch it — critical for diagnosing "directory inaccessible".
+	if fi, err := os.Stat(mountPath); err != nil {
+		slog.Warn("projfs: mount path Stat failed", "mountPath", mountPath, "error", err)
+	} else {
+		slog.Info("projfs: mount path exists",
+			"mountPath", mountPath,
+			"isDir", fi.IsDir(),
+			"mode", fi.Mode(),
+			"modTime", fi.ModTime(),
+		)
+	}
+	if entries, err := os.ReadDir(mountPath); err != nil {
+		slog.Warn("projfs: mount path ReadDir failed", "mountPath", mountPath, "error", err)
+	} else {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		slog.Info("projfs: mount path contents", "mountPath", mountPath, "count", len(entries), "entries", names)
+	}
+
+	// Log struct sizes — a mismatch vs Windows SDK indicates alignment bugs.
+	slog.Debug("projfs: struct sizes",
+		"prjCallbackData", unsafe.Sizeof(prjCallbackData{}),
+		"prjCallbacks", unsafe.Sizeof(prjCallbacks{}),
+		"prjPlaceholderInfo", unsafe.Sizeof(prjPlaceholderInfo{}),
+		"prjFileBasicInfo", unsafe.Sizeof(prjFileBasicInfo{}),
+		"prjNotificationMapping", unsafe.Sizeof(prjNotificationMapping{}),
+		"prjStartVirtualizingOptions", unsafe.Sizeof(prjStartVirtualizingOptions{}),
+		"prjPlaceholderVersionInfo", unsafe.Sizeof(prjPlaceholderVersionInfo{}),
+	)
+
 	if err := projfsAvailable(); err != nil {
 		slog.Error("projfs: ProjFS not available", "error", err)
 		return nil, err
 	}
 	slog.Debug("projfs: ProjFS DLL loaded successfully")
 
+	// Log backing FS root listing to verify the FS is functional.
+	if rootEntries, err := fsys.ReadDir("."); err != nil {
+		slog.Warn("projfs: backing FS ReadDir(\".\") failed", "error", err)
+	} else {
+		rootNames := make([]string, len(rootEntries))
+		for i, e := range rootEntries {
+			rootNames[i] = e.Name()
+		}
+		slog.Info("projfs: backing FS root listing", "count", len(rootEntries), "entries", rootNames)
+	}
+
 	initCallbacks()
-	slog.Debug("projfs: callbacks initialized")
+	slog.Debug("projfs: callbacks initialized",
+		"cbStartDirEnum", fmt.Sprintf("0x%X", cbStartDirEnum),
+		"cbEndDirEnum", fmt.Sprintf("0x%X", cbEndDirEnum),
+		"cbGetDirEnum", fmt.Sprintf("0x%X", cbGetDirEnum),
+		"cbGetPlaceholder", fmt.Sprintf("0x%X", cbGetPlaceholder),
+		"cbGetFileData", fmt.Sprintf("0x%X", cbGetFileData),
+		"cbQueryFileName", fmt.Sprintf("0x%X", cbQueryFileName),
+		"cbNotification", fmt.Sprintf("0x%X", cbNotification),
+		"cbCancelCommand", fmt.Sprintf("0x%X", cbCancelCommand),
+	)
 
 	rootPathPtr, err := windows.UTF16PtrFromString(mountPath)
 	if err != nil {
@@ -511,7 +576,7 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 
 	slog.Debug("projfs: marking directory as placeholder", "mountPath", mountPath)
 	if err := prjMarkDirectoryAsPlaceholder(rootPathPtr, nil, nil, &instanceID); err != nil {
-		slog.Error("projfs: MarkDirectoryAsPlaceholder failed", "mountPath", mountPath, "error", err)
+		slog.Error("projfs: MarkDirectoryAsPlaceholder failed", "mountPath", mountPath, "error", err, "errorType", fmt.Sprintf("%T", err))
 		return nil, fmt.Errorf("cannot mark %q as virtualization root: %w", mountPath, err)
 	}
 	slog.Debug("projfs: directory marked as placeholder", "mountPath", mountPath)
@@ -546,9 +611,14 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 	slog.Debug("projfs: starting virtualization",
 		"mountPath", mountPath,
 		"notificationBitMask", fmt.Sprintf("0x%X", notifMapping.NotificationBitMask),
+		"optsFlags", opts.Flags,
+		"optsPoolThreadCount", opts.PoolThreadCount,
+		"optsConcurrentThreadCount", opts.ConcurrentThreadCount,
+		"optsMappingsCount", opts.NotificationMappingsCount,
+		"instanceContext", fmt.Sprintf("0x%X", uintptr(unsafe.Pointer(s))),
 	)
 	if err := prjStartVirtualizing(rootPathPtr, &cbs, uintptr(unsafe.Pointer(s)), &opts, &s.nsCtx); err != nil {
-		slog.Error("projfs: StartVirtualizing failed", "mountPath", mountPath, "error", err)
+		slog.Error("projfs: StartVirtualizing failed", "mountPath", mountPath, "error", err, "errorType", fmt.Sprintf("%T", err))
 		return nil, fmt.Errorf("cannot start ProjFS virtualization at %q: %w", mountPath, err)
 	}
 	slog.Info("projfs: virtualization started successfully",

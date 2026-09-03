@@ -76,6 +76,18 @@ prefix.
 A temporary local-mount wrapper (tempMountFS in tempmountfs.go) provides writable
 scratch space on top of any read-only FS for implementations that need it.
 
+### Addon wrappers
+
+Wrappers modify the behavior of an existing FS. They are configured via
+`MountSpecOptions` fields (YAML mount specs) or applied programmatically.
+Wrappers are applied in a fixed order by `applyWrappers()` in construct.go:
+ReadOnly → FaultInjector → (future wrappers).
+
+| Wrapper        | File           | Constructor       | Config type   | Behavior                                          |
+|:---------------|:---------------|:------------------|:--------------|:--------------------------------------------------|
+| ReadOnly       | readonlyfs.go  | ReadOnly(inner)   | bool          | Returns fs.ErrPermission for all write ops        |
+| FaultInjector  | faultfs.go     | FaultInjector()   | FaultConfig   | Injects configurable latency and random errors    |
+
 ### Host mount
 
 ```go

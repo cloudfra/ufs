@@ -272,7 +272,11 @@ func newPstestGCSFS(tb testing.TB, bucket, baseDir string) (*gcsFS, *pstest.Serv
 		tb.Fatal(err)
 	}
 	// Keep the admin client open so the shared gRPC connection stays alive.
-	tb.Cleanup(func() { psClient.Close() })
+	tb.Cleanup(func() {
+		if err := psClient.Close(); err != nil {
+			tb.Logf("psClient.Close() = %v", err)
+		}
+	})
 
 	_, err = psClient.TopicAdminClient.CreateTopic(ctx, &pb.Topic{
 		Name: testTopic,

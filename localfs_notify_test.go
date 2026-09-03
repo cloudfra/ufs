@@ -99,7 +99,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -148,7 +148,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -177,7 +177,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -215,7 +215,7 @@ func TestWatchCloseStopsDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -255,7 +255,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -296,7 +296,7 @@ func TestWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -325,7 +325,7 @@ func TestWatchInvalidPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ctx := t.Context()
 
@@ -346,7 +346,7 @@ func TestWatchRaceConcurrentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	closer, err := fsys.Watch(t.Context(), ".", func(NotifyOp, string) {})
 	if err != nil {
@@ -370,7 +370,7 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	var hookCalls atomic.Int64
 	hook := func(NotifyOp, string) {
@@ -407,7 +407,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -454,7 +454,7 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -489,7 +489,7 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -534,7 +534,7 @@ func TestWatchRaceCloseAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	closer, err := fsys.Watch(ctx, ".", func(NotifyOp, string) {})
@@ -571,7 +571,7 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())

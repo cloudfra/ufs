@@ -181,7 +181,9 @@ func BenchmarkRsyncSmall(b *testing.B) {
 		if err := Rsync(src, dst, "."); err != nil {
 			b.Fatal(err)
 		}
-		dst.Close()
+		if err := dst.Close(); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -225,7 +227,9 @@ func BenchmarkRsyncLarge(b *testing.B) {
 
 func BenchmarkListFilesSmall(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	for i := range 100 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		f, err := fsys.Create(name)
@@ -251,7 +255,9 @@ func BenchmarkListFilesSmall(b *testing.B) {
 
 func BenchmarkListFilesMedium(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	for i := range 10_000 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		f, err := fsys.Create(name)
@@ -305,7 +311,9 @@ func BenchmarkListFilesLarge(b *testing.B) {
 
 func BenchmarkListSmall(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	for i := range 1000 {
 		subdir := fmt.Sprintf("sub%d", i%10)
 		if i < 10 {
@@ -337,7 +345,9 @@ func BenchmarkListSmall(b *testing.B) {
 
 func BenchmarkListMedium(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	for i := range 10_000 {
 		subdir := fmt.Sprintf("sub%d", i%64)
 		if i < 64 {
@@ -450,7 +460,9 @@ func BenchmarkWalkWithExcludes(b *testing.B) {
 
 func BenchmarkMemFSReadFileSmall(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	f, err := fsys.Create("small.bin")
 	if err != nil {
 		b.Fatal(err)
@@ -472,7 +484,9 @@ func BenchmarkMemFSReadFileSmall(b *testing.B) {
 
 func BenchmarkMemFSReadFileMedium(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	f, err := fsys.Create("medium.bin")
 	if err != nil {
 		b.Fatal(err)
@@ -494,7 +508,9 @@ func BenchmarkMemFSReadFileMedium(b *testing.B) {
 
 func BenchmarkMemFSReadFileLarge(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	f, err := fsys.Create("large.bin")
 	if err != nil {
 		b.Fatal(err)
@@ -598,7 +614,9 @@ func BenchmarkMemFSCreate(b *testing.B) {
 
 func BenchmarkMemFSRemoveAll(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
-	fsys.MkdirAll(".", fs.ModePerm)
+	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
+		b.Fatal(err)
+	}
 	for i := range 5000 {
 		name := fmt.Sprintf("subdir_%d/file", i)
 		f, err := fsys.Create(name)
@@ -625,7 +643,11 @@ func BenchmarkMemFSRemoveAll(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			f.Write([]byte("x"))
+			if n, err := f.Write([]byte("x")); err != nil {
+				b.Fatal(err)
+			} else if n != 1 {
+				b.Fatalf("Write() = %d, want 1", n)
+			}
 
 			if err := f.Close(); err != nil {
 				b.Fatal(err)

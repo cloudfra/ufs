@@ -321,7 +321,7 @@ func TestNestFSReadDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	nfs := fsys.(*nestFS)
 	if err := nfs.MkdirAll("subdir", fs.ModePerm); err != nil {
@@ -331,7 +331,9 @@ func TestNestFSReadDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	entries, err := nfs.ReadDir("subdir")
 	if err != nil {
@@ -350,14 +352,16 @@ func TestNestFSReadDirOnFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	nfs := fsys.(*nestFS)
 	f, err := fsys.Create("regular.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err = nfs.ReadDir("regular.txt")
 	if err == nil {
@@ -408,7 +412,7 @@ func TestNestFSStat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	nfs := fsys.(*nestFS)
 	wf, err := fsys.Create("statme.txt")
@@ -446,7 +450,7 @@ func TestNestReadDirFileRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	nfs := fsys.(*nestFS)
 	if err := nfs.MkdirAll("readdir-test", fs.ModePerm); err != nil {
@@ -457,7 +461,7 @@ func TestNestReadDirFileRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	buf := make([]byte, 16)
 	n, _ := f.Read(buf)
@@ -531,13 +535,15 @@ func TestNestFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	f, err := fsys.Create("remove_me.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("file_exists", func(t *testing.T) {
 		if err := fsys.Remove("remove_me.txt"); err != nil {
@@ -560,7 +566,7 @@ func TestNestFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	nfs := fsys.(*nestFS)
 	if err := nfs.MkdirAll("sub/dir", fs.ModePerm); err != nil {
@@ -604,7 +610,7 @@ func TestNestFSGlobFallback(t *testing.T) {
 	// archiveFS does not implement fs.GlobFS, triggering the globFS fallback in nestFS.
 	afs := mustArchiveFS(t)
 	nfs := makeNestFS(t.Context(), afs)
-	defer nfs.Close()
+	defer validateClose(t, nfs)()
 
 	matches, err := nfs.Glob("*.html")
 	if err != nil {
@@ -620,7 +626,7 @@ func TestNestFSOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	nfs := fsys.(*nestFS)
 	if err := nfs.MkdirAll("sub/dir", fs.ModePerm); err != nil {
@@ -630,8 +636,14 @@ func TestNestFSOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	io.WriteString(f, "hello")
-	f.Close()
+	if n, err := io.WriteString(f, "hello"); err != nil {
+		t.Fatal(err)
+	} else if n != len("hello") {
+		t.Fatalf("WriteString() = %d, want %d", n, len("hello"))
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("ReadFile", func(t *testing.T) {
 		data, err := nfs.ReadFile("sub/file.txt")
@@ -679,7 +691,9 @@ func TestNestFSOperations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create() = %v, want nil", err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 	})
 }
 
@@ -736,7 +750,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	entries, err := fs.ReadDir(fsys, cwdPath)
 	if err != nil {
@@ -871,7 +885,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		got, err := io.ReadAll(wrapped)
 		if err != nil {
@@ -888,7 +902,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		// Consume first 5 bytes.
 		if _, err := io.ReadFull(wrapped, make([]byte, 5)); err != nil {
@@ -916,7 +930,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Seek(3, io.SeekStart); err != nil {
 			t.Fatal(err)
@@ -950,7 +964,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		buf := make([]byte, 5)
 		n, err := wrapped.ReadAt(buf, 6)
@@ -972,7 +986,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Write([]byte("x")); !errors.Is(err, fs.ErrInvalid) {
 			t.Errorf("Write() = %v, want fs.ErrInvalid", err)
@@ -988,7 +1002,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Write([]byte("x")); !errors.Is(err, fs.ErrInvalid) {
 			t.Errorf("Write() = %v, want fs.ErrInvalid", err)
@@ -1006,7 +1020,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		info, err := wrapped.Stat()
 		if err != nil {
@@ -1057,7 +1071,7 @@ func TestWrapFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		nf := wrapped.(*nestFile)
 		if nf.buf != nil {
@@ -1081,7 +1095,7 @@ func TestWrapFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Write([]byte("x")); !errors.Is(err, fs.ErrInvalid) {
 			t.Errorf("Write() = %v, want fs.ErrInvalid", err)
@@ -1097,7 +1111,7 @@ func TestWrapFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Write([]byte("hello")); err != nil {
 			t.Errorf("Write() = %v, want nil", err)
@@ -1113,7 +1127,7 @@ func TestWrapFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.WriteString("world"); err != nil {
 			t.Errorf("WriteString() = %v, want nil", err)
@@ -1129,7 +1143,7 @@ func TestWrapFSFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.WriteString("world"); err != nil {
 			t.Errorf("WriteString() = %v, want nil", err)
@@ -1163,7 +1177,7 @@ func TestWrapFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Write([]byte("x")); !errors.Is(err, fs.ErrInvalid) {
 			t.Errorf("Write() = %v, want fs.ErrInvalid", err)
@@ -1179,7 +1193,7 @@ func TestWrapFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Write([]byte("hello")); err != nil {
 			t.Errorf("Write() = %v, want nil", err)
@@ -1203,7 +1217,7 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		for _, tc := range []struct {
 			offset int64
@@ -1233,7 +1247,7 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		for _, tc := range []struct {
 			off  int64
@@ -1258,7 +1272,7 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		buf := make([]byte, 5)
 		n, err := wrapped.ReadAt(buf, 6)
@@ -1280,7 +1294,7 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		if _, err := wrapped.Seek(3, io.SeekStart); err != nil {
 			t.Fatal(err)
@@ -1316,7 +1330,7 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer wrapped.Close()
+			defer validateClose(t, wrapped)()
 
 			nf := wrapped.(*nestFile)
 			if nf.buf == nil {
@@ -1336,7 +1350,7 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer wrapped.Close()
+			defer validateClose(t, wrapped)()
 
 			nf := wrapped.(*nestFile)
 			if nf.tmpFile == nil {
@@ -1374,7 +1388,7 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer wrapped.Close()
+		defer validateClose(t, wrapped)()
 
 		nf := wrapped.(*nestFile)
 		if nf.buf != nil {

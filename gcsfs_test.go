@@ -318,7 +318,7 @@ func TestGCSFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	t.Run("file_exists", func(t *testing.T) {
 		if err := fsys.Remove("a"); err != nil {
@@ -351,7 +351,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer fsys.Close()
+		defer validateClose(t, fsys)()
 
 		if err := fsys.RemoveAll("dir"); err != nil {
 			t.Fatalf("RemoveAll('dir') = %v, want nil", err)
@@ -370,7 +370,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer fsys.Close()
+		defer validateClose(t, fsys)()
 
 		if err := fsys.RemoveAll("nonexistent"); err != nil {
 			t.Errorf("RemoveAll(nonexistent) = %v, want nil", err)
@@ -383,7 +383,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer fsys.Close()
+		defer validateClose(t, fsys)()
 
 		if err := fsys.RemoveAll(cwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)

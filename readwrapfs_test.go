@@ -31,14 +31,18 @@ var testMapFS = fstest.MapFS{
 func makeTestStdFS(t *testing.T) ReadFS {
 	t.Helper()
 	fsys := FromFS(testMapFS)
-	t.Cleanup(func() { fsys.Close() })
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
 	return fsys
 }
 
 func TestFromFSString(t *testing.T) {
 	t.Parallel()
 	fsys := FromFS(testMapFS)
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	want := "readWrapFS(fstest.MapFS)"
 	if got := fsys.(interface{ String() string }).String(); got != want {
@@ -54,7 +58,7 @@ func TestFromFSOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() = %v, want nil", err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -73,7 +77,7 @@ func TestFromFSOpenDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(dir) = %v, want nil", err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	info, err := f.Stat()
 	if err != nil {

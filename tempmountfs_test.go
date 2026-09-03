@@ -98,7 +98,9 @@ func TestTempMountFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("file_exists", func(t *testing.T) {
 		if err := fsys.Remove("remove_me.txt"); err != nil {
@@ -176,7 +178,9 @@ func TestTempMountFSReadLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.Symlink("target.txt", filepath.Join(tempDir, "link.txt")); err != nil {
 		t.Fatalf("Symlink failed: %v", err)
@@ -211,7 +215,9 @@ func TestTempMountFSLstat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.Symlink("lstat_file.txt", filepath.Join(tempDir, "lstat_link.txt")); err != nil {
 		t.Fatalf("Symlink failed: %v", err)

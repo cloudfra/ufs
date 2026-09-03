@@ -30,7 +30,11 @@ var embedTestFiles embed.FS
 func makeTestEmbedFS(t *testing.T, name string) FS {
 	t.Helper()
 	fsys := NewEmbedFS(name, embedTestFiles)
-	t.Cleanup(func() { fsys.Close() })
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
 	return fsys
 }
 
@@ -51,7 +55,9 @@ func TestNewEmbedFSURI(t *testing.T) {
 		if got := fsys.String(); !strings.Contains(got, "embedFS(") {
 			t.Errorf("NewEmbedFS(%q).String() = %q, want embedFS(...) wrapper", tc.name, got)
 		}
-		fsys.Close()
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
 	}
 }
 

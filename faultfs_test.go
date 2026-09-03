@@ -195,6 +195,9 @@ func TestFaultInjectorLatency(t *testing.T) {
 }
 
 func TestFaultInjectorLatencyJitter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping timing-sensitive test in short mode")
+	}
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)

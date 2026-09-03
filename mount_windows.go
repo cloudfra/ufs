@@ -34,12 +34,12 @@ type utf16Str = *uint16
 
 // HRESULT constants returned from ProjFS callbacks.
 const (
-	hresultOK            = 0          // S_OK
-	hresultFileNotFound  = 0x80070002 // HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
-	hresultAccessDenied  = 0x80070005 // HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)
-	hresultFileExists    = 0x80070050 // HRESULT_FROM_WIN32(ERROR_FILE_EXISTS)
-	hresultOutOfMemory   = 0x8007000E // HRESULT_FROM_WIN32(ERROR_OUTOFMEMORY)
-	hresultFail          = 0x80004005 // E_FAIL
+	hresultOK           = 0          // S_OK
+	hresultFileNotFound = 0x80070002 // HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)
+	hresultAccessDenied = 0x80070005 // HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)
+	hresultFileExists   = 0x80070050 // HRESULT_FROM_WIN32(ERROR_FILE_EXISTS)
+	hresultOutOfMemory  = 0x8007000E // HRESULT_FROM_WIN32(ERROR_OUTOFMEMORY)
+	hresultFail         = 0x80004005 // E_FAIL
 )
 
 // projfsPath converts a ProjFS backslash-relative path to a forward-slash

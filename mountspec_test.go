@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestParseYAMLMountSpec(t *testing.T) {
@@ -91,6 +92,41 @@ func TestParseYAMLMountSpec(t *testing.T) {
 				t.Errorf("len(specs) = %d, want %d", len(specs), tc.wantCount)
 			}
 		})
+	}
+}
+
+func TestParseYAMLMountSpecFaultConfig(t *testing.T) {
+	t.Parallel()
+	input := `- source: "memory://"
+  mountPoint: "."
+  options:
+    fault:
+      latency: 100ms
+      latencyJitter: 50ms
+      errorRate: 0.25
+      log: true`
+	specs, err := parseYAMLMountSpec(input)
+	if err != nil {
+		t.Fatalf("parseYAMLMountSpec() error: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("len(specs) = %d, want 1", len(specs))
+	}
+	fault := specs[0].Options.Fault
+	if fault == nil {
+		t.Fatal("Options.Fault is nil, want non-nil")
+	}
+	if fault.Latency != 100*time.Millisecond {
+		t.Errorf("Latency = %v, want 100ms", fault.Latency)
+	}
+	if fault.LatencyJitter != 50*time.Millisecond {
+		t.Errorf("LatencyJitter = %v, want 50ms", fault.LatencyJitter)
+	}
+	if fault.ErrorRate != 0.25 {
+		t.Errorf("ErrorRate = %v, want 0.25", fault.ErrorRate)
+	}
+	if !fault.Log {
+		t.Error("Log = false, want true")
 	}
 }
 
@@ -518,6 +554,87 @@ func TestNewFromFstabLocalFS(t *testing.T) {
 	}
 	if string(data) != "hello" {
 		t.Errorf("content = %q, want %q", data, "hello")
+	}
+}
+
+func TestNewFromYAMLFaultInjector(t *testing.T) {
+	t.Parallel()
+	input := `- source: "memory://"
+  mountPoint: "."
+  options:
+    fault:
+      errorRate: 1.0
+      errorMessage: "disk on fire"`
+	fsys, err := New(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	_, err = fsys.Create("file.txt")
+	if err == nil {
+		t.Fatal("Create on fault-injected FS succeeded, want error")
+	}
+}
+
+func TestNewFromYAMLFaultInjectorMount(t *testing.T) {
+	t.Parallel()
+	input := `- source: "memory://"
+  mountPoint: "."
+- source: "memory://"
+  mountPoint: "unstable"
+  options:
+    fault:
+      errorRate: 1.0`
+	fsys, err := New(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	if _, err := fsys.Create("file.txt"); err != nil {
+		t.Fatalf("Create at root: %v", err)
+	}
+
+	_, err = fsys.Create("unstable/file.txt")
+	if err == nil {
+		t.Fatal("Create on fault-injected mount succeeded, want error")
+	}
+}
+
+func TestNewFromYAMLFaultAndReadOnly(t *testing.T) {
+	t.Parallel()
+	input := `- source: "memory://"
+  mountPoint: "."
+  options:
+    readOnly: true
+    fault:
+      latency: 1ms`
+	fsys, err := New(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	_, err = fsys.Create("file.txt")
+	if err == nil {
+		t.Fatal("Create on read-only + fault FS succeeded, want error")
+	}
+}
+
+func TestNewFromFstabFaultInjector(t *testing.T) {
+	t.Parallel()
+	// fstab doesn't support fault config — only YAML does. This test verifies
+	// fstab continues to work without fault config.
+	input := "memory:// . auto rw 0 0"
+	fsys, err := New(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	if _, err := fsys.Create("file.txt"); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
 }
 

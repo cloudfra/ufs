@@ -137,12 +137,12 @@ func nameToURI(name string) (*url.URL, error) {
 //
 // YAML (flat list of [MountSpec] entries):
 //
-//	- source: "memory://"
-//	  mountPoint: "."
-//	- source: "null://"
-//	  mountPoint: "cache"
-//	  options:
-//	    readOnly: true
+//   - source: "memory://"
+//     mountPoint: "."
+//   - source: "null://"
+//     mountPoint: "cache"
+//     options:
+//     readOnly: true
 //
 // If no entry has a root mount point (".", "/", "none", or empty), a read-only
 // null:// filesystem is used as the root.
@@ -319,13 +319,16 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 // and mount options.
 type MountSpec struct {
 	Source     string           `yaml:"source"`
-	MountPoint string          `yaml:"mountPoint"`
+	MountPoint string           `yaml:"mountPoint"`
 	Options    MountSpecOptions `yaml:"options"`
 }
 
 // MountSpecOptions holds options that apply to a [MountSpec] entry.
+// Each wrapper is represented by a typed pointer field; nil means the
+// wrapper is not applied.
 type MountSpecOptions struct {
-	ReadOnly bool `yaml:"readOnly"`
+	ReadOnly bool         `yaml:"readOnly"`
+	Fault    *FaultConfig `yaml:"fault,omitempty"`
 }
 
 func parseMountSpec(input string) []MountSpec {
@@ -419,6 +422,18 @@ var defaultRootSpec = MountSpec{
 	Options:    MountSpecOptions{ReadOnly: true},
 }
 
+// applyWrappers applies the configured wrapper layers from opts to fsys.
+// Wrappers are applied in a fixed order: ReadOnly first, then FaultInjector.
+func applyWrappers(fsys FS, opts MountSpecOptions) FS {
+	if opts.ReadOnly {
+		fsys = ReadOnly(fsys)
+	}
+	if !opts.Fault.isZero() {
+		fsys = FaultInjector(fsys, *opts.Fault)
+	}
+	return fsys
+}
+
 func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 	var root *MountSpec
 	var mounts []MountSpec
@@ -437,10 +452,7 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	var rootFS FS = baseFS
-	if root.Options.ReadOnly {
-		rootFS = ReadOnly(baseFS)
-	}
+	rootFS := applyWrappers(baseFS, root.Options)
 	nFS := makeNestFS(ctx, rootFS)
 
 	for _, m := range mounts {
@@ -448,10 +460,7 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 		if err != nil {
 			return nil, joinErrors(err, nFS.Close())
 		}
-		var mountFS FS = mountBaseFS
-		if m.Options.ReadOnly {
-			mountFS = ReadOnly(mountBaseFS)
-		}
+		mountFS := applyWrappers(mountBaseFS, m.Options)
 		mountNestFS := makeNestFS(ctx, mountFS)
 		if err := nFS.addMount(m.MountPoint, mountNestFS); err != nil {
 			return nil, joinErrors(err, mountNestFS.Close(), nFS.Close())

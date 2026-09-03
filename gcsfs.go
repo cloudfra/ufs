@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -433,7 +434,11 @@ func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close file during ReadDir", "path", name, "error", err)
+		}
+	}()
 	gf := f.(*gcsFile)
 	if !gf.isDir {
 		return nil, pathError("readdir", name, fs.ErrInvalid)

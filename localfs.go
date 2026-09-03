@@ -17,6 +17,7 @@ package ufs
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"os"
 	"path"
@@ -129,7 +130,11 @@ func (fsys *localFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close directory during ReadDir", "path", name, "error", err)
+		}
+	}()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
 		return nil, err

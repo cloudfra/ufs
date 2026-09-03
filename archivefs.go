@@ -193,8 +193,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 	}
 	fsys, err := archives.FileSystem(ctx, name, file)
 	if err != nil {
-		file.Close()
-		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
+		return nil, joinErrors(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
 	}
 	return makeArchiveFS(fsys, name, file), nil
 }

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"os"
 	"path"
@@ -485,7 +486,11 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close file during ReadDir", "path", name, "error", err)
+		}
+	}()
 
 	readDirFile, ok := f.(fs.ReadDirFile)
 	if !ok {
@@ -513,7 +518,11 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close file during Stat", "path", name, "error", err)
+		}
+	}()
 	return f.Stat()
 }
 
@@ -741,7 +750,9 @@ func polyfillSeekReadAt(nf *nestFile, f fs.File, mode bufferMode) error {
 func polyfillSeekReadAtMemory(nf *nestFile, f fs.File) error {
 	data, err := io.ReadAll(f)
 	if err != nil {
-		f.Close()
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("failed to close file after ReadAll error", "error", closeErr)
+		}
 		return err
 	}
 	nf.buf = bytes.NewReader(data)

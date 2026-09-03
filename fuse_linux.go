@@ -304,7 +304,7 @@ func (fh *fuseFileHandle) Read(ctx context.Context, dest []byte, off int64) (fus
 func (fh *fuseFileHandle) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
 	if wa, ok := fh.file.(io.WriterAt); ok {
 		n, err := wa.WriteAt(data, off)
-		return uint32(n), fuseErrno(err)
+		return clampToUint32(n), fuseErrno(err)
 	}
 	if s, ok := fh.file.(io.Seeker); ok {
 		if _, err := s.Seek(off, io.SeekStart); err != nil {
@@ -316,7 +316,7 @@ func (fh *fuseFileHandle) Write(ctx context.Context, data []byte, off int64) (ui
 		return 0, syscall.EBADF
 	}
 	n, err := w.Write(data)
-	return uint32(n), fuseErrno(err)
+	return clampToUint32(n), fuseErrno(err)
 }
 
 func (fh *fuseFileHandle) Release(ctx context.Context) syscall.Errno {
@@ -349,7 +349,7 @@ func fuseErrno(err error) syscall.Errno {
 }
 
 func fuseAttrFromFileInfo(fi fs.FileInfo, attr *fuse.Attr) {
-	attr.Size = uint64(fi.Size())
+	attr.Size = clampToUint64(fi.Size())
 	attr.Mode = fuseMode(fi.Mode())
 	mt := fi.ModTime()
 	attr.SetTimes(&mt, &mt, &mt)

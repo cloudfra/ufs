@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -224,4 +225,24 @@ func tryOSDeleteFile(path string) {
 	if err := osDeleteFile(path); err != nil {
 		log.Printf("WARNING: %s", err)
 	}
+}
+
+// clampToUint32 converts n to uint32, clamping negative values to 0 and
+// values above math.MaxUint32 to math.MaxUint32.
+func clampToUint32(n int) uint32 {
+	if n < 0 {
+		return 0
+	}
+	if uint64(n) > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(n)
+}
+
+// clampToUint64 converts n to uint64, clamping negative values to 0.
+func clampToUint64(n int64) uint64 {
+	if n < 0 {
+		return 0
+	}
+	return uint64(n)
 }

@@ -17,6 +17,7 @@ package ufs
 import (
 	"bytes"
 	"io/fs"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -618,6 +619,56 @@ func TestNewRemoteArchiveSSRFBlocked(t *testing.T) {
 			_, err := New(t.Context(), tc.uri)
 			if err == nil {
 				t.Fatalf("New(%q) should have been blocked", tc.uri)
+			}
+		})
+	}
+}
+
+func TestClampToUint32(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   int
+		want uint32
+	}{
+		{"zero", 0, 0},
+		{"positive", 42, 42},
+		{"negative", -1, 0},
+		{"large_negative", -1000, 0},
+		{"max_int32", math.MaxInt32, math.MaxInt32},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := clampToUint32(tc.in); got != tc.want {
+				t.Errorf("clampToUint32(%d) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClampToUint64(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   int64
+		want uint64
+	}{
+		{"zero", 0, 0},
+		{"positive", 42, 42},
+		{"negative", -1, 0},
+		{"large_negative", -1000, 0},
+		{"max_int64", math.MaxInt64, math.MaxInt64},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := clampToUint64(tc.in); got != tc.want {
+				t.Errorf("clampToUint64(%d) = %d, want %d", tc.in, got, tc.want)
 			}
 		})
 	}

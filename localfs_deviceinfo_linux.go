@@ -19,21 +19,28 @@ package ufs
 import (
 	"bufio"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+const procMountsPath = "/proc/self/mounts"
 
 func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
 	rootPath := fsys.osFS.Name()
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath
 	}
-	f, err := os.Open("/proc/self/mounts")
+	f, err := os.Open(procMountsPath)
 	if err != nil {
 		return defaultDeviceMap
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("failed to close mount info", "path", procMountsPath, "error", err)
+		}
+	}()
 	return linuxDeviceMapFromReader(rootPath, f)
 }
 

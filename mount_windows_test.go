@@ -87,7 +87,10 @@ func TestProjfsPath(t *testing.T) {
 		{`file.txt`, "file.txt"},
 		{`a\b`, "a/b"},
 	} {
-		ptr, _ := windows.UTF16PtrFromString(tc.name)
+		ptr, err := windows.UTF16PtrFromString(tc.name)
+		if err != nil {
+			t.Fatalf("UTF16PtrFromString(%q): %v", tc.name, err)
+		}
 		got := projfsPath(ptr)
 		if got != tc.want {
 			t.Errorf("projfsPath(%q) = %q, want %q", tc.name, got, tc.want)

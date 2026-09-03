@@ -42,9 +42,7 @@ type fsTestCase struct {
 var (
 	angryFSTestCase = fsTestCase{
 		name: "angryFS",
-		createFS: func(tb testing.TB) FS {
-			return mustAngryFS(tb)
-		},
+		createFS: mustAngryFS,
 		wantString: angryFSPrefix,
 	}
 
@@ -164,7 +162,7 @@ func getAllExceptAngryTestCaseList() []fsTestCase {
 
 func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 	ctx := context.Background()
-	result := []fsTestCase{}
+	result := make([]fsTestCase, 0, 2*len(tcl))
 	for _, tc := range tcl {
 		result = append(result, tc, fsTestCase{
 			name: "nestFS." + tc.name,
@@ -411,7 +409,7 @@ func must(tb testing.TB, err error) {
 }
 
 func toMapKeys[T any](m map[string]T) []string {
-	keys := []string{}
+	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}

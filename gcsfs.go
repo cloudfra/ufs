@@ -70,7 +70,7 @@ type gcsFile struct {
 }
 
 func (f *gcsFile) Stat() (fs.FileInfo, error) {
-	mode := fs.FileMode(fs.ModePerm)
+	mode := fs.ModePerm
 	if f.isDir {
 		mode = fs.ModeDir | fs.ModePerm
 	}

@@ -29,11 +29,6 @@ func ExampleNew_memory() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			log.Fatal(err)
-		}
-	}()
 
 	f, err := fsys.Create("hello.txt")
 	if err != nil {
@@ -51,6 +46,10 @@ func ExampleNew_memory() {
 		log.Fatal(err)
 	}
 	fmt.Println(string(data))
+
+	if err := fsys.Close(); err != nil {
+		log.Fatal(err)
+	}
 	// Output: hello, world
 }
 
@@ -63,11 +62,6 @@ func ExampleNew_null() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			log.Fatal(err)
-		}
-	}()
 
 	f, err := fsys.Create("discard.txt")
 	if err != nil {
@@ -86,6 +80,10 @@ func ExampleNew_null() {
 		log.Fatal(err)
 	}
 	fmt.Printf("read %d bytes\n", len(data))
+
+	if err := fsys.Close(); err != nil {
+		log.Fatal(err)
+	}
 	// Output:
 	// wrote 22 bytes, err=<nil>
 	// read 0 bytes
@@ -102,16 +100,6 @@ func ExampleCopy() {
 	if err != nil {
 		log.Fatalf("failed to create destination FS: %v", err)
 	}
-	defer func() {
-		if err := src.Close(); err != nil {
-			log.Fatalf("failed to close source FS: %v", err)
-		}
-	}()
-	defer func() {
-		if err := dst.Close(); err != nil {
-			log.Fatalf("failed to close destination FS: %v", err)
-		}
-	}()
 
 	f, err := src.Create("hello.txt")
 	if err != nil {
@@ -134,6 +122,13 @@ func ExampleCopy() {
 		log.Fatalf("failed to read copied file: %v", err)
 	}
 	fmt.Println(string(data))
+
+	if err := dst.Close(); err != nil {
+		log.Fatalf("failed to close destination FS: %v", err)
+	}
+	if err := src.Close(); err != nil {
+		log.Fatalf("failed to close source FS: %v", err)
+	}
 	// Output: hello
 }
 
@@ -148,16 +143,6 @@ func ExampleRsync() {
 	if err != nil {
 		log.Fatalf("failed to create destination FS: %v", err)
 	}
-	defer func() {
-		if err := src.Close(); err != nil {
-			log.Fatalf("failed to close source FS: %v", err)
-		}
-	}()
-	defer func() {
-		if err := dst.Close(); err != nil {
-			log.Fatalf("failed to close destination FS: %v", err)
-		}
-	}()
 
 	if err := src.MkdirAll("subdir", fs.ModePerm); err != nil {
 		log.Fatalf("failed to create directory: %v", err)
@@ -186,6 +171,13 @@ func ExampleRsync() {
 	for _, p := range files {
 		fmt.Println(p)
 	}
+
+	if err := dst.Close(); err != nil {
+		log.Fatalf("failed to close destination FS: %v", err)
+	}
+	if err := src.Close(); err != nil {
+		log.Fatalf("failed to close source FS: %v", err)
+	}
 	// Output:
 	// a.txt
 	// subdir/b.txt
@@ -198,11 +190,6 @@ func ExampleListFiles() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
-		}
-	}()
 
 	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
 		log.Fatalf("failed to create directory: %v", err)
@@ -224,6 +211,10 @@ func ExampleListFiles() {
 	for _, p := range files {
 		fmt.Println(p)
 	}
+
+	if err := fsys.Close(); err != nil {
+		log.Fatalf("failed to close FS: %v", err)
+	}
 	// Output:
 	// a.txt
 	// b.txt
@@ -237,11 +228,6 @@ func ExampleList() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
-		}
-	}()
 
 	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
 		log.Fatalf("failed to create directory: %v", err)
@@ -261,6 +247,10 @@ func ExampleList() {
 	for _, p := range entries {
 		fmt.Println(p)
 	}
+
+	if err := fsys.Close(); err != nil {
+		log.Fatalf("failed to close FS: %v", err)
+	}
 	// Output:
 	// subdir
 	// subdir/c.txt
@@ -274,11 +264,6 @@ func ExampleForEachFilename() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
-		}
-	}()
 
 	for _, name := range []string{"a.txt", "b.txt"} {
 		f, err := fsys.Create(name)
@@ -295,6 +280,10 @@ func ExampleForEachFilename() {
 		return nil
 	}); err != nil {
 		log.Fatalf("failed to iterate over filenames: %v", err)
+	}
+
+	if err := fsys.Close(); err != nil {
+		log.Fatalf("failed to close FS: %v", err)
 	}
 	// Output:
 	// a.txt
@@ -316,12 +305,11 @@ func ExampleCreateURI() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
-		}
-	}()
 	fmt.Println(fsys.URI())
+
+	if err := fsys.Close(); err != nil {
+		log.Fatalf("failed to close FS: %v", err)
+	}
 	// Output:
 	// memory:
 	// memory:

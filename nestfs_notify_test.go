@@ -44,7 +44,9 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
 		return ev.op == NotifyCreate && ev.path == "test.txt"

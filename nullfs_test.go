@@ -78,7 +78,7 @@ func TestNewNullFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	nf, ok := f.(io.Writer)
 	if !ok {
@@ -259,7 +259,7 @@ func TestNullFSCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(\"created.txt\") failed: %v", err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	if f == nil {
 		t.Fatal("Created file is nil")
@@ -289,7 +289,7 @@ func TestNullFileOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	// Read
 	b := make([]byte, 10)

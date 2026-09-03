@@ -109,7 +109,11 @@ func setupListFS(t *testing.T) FS {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { fsys.Close() })
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
 	if err := fsys.MkdirAll("dir", fs.ModePerm); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +122,9 @@ func setupListFS(t *testing.T) FS {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return fsys
 }
@@ -147,8 +153,14 @@ func TestCopy(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to create file in srcFS: %v", err)
 	}
-	f.WriteString("hello world")
-	f.Close()
+	if n, err := f.WriteString("hello world"); err != nil {
+		t.Fatalf("WriteString() = %v", err)
+	} else if n != len("hello world") {
+		t.Fatalf("WriteString() = %d, want %d", n, len("hello world"))
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v", err)
+	}
 
 	if err := Copy(src, "hello.txt", dst, "copy.txt"); err != nil {
 		t.Fatalf("Copy() = %v, want nil", err)
@@ -206,8 +218,14 @@ func TestCopyCreateError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.WriteString("data")
-	f.Close()
+	if n, err := f.WriteString("data"); err != nil {
+		t.Fatal(err)
+	} else if n != len("data") {
+		t.Fatalf("WriteString() = %d, want %d", n, len("data"))
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	dst, err := newAngryFS("angry://")
 	if err != nil {
@@ -646,7 +664,11 @@ func TestIsMountedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	nfs := makeNestFS(t.Context(), lfs)
-	t.Cleanup(func() { nfs.Close() })
+	t.Cleanup(func() {
+		if err := nfs.Close(); err != nil {
+			t.Errorf("nfs.Close() = %v", err)
+		}
+	})
 
 	cases := []struct {
 		name string
@@ -701,7 +723,11 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 	nfs := makeNestFS(t.Context(), lfs)
-	t.Cleanup(func() { nfs.Close() })
+	t.Cleanup(func() {
+		if err := nfs.Close(); err != nil {
+			t.Errorf("nfs.Close() = %v", err)
+		}
+	})
 
 	var got []string
 	err = Walk(nfs, cwdPath, WalkArgs{}, func(name string) error {
@@ -726,7 +752,11 @@ func setupRemoveFS(t *testing.T) FS {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { fsys.Close() })
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
 	if err := fsys.MkdirAll("dir", fs.ModePerm); err != nil {
 		t.Fatal(err)
 	}
@@ -735,7 +765,9 @@ func setupRemoveFS(t *testing.T) FS {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return fsys
 }

@@ -102,7 +102,11 @@ func TestNewGitFSLocalRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(srcDir)
+	defer func() {
+		if err := os.RemoveAll(srcDir); err != nil {
+			t.Errorf("os.RemoveAll(%q) = %v", srcDir, err)
+		}
+	}()
 
 	if err := initTestGitRepo(t, srcDir, map[string]string{
 		"hello.txt": "hello world",
@@ -115,13 +119,13 @@ func TestNewGitFSLocalRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	f, err := fsys.Open("hello.txt")
 	if err != nil {
 		t.Fatalf("Open(%q) = %v, want nil", "hello.txt", err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -137,7 +141,11 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(srcDir)
+	defer func() {
+		if err := os.RemoveAll(srcDir); err != nil {
+			t.Errorf("os.RemoveAll(%q) = %v", srcDir, err)
+		}
+	}()
 
 	if err := initTestGitRepo(t, srcDir, map[string]string{
 		"hello.txt": "hello",
@@ -149,7 +157,7 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	// .git and .gitignore should be stripped from the cloned result
 	if _, err := fsys.Open(".git"); err == nil {

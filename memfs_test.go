@@ -90,7 +90,7 @@ func TestMemFSCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(\"created.txt\") failed: %v", err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	if f == nil {
 		t.Fatal("Created file is nil")
@@ -183,7 +183,11 @@ func TestMemFileSeek(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.WriteString("abcdefghijklm")
+	if n, err := f.WriteString("abcdefghijklm"); err != nil {
+		t.Fatal(err)
+	} else if n != len("abcdefghijklm") {
+		t.Fatalf("WriteString() = %d, want %d", n, len("abcdefghijklm"))
+	}
 
 	// Seek to middle
 	pos, err := f.Seek(5, io.SeekStart)
@@ -241,7 +245,11 @@ func TestMemFileReadAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.WriteString("hello world")
+	if n, err := f.WriteString("hello world"); err != nil {
+		t.Fatal(err)
+	} else if n != len("hello world") {
+		t.Fatalf("WriteString() = %d, want %d", n, len("hello world"))
+	}
 
 	// Read from middle (should not hit EOF)
 	buf := make([]byte, 5)
@@ -317,7 +325,7 @@ func TestMemFSDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	if _, ok := f.(fs.ReadDirFile); ok {
 		t.Error("regular file implements fs.ReadDirFile, want it not to")
@@ -339,7 +347,9 @@ func TestMemFSFilePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Reopen and read
 	f2, err := fsys.Open("persist.txt")
@@ -446,7 +456,11 @@ func TestMemFSLstat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-	f.WriteString("data")
+	if n, err := f.WriteString("data"); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	} else if n != len("data") {
+		t.Fatalf("WriteString() = %d, want %d", n, len("data"))
+	}
 	if err := f.Close(); err != nil {
 		t.Errorf("failed to close file: %v", err)
 	}
@@ -543,8 +557,13 @@ func TestMemFSReadDir(t *testing.T) {
 	})
 
 	t.Run("on_file", func(t *testing.T) {
-		f, _ := fsys.Create("plain.txt")
-		f.Close()
+		f, err := fsys.Create("plain.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := dfs.ReadDir("plain.txt"); err == nil {
 			t.Error("ReadDir on a file succeeded, want error")
 		}
@@ -568,10 +587,17 @@ func TestMemFSGlob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fsys.MkdirAll("src", fs.ModePerm)
+	if err := fsys.MkdirAll("src", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"src/foo.go", "src/bar.go", "src/README.md"} {
-		f, _ := fsys.Create(name)
-		f.Close()
+		f, err := fsys.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	gfs := fsys.(fs.GlobFS)
@@ -626,7 +652,9 @@ func TestMemFSReaddirAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	dir, err := fsys.Open("parent")
@@ -665,7 +693,9 @@ func TestMemFSReaddirPaginated(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	dir, err := fsys.Open("paged")
@@ -703,7 +733,7 @@ func TestMemFileReadDirOnFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	// Regular files must not expose ReadDir; ReadDirFS.ReadDir should error.
 	if _, ok := f.(fs.ReadDirFile); ok {
@@ -723,7 +753,7 @@ func TestMemFileSeekNegative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer validateClose(t, f)()
 
 	if _, err := f.Seek(-1, io.SeekStart); err == nil {
 		t.Error("Seek(-1, SeekStart) succeeded, want error")
@@ -758,7 +788,7 @@ func TestMemFileDirRead(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Open(%q) = %v", dirPath, err)
 			}
-			defer f.Close()
+			defer validateClose(t, f)()
 
 			n, err := f.Read(make([]byte, 1))
 			if err == nil || err == io.EOF {
@@ -873,9 +903,11 @@ func TestMemFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
-	fsys.MkdirAll("a/b", fs.ModePerm)
+	if err := fsys.MkdirAll("a/b", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"a/b/x.txt", "a/y.txt", "z.txt"} {
 		g, err := fsys.Create(name)
 		if err != nil {
@@ -935,7 +967,9 @@ func TestMemFSRemoveAll(t *testing.T) {
 
 func TestMemFSRemoveClosedFS(t *testing.T) {
 	fsys, _ := newMemFS("memory://test")
-	fsys.Close()
+	if err := fsys.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := fsys.Remove("file.txt"); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("Remove on closed memFS = %v, want fs.ErrClosed", err)

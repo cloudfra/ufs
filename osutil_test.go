@@ -61,7 +61,9 @@ func TestOSDeleteFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		p := f.Name()
-		f.Close()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
 
 		if err := osDeleteFile(p); err != nil {
 			t.Errorf("osDeleteFile(existing) = %v, want nil", err)
@@ -78,7 +80,9 @@ func TestTryOSDeleteFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := f.Name()
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	tryOSDeleteFile(p)
 	if osExists(p) {
@@ -115,7 +119,7 @@ func TestNewRemoteArchive(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if files, err := fsys.ReadDir(cwdPath); files != nil {
 		t.Logf("files: %v, err: %s", files, err)
@@ -471,7 +475,11 @@ func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) FS 
 	if err != nil {
 		t.Fatalf("newArchiveFSFromLocalFS() = %v", err)
 	}
-	t.Cleanup(func() { fsys.Close() })
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
 	return fsys
 }
 

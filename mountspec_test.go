@@ -370,7 +370,7 @@ func TestNewFromYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Create("hello.txt"); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -392,7 +392,7 @@ func TestNewFromYAMLReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	_, err = fsys.Create("file.txt")
 	if err == nil {
@@ -412,7 +412,7 @@ func TestNewFromYAMLReadOnlyMount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Create("file.txt"); err != nil {
 		t.Fatalf("Create at root: %v", err)
@@ -432,7 +432,7 @@ func TestNewFromYAMLNoRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	_, err = fsys.Create("file.txt")
 	if err == nil {
@@ -451,7 +451,7 @@ func TestNewFromFstab(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Create("hello.txt"); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -468,7 +468,7 @@ func TestNewFromFstabReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	_, err = fsys.Create("file.txt")
 	if err == nil {
@@ -483,7 +483,7 @@ func TestNewFromFstabReadOnlyMount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Create("file.txt"); err != nil {
 		t.Fatalf("Create at root: %v", err)
@@ -508,7 +508,7 @@ null:// scratch auto rw 0 0
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Stat("scratch"); err != nil {
 		t.Fatalf("Stat(scratch): %v", err)
@@ -522,7 +522,7 @@ func TestNewFromFstabNoRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	_, err = fsys.Create("file.txt")
 	if err == nil {
@@ -546,7 +546,7 @@ func TestNewFromFstabLocalFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	data, err := fs.ReadFile(fsys, "test.txt")
 	if err != nil {
@@ -569,7 +569,7 @@ func TestNewFromYAMLFaultInjector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	_, err = fsys.Create("file.txt")
 	if err == nil {
@@ -590,7 +590,7 @@ func TestNewFromYAMLFaultInjectorMount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Create("file.txt"); err != nil {
 		t.Fatalf("Create at root: %v", err)
@@ -614,7 +614,7 @@ func TestNewFromYAMLFaultAndReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	_, err = fsys.Create("file.txt")
 	if err == nil {
@@ -631,7 +631,7 @@ func TestNewFromFstabFaultInjector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Create("file.txt"); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -644,7 +644,7 @@ func TestNewURIStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Create("test.txt"); err != nil {
 		t.Fatalf("Create: %v", err)

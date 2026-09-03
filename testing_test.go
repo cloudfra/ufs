@@ -58,7 +58,9 @@ var (
 					tb.Fatalf("cannot create localFS file system, %s", err)
 				}
 				tb.Cleanup(func() {
-					fsys.Close()
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
 				})
 				return fsys
 			},
@@ -72,7 +74,9 @@ var (
 					tb.Fatalf("cannot create tempMountFS file system, %s", err)
 				}
 				tb.Cleanup(func() {
-					fsys.Close()
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
 				})
 				return fsys
 			},
@@ -83,7 +87,9 @@ var (
 			createFS: func(tb testing.TB) FS {
 				fsys := makeMemFS(memFSPrefix)
 				tb.Cleanup(func() {
-					fsys.Close()
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
 				})
 				return fsys
 			},
@@ -97,7 +103,9 @@ var (
 			createFS: func(tb testing.TB) FS {
 				fsys := makeNullFS(nullFSPrefix)
 				tb.Cleanup(func() {
-					fsys.Close()
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
 				})
 				return fsys
 			},

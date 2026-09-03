@@ -29,7 +29,11 @@ func ExampleNew_memory() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer fsys.Close()
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	f, err := fsys.Create("hello.txt")
 	if err != nil {
@@ -59,7 +63,11 @@ func ExampleNew_null() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer fsys.Close()
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	f, err := fsys.Create("discard.txt")
 	if err != nil {

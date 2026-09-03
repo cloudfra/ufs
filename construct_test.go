@@ -251,7 +251,7 @@ func TestFSBuilderBuildEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 	if _, ok := fsys.(*nestFS); !ok {
 		t.Errorf("Build() = %T, want *nestFS", fsys)
 	}
@@ -299,7 +299,7 @@ func TestFSBuilderBuildURI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q) = %v, want nil", got, err)
 			}
-			defer fsys.Close()
+			defer validateClose(t, fsys)()
 		})
 	}
 }
@@ -314,7 +314,7 @@ func TestFSBuilderBuildURIEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(%q) = %v, want nil", uri, err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 }
 
 func TestFSBuilderBuildURIWithFSMountErrors(t *testing.T) {
@@ -334,7 +334,7 @@ func TestFSBuilderMountFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	entries, err := fsys.ReadDir("assets/testing/testassets/files")
 	if err != nil {
@@ -353,7 +353,7 @@ func TestFSBuilderMountFSWriteBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	_, err = fsys.Create("assets/newfile.txt")
 	if !errors.Is(err, fs.ErrPermission) {
@@ -440,7 +440,7 @@ func TestCreateURIWithSiblingMounts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q) = %v, want nil", uri, err)
 			}
-			defer fsys.Close()
+			defer validateClose(t, fsys)()
 
 			if _, ok := fsys.(*nestFS); !ok {
 				t.Errorf("New() = %T, want *nestFS", fsys)
@@ -544,7 +544,7 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q) = %v", uri, err)
 			}
-			defer fsys.Close()
+			defer validateClose(t, fsys)()
 
 			rootEntries, err := fsys.ReadDir(".")
 			if err != nil {

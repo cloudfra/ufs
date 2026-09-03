@@ -290,7 +290,9 @@ func TestMemWatchInvalidPath(t *testing.T) {
 
 func TestMemWatchClosed(t *testing.T) {
 	fsys := makeMemFS("memory:")
-	fsys.Close()
+	if err := fsys.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := fsys.Watch(t.Context(), ".", func(NotifyOp, string) {}); err == nil {
 		t.Error("Watch on closed FS should fail")
@@ -420,7 +422,9 @@ func TestMemWatchFSClose(t *testing.T) {
 	_ = closer
 
 	// Closing the FS should cancel all watchers.
-	fsys.Close()
+	if err := fsys.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 }

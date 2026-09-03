@@ -68,13 +68,15 @@ func TestLocalFS(t *testing.T) {
 func TestLocalFSLstat(t *testing.T) {
 	dir := mustTemp(t)
 	fsys := mustFS(t, newFSFuncWithoutContext(newLocalFS), dir)
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	f, err := fsys.Create("lstat_file.txt")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
 
 	if err := os.Symlink("lstat_file.txt", filepath.Join(dir, "lstat_link.txt")); err != nil {
 		t.Skipf("skipping: symlink creation requires elevated privileges or Developer Mode on Windows: %v", err)
@@ -112,13 +114,15 @@ func TestLocalFSLstat(t *testing.T) {
 func TestLocalFSReadLink(t *testing.T) {
 	dir := mustTemp(t)
 	fsys := mustFS(t, newFSFuncWithoutContext(newLocalFS), dir)
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	f, err := fsys.Create("target.txt")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
 
 	if err := os.Symlink("target.txt", filepath.Join(dir, "link.txt")); err != nil {
 		t.Skipf("skipping: symlink creation requires elevated privileges or Developer Mode on Windows: %v", err)
@@ -144,7 +148,7 @@ func TestLocalFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	// Create a file and a subdirectory with a child.
 	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), 0o644); err != nil {
@@ -185,7 +189,7 @@ func TestLocalFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsys.Close()
+	defer validateClose(t, fsys)()
 
 	if err := os.MkdirAll(filepath.Join(dir, "tree", "deep"), 0o755); err != nil {
 		t.Fatal(err)

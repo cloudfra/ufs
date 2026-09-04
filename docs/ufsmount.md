@@ -54,7 +54,7 @@ for details.
 
 ## Usage
 
-```
+```text
 ufsmount -uri <source> -mount <path>
 ```
 

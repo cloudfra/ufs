@@ -17,7 +17,7 @@ notifications to sync local NTFS state back into the backing `FS`.
 
 ### Data flow
 
-```
+```text
 User writes file via OS
   → File materializes on local NTFS (ProjFS can't prevent this)
   → ProjFS fires post-notification (NEW_FILE_CREATED, FILE_HANDLE_CLOSED_FILE_MODIFIED, etc.)
@@ -71,7 +71,8 @@ New fields: `writable` and `mountPath`.
 - Type-assert `fsys` to `FS`; store in `s.writable` if it succeeds.
 - Store `mountPath` in `s.mountPath`.
 - When `writable != nil`, expand the notification bitmask:
-  ```
+
+  ```text
   prjNotifyPreDelete |
   prjNotifyPreRename |          // deny on read-only; allow+remove on writable
   prjNotifyNewFileCreated |     // sync new file to backing FS
@@ -81,15 +82,18 @@ New fields: `writable` and `mountPath`.
   prjNotifyFileHandleClosedFileDeleted |   // defensive cleanup
   prjNotifyFilePreConvertToFull            // allow conversion
   ```
+
 - When `writable == nil`, keep the existing bitmask: `prjNotifyPreDelete | prjNotifyPreRename`.
 
 ### notificationCB
 
 Read-only path (unchanged):
+
 - `PRE_DELETE`, `PRE_RENAME` → return `hresultAccessDenied`
 - All others → return `hresultOK`
 
 Read-write path (new):
+
 - `NEW_FILE_CREATED` → `s.syncFromLocal(path, isDir)`
 - `FILE_OVERWRITTEN` → `s.syncFromLocal(path, false)`
 - `FILE_HANDLE_CLOSED_FILE_MODIFIED` → `s.syncFromLocal(path, false)`
@@ -322,6 +326,7 @@ var mountBackends []mountBackend // populated by platform init files
 ```
 
 Platform-specific files register backends via `init()`:
+
 - `mount_conformance_linux_test.go` — registers FUSE backend
 - `mount_conformance_windows_test.go` — registers ProjFS backend
 
@@ -367,6 +372,7 @@ These live in the platform-specific test files (`mount_windows_test.go`,
 `fuse_linux_test.go`).
 
 FUSE already has write tests in `fuse_linux_test.go`:
+
 - `TestHostMountCreateWriteRead`, `TestHostMountOpenWriteOnlyNoTrunc`,
   `TestHostMountWriteAtOffset`, `TestHostMountMkdir`,
   `TestHostMountMkdirExisting`, `TestHostMountRemoveFile`,
@@ -397,7 +403,7 @@ specific set for ProjFS. The conformance subset is carved out of it.
 
 ### File layout
 
-```
+```text
 mount_conformance_test.go              — shared conformance tests (read + write), no build tag
 mount_conformance_linux_test.go        — registers FUSE backend (read + write)
 mount_conformance_windows_test.go      — registers ProjFS backend (read + write; future: + WinFSP)

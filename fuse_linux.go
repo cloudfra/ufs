@@ -138,7 +138,7 @@ func (n *fuseNode) newChild(ctx context.Context, childPath string, fi fs.FileInf
 	return n.NewPersistentInode(ctx, child, fusefs.StableAttr{Mode: fuseMode(fi.Mode())})
 }
 
-func (n *fuseNode) Getattr(ctx context.Context, fh fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+func (n *fuseNode) Getattr(_ context.Context, _ fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	fi, err := n.fsys.Stat(n.path)
 	if err != nil {
 		return fuseErrno(err)
@@ -158,7 +158,7 @@ func (n *fuseNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 	return child, 0
 }
 
-func (n *fuseNode) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errno) {
+func (n *fuseNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) {
 	entries, err := n.fsys.ReadDir(n.path)
 	if err != nil {
 		return nil, fuseErrno(err)
@@ -177,7 +177,7 @@ func (n *fuseNode) Readdir(ctx context.Context) (fusefs.DirStream, syscall.Errno
 	return fusefs.NewListDirStream(fuseEntries), 0
 }
 
-func (n *fuseNode) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
+func (n *fuseNode) Open(_ context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if flags&(syscall.O_WRONLY|syscall.O_RDWR|syscall.O_TRUNC) != 0 {
 		wfs, ok := n.fsys.(FS)
 		if !ok {
@@ -201,7 +201,7 @@ func (n *fuseNode) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, u
 	return &fuseFileHandle{file: f}, 0, 0
 }
 
-func (n *fuseNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
+func (n *fuseNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 	target, err := n.fsys.ReadLink(n.path)
 	if err != nil {
 		return nil, fuseErrno(err)
@@ -209,7 +209,7 @@ func (n *fuseNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	return []byte(target), 0
 }
 
-func (n *fuseNode) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (*fusefs.Inode, fusefs.FileHandle, uint32, syscall.Errno) {
+func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, out *fuse.EntryOut) (*fusefs.Inode, fusefs.FileHandle, uint32, syscall.Errno) {
 	wfs, ok := n.fsys.(FS)
 	if !ok {
 		return nil, nil, 0, syscall.EROFS
@@ -252,7 +252,7 @@ func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fus
 	return child, 0
 }
 
-func (n *fuseNode) Unlink(ctx context.Context, name string) syscall.Errno {
+func (n *fuseNode) Unlink(_ context.Context, name string) syscall.Errno {
 	wfs, ok := n.fsys.(FS)
 	if !ok {
 		return syscall.EROFS
@@ -260,7 +260,7 @@ func (n *fuseNode) Unlink(ctx context.Context, name string) syscall.Errno {
 	return fuseErrno(wfs.Remove(n.childPath(name)))
 }
 
-func (n *fuseNode) Rmdir(ctx context.Context, name string) syscall.Errno {
+func (n *fuseNode) Rmdir(_ context.Context, name string) syscall.Errno {
 	wfs, ok := n.fsys.(FS)
 	if !ok {
 		return syscall.EROFS
@@ -273,7 +273,7 @@ type fuseFileHandle struct {
 	file fs.File
 }
 
-func (fh *fuseFileHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+func (fh *fuseFileHandle) Read(_ context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	if ra, ok := fh.file.(io.ReaderAt); ok {
 		n, err := ra.ReadAt(dest, off)
 		if err != nil && !errors.Is(err, io.EOF) {
@@ -301,7 +301,7 @@ func (fh *fuseFileHandle) Read(ctx context.Context, dest []byte, off int64) (fus
 	return fuse.ReadResultData(dest[:n]), 0
 }
 
-func (fh *fuseFileHandle) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
+func (fh *fuseFileHandle) Write(_ context.Context, data []byte, off int64) (uint32, syscall.Errno) {
 	if wa, ok := fh.file.(io.WriterAt); ok {
 		n, err := wa.WriteAt(data, off)
 		return clampToUint32(n), fuseErrno(err)
@@ -319,7 +319,7 @@ func (fh *fuseFileHandle) Write(ctx context.Context, data []byte, off int64) (ui
 	return clampToUint32(n), fuseErrno(err)
 }
 
-func (fh *fuseFileHandle) Release(ctx context.Context) syscall.Errno {
+func (fh *fuseFileHandle) Release(_ context.Context) syscall.Errno {
 	return fuseErrno(fh.file.Close())
 }
 

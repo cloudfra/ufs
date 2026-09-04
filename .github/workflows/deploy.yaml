@@ -213,6 +213,8 @@ jobs:
           }
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Enable ProjFS
+        run: .github/enable-projfs.ps1
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -237,7 +239,6 @@ jobs:
         with:
           go-version: stable
           cache: false
-
       - name: System Information
         run: make system-info
 

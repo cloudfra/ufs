@@ -52,8 +52,9 @@ var (
 // i.e. whether the Windows Projected File System feature is enabled.
 func projfsAvailable() error {
 	if err := projectedfslib.Load(); err != nil {
-		return fmt.Errorf("ProjFS is not available: enable the 'Windows Projected File System' optional feature.\n"+
-			"  PowerShell (admin): Enable-WindowsOptionalFeature -Online -FeatureName Client-ProjFS\n"+
+		return fmt.Errorf("ProjFS is not available: enable the 'Windows Projected File System' feature.\n"+
+			"  Windows Server (admin): Install-WindowsFeature -Name FS-Projectedfs\n"+
+			"  Windows 10/11 (admin):  Enable-WindowsOptionalFeature -Online -FeatureName Client-ProjFS\n"+
 			"  See: https://learn.microsoft.com/en-us/windows/win32/projfs/enabling-windows-projected-file-system\n"+
 			"  %w", err)
 	}

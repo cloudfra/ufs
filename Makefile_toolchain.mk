@@ -17,9 +17,9 @@ include Makefile_core.mk
 # https://github.com/rhysd/actionlint/releases
 ACTIONLINT_VERSION=latest
 # https://github.com/docker/compose/releases
-DOCKERCOMPOSE_VERSION = 5.5.0
+DOCKERCOMPOSE_VERSION = 5.5.1
 # https://developer.hashicorp.com/terraform/install
-TERRAFORM_VERSION = 1.16.0
+TERRAFORM_VERSION = 1.16.1
 # https://github.com/cloudfra/certtool/releases
 CERTTOOL_VERSION = 0.5.1
 # https://github.com/hadolint/hadolint/releases

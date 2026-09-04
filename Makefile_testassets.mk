@@ -35,9 +35,15 @@ TEST_FILE_ASSETS += testing/testassets/files/assets/images/Laptop.jpg
 TEST_FILE_ASSETS += testing/testassets/files/assets/images/earth.avi
 TEST_FILE_ASSETS += testing/testassets/files/assets/images/earth.mp4
 TEST_FILE_ASSETS += testing/testassets/files/assets/images/earth.webm
+TEST_FILE_ASSETS += testing/testassets/files/assets/deep/x/y/1.txt
+TEST_FILE_ASSETS += testing/testassets/files/assets/deep/x/y/2.txt
+TEST_FILE_ASSETS += testing/testassets/files/assets/deep/x/3.txt
+TEST_FILE_ASSETS += testing/testassets/files/assets/deep/z/4.txt
+TEST_FILE_ASSETS += testing/testassets/files/assets/deep/5.txt
 
 
 TEST_ARCHIVE_ASSETS = testing/testassets/archives/nodir-testassets.zip
+TEST_ARCHIVE_ASSETS += testing/testassets/archives/nodir-deep-testassets.zip
 TEST_ARCHIVE_ASSETS += testing/testassets/archives/single-testassets.zip
 TEST_ARCHIVE_ASSETS += testing/testassets/archives/nested-testassets.zip
 TEST_ARCHIVE_ASSETS += testing/testassets/archives/testassets.tar.gz
@@ -52,6 +58,10 @@ TEST_ASSETS = $(TEST_FILE_ASSETS) $(TEST_ARCHIVE_ASSETS)
 testing/testassets/archives/nodir-testassets.zip: $(TEST_FILE_ASSETS)
 	mkdir -p $(dir $@)
 	cd testing/testassets/files/assets/; $(ZIP) -qr9 ../../archives/nodir-testassets.zip onetwothree/1.txt onetwothree/2.txt onetwothree/3.txt 1.txt 2.txt sixseven/6.txt sixseven/7.txt
+
+testing/testassets/archives/nodir-deep-testassets.zip: $(TEST_FILE_ASSETS)
+	mkdir -p $(dir $@)
+	cd testing/testassets/files/assets/; $(ZIP) -qr9 ../../archives/nodir-deep-testassets.zip deep/x/y/1.txt deep/x/y/2.txt deep/x/3.txt deep/z/4.txt deep/5.txt onetwothree/1.txt onetwothree/2.txt
 
 testing/testassets/archives/single-testassets.zip: $(TEST_FILE_ASSETS)
 	mkdir -p $(dir $@)
@@ -182,6 +192,26 @@ testing/testassets/files/assets/images/earth.avi:
 testing/testassets/files/assets/images/example.svg:
 	mkdir -p $(dir $@)
 	curl -L -o $@ "https://file-examples.com/wp-content/storage/2020/03/file_example_SVG_20kB.svg"
+
+testing/testassets/files/assets/deep/x/y/1.txt:
+	mkdir -p $(dir $@)
+	echo -n $@ > $@
+
+testing/testassets/files/assets/deep/x/y/2.txt:
+	mkdir -p $(dir $@)
+	echo -n $@ > $@
+
+testing/testassets/files/assets/deep/x/3.txt:
+	mkdir -p $(dir $@)
+	echo -n $@ > $@
+
+testing/testassets/files/assets/deep/z/4.txt:
+	mkdir -p $(dir $@)
+	echo -n $@ > $@
+
+testing/testassets/files/assets/deep/5.txt:
+	mkdir -p $(dir $@)
+	echo -n $@ > $@
 
 testassets: $(TEST_ASSETS)
 archiveassets: $(TEST_ARCHIVE_ASSETS)

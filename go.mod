@@ -105,6 +105,8 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
 
+replace github.com/mholt/archives => ./third_party/archives
+
 ignore (
 	./build
 	./third_party

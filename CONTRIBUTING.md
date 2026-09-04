@@ -29,12 +29,12 @@ make test   # unit test suite
 make run    # build and run the example binary
 ```
 
-See the "Common make targets" table in the [README](README.md#common-make-targets)
+See the "Commands" section in the [README](README.md#commands)
 for the rest (benchmarks, Terraform tests, Docker images, etc.).
 
 ## Adding a new `cmd/` binary
 
-Per the README's [Project layout](README.md#project-layout), create a new
+Per the README's [Public API](README.md#public-api) section, create a new
 directory under `cmd/` with a `main` package, e.g. `cmd/myapp/myapp.go`.
 The build system picks it up automatically — no Makefile changes needed
 to build it with `make`. To also cross-compile, package, or release it,

@@ -11,7 +11,7 @@ go install github.com/cloudfra/ufs/cmd/walk@latest
 
 ## Usage
 
-```
+```text
 walk -path <uri-or-path>
 ```
 

@@ -68,7 +68,7 @@ same scenario names, same final-state assertions where possible.
 
 ## File layout
 
-```
+```text
 mount_conformance_test.go              — shared conformance tests, table-driven
 mount_conformance_linux_test.go        — registers FUSE backend
 mount_conformance_windows_test.go      — registers ProjFS (future: + WinFSP)

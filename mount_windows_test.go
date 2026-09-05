@@ -194,13 +194,8 @@ func TestHostMountReadOnly(t *testing.T) {
 	t.Cleanup(func() { _ = fsys.Close() })
 
 	roFS := &projfsReadOnlyFS{fsys}
-	mountDir := testProjFSMount(t, roFS)
+	_ = testProjFSMount(t, roFS)
 	t.Skip("ProjFS cannot intercept new file creation or mkdir — writes materialize to local NTFS")
-
-	err = os.WriteFile(filepath.Join(mountDir, "nope.txt"), []byte("data"), 0o644)
-	if err == nil {
-		t.Fatal("write to read-only mount succeeded, want error")
-	}
 }
 
 func TestHostMountReadOnlyMkdir(t *testing.T) {
@@ -212,13 +207,8 @@ func TestHostMountReadOnlyMkdir(t *testing.T) {
 	t.Cleanup(func() { _ = fsys.Close() })
 
 	roFS := &projfsReadOnlyFS{fsys}
-	mountDir := testProjFSMount(t, roFS)
+	_ = testProjFSMount(t, roFS)
 	t.Skip("ProjFS cannot intercept new file creation or mkdir — writes materialize to local NTFS")
-
-	err = os.Mkdir(filepath.Join(mountDir, "nope"), 0o755)
-	if err == nil {
-		t.Fatal("mkdir on read-only mount succeeded, want error")
-	}
 }
 
 func TestHostMountReadOnlyRemove(t *testing.T) {

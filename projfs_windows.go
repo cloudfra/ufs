@@ -27,25 +27,16 @@ import (
 var (
 	projectedfslib = windows.NewLazySystemDLL("projectedfslib.dll")
 
-	procPrjStartVirtualizing             = projectedfslib.NewProc("PrjStartVirtualizing")
-	procPrjStopVirtualizing              = projectedfslib.NewProc("PrjStopVirtualizing")
-	procPrjMarkDirectoryAsPlaceholder    = projectedfslib.NewProc("PrjMarkDirectoryAsPlaceholder")
-	procPrjGetVirtualizationInstanceInfo = projectedfslib.NewProc("PrjGetVirtualizationInstanceInfo")
-	procPrjWritePlaceholderInfo          = projectedfslib.NewProc("PrjWritePlaceholderInfo")
-	procPrjWritePlaceholderInfo2         = projectedfslib.NewProc("PrjWritePlaceholderInfo2")
-	procPrjWriteFileData                 = projectedfslib.NewProc("PrjWriteFileData")
-	procPrjAllocateAlignedBuffer         = projectedfslib.NewProc("PrjAllocateAlignedBuffer")
-	procPrjFreeAlignedBuffer             = projectedfslib.NewProc("PrjFreeAlignedBuffer")
-	procPrjFillDirEntryBuffer            = projectedfslib.NewProc("PrjFillDirEntryBuffer")
-	procPrjFillDirEntryBuffer2           = projectedfslib.NewProc("PrjFillDirEntryBuffer2")
-	procPrjFileNameCompare               = projectedfslib.NewProc("PrjFileNameCompare")
-	procPrjFileNameMatch                 = projectedfslib.NewProc("PrjFileNameMatch")
-	procPrjDoesNameContainWildCards      = projectedfslib.NewProc("PrjDoesNameContainWildCards")
-	procPrjCompleteCommand               = projectedfslib.NewProc("PrjCompleteCommand")
-	procPrjDeleteFile                    = projectedfslib.NewProc("PrjDeleteFile")
-	procPrjUpdateFileIfNeeded            = projectedfslib.NewProc("PrjUpdateFileIfNeeded")
-	procPrjGetOnDiskFileState            = projectedfslib.NewProc("PrjGetOnDiskFileState")
-	procPrjClearNegativePathCache        = projectedfslib.NewProc("PrjClearNegativePathCache")
+	procPrjStartVirtualizing          = projectedfslib.NewProc("PrjStartVirtualizing")
+	procPrjStopVirtualizing           = projectedfslib.NewProc("PrjStopVirtualizing")
+	procPrjMarkDirectoryAsPlaceholder = projectedfslib.NewProc("PrjMarkDirectoryAsPlaceholder")
+	procPrjWritePlaceholderInfo       = projectedfslib.NewProc("PrjWritePlaceholderInfo")
+	procPrjWriteFileData              = projectedfslib.NewProc("PrjWriteFileData")
+	procPrjAllocateAlignedBuffer      = projectedfslib.NewProc("PrjAllocateAlignedBuffer")
+	procPrjFreeAlignedBuffer          = projectedfslib.NewProc("PrjFreeAlignedBuffer")
+	procPrjFillDirEntryBuffer         = projectedfslib.NewProc("PrjFillDirEntryBuffer")
+	procPrjFileNameCompare            = projectedfslib.NewProc("PrjFileNameCompare")
+	procPrjFileNameMatch              = projectedfslib.NewProc("PrjFileNameMatch")
 )
 
 // projfsAvailable reports whether projectedfslib.dll could be loaded,
@@ -96,54 +87,10 @@ const (
 	prjNotificationFilePreConvertToFull           = 0x00001000
 )
 
-// PRJ_FILE_STATE values.
-const (
-	prjFileStatePlaceholder         = 0x00000001
-	prjFileStateHydratedPlaceholder = 0x00000002
-	prjFileStateDirtyPlaceholder    = 0x00000004
-	prjFileStateFull                = 0x00000008
-	prjFileStateTombstone           = 0x00000010
-)
-
-// PRJ_STARTVIRTUALIZING_FLAGS values.
-const (
-	prjFlagNone             = 0x00000000
-	prjFlagUseNegativeCache = 0x00000001
-)
-
-// PRJ_EXT_INFO_TYPE values.
-const (
-	prjExtInfoTypeSymlink = 0x00000001
-)
-
 // PRJ_CALLBACK_DATA_FLAGS values.
 const (
 	prjCBDataFlagRestartScan       = 0x00000001
 	prjCBDataFlagReturnSingleEntry = 0x00000002
-)
-
-// PRJ_COMPLETE_COMMAND_TYPE values.
-const (
-	prjCompleteCommandTypeNotification = 0x00000001
-	prjCompleteCommandTypeEnumeration  = 0x00000002
-)
-
-// PRJ_UPDATE_TYPES values.
-const (
-	prjUpdateTypeNone           = 0x00000000
-	prjUpdateAllowDirtyMetadata = 0x00000001
-	prjUpdateAllowDirtyData     = 0x00000002
-	prjUpdateAllowTombstone     = 0x00000004
-	prjUpdateAllowReadOnly      = 0x00000020
-)
-
-// PRJ_UPDATE_FAILURE_CAUSES values.
-const (
-	prjUpdateFailureCauseNone          = 0x00000000
-	prjUpdateFailureCauseDirtyMetadata = 0x00000001
-	prjUpdateFailureCauseDirtyData     = 0x00000002
-	prjUpdateFailureCauseTombstone     = 0x00000004
-	prjUpdateFailureCauseReadOnly      = 0x00000008
 )
 
 // prjPlaceholderIDLength is the fixed length of PRJ_PLACEHOLDER_ID.
@@ -191,12 +138,12 @@ type prjCallbackData struct {
 	Size                           uint32
 	Flags                          uint32
 	NamespaceVirtualizationContext uintptr
-	CommandId                      int32
-	FileId                         windows.GUID
-	DataStreamId                   windows.GUID
+	CommandID                      int32
+	FileID                         windows.GUID
+	DataStreamID                   windows.GUID
 	FilePathName                   *uint16
 	VersionInfo                    *prjPlaceholderVersionInfo
-	TriggeringProcessId            uint32
+	TriggeringProcessID            uint32
 	_                              [4]byte
 	TriggeringProcessImageFileName *uint16
 	InstanceContext                uintptr
@@ -230,32 +177,6 @@ type prjStartVirtualizingOptions struct {
 	NotificationMappings      *prjNotificationMapping
 	NotificationMappingsCount uint32
 	_                         [4]byte
-}
-
-// prjVirtualizationInstanceInfo maps PRJ_VIRTUALIZATION_INSTANCE_INFO.
-type prjVirtualizationInstanceInfo struct {
-	InstanceID     windows.GUID
-	WriteAlignment uint32
-}
-
-// prjExtendedInfo maps PRJ_EXTENDED_INFO.
-type prjExtendedInfo struct {
-	InfoType   uint32
-	_          [4]byte
-	TargetName *uint16 // union: only Symlink.TargetName used
-	_          [8]byte // padding to match union size
-}
-
-// prjNotificationParameters maps PRJ_NOTIFICATION_PARAMETERS (union).
-type prjNotificationParameters struct {
-	Data [4]byte // union — interpret based on notification type
-}
-
-// prjCompleteCommandExtendedParameters maps the union for PrjCompleteCommand.
-type prjCompleteCommandExtendedParameters struct {
-	CommandType uint32
-	_           [4]byte
-	Data        [24]byte // union — notification or enumeration parameters
 }
 
 // hresultToError converts an HRESULT (uintptr) to a Go error.
@@ -295,7 +216,7 @@ func prjStartVirtualizing(virtualizationRootPath *uint16, callbacks *prjCallback
 }
 
 func prjStopVirtualizing(namespaceVirtualizationContext uintptr) {
-	procPrjStopVirtualizing.Call(namespaceVirtualizationContext)
+	_, _, _ = procPrjStopVirtualizing.Call(namespaceVirtualizationContext)
 }
 
 func prjWritePlaceholderInfo(namespaceVirtualizationContext uintptr, destinationFileName *uint16, placeholderInfo *prjPlaceholderInfo, placeholderInfoSize uint32) error {
@@ -308,21 +229,10 @@ func prjWritePlaceholderInfo(namespaceVirtualizationContext uintptr, destination
 	return hresultToError(hr)
 }
 
-func prjWritePlaceholderInfo2(namespaceVirtualizationContext uintptr, destinationFileName *uint16, placeholderInfo *prjPlaceholderInfo, placeholderInfoSize uint32, extendedInfo *prjExtendedInfo) error {
-	hr, _, _ := procPrjWritePlaceholderInfo2.Call(
-		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(destinationFileName)),
-		uintptr(unsafe.Pointer(placeholderInfo)),
-		uintptr(placeholderInfoSize),
-		uintptr(unsafe.Pointer(extendedInfo)),
-	)
-	return hresultToError(hr)
-}
-
-func prjWriteFileData(namespaceVirtualizationContext uintptr, dataStreamId *windows.GUID, buffer unsafe.Pointer, byteOffset uint64, length uint32) error {
+func prjWriteFileData(namespaceVirtualizationContext uintptr, dataStreamID *windows.GUID, buffer unsafe.Pointer, byteOffset uint64, length uint32) error {
 	hr, _, _ := procPrjWriteFileData.Call(
 		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(dataStreamId)),
+		uintptr(unsafe.Pointer(dataStreamID)),
 		uintptr(buffer),
 		uintptr(byteOffset),
 		uintptr(length),
@@ -335,11 +245,11 @@ func prjAllocateAlignedBuffer(namespaceVirtualizationContext uintptr, size uint6
 		namespaceVirtualizationContext,
 		uintptr(size),
 	)
-	return unsafe.Pointer(ptr)
+	return unsafe.Pointer(ptr) //nolint:govet // syscall returns uintptr that must be converted to unsafe.Pointer
 }
 
 func prjFreeAlignedBuffer(buffer unsafe.Pointer) {
-	procPrjFreeAlignedBuffer.Call(uintptr(buffer))
+	_, _, _ = procPrjFreeAlignedBuffer.Call(uintptr(buffer))
 }
 
 func prjFillDirEntryBuffer(fileName *uint16, fileBasicInfo *prjFileBasicInfo, dirEntryBufferHandle uintptr) error {
@@ -347,16 +257,6 @@ func prjFillDirEntryBuffer(fileName *uint16, fileBasicInfo *prjFileBasicInfo, di
 		uintptr(unsafe.Pointer(fileName)),
 		uintptr(unsafe.Pointer(fileBasicInfo)),
 		dirEntryBufferHandle,
-	)
-	return hresultToError(hr)
-}
-
-func prjFillDirEntryBuffer2(dirEntryBufferHandle uintptr, fileName *uint16, fileBasicInfo *prjFileBasicInfo, extendedInfo *prjExtendedInfo) error {
-	hr, _, _ := procPrjFillDirEntryBuffer2.Call(
-		dirEntryBufferHandle,
-		uintptr(unsafe.Pointer(fileName)),
-		uintptr(unsafe.Pointer(fileBasicInfo)),
-		uintptr(unsafe.Pointer(extendedInfo)),
 	)
 	return hresultToError(hr)
 }
@@ -375,69 +275,6 @@ func prjFileNameMatch(fileNameToCheck *uint16, pattern *uint16) bool {
 		uintptr(unsafe.Pointer(pattern)),
 	)
 	return r != 0
-}
-
-func prjDoesNameContainWildCards(fileName *uint16) bool {
-	r, _, _ := procPrjDoesNameContainWildCards.Call(
-		uintptr(unsafe.Pointer(fileName)),
-	)
-	return r != 0
-}
-
-func prjGetVirtualizationInstanceInfo(namespaceVirtualizationContext uintptr, virtualizationInstanceInfo *prjVirtualizationInstanceInfo) error {
-	hr, _, _ := procPrjGetVirtualizationInstanceInfo.Call(
-		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(virtualizationInstanceInfo)),
-	)
-	return hresultToError(hr)
-}
-
-func prjCompleteCommand(namespaceVirtualizationContext uintptr, commandId int32, completionResult uintptr, extendedParameters *prjCompleteCommandExtendedParameters) error {
-	hr, _, _ := procPrjCompleteCommand.Call(
-		namespaceVirtualizationContext,
-		uintptr(commandId),
-		completionResult,
-		uintptr(unsafe.Pointer(extendedParameters)),
-	)
-	return hresultToError(hr)
-}
-
-func prjDeleteFile(namespaceVirtualizationContext uintptr, destinationFileName *uint16, updateFlags uint32, failureCause *uint32) error {
-	hr, _, _ := procPrjDeleteFile.Call(
-		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(destinationFileName)),
-		uintptr(updateFlags),
-		uintptr(unsafe.Pointer(failureCause)),
-	)
-	return hresultToError(hr)
-}
-
-func prjUpdateFileIfNeeded(namespaceVirtualizationContext uintptr, destinationFileName *uint16, placeholderInfo *prjPlaceholderInfo, placeholderInfoSize uint32, updateFlags uint32, failureCause *uint32) error {
-	hr, _, _ := procPrjUpdateFileIfNeeded.Call(
-		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(destinationFileName)),
-		uintptr(unsafe.Pointer(placeholderInfo)),
-		uintptr(placeholderInfoSize),
-		uintptr(updateFlags),
-		uintptr(unsafe.Pointer(failureCause)),
-	)
-	return hresultToError(hr)
-}
-
-func prjGetOnDiskFileState(destinationFileName *uint16, fileState *uint32) error {
-	hr, _, _ := procPrjGetOnDiskFileState.Call(
-		uintptr(unsafe.Pointer(destinationFileName)),
-		uintptr(unsafe.Pointer(fileState)),
-	)
-	return hresultToError(hr)
-}
-
-func prjClearNegativePathCache(namespaceVirtualizationContext uintptr, totalEntryNumber *uint32) error {
-	hr, _, _ := procPrjClearNegativePathCache.Call(
-		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(totalEntryNumber)),
-	)
-	return hresultToError(hr)
 }
 
 // goTimeToFiletime converts a Go time.Time to a Windows FILETIME int64

@@ -35,7 +35,7 @@ GOVULNCHECK_VERSION = 1.7.0
 # https://github.com/mgechev/revive/releases
 REVIVE_VERSION=latest
 # https://github.com/rvben/rumdl/releases
-RUMDL_VERSION = 0.2.53
+RUMDL_VERSION = 0.2.64
 # https://github.com/koalaman/shellcheck/releases
 SHELLCHECK_VERSION = 0.11.0
 # https://github.com/terraform-linters/tflint/releases

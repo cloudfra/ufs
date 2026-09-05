@@ -368,6 +368,16 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	return wrapped, nil
 }
 
+// readOnlyAt resolves name to the sub-FS that actually serves it (a mounted
+// archive, for instance) and reports whether that sub-FS rejects writes.
+func (fsys *nestFS) readOnlyAt(name string) bool {
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return false
+	}
+	return isReadOnlyAt(mountFS.fsys, subName)
+}
+
 func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	_, targetName, targetFS, ok := fsys.mounts.getClosestMount(name)
 	if !ok {

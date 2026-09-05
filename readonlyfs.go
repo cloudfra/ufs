@@ -60,3 +60,28 @@ func (fsys *readOnlyFS) RemoveAll(name string) error {
 	}
 	return pathError("removeall", name, fs.ErrPermission)
 }
+
+func (fsys *readOnlyFS) readOnlyAt(_ string) bool {
+	return true
+}
+
+// readOnlyAtChecker is implemented by FS types that can determine, for a
+// specific path, whether writes are guaranteed to fail — without attempting
+// one. Host-mount adapters (FUSE on Linux, ProjFS on Windows) use this to
+// reflect read-only status in stat and directory-listing responses.
+// Composite or wrapper FS types delegate to whichever inner FS actually
+// serves the path (e.g. [nestFS] resolves the path to a mounted sub-FS first).
+type readOnlyAtChecker interface {
+	readOnlyAt(name string) bool
+}
+
+// isReadOnlyAt reports whether writes to name through fsys are guaranteed to
+// fail: either fsys doesn't implement the write half of [FS] at all, or it
+// (or a wrapper/composite in its chain) reports so via [readOnlyAtChecker].
+func isReadOnlyAt(fsys ReadFS, name string) bool {
+	if c, ok := fsys.(readOnlyAtChecker); ok {
+		return c.readOnlyAt(name)
+	}
+	_, isFS := fsys.(FS)
+	return !isFS
+}

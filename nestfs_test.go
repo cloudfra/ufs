@@ -244,6 +244,8 @@ func TestNestFSFull(t *testing.T) {
 	assertDir(t, fsys, "testing/testassets/archives", []string{
 		"nested-testassets.zip",
 		"nested-testassets.zip.d",
+		"nodir-deep-testassets.zip",
+		"nodir-deep-testassets.zip.d",
 		"nodir-testassets.zip",
 		"nodir-testassets.zip.d",
 		"single-testassets.zip",

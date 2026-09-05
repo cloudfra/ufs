@@ -1,0 +1,1 @@
+testing/testassets/files/assets/deep/z/4.txt

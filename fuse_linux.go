@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"log/slog"
 	"path"
 	"syscall"
 	"time"
@@ -101,7 +102,9 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 
 	go func() {
 		<-ctx.Done()
-		_ = server.Unmount()
+		if err := server.Unmount(); err != nil {
+			slog.Warn("fuse: failed to unmount after context cancellation", "path", mountPath, "error", err)
+		}
 	}()
 
 	return &fuseHostServer{server: server}, nil
@@ -221,7 +224,9 @@ func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, 
 	}
 	fi, statErr := n.fsys.Stat(childPath)
 	if statErr != nil {
-		_ = f.Close()
+		if closeErr := f.Close(); closeErr != nil {
+			slog.Warn("fuse: failed to close file after Stat error", "path", childPath, "error", closeErr)
+		}
 		return nil, nil, 0, fuseErrno(statErr)
 	}
 	child := n.newChild(ctx, childPath, fi)

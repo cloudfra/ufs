@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"path"
@@ -164,7 +165,11 @@ func Walk(fsys fs.FS, dir string, args WalkArgs, f func(string) error) error {
 				return fs.SkipDir
 			}
 			for _, pattern := range args.ExcludeDirectory {
-				if matched, _ := path.Match(pattern, d.Name()); matched {
+				matched, matchErr := path.Match(pattern, d.Name())
+				if matchErr != nil {
+					return fmt.Errorf("invalid ExcludeDirectory pattern %q: %w", pattern, matchErr)
+				}
+				if matched {
 					return fs.SkipDir
 				}
 			}

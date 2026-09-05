@@ -34,7 +34,17 @@ linters:
     #- unparam
     #- prealloc
     #- revive
+  settings:
+    errcheck:
+      # Treat `_ = f()` the same as an outright ignored error: every error
+      # must be returned to the caller or logged, never silently discarded.
+      check-blank: true
   exclusions:
+    # golangci-lint's default presets (common-false-positives, legacy, etc.)
+    # quietly exclude errcheck findings for things like Close/Flush/Setenv.
+    # Disabling them keeps errcheck exhaustive: every ignored error is a
+    # reported issue, not a silently accepted default.
+    presets: []
     paths:
       - "build/"
       - "third_party/"

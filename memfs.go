@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"path"
 	"sort"
@@ -235,7 +236,11 @@ func (fsys *memFS) getDeviceInfo() map[string]deviceInfo {
 }
 
 func (fsys *memFS) URI() *url.URL {
-	u, _ := url.Parse(fsys.name)
+	u, err := url.Parse(fsys.name)
+	if err != nil {
+		slog.Warn("memFS: failed to parse URI, using opaque fallback", "name", fsys.name, "error", err)
+		return &url.URL{Scheme: "memory", Opaque: fsys.name}
+	}
 	return u
 }
 

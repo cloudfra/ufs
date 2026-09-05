@@ -19,7 +19,9 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"path"
 	"testing"
+	"testing/fstest"
 )
 
 const testArchive = "testing/testassets/archives/testassets.tar.gz"
@@ -230,6 +232,182 @@ func TestArchiveFSRemoveAll(t *testing.T) {
 	}
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("RemoveAll() error = %v, want to wrap fs.ErrPermission", err)
+	}
+}
+
+const testNoDirDeepArchive = "testing/testassets/archives/nodir-deep-testassets.zip"
+
+// noDirDeepFiles lists every file entry in testNoDirDeepArchive. The zip
+// contains only these file entries — no explicit directory entries — so
+// every directory in the tree (deep, deep/x, deep/x/y, deep/z, onetwothree)
+// is implicit. See Makefile_testassets.mk for how the archive is built.
+var noDirDeepFiles = []string{
+	"deep/5.txt",
+	"deep/x/3.txt",
+	"deep/x/y/1.txt",
+	"deep/x/y/2.txt",
+	"deep/z/4.txt",
+	"onetwothree/1.txt",
+	"onetwothree/2.txt",
+}
+
+var noDirDeepDirs = map[string][]string{
+	".":           {"deep", "onetwothree"},
+	"deep":        {"5.txt", "x", "z"},
+	"deep/x":      {"3.txt", "y"},
+	"deep/x/y":    {"1.txt", "2.txt"},
+	"deep/z":      {"4.txt"},
+	"onetwothree": {"1.txt", "2.txt"},
+}
+
+func mustNoDirDeepArchiveFS(t *testing.T) FS {
+	t.Helper()
+	fsys, err := newArchiveFSFromLocalFS(context.Background(), testNoDirDeepArchive)
+	if err != nil {
+		t.Fatalf("newArchiveFSFromLocalFS(%q) = %v, want nil", testNoDirDeepArchive, err)
+	}
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("failed to close archive FS: %v", err)
+		}
+	})
+	return fsys
+}
+
+func TestArchiveFSImplicitDirStatName(t *testing.T) {
+	t.Parallel()
+	fsys := mustNoDirDeepArchiveFS(t)
+
+	for dir := range noDirDeepDirs {
+		if dir == "." {
+			continue
+		}
+		t.Run(dir, func(t *testing.T) {
+			info, err := fsys.Stat(dir)
+			if err != nil {
+				t.Fatalf("Stat(%q) = %v", dir, err)
+			}
+			if !info.IsDir() {
+				t.Errorf("Stat(%q).IsDir() = false, want true", dir)
+			}
+			if got := info.Name(); got != path.Base(dir) {
+				t.Errorf("Stat(%q).Name() = %q, want %q", dir, got, path.Base(dir))
+			}
+		})
+	}
+}
+
+func TestArchiveFSImplicitDirOpenStatName(t *testing.T) {
+	t.Parallel()
+	fsys := mustNoDirDeepArchiveFS(t)
+
+	for dir := range noDirDeepDirs {
+		if dir == "." {
+			continue
+		}
+		t.Run(dir, func(t *testing.T) {
+			f, err := fsys.Open(dir)
+			if err != nil {
+				t.Fatalf("Open(%q) = %v", dir, err)
+			}
+			defer validateClose(t, f)()
+
+			info, err := f.Stat()
+			if err != nil {
+				t.Fatalf("Open(%q).Stat() = %v", dir, err)
+			}
+			if !info.IsDir() {
+				t.Errorf("Open(%q).Stat().IsDir() = false, want true", dir)
+			}
+			if got := info.Name(); got != path.Base(dir) {
+				t.Errorf("Open(%q).Stat().Name() = %q, want %q", dir, got, path.Base(dir))
+			}
+		})
+	}
+}
+
+func TestArchiveFSImplicitDirReadDir(t *testing.T) {
+	t.Parallel()
+	fsys := mustNoDirDeepArchiveFS(t)
+
+	for dir, wantNames := range noDirDeepDirs {
+		t.Run(dir, func(t *testing.T) {
+			assertDir(t, fsys, dir, wantNames)
+		})
+	}
+}
+
+func TestArchiveFSImplicitDirWalkDir(t *testing.T) {
+	t.Parallel()
+	fsys := mustNoDirDeepArchiveFS(t)
+
+	visited := map[string]bool{}
+	err := fs.WalkDir(fsys, ".", func(p string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		visited[p] = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir = %v", err)
+	}
+
+	for dir := range noDirDeepDirs {
+		if !visited[dir] {
+			t.Errorf("WalkDir did not visit directory %q", dir)
+		}
+	}
+	for _, filePath := range noDirDeepFiles {
+		if !visited[filePath] {
+			t.Errorf("WalkDir did not visit file %q", filePath)
+		}
+	}
+}
+
+func TestArchiveFSImplicitDirReadFile(t *testing.T) {
+	t.Parallel()
+	fsys := mustNoDirDeepArchiveFS(t)
+
+	for _, filePath := range noDirDeepFiles {
+		t.Run(filePath, func(t *testing.T) {
+			got, err := fs.ReadFile(fsys, filePath)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) = %v", filePath, err)
+			}
+			if len(got) == 0 {
+				t.Errorf("ReadFile(%q) returned empty content", filePath)
+			}
+		})
+	}
+}
+
+func TestArchiveFSImplicitDirLstatName(t *testing.T) {
+	t.Parallel()
+	fsys := mustNoDirDeepArchiveFS(t)
+
+	for dir := range noDirDeepDirs {
+		if dir == "." {
+			continue
+		}
+		t.Run(dir, func(t *testing.T) {
+			info, err := fsys.Lstat(dir)
+			if err != nil {
+				t.Fatalf("Lstat(%q) = %v", dir, err)
+			}
+			if got := info.Name(); got != path.Base(dir) {
+				t.Errorf("Lstat(%q).Name() = %q, want %q", dir, got, path.Base(dir))
+			}
+		})
+	}
+}
+
+func TestArchiveFSImplicitDirFSTestConformance(t *testing.T) {
+	t.Parallel()
+	fsys := mustNoDirDeepArchiveFS(t)
+
+	if err := fstest.TestFS(fsys, noDirDeepFiles...); err != nil {
+		t.Errorf("fstest.TestFS = %v", err)
 	}
 }
 

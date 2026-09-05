@@ -115,9 +115,9 @@ func cbDataAttrs(callbackData *prjCallbackData) []any {
 		"path", p,
 		"rawPath", rawPath,
 		"cbDataSize", callbackData.Size,
-		"commandId", callbackData.CommandId,
+		"commandId", callbackData.CommandID,
 		"flags", fmt.Sprintf("0x%X", callbackData.Flags),
-		"triggeringPID", callbackData.TriggeringProcessId,
+		"triggeringPID", callbackData.TriggeringProcessID,
 	}
 	if callbackData.TriggeringProcessImageFileName != nil {
 		attrs = append(attrs, "triggeringProcess", windows.UTF16PtrToString(callbackData.TriggeringProcessImageFileName))
@@ -189,30 +189,30 @@ func initCallbacks() {
 }
 
 func serverFromContext(callbackData *prjCallbackData) *projfsMountServer {
-	return (*projfsMountServer)(unsafe.Pointer(callbackData.InstanceContext))
+	return (*projfsMountServer)(unsafe.Pointer(callbackData.InstanceContext)) //nolint:govet // ProjFS callback context is a pointer stored as uintptr
 }
 
-func startDirEnumCB(callbackData *prjCallbackData, enumerationId *windows.GUID) uintptr {
+func startDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID) uintptr {
 	s := serverFromContext(callbackData)
 	p := projfsPath(callbackData.FilePathName)
-	slog.Debug("projfs: StartDirEnum", append(cbDataAttrs(callbackData), "enumId", enumerationId)...)
-	s.enumSessions.Store(*enumerationId, &projfsEnumSession{path: p})
+	slog.Debug("projfs: StartDirEnum", append(cbDataAttrs(callbackData), "enumId", enumerationID)...)
+	s.enumSessions.Store(*enumerationID, &projfsEnumSession{path: p})
 	slog.Debug("projfs: StartDirEnum complete", "path", p, "result", "S_OK")
 	return 0
 }
 
-func endDirEnumCB(callbackData *prjCallbackData, enumerationId *windows.GUID) uintptr {
+func endDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID) uintptr {
 	s := serverFromContext(callbackData)
-	slog.Debug("projfs: EndDirEnum", append(cbDataAttrs(callbackData), "enumId", enumerationId)...)
-	s.enumSessions.Delete(*enumerationId)
+	slog.Debug("projfs: EndDirEnum", append(cbDataAttrs(callbackData), "enumId", enumerationID)...)
+	s.enumSessions.Delete(*enumerationID)
 	return 0
 }
 
-func getDirEnumCB(callbackData *prjCallbackData, enumerationId *windows.GUID, searchExpression *uint16, dirEntryBufferHandle uintptr) uintptr {
+func getDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID, searchExpression *uint16, dirEntryBufferHandle uintptr) uintptr {
 	s := serverFromContext(callbackData)
-	v, ok := s.enumSessions.Load(*enumerationId)
+	v, ok := s.enumSessions.Load(*enumerationID)
 	if !ok {
-		slog.Error("projfs: GetDirEnum session not found", append(cbDataAttrs(callbackData), "enumId", enumerationId)...)
+		slog.Error("projfs: GetDirEnum session not found", append(cbDataAttrs(callbackData), "enumId", enumerationID)...)
 		return hresultFail
 	}
 	session := v.(*projfsEnumSession)
@@ -222,7 +222,7 @@ func getDirEnumCB(callbackData *prjCallbackData, enumerationId *windows.GUID, se
 		searchStr = windows.UTF16PtrToString(searchExpression)
 	}
 	slog.Debug("projfs: GetDirEnum", append(cbDataAttrs(callbackData),
-		"enumId", enumerationId,
+		"enumId", enumerationID,
 		"search", searchStr,
 		"sessionPath", session.path,
 		"sessionIndex", session.index,
@@ -385,7 +385,11 @@ func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint
 		slog.Error("projfs: GetFileData Open failed", "path", p, "error", err, "hresult", hresultName(hr))
 		return hr
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("projfs: GetFileData close failed", "path", p, "error", err)
+		}
+	}()
 
 	slog.Debug("projfs: GetFileData file opened",
 		"path", p,
@@ -438,7 +442,7 @@ func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint
 		return hr
 	}
 
-	if err := prjWriteFileData(callbackData.NamespaceVirtualizationContext, &callbackData.DataStreamId, buf, byteOffset, uint32(n)); err != nil {
+	if err := prjWriteFileData(callbackData.NamespaceVirtualizationContext, &callbackData.DataStreamID, buf, byteOffset, uint32(n)); err != nil {
 		hr := projfsHRESULT(err)
 		slog.Error("projfs: GetFileData WriteFileData failed", "path", p, "error", err, "bytesWritten", n, "hresult", hresultName(hr))
 		return hr
@@ -460,7 +464,7 @@ func queryFileNameCB(callbackData *prjCallbackData) uintptr {
 	return 0
 }
 
-func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notification uint32, destinationFileName utf16Str, operationParameters uintptr) uintptr {
+func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notification uint32, destinationFileName utf16Str, _ uintptr) uintptr {
 	destName := ""
 	if destinationFileName != nil {
 		destName = windows.UTF16PtrToString(destinationFileName)
@@ -629,7 +633,9 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 	go func() {
 		<-ctx.Done()
 		slog.Info("projfs: context canceled, closing mount", "mountPath", mountPath)
-		s.Close()
+		if err := s.Close(); err != nil {
+			slog.Warn("projfs: close on context cancel failed", "mountPath", mountPath, "error", err)
+		}
 	}()
 
 	return s, nil

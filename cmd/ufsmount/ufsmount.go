@@ -20,7 +20,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -45,7 +44,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err := run(*uriFlag, *mountFlag); err != nil {
-		log.Fatalf("ERROR: %s", err)
+		slog.Error("fatal error", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -60,7 +60,7 @@ func run(uri, mountPath string) error {
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Printf("cannot close file system %q, %s", fsys, err)
+			slog.Warn("cannot close file system", "fs", fsys, "error", err)
 		}
 	}()
 
@@ -71,12 +71,12 @@ func run(uri, mountPath string) error {
 	}
 	defer func() {
 		if err := server.Close(); err != nil {
-			log.Printf("cannot unmount %q, %s", mountPath, err)
+			slog.Warn("cannot unmount", "mountPath", mountPath, "error", err)
 		}
 	}()
 
-	log.Printf("Mounted %s at %s", uri, mountPath)
+	slog.Info("mounted file system", "uri", uri, "mountPath", mountPath)
 	server.Wait()
-	log.Printf("Unmounted %s", mountPath)
+	slog.Info("unmounted file system", "mountPath", mountPath)
 	return nil
 }

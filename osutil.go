@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"math"
 	"net"
@@ -150,7 +149,7 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			log.Printf("WARNING: failed to close response body: %v", err)
+			slog.Warn("failed to close response body", "error", err)
 		}
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
@@ -215,7 +214,7 @@ func osDeleteDirectory(path string) error {
 
 func tryOSDeleteDirectory(path string) {
 	if err := osDeleteDirectory(path); err != nil {
-		log.Printf("WARNING: %s", err)
+		slog.Warn("failed to delete directory", "path", path, "error", err)
 	}
 }
 
@@ -228,7 +227,7 @@ func osDeleteFile(path string) error {
 
 func tryOSDeleteFile(path string) {
 	if err := osDeleteFile(path); err != nil {
-		log.Printf("WARNING: %s", err)
+		slog.Warn("failed to delete file", "path", path, "error", err)
 	}
 }
 

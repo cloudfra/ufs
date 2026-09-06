@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/google/martian/v3/log"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -414,7 +413,7 @@ func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			log.Errorf("failed to close file %q: %v", name, err)
+			slog.Error("failed to close file", "path", name, "error", err)
 		}
 	}()
 	gf := f.(*gcsFile)

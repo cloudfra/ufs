@@ -1,6 +1,7 @@
 # ufs
 
 <img src="logo.png" alt="Logo" width="64" height="64" />
+
 Unified File System (UFS) is a Go library that allows apps to access multiple
 storage backends through a single fs.FS-based API. It provides a factory
 constructor (ufs.New) that dispatches to the appropriate implementation based on
@@ -21,7 +22,7 @@ URI scheme, and a layering helper (ufs.CreateURI) for composing nested file syst
 
 | Storage      | URI Prefix     | Implementation | Description                                               |
 |:-------------|:---------------|:---------------|:----------------------------------------------------------|
-| Null       | `null://`   | nullfs.go  | Acts as /dev/null. Writes discarded, reads return empty.  |
+| Null         | `null://`      | nullfs.go      | Acts as /dev/null. Writes discarded, reads return empty.  |
 | Memory       | `memory:`      | memfs.go       | In-memory storage; lost when the process exits.           |
 | Local        | `file:///path` | localfs.go     | Local disk, mounted at a root path via os.OpenRoot.       |
 | Google Cloud | `gs://bucket`  | gcsfs.go       | Google Cloud Storage bucket as a read-only file system.   |

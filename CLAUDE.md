@@ -1,34 +1,35 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This project is a go library to provide a unified virtual file system to go applications that's compatible with the fs.FS interface.
 
-## Commands
+It provides features such as:
+
+* Multiple File System interfaces: Local, Cloud Storage, Archive, Git, in-memory, embedded files, etc.
+* Nested mounting
+* Fault injection
+* FUSE and ProjFS mounting
+
+## Development
+
+When building and testing this project you want to use the `make` tool exclusively. Do not run individual tests or any sort of filtering for builds. Also this project is cross platform and there's a common pitfall to ignore Windows files so make sure that you analyze the _windows.go files separately. Generally issues are caught in CI if you skip that.
+
+The list of `make` commands are:
 
 ```bash
 # Build
-go build ./...
+make build -j$(nproc)
 
-# Test (CGO disabled)
+# Test
 make test
 
-# Test with race detector (required for presubmit)
-CGO_ENABLED=1 go test -race ./...
+# Linting
+make lint
 
-# Run a single test
-go test -run TestName ./...
-
-# Lint (requires golangci-lint)
-golangci-lint run
-
-# Presubmit (lint + check)
+# Prepare change for PR
 make presubmit
-
-# Deflake tests (runs race tests 10x)
-make test-deflake
-
-# Cross-compile all binaries
-make build
 ```
+
+For the most part you want to run `make test` and `make lint` while developing and run `make presubmit` just before creating or updating a pull request.
 
 ## Architecture
 
@@ -44,7 +45,7 @@ is github.com/cloudfra/ufs.
 | File       | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter               |
 | ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
 | FS         | Read-write; extends ReadFS with Create, MkdirAll                             |
-| Watcher    | Optional; recursive directory change notifications via Watch                  |
+| Watcher    | Optional; recursive directory change notifications via Watch                 |
 
 ### Factory
 
@@ -102,23 +103,23 @@ error on other platforms (Windows support planned).
 |:---------------|:-----------------------------------------------------------------|
 | host.go        | Platform-agnostic MountServer interface and HostMount function   |
 | host_other.go  | Stub returning "not implemented" on non-Linux platforms          |
-| fuse_linux.go  | FUSE adapter — bridges ufs.ReadFS/FS to go-fuse InodeEmbedder   |
+| fuse_linux.go  | FUSE adapter — bridges ufs.ReadFS/FS to go-fuse InodeEmbedder    |
 
 ### Supporting files
 
-| File                | Purpose                                                      |
-|:--------------------|:-------------------------------------------------------------|
-| info.go             | fsInfo — concrete fs.FileInfo implementation                 |
-| path.go, path_test.go | validPath — validates paths against fs.ValidPath           |
-| op.go               | High-level ops — Rsync copies files between FSes             |
-| osutil.go           | OS helpers (file download, etc.)                             |
-| localfs_notify.go   | Watcher impl for localFS — recursive fsnotify with path translation |
-| testing_test.go     | Shared test harness used by each backend                     |
-| assets_test.go      | Test asset loading helpers                                   |
+| File                  | Purpose                                                             |
+|:----------------------|:--------------------------------------------------------------------|
+| info.go               | fsInfo — concrete fs.FileInfo implementation                        |
+| path.go, path_test.go | validPath — validates paths against fs.ValidPath                    |
+| op.go                 | High-level ops — Rsync copies files between FSes                    |
+| osutil.go             | OS helpers (file download, etc.)                                    |
+| localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
+| testing_test.go       | Shared test harness used by each backend                            |
+| assets_test.go        | Test asset loading helpers                                          |
 
 ### Conventions
 
-- Keep structs private; expose construction via the public New() factory.
-- Factory name arg follows a URI scheme: null://, file:///..., memory:, gs://..., git://..., archive://...
-- All path operations call validPath first — returns fs.PathError for invalid paths.
-- Each backend has its own file, its own tests, and runs the shared fstest.TestFS harness via testFileSystem.
+* Keep structs private; expose construction via the public New() factory.
+* Factory name arg follows a URI scheme: null://, file:///..., memory:, gs://..., git://..., archive://...
+* All path operations call validPath first — returns fs.PathError for invalid paths.
+* Each backend has its own file, its own tests, and runs the shared fstest.TestFS harness via testFileSystem.

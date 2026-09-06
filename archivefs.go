@@ -76,7 +76,9 @@ func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
 func (fsys *archiveFS) ensureIndexed() {
 	fsys.indexed.Do(func() {
 		if rdfs, ok := fsys.fsys.(fs.ReadDirFS); ok {
-			rdfs.ReadDir(".")
+			// Trigger the archive's implicit-directory index build; the returned
+			// entries and any error are intentionally ignored.
+			_, _ = rdfs.ReadDir(".")
 		}
 	})
 }

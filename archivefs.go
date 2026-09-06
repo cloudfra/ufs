@@ -168,6 +168,10 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 	return pathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
+func (fsys *archiveFS) readOnlyAt(_ string) bool {
+	return true
+}
+
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
 	info, err := os.Stat(name)
 	if err != nil {

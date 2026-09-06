@@ -122,7 +122,7 @@ func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 		isDir:   false,
 	}
 	var attr fuse.Attr
-	fuseAttrFromFileInfo(fi, &attr)
+	fuseAttrFromFileInfo(fi, &attr, false)
 
 	if attr.Size != 1234 {
 		t.Errorf("Size = %d, want 1234", attr.Size)
@@ -154,7 +154,7 @@ func TestFuseAttrFromFileInfoDirectory(t *testing.T) {
 		isDir:   true,
 	}
 	var attr fuse.Attr
-	fuseAttrFromFileInfo(fi, &attr)
+	fuseAttrFromFileInfo(fi, &attr, false)
 
 	wantMode := fuseMode(fi.Mode())
 	if attr.Mode != wantMode {
@@ -162,6 +162,38 @@ func TestFuseAttrFromFileInfoDirectory(t *testing.T) {
 	}
 	if attr.Nlink != 2 {
 		t.Errorf("Nlink = %d, want 2", attr.Nlink)
+	}
+}
+
+func TestFuseAttrFromFileInfoReadOnlyStripsWriteBits(t *testing.T) {
+	t.Parallel()
+	fi := &fsInfo{
+		name: "hello.txt",
+		mode: 0o644,
+	}
+	var attr fuse.Attr
+	fuseAttrFromFileInfo(fi, &attr, true)
+
+	if attr.Mode&writePermBits != 0 {
+		t.Errorf("Mode = %#o, want write bits stripped (mask %#o)", attr.Mode, writePermBits)
+	}
+	wantMode := fuseMode(fi.Mode()) &^ writePermBits
+	if attr.Mode != wantMode {
+		t.Errorf("Mode = %#o, want %#o", attr.Mode, wantMode)
+	}
+}
+
+func TestIsReadOnlyAtNonFSMount(t *testing.T) {
+	t.Parallel()
+	memfs, err := New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = memfs.Close() })
+
+	roOnly := &fuseReadOnlyFS{memfs}
+	if !isReadOnlyAt(roOnly, "anything") {
+		t.Error("ReadFS-only (non-FS) mount not reported read-only")
 	}
 }
 

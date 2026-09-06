@@ -119,6 +119,33 @@ func TestProjfsHRESULT(t *testing.T) {
 	}
 }
 
+// TestFileAttributesFor covers the read-only forms this package must reflect
+// in ProjFS stat/directory-listing responses: a writable file/directory get
+// the plain NORMAL/DIRECTORY attribute, while a read-only mount (or
+// sub-mount) additionally sets FILE_ATTRIBUTE_READONLY.
+func TestFileAttributesFor(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		info     fs.FileInfo
+		readOnly bool
+		want     uint32
+	}{
+		{"file/writable", &fsInfo{name: "a.txt"}, false, fileAttributeNormal},
+		{"file/readOnly", &fsInfo{name: "a.txt"}, true, fileAttributeNormal | fileAttributeReadOnly},
+		{"dir/writable", &fsInfo{name: "d", isDir: true, mode: fs.ModeDir}, false, fileAttributeDirectory},
+		{"dir/readOnly", &fsInfo{name: "d", isDir: true, mode: fs.ModeDir}, true, fileAttributeDirectory | fileAttributeReadOnly},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := fileAttributesFor(tc.info, tc.readOnly); got != tc.want {
+				t.Errorf("fileAttributesFor(%+v, %v) = %#x, want %#x", tc.info, tc.readOnly, got, tc.want)
+			}
+		})
+	}
+}
+
 // --- Integration tests — lifecycle ---
 
 func TestHostMountClose(t *testing.T) {

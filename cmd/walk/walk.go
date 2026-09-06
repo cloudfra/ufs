@@ -18,7 +18,9 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
+	"fmt"
+	"log/slog"
+	"os"
 
 	"github.com/cloudfra/ufs"
 )
@@ -28,7 +30,8 @@ var pathFlag = flag.String("path", ".", "Path to walk the directory tree to repo
 func main() {
 	flag.Parse()
 	if err := run(*pathFlag); err != nil {
-		log.Printf("ERROR: %s", err)
+		slog.Error("walk failed", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -40,15 +43,15 @@ func run(dir string) error {
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Printf("cannot close mounted file system %q, %s", fsys, err)
+			slog.Warn("cannot close mounted file system", "fs", fsys, "error", err)
 		}
 	}()
 	return ufs.ForEachFilename(fsys, ".", func(name string) error {
 		absName, err := ufs.AbsPath(fsys, name)
 		if err == nil {
-			log.Printf("%s", absName)
+			fmt.Println(absName)
 		} else {
-			log.Printf("ufs://%s", name)
+			fmt.Printf("ufs://%s\n", name)
 		}
 		return nil
 	})

@@ -17,9 +17,8 @@ package ufs
 import (
 	"io"
 	"io/fs"
+	"log/slog"
 	"path"
-
-	"github.com/google/martian/v3/log"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -53,7 +52,7 @@ func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error
 	}
 	defer func() {
 		if err := sfp.Close(); err != nil {
-			log.Errorf("failed to close source file %q: %v", srcFilename, err)
+			slog.Error("failed to close source file", "path", srcFilename, "error", err)
 		}
 	}()
 
@@ -63,7 +62,7 @@ func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error
 	}
 	defer func() {
 		if err := dfp.Close(); err != nil {
-			log.Errorf("failed to close destination file %q: %v", destFilename, err)
+			slog.Error("failed to close destination file", "path", destFilename, "error", err)
 		}
 	}()
 	if _, err := io.Copy(dfp, sfp); err != nil {

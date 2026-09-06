@@ -104,7 +104,9 @@ func TestNewWindowsDriveLetters(t *testing.T) {
 					t.Errorf("New(%q) = %v, want nil", name, err)
 					continue
 				}
-				_ = fsys.Close()
+				if err := fsys.Close(); err != nil {
+					t.Errorf("fsys.Close() = %v, want nil", err)
+				}
 			}
 		})
 	}

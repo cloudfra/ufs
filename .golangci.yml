@@ -48,3 +48,13 @@ linters:
     paths:
       - "build/"
       - "third_party/"
+    rules:
+      # syscall.Proc/LazyProc.Call's third return value is the raw
+      # GetLastError() value, which the Windows API contract makes
+      # meaningless unless the call's actual return value (HRESULT, BOOL,
+      # etc. -- always checked at each call site) signals failure. This is
+      # the same exclusion golangci-lint's default presets grant for this
+      # well-known Windows FFI pattern.
+      - linters:
+          - errcheck
+        text: "Error return value of `.*\\.Call` is not checked"

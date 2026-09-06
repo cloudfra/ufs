@@ -50,6 +50,12 @@ var (
 	_ deviceInfoGet  = (*mountMap)(nil)
 )
 
+// dirChecker is an optional interface that file implementations can satisfy
+// to report whether an opened file is a directory without an extra stat call.
+type dirChecker interface {
+	IsDir() bool
+}
+
 func getPotentialArchives(name string) []string {
 	components := strings.Split(name, unixPathSeparator)
 	potentials := []string{}
@@ -415,8 +421,14 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 	}
 
 	if rdf, ok := f.(fs.ReadDirFile); ok {
-		info, statErr := f.Stat()
-		if statErr == nil && info.IsDir() {
+		isDir := false
+		if dc, ok := f.(dirChecker); ok {
+			isDir = dc.IsDir()
+		} else {
+			info, statErr := f.Stat()
+			isDir = statErr == nil && info.IsDir()
+		}
+		if isDir {
 			return makeNestReadDirFile(mountFS, subName, rdf), nil
 		}
 	}

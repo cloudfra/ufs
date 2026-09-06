@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/mholt/archives"
 )
@@ -59,13 +60,25 @@ func isMountableArchivePath(name string) bool {
 }
 
 type archiveFS struct {
-	fsys   fs.FS
-	name   string
-	closer io.Closer
+	fsys    fs.FS
+	name    string
+	closer  io.Closer
+	indexed sync.Once
 }
 
 func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
 	return archiveDeviceInfoMap
+}
+
+// ensureIndexed triggers an index build on the underlying archive FS so that
+// implicit directories (directories inferred from file paths rather than from
+// explicit directory entries) are visible to Open and Stat.
+func (fsys *archiveFS) ensureIndexed() {
+	fsys.indexed.Do(func() {
+		if rdfs, ok := fsys.fsys.(fs.ReadDirFS); ok {
+			rdfs.ReadDir(".")
+		}
+	})
 }
 
 func (fsys *archiveFS) URI() *url.URL {
@@ -84,6 +97,7 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if err := validPath("open", name); err != nil {
 		return nil, err
 	}
+	fsys.ensureIndexed()
 	return fsys.fsys.Open(name)
 }
 
@@ -101,6 +115,7 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
+	fsys.ensureIndexed()
 	f, err := fsys.fsys.Open(name)
 	if err != nil {
 		return nil, err

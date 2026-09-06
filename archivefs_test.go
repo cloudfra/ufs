@@ -233,6 +233,95 @@ func TestArchiveFSRemoveAll(t *testing.T) {
 	}
 }
 
+const testNoDirArchive = "testing/testassets/archives/nodir-testassets.zip"
+
+func mustNoDirArchiveFS(t *testing.T) FS {
+	t.Helper()
+	fsys, err := newArchiveFSFromLocalFS(context.Background(), testNoDirArchive)
+	if err != nil {
+		t.Fatalf("newArchiveFSFromLocalFS(%q) = %v, want nil", testNoDirArchive, err)
+	}
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("failed to close archive FS: %v", err)
+		}
+	})
+	return fsys
+}
+
+func TestArchiveFSOpenImplicitDir(t *testing.T) {
+	fsys := mustNoDirArchiveFS(t)
+
+	f, err := fsys.Open("onetwothree")
+	if err != nil {
+		t.Fatalf("Open(\"onetwothree\") = %v, want nil", err)
+	}
+	defer validateClose(t, f)()
+
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatalf("Stat() = %v, want nil", err)
+	}
+	if !info.IsDir() {
+		t.Error("Open(\"onetwothree\") should be a directory but IsDir() = false")
+	}
+
+	rdf, ok := f.(fs.ReadDirFile)
+	if !ok {
+		t.Fatal("Open(\"onetwothree\") did not return a ReadDirFile")
+	}
+	entries, err := rdf.ReadDir(-1)
+	if err != nil {
+		t.Fatalf("ReadDir(-1) = %v, want nil", err)
+	}
+	wantNames := []string{"1.txt", "2.txt", "3.txt"}
+	gotNames := []string{}
+	for _, e := range entries {
+		gotNames = append(gotNames, e.Name())
+	}
+	if len(gotNames) != len(wantNames) {
+		t.Errorf("ReadDir got %v, want %v", gotNames, wantNames)
+	}
+	for i, want := range wantNames {
+		if i < len(gotNames) && gotNames[i] != want {
+			t.Errorf("entry[%d] = %q, want %q", i, gotNames[i], want)
+		}
+	}
+}
+
+func TestArchiveFSStatImplicitDir(t *testing.T) {
+	fsys := mustNoDirArchiveFS(t)
+
+	info, err := fsys.Stat("onetwothree")
+	if err != nil {
+		t.Fatalf("Stat(\"onetwothree\") = %v, want nil", err)
+	}
+	if !info.IsDir() {
+		t.Error("Stat(\"onetwothree\") should be a directory but IsDir() = false")
+	}
+}
+
+func TestArchiveFSReadDirImplicitDir(t *testing.T) {
+	fsys := mustNoDirArchiveFS(t)
+
+	rfs, ok := fsys.(fs.ReadDirFS)
+	if !ok {
+		t.Fatal("archiveFS does not implement fs.ReadDirFS")
+	}
+
+	entries, err := rfs.ReadDir("onetwothree")
+	if err != nil {
+		t.Fatalf("ReadDir(\"onetwothree\") = %v, want nil", err)
+	}
+	if len(entries) != 3 {
+		names := []string{}
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("ReadDir(\"onetwothree\") got %d entries %v, want 3", len(entries), names)
+	}
+}
+
 // TestArchiveFSInvalidPaths verifies that every FS operation on archiveFS
 // rejects paths that fail fs.ValidPath.
 func TestArchiveFSInvalidPaths(t *testing.T) {

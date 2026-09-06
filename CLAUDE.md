@@ -9,27 +9,31 @@ It provides features such as:
 * Fault injection
 * FUSE and ProjFS mounting
 
+## Design Priorities
+
+1. **Correctness** — every code path must be correct before anything else matters. Verify behavior against the `fs.FS` contract and edge cases (empty archives, implicit directories, symlinks, concurrent access).
+2. **Minimize memory allocations** — prefer reusing buffers, avoiding unnecessary copies, and reducing per-operation heap pressure. Profile with `go test -benchmem` to validate.
+3. **Performance through minimizing work** — the fastest code is code that doesn't run. Prefer lazy initialization, short-circuit returns, and caching over micro-optimization. Do not trade correctness or allocation discipline for throughput.
+
 ## Development
 
-When building and testing this project you want to use the `make` tool exclusively. Do not run individual tests or any sort of filtering for builds. Also this project is cross platform and there's a common pitfall to ignore Windows files so make sure that you analyze the _windows.go files separately. Generally issues are caught in CI if you skip that.
-
-The list of `make` commands are:
+**Always use `make` to build, test, and validate.** Do not run individual `go test` commands or filter builds manually — the Makefile handles cross-platform builds, test asset generation, race detection, and linting in the correct order. Skipping `make` risks missing platform-specific issues (especially `_windows.go` files) and test asset dependencies.
 
 ```bash
 # Build
 make build -j$(nproc)
 
-# Test
+# Test (includes race detection)
 make test
 
 # Linting
 make lint
 
-# Prepare change for PR
+# Full validation before creating or updating a PR
 make presubmit
 ```
 
-For the most part you want to run `make test` and `make lint` while developing and run `make presubmit` just before creating or updating a pull request.
+Run `make test` and `make lint` during development. Run `make presubmit` before creating or updating a pull request — it is the same check CI runs.
 
 ## Architecture
 

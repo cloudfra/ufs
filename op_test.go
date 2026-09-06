@@ -352,7 +352,10 @@ func (f *forEachFilenameFS) ForEachFilename(_ string, fn func(string) error) err
 }
 
 func TestForEachFilenameInterface(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, err := newMemFS("memory://test")
+	if err != nil {
+		t.Fatalf("newMemFS() = %v, want nil", err)
+	}
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)
@@ -363,7 +366,7 @@ func TestForEachFilenameInterface(t *testing.T) {
 	fsys := &forEachFilenameFS{FS: inner, files: want}
 
 	var got []string
-	err := ForEachFilename(fsys, cwdPath, func(name string) error {
+	err = ForEachFilename(fsys, cwdPath, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -428,7 +431,10 @@ func (f *forEachFileInfoFS) ForEachFileInfo(_ string, fn func(fs.FileInfo) error
 }
 
 func TestForEachFileInfoInterface(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, err := newMemFS("memory://test")
+	if err != nil {
+		t.Fatalf("newMemFS() = %v, want nil", err)
+	}
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)
@@ -442,7 +448,7 @@ func TestForEachFileInfoInterface(t *testing.T) {
 	fsys := &forEachFileInfoFS{FS: inner, infos: wantInfos}
 
 	var gotNames []string
-	err := ForEachFileInfo(fsys, cwdPath, func(info fs.FileInfo) error {
+	err = ForEachFileInfo(fsys, cwdPath, func(info fs.FileInfo) error {
 		gotNames = append(gotNames, info.Name())
 		return nil
 	})
@@ -806,14 +812,17 @@ func TestRemoveNonEmptyDir(t *testing.T) {
 type noRemoverFS struct{ fs.FS }
 
 func TestRemoveFallback(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, err := newMemFS("memory://test")
+	if err != nil {
+		t.Fatalf("newMemFS() = %v, want nil", err)
+	}
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)
 		}
 	}()
 
-	err := Remove(&noRemoverFS{inner}, "any.txt")
+	err = Remove(&noRemoverFS{inner}, "any.txt")
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("Remove on non-Remover FS = %v, want ErrPermission", err)
 	}
@@ -876,14 +885,17 @@ func TestRemoveAllRoot(t *testing.T) {
 }
 
 func TestRemoveAllFallback(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, err := newMemFS("memory://test")
+	if err != nil {
+		t.Fatalf("newMemFS() = %v, want nil", err)
+	}
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)
 		}
 	}()
 
-	err := RemoveAll(&noRemoverFS{inner}, "dir")
+	err = RemoveAll(&noRemoverFS{inner}, "dir")
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("RemoveAll on non-Remover FS = %v, want ErrPermission", err)
 	}

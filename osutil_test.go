@@ -417,8 +417,14 @@ func TestDownloadFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("downloadFileWith() = %v", err)
 		}
-		absDir, _ := filepath.Abs(dir)
-		absPath, _ := filepath.Abs(path)
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			t.Fatalf("filepath.Abs(%q) = %v, want nil", dir, err)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			t.Fatalf("filepath.Abs(%q) = %v, want nil", path, err)
+		}
 		rel, err := filepath.Rel(absDir, absPath)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			t.Errorf("downloaded file %q escapes download dir %q (rel=%q)", absPath, absDir, rel)
@@ -432,9 +438,18 @@ func TestDownloadFile(t *testing.T) {
 		if err != nil {
 			return
 		}
-		absDir, _ := filepath.Abs(dir)
-		absPath, _ := filepath.Abs(path)
-		rel, _ := filepath.Rel(absDir, absPath)
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			t.Fatalf("filepath.Abs(%q) = %v, want nil", dir, err)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			t.Fatalf("filepath.Abs(%q) = %v, want nil", path, err)
+		}
+		rel, err := filepath.Rel(absDir, absPath)
+		if err != nil {
+			t.Fatalf("filepath.Rel(%q, %q) = %v, want nil", absDir, absPath, err)
+		}
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			t.Errorf("traversal redirect produced path %q outside dir %q", absPath, absDir)
 		}
@@ -593,8 +608,14 @@ func TestDownloadFilePathContainment(t *testing.T) {
 				t.Logf("correctly rejected: %v", err)
 				return
 			}
-			absDir, _ := filepath.Abs(dir)
-			absPath, _ := filepath.Abs(path)
+			absDir, err := filepath.Abs(dir)
+			if err != nil {
+				t.Fatalf("filepath.Abs(%q) = %v, want nil", dir, err)
+			}
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				t.Fatalf("filepath.Abs(%q) = %v, want nil", path, err)
+			}
 			if !strings.HasPrefix(absPath, absDir+string(os.PathSeparator)) {
 				t.Errorf("downloaded path %q is outside target dir %q", absPath, absDir)
 			}

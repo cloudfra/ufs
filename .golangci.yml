@@ -34,7 +34,27 @@ linters:
     #- unparam
     #- prealloc
     #- revive
+  settings:
+    errcheck:
+      # Treat `_ = f()` the same as an outright ignored error: every error
+      # must be returned to the caller or logged, never silently discarded.
+      check-blank: true
   exclusions:
+    # golangci-lint's default presets (common-false-positives, legacy, etc.)
+    # quietly exclude errcheck findings for things like Close/Flush/Setenv.
+    # Disabling them keeps errcheck exhaustive: every ignored error is a
+    # reported issue, not a silently accepted default.
+    presets: []
     paths:
       - "build/"
       - "third_party/"
+    rules:
+      # syscall.Proc/LazyProc.Call's third return value is the raw
+      # GetLastError() value, which the Windows API contract makes
+      # meaningless unless the call's actual return value (HRESULT, BOOL,
+      # etc. -- always checked at each call site) signals failure. This is
+      # the same exclusion golangci-lint's default presets grant for this
+      # well-known Windows FFI pattern.
+      - linters:
+          - errcheck
+        text: "Error return value of `.*\\.Call` is not checked"

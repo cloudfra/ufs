@@ -241,8 +241,16 @@ func getDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID, se
 		}
 		slog.Debug("projfs: GetDirEnum ReadDir returned", "path", session.path, "count", len(entries))
 		sort.Slice(entries, func(i, j int) bool {
-			a, _ := windows.UTF16PtrFromString(entries[i].Name())
-			b, _ := windows.UTF16PtrFromString(entries[j].Name())
+			a, aErr := windows.UTF16PtrFromString(entries[i].Name())
+			if aErr != nil {
+				slog.Warn("projfs: GetDirEnum sort UTF16 conversion failed", "name", entries[i].Name(), "error", aErr)
+				return false
+			}
+			b, bErr := windows.UTF16PtrFromString(entries[j].Name())
+			if bErr != nil {
+				slog.Warn("projfs: GetDirEnum sort UTF16 conversion failed", "name", entries[j].Name(), "error", bErr)
+				return false
+			}
 			return prjFileNameCompare(a, b) < 0
 		})
 		session.entries = entries
@@ -601,7 +609,11 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 		CancelCommandCallback:             cbCancelCommand,
 	}
 
-	notifRoot, _ := windows.UTF16PtrFromString("")
+	notifRoot, err := windows.UTF16PtrFromString("")
+	if err != nil {
+		slog.Error("projfs: UTF16 conversion of empty notification root failed", "error", err)
+		return nil, err
+	}
 	notifMapping := prjNotificationMapping{
 		NotificationBitMask: prjNotifyPreDelete | prjNotifyPreRename,
 		NotificationRoot:    notifRoot,

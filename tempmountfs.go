@@ -17,6 +17,7 @@ package ufs
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/url"
 )
 
@@ -34,7 +35,11 @@ func (fsys *tempMountFS) getDeviceInfo() map[string]deviceInfo {
 }
 
 func (fsys *tempMountFS) URI() *url.URL {
-	u, _ := url.Parse(fsys.uri)
+	u, err := url.Parse(fsys.uri)
+	if err != nil {
+		slog.Warn("tempMountFS: failed to parse URI, using opaque fallback", "uri", fsys.uri, "error", err)
+		return &url.URL{Opaque: fsys.uri}
+	}
 	return u
 }
 

@@ -109,7 +109,11 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
@@ -158,7 +162,11 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	if err := os.WriteFile(filepath.Join(dir, "a", "b", "deep.txt"), []byte("data"), 0o644); err != nil {
 		t.Fatal(err)
@@ -187,7 +195,11 @@ func TestWatchNewDirRecursion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	if err := os.MkdirAll(filepath.Join(dir, "new", "sub"), 0o755); err != nil {
 		t.Fatal(err)
@@ -264,7 +276,11 @@ func TestWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	cancel()
 
@@ -306,7 +322,11 @@ func TestWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	if err := os.WriteFile(filepath.Join(dir, "watched", "inside.txt"), []byte("y"), 0o644); err != nil {
 		t.Fatal(err)
@@ -356,7 +376,9 @@ func TestWatchRaceConcurrentClose(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 10 {
 		wg.Go(func() {
-			_ = closer.Close()
+			if err := closer.Close(); err != nil {
+				t.Errorf("concurrent closer.Close() = %v, want nil", err)
+			}
 		})
 	}
 	wg.Wait()
@@ -387,7 +409,10 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := range 50 {
-			_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("churn_%d.txt", i)), []byte("x"), 0o644)
+			p := filepath.Join(dir, fmt.Sprintf("churn_%d.txt", i))
+			if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+				t.Errorf("os.WriteFile(%q) = %v, want nil", p, err)
+			}
 		}
 	}()
 
@@ -417,7 +442,11 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	const writers = 5
 	const filesPerWriter = 10
@@ -429,7 +458,10 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 			defer wg.Done()
 			for f := range filesPerWriter {
 				name := fmt.Sprintf("w%d_f%d.txt", w, f)
-				_ = os.WriteFile(filepath.Join(dir, name), []byte("data"), 0o644)
+				p := filepath.Join(dir, name)
+				if err := os.WriteFile(p, []byte("data"), 0o644); err != nil {
+					t.Errorf("os.WriteFile(%q) = %v, want nil", p, err)
+				}
 			}
 		}()
 	}
@@ -464,12 +496,20 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	for i := range 30 {
 		p := filepath.Join(dir, fmt.Sprintf("ephemeral_%d.txt", i))
-		_ = os.WriteFile(p, []byte("x"), 0o644)
-		_ = os.Remove(p)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Errorf("os.WriteFile(%q) = %v, want nil", p, err)
+		}
+		if err := os.Remove(p); err != nil {
+			t.Errorf("os.Remove(%q) = %v, want nil", p, err)
+		}
 	}
 
 	// Verify the watcher is still alive and functional after the churn.
@@ -499,7 +539,11 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	// Rapidly create nested directory trees to race addRecursive with new
 	// events arriving for the child directories.
@@ -508,7 +552,10 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 		if err := os.MkdirAll(nested, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		_ = os.WriteFile(filepath.Join(nested, "leaf.txt"), []byte("x"), 0o644)
+		leaf := filepath.Join(nested, "leaf.txt")
+		if err := os.WriteFile(leaf, []byte("x"), 0o644); err != nil {
+			t.Errorf("os.WriteFile(%q) = %v, want nil", leaf, err)
+		}
 	}
 
 	// The watcher must survive the rapid nesting. Verify by writing a file
@@ -551,7 +598,9 @@ func TestWatchRaceCloseAndCancel(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		_ = closer.Close()
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() racing with cancel = %v, want nil", err)
+		}
 	}()
 	wg.Wait()
 }
@@ -581,11 +630,18 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	// Remove all watched directories at once.
 	for i := range 5 {
-		_ = os.RemoveAll(filepath.Join(dir, fmt.Sprintf("rmdir%d", i)))
+		p := filepath.Join(dir, fmt.Sprintf("rmdir%d", i))
+		if err := os.RemoveAll(p); err != nil {
+			t.Errorf("os.RemoveAll(%q) = %v, want nil", p, err)
+		}
 	}
 
 	// Watcher must still be alive — confirm by creating a new file.

@@ -19,9 +19,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"os"
+	"path"
 	"strings"
+	"sync"
 
 	"github.com/mholt/archives"
 )
@@ -59,13 +62,44 @@ func isMountableArchivePath(name string) bool {
 }
 
 type archiveFS struct {
-	fsys   fs.FS
-	name   string
-	closer io.Closer
+	fsys    fs.FS
+	name    string
+	closer  io.Closer
+	indexed sync.Once
 }
 
 func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
 	return archiveDeviceInfoMap
+}
+
+func (fsys *archiveFS) ensureIndexed() {
+	fsys.indexed.Do(func() {
+		if rdfs, ok := fsys.fsys.(fs.ReadDirFS); ok {
+			if _, err := rdfs.ReadDir("."); err != nil {
+				slog.Warn("failed to index archive", "name", fsys.name, "error", err)
+			}
+		}
+	})
+}
+
+// openInner opens name in the underlying FS. If the archive returns an entry
+// whose name doesn't match (implicit directory bug in non-indexed archives),
+// it triggers an index build and retries once.
+func (fsys *archiveFS) openInner(name string) (fs.File, error) {
+	f, err := fsys.fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if name == "." {
+		return f, nil
+	}
+	info, statErr := f.Stat()
+	if statErr != nil || info.Name() == path.Base(name) {
+		return f, nil
+	}
+	f.Close()
+	fsys.ensureIndexed()
+	return fsys.fsys.Open(name)
 }
 
 func (fsys *archiveFS) URI() *url.URL {
@@ -84,7 +118,7 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if err := validPath("open", name); err != nil {
 		return nil, err
 	}
-	return fsys.fsys.Open(name)
+	return fsys.openInner(name)
 }
 
 func (fsys *archiveFS) Close() error {
@@ -101,7 +135,7 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
-	f, err := fsys.fsys.Open(name)
+	f, err := fsys.openInner(name)
 	if err != nil {
 		return nil, err
 	}

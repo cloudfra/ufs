@@ -80,6 +80,7 @@ bazel-testlogs
 # Editor/IDE
 .claude/
 .idea/
+.qwen/
 .vscode/
 
 # Output Directories

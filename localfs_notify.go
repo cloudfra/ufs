@@ -67,7 +67,9 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 		watchRoot: watchRoot,
 	}
 
-	if err := lw.addRecursive(watchRoot); err != nil {
+	// Watch the root directory synchronously so events are delivered
+	// immediately when Watch returns.
+	if err := w.Add(watchRoot); err != nil {
 		_ = w.Close()
 		cancel()
 		return nil, err
@@ -75,6 +77,14 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 
 	lw.wg.Add(1)
 	go lw.loop(ctx)
+
+	// Add subdirectory watches in the background so Watch() is not blocked
+	// by a potentially slow filepath.WalkDir on large trees.
+	lw.wg.Add(1)
+	go func() {
+		defer lw.wg.Done()
+		_ = lw.addRecursive(watchRoot)
+	}()
 
 	return lw, nil
 }

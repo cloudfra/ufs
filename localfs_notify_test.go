@@ -160,6 +160,10 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	}
 	defer func() { _ = closer.Close() }()
 
+	// Subdirectory watches are added in a background goroutine after
+	// Watch returns. Give the walk a moment to register the nested dirs.
+	time.Sleep(100 * time.Millisecond)
+
 	if err := os.WriteFile(filepath.Join(dir, "a", "b", "deep.txt"), []byte("data"), 0o644); err != nil {
 		t.Fatal(err)
 	}

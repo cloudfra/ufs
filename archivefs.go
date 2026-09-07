@@ -21,7 +21,9 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"strings"
+	"sync"
 
 	"github.com/mholt/archives"
 )
@@ -59,13 +61,26 @@ func isMountableArchivePath(name string) bool {
 }
 
 type archiveFS struct {
-	fsys   fs.FS
-	name   string
-	closer io.Closer
+	fsys    fs.FS
+	name    string
+	closer  io.Closer
+	indexed sync.Once
 }
 
 func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
 	return archiveDeviceInfoMap
+}
+
+// ensureIndexed forces the underlying archive FS to build its internal index
+// by triggering a ReadDir on the root. This is needed for archives with
+// implicit directories (directories inferred from file paths rather than
+// stored as explicit entries).
+func (fsys *archiveFS) ensureIndexed() {
+	fsys.indexed.Do(func() {
+		if rdfs, ok := fsys.fsys.(fs.ReadDirFS); ok {
+			_, _ = rdfs.ReadDir(".")
+		}
+	})
 }
 
 func (fsys *archiveFS) URI() *url.URL {
@@ -84,7 +99,31 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if err := validPath("open", name); err != nil {
 		return nil, err
 	}
-	return fsys.fsys.Open(name)
+	f, err := fsys.fsys.Open(name)
+	if err != nil {
+		// Could be an implicit directory not visible without the index.
+		fsys.ensureIndexed()
+		f, err = fsys.fsys.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		return wrapArchiveFile(f, name), nil
+	}
+	if name != "." {
+		if info, statErr := f.Stat(); statErr == nil && info.Name() != path.Base(name) {
+			// The archives library returned the wrong file — this happens
+			// when the target is an implicit directory. Build the index
+			// and retry.
+			_ = f.Close()
+			fsys.ensureIndexed()
+			f, err = fsys.fsys.Open(name)
+			if err != nil {
+				return nil, err
+			}
+			return wrapArchiveFile(f, name), nil
+		}
+	}
+	return wrapArchiveFile(f, name), nil
 }
 
 func (fsys *archiveFS) Close() error {
@@ -101,16 +140,11 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
-	f, err := fsys.fsys.Open(name)
+	info, err := fs.Stat(fsys.fsys, name)
 	if err != nil {
 		return nil, err
 	}
-	stat, statErr := f.Stat()
-	closeErr := f.Close()
-	if statErr != nil {
-		return nil, joinErrors(statErr, closeErr)
-	}
-	return stat, closeErr
+	return fixArchiveName(info, name), nil
 }
 
 func (fsys *archiveFS) Create(name string) (File, error) {
@@ -166,6 +200,82 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 		return err
 	}
 	return pathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
+}
+
+// fixArchiveName returns info with a corrected Name() when the archives
+// library returns the full path instead of the base name for implicit
+// directories.
+func fixArchiveName(info fs.FileInfo, name string) fs.FileInfo {
+	want := path.Base(name)
+	if info.Name() == want {
+		return info
+	}
+	return fixedNameInfo{FileInfo: info, baseName: want}
+}
+
+type fixedNameInfo struct {
+	fs.FileInfo
+	baseName string
+}
+
+func (fi fixedNameInfo) Name() string { return fi.baseName }
+
+// wrapArchiveFile wraps directory files returned by the archives library to
+// fix two upstream bugs: incorrect Name() for implicit directories, and
+// broken ReadDir paging (ReadDir(n<=0) doesn't advance the read position).
+// Regular files are returned as-is.
+func wrapArchiveFile(f fs.File, name string) fs.File {
+	rdf, ok := f.(fs.ReadDirFile)
+	if !ok {
+		return f
+	}
+	return &archiveDirFile{ReadDirFile: rdf, baseName: path.Base(name)}
+}
+
+// archiveDirFile wraps a ReadDirFile to fix Name() and ReadDir paging.
+type archiveDirFile struct {
+	fs.ReadDirFile
+	baseName string
+	entries  []fs.DirEntry
+	pos      int
+	cached   bool
+}
+
+func (f *archiveDirFile) Stat() (fs.FileInfo, error) {
+	info, err := f.ReadDirFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Name() != f.baseName {
+		return fixedNameInfo{FileInfo: info, baseName: f.baseName}, nil
+	}
+	return info, nil
+}
+
+func (f *archiveDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	if !f.cached {
+		entries, err := f.ReadDirFile.ReadDir(-1)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		f.entries = entries
+		f.cached = true
+	}
+	if n <= 0 {
+		entries := f.entries[f.pos:]
+		f.pos = len(f.entries)
+		return entries, nil
+	}
+	if f.pos >= len(f.entries) {
+		return nil, io.EOF
+	}
+	end := min(f.pos+n, len(f.entries))
+	entries := f.entries[f.pos:end]
+	f.pos = end
+	if f.pos >= len(f.entries) {
+		return entries, io.EOF
+	}
+	return entries, nil
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {

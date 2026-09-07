@@ -55,6 +55,8 @@ type nullFile struct {
 	name string
 }
 
+func (n *nullFile) IsDir() bool { return false }
+
 func (n *nullFile) Stat() (fs.FileInfo, error) {
 	isDir := isDirName(n.name)
 	mode := fs.ModePerm
@@ -104,6 +106,8 @@ func newNullFile(name string) *nullFile {
 }
 
 type nullReadDirFile struct{}
+
+func (vrd *nullReadDirFile) IsDir() bool { return true }
 
 func (vrd *nullReadDirFile) Stat() (fs.FileInfo, error) {
 	return nullDirStat, nil

@@ -93,6 +93,8 @@ type memFile struct {
 	modTime time.Time
 }
 
+func (f *memFile) IsDir() bool { return false }
+
 func (f *memFile) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -189,6 +191,8 @@ type memDirFile struct {
 	mode    fs.FileMode
 	modTime time.Time
 }
+
+func (d *memDirFile) IsDir() bool { return true }
 
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
 	return &fsInfo{

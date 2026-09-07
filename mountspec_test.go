@@ -537,7 +537,7 @@ func TestNewFromFstabNoRoot(t *testing.T) {
 func TestNewFromFstabLocalFS(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 

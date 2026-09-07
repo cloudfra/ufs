@@ -59,7 +59,7 @@ func TestMountConformanceReadFile(t *testing.T) {
 	t.Parallel()
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("world"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("world"), testFilePermission); err != nil {
 			t.Fatal(err)
 		}
 
@@ -86,10 +86,10 @@ func TestMountConformanceStat(t *testing.T) {
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
 		content := []byte("test content")
-		if err := os.WriteFile(filepath.Join(srcDir, "file.txt"), content, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(srcDir, "file.txt"), content, testFilePermission); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(filepath.Join(srcDir, "subdir"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(srcDir, "subdir"), testDirectoryPermission); err != nil {
 			t.Fatal(err)
 		}
 
@@ -127,11 +127,11 @@ func TestMountConformanceReadDir(t *testing.T) {
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
 		for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
-			if err := os.WriteFile(filepath.Join(srcDir, name), []byte("data"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(srcDir, name), []byte("data"), testFilePermission); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := os.MkdirAll(filepath.Join(srcDir, "sub"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(srcDir, "sub"), testDirectoryPermission); err != nil {
 			t.Fatal(err)
 		}
 
@@ -147,9 +147,9 @@ func TestMountConformanceReadDir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var names []string
-		for _, e := range entries {
-			names = append(names, e.Name())
+		names := make([]string, len(entries))
+		for idx, e := range entries {
+			names[idx] = e.Name()
 		}
 		sort.Strings(names)
 		want := []string{"a.txt", "b.txt", "c.txt", "sub"}
@@ -189,10 +189,10 @@ func TestMountConformanceNestedRead(t *testing.T) {
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
 		nested := filepath.Join(srcDir, "a", "b")
-		if err := os.MkdirAll(nested, 0o755); err != nil {
+		if err := os.MkdirAll(nested, testDirectoryPermission); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(nested, "deep.txt"), []byte("deep"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(nested, "deep.txt"), []byte("deep"), testFilePermission); err != nil {
 			t.Fatal(err)
 		}
 
@@ -223,7 +223,7 @@ func TestMountConformanceLargeFile(t *testing.T) {
 		for i := range content {
 			content[i] = byte(i % 251)
 		}
-		if err := os.WriteFile(filepath.Join(srcDir, "large.bin"), content, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(srcDir, "large.bin"), content, testFilePermission); err != nil {
 			t.Fatal(err)
 		}
 

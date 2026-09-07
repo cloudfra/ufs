@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"os"
 )
 
 // ExampleNew_memory demonstrates a volatile in-memory file system. All data is
@@ -29,33 +28,33 @@ func ExampleNew_memory() {
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("cannot mount filesystem", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
 			slog.Error("cannot close filesystem", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 
 	f, err := fsys.Create("hello.txt")
 	if err != nil {
 		slog.Error("cannot create file", "error", err)
-		os.Exit(1)
+		return
 	}
 	if _, err := f.WriteString("hello, world"); err != nil {
 		slog.Error("cannot write to file", "error", err)
-		os.Exit(1)
+		return
 	}
 	if err := f.Close(); err != nil {
 		slog.Error("cannot close file", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	data, err := fsys.ReadFile("hello.txt")
 	if err != nil {
 		slog.Error("cannot read file", "error", err)
-		os.Exit(1)
+		return
 	}
 	fmt.Println(string(data))
 	// Output: hello, world
@@ -69,33 +68,33 @@ func ExampleNew_null() {
 	fsys, err := New(ctx, "null://")
 	if err != nil {
 		slog.Error("cannot mount filesystem", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
 			slog.Error("cannot close filesystem", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 
 	f, err := fsys.Create("discard.txt")
 	if err != nil {
 		slog.Error("cannot create file", "error", err)
-		os.Exit(1)
+		return
 	}
 	n, writeErr := f.WriteString("this data is discarded")
 	fmt.Printf("wrote %d bytes, err=%v\n", n, writeErr)
 
 	if err := f.Close(); err != nil {
 		slog.Error("cannot close file", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	// ReadFile always returns an empty byte slice, not an error.
 	data, err := fsys.ReadFile("discard.txt")
 	if err != nil {
 		slog.Error("cannot read file", "error", err)
-		os.Exit(1)
+		return
 	}
 	fmt.Printf("read %d bytes\n", len(data))
 	// Output:
@@ -109,50 +108,50 @@ func ExampleCopy() {
 	src, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("failed to create source FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	dst, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("failed to create destination FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := src.Close(); err != nil {
 			slog.Error("failed to close source FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 	defer func() {
 		if err := dst.Close(); err != nil {
 			slog.Error("failed to close destination FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 
 	f, err := src.Create("hello.txt")
 	if err != nil {
 		slog.Error("failed to create file in source FS", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	if _, err = f.WriteString("hello"); err != nil {
 		slog.Error("failed to write to file in source FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	if err := f.Close(); err != nil {
 		slog.Error("failed to close file in source FS", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	if err := Copy(src, "hello.txt", dst, "copy.txt"); err != nil {
 		slog.Error("failed to copy file", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	data, err := dst.ReadFile("copy.txt")
 	if err != nil {
 		slog.Error("failed to read copied file", "error", err)
-		os.Exit(1)
+		return
 	}
 	fmt.Println(string(data))
 	// Output: hello
@@ -164,55 +163,55 @@ func ExampleRsync() {
 	src, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("failed to create source FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	dst, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("failed to create destination FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := src.Close(); err != nil {
 			slog.Error("failed to close source FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 	defer func() {
 		if err := dst.Close(); err != nil {
 			slog.Error("failed to close destination FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 
 	if err := src.MkdirAll("subdir", fs.ModePerm); err != nil {
 		slog.Error("failed to create directory", "error", err)
-		os.Exit(1)
+		return
 	}
 	for _, name := range []string{"a.txt", "subdir/b.txt"} {
 		f, err := src.Create(name)
 		if err != nil {
 			slog.Error("failed to create file", "error", err)
-			os.Exit(1)
+			return
 		}
 		if _, err := f.WriteString("content"); err != nil {
 			slog.Error("failed to write to file", "error", err)
-			os.Exit(1)
+			return
 		}
 		if err := f.Close(); err != nil {
 			slog.Error("failed to close file", "error", err)
-			os.Exit(1)
+			return
 		}
 	}
 
 	if err := Rsync(src, dst, "."); err != nil {
 		slog.Error("failed to rsync files", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	files, err := ListFiles(dst, ".")
 	if err != nil {
 		slog.Error("failed to list files", "error", err)
-		os.Exit(1)
+		return
 	}
 	for _, p := range files {
 		fmt.Println(p)
@@ -228,35 +227,35 @@ func ExampleListFiles() {
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("failed to create FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
 			slog.Error("failed to close FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 
 	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
 		slog.Error("failed to create directory", "error", err)
-		os.Exit(1)
+		return
 	}
 	for _, name := range []string{"a.txt", "b.txt", "subdir/c.txt"} {
 		f, err := fsys.Create(name)
 		if err != nil {
 			slog.Error("failed to create file", "error", err)
-			os.Exit(1)
+			return
 		}
 		if err := f.Close(); err != nil {
 			slog.Error("failed to close file", "error", err)
-			os.Exit(1)
+			return
 		}
 	}
 
 	files, err := ListFiles(fsys, ".")
 	if err != nil {
 		slog.Error("failed to list files", "error", err)
-		os.Exit(1)
+		return
 	}
 	for _, p := range files {
 		fmt.Println(p)
@@ -273,33 +272,33 @@ func ExampleList() {
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("failed to create FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
 			slog.Error("failed to close FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 
 	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
 		slog.Error("failed to create directory", "error", err)
-		os.Exit(1)
+		return
 	}
 	f, err := fsys.Create("subdir/c.txt")
 	if err != nil {
 		slog.Error("cannot create file", "error", err)
-		os.Exit(1)
+		return
 	}
 	if err := f.Close(); err != nil {
 		slog.Error("failed to close file", "error", err)
-		os.Exit(1)
+		return
 	}
 
 	entries, err := List(fsys, ".")
 	if err != nil {
 		slog.Error("failed to list entries", "error", err)
-		os.Exit(1)
+		return
 	}
 	for _, p := range entries {
 		fmt.Println(p)
@@ -316,12 +315,12 @@ func ExampleForEachFilename() {
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
 		slog.Error("failed to create FS", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
 			slog.Error("failed to close FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 
@@ -329,11 +328,11 @@ func ExampleForEachFilename() {
 		f, err := fsys.Create(name)
 		if err != nil {
 			slog.Error("failed to create file", "error", err)
-			os.Exit(1)
+			return
 		}
 		if err := f.Close(); err != nil {
 			slog.Error("failed to close file", "error", err)
-			os.Exit(1)
+			return
 		}
 	}
 
@@ -342,7 +341,7 @@ func ExampleForEachFilename() {
 		return nil
 	}); err != nil {
 		slog.Error("failed to iterate over filenames", "error", err)
-		os.Exit(1)
+		return
 	}
 	// Output:
 	// a.txt
@@ -356,7 +355,7 @@ func ExampleCreateURI() {
 	uri, err := CreateURI("memory://", nil)
 	if err != nil {
 		slog.Error("failed to create URI", "error", err)
-		os.Exit(1)
+		return
 	}
 	fmt.Println(uri)
 
@@ -364,12 +363,12 @@ func ExampleCreateURI() {
 	fsys, err := New(ctx, uri)
 	if err != nil {
 		slog.Error("cannot mount filesystem", "error", err)
-		os.Exit(1)
+		return
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
 			slog.Error("failed to close FS", "error", err)
-			os.Exit(1)
+			return
 		}
 	}()
 	fmt.Println(fsys.URI())

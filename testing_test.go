@@ -33,6 +33,11 @@ import (
 	"github.com/xyproto/randomstring"
 )
 
+const (
+	testDirectoryPermission = 0o750
+	testFilePermission      = 0o600
+)
+
 type fsTestCase struct {
 	name       string
 	createFS   func(tb testing.TB) FS
@@ -41,10 +46,8 @@ type fsTestCase struct {
 
 var (
 	angryFSTestCase = fsTestCase{
-		name: "angryFS",
-		createFS: func(tb testing.TB) FS {
-			return mustAngryFS(tb)
-		},
+		name:       "angryFS",
+		createFS:   mustAngryFS,
 		wantString: angryFSPrefix,
 	}
 
@@ -164,14 +167,15 @@ func getAllExceptAngryTestCaseList() []fsTestCase {
 
 func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 	ctx := context.Background()
-	result := []fsTestCase{}
-	for _, tc := range tcl {
-		result = append(result, tc, fsTestCase{
+	result := make([]fsTestCase, len(tcl)*2)
+	for idx, tc := range tcl {
+		result[idx*2] = tc
+		result[idx*2+1] = fsTestCase{
 			name: "nestFS." + tc.name,
 			createFS: func(tb testing.TB) FS {
 				return makeNestFS(ctx, tc.createFS(tb))
 			},
-		})
+		}
 	}
 	return result
 }
@@ -411,9 +415,11 @@ func must(tb testing.TB, err error) {
 }
 
 func toMapKeys[T any](m map[string]T) []string {
-	keys := []string{}
+	keys := make([]string, len(m))
+	idx := 0
 	for k := range m {
-		keys = append(keys, k)
+		keys[idx] = k
+		idx++
 	}
 	sort.Strings(keys)
 	return keys

@@ -16,9 +16,11 @@ package ufs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"path"
 	"strings"
 	"sync"
@@ -109,10 +111,12 @@ func (gw *gcsWatcher) Close() error {
 func (gw *gcsWatcher) loop(ctx context.Context, sub *pubsub.Subscriber) {
 	defer gw.wg.Done()
 	// Receive blocks until ctx is canceled.
-	_ = sub.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
+	if err := sub.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
 		defer msg.Ack()
 		gw.handleMessage(msg)
-	})
+	}); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Warn("gcsFS: pubsub receive loop exited with error", "error", err)
+	}
 }
 
 func (gw *gcsWatcher) handleMessage(msg *pubsub.Message) {

@@ -38,7 +38,11 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	f, err := inner.Create("test.txt")
 	if err != nil {
@@ -73,7 +77,11 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer func() {
+		if err := closer.Close(); err != nil {
+			t.Errorf("closer.Close() = %v, want nil", err)
+		}
+	}()
 
 	// File inside the watched subdirectory should be delivered.
 	f, err := inner.Create("sub/inside.txt")

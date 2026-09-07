@@ -17,6 +17,7 @@ package ufs
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/url"
 	"strings"
 )
@@ -48,7 +49,11 @@ func (fsys *angryFS) getDeviceInfo() map[string]deviceInfo {
 }
 
 func (fsys *angryFS) URI() *url.URL {
-	u, _ := url.Parse(fsys.name)
+	u, err := url.Parse(fsys.name)
+	if err != nil {
+		slog.Warn("angryFS: failed to parse URI, using opaque fallback", "name", fsys.name, "error", err)
+		return &url.URL{Scheme: "angry", Opaque: fsys.name, RawQuery: "ro=true"}
+	}
 	v := u.Query()
 	v.Set("ro", "true")
 	u.RawQuery = v.Encode()

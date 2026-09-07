@@ -418,7 +418,10 @@ func TestMemFSReadLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, _ := fsys.Create("file.txt")
+	f, err := fsys.Create("file.txt")
+	if err != nil {
+		t.Fatalf("Create(\"file.txt\") = %v, want nil", err)
+	}
 	if err := f.Close(); err != nil {
 		t.Fatalf("failed to close file: %v", err)
 	}
@@ -528,7 +531,10 @@ func TestMemFSReadDir(t *testing.T) {
 		t.Fatalf("failed to create directory: %v", err)
 	}
 	for _, name := range []string{"a.txt", "b.txt"} {
-		f, _ := fsys.Create("docs/" + name)
+		f, err := fsys.Create("docs/" + name)
+		if err != nil {
+			t.Fatalf("Create(%q) = %v, want nil", "docs/"+name, err)
+		}
 		if err := f.Close(); err != nil {
 			t.Fatalf("failed to close file: %v", err)
 		}
@@ -947,7 +953,10 @@ func TestMemFSRemoveAll(t *testing.T) {
 		if err := fsys2.MkdirAll("dir", fs.ModePerm); err != nil {
 			t.Fatalf("failed to create directory: %v", err)
 		}
-		h, _ := fsys2.Create("file.txt")
+		h, err := fsys2.Create("file.txt")
+		if err != nil {
+			t.Fatalf("Create(\"file.txt\") = %v, want nil", err)
+		}
 		if err := h.Close(); err != nil {
 			t.Errorf("failed to close file: %v", err)
 		}
@@ -966,7 +975,10 @@ func TestMemFSRemoveAll(t *testing.T) {
 }
 
 func TestMemFSRemoveClosedFS(t *testing.T) {
-	fsys, _ := newMemFS("memory://test")
+	fsys, err := newMemFS("memory://test")
+	if err != nil {
+		t.Fatalf("newMemFS() = %v, want nil", err)
+	}
 	if err := fsys.Close(); err != nil {
 		t.Fatal(err)
 	}

@@ -67,7 +67,11 @@ func TestMountConformanceReadFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -97,7 +101,11 @@ func TestMountConformanceStat(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -139,7 +147,11 @@ func TestMountConformanceReadDir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -173,7 +185,11 @@ func TestMountConformanceStatNotExist(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -200,7 +216,11 @@ func TestMountConformanceNestedRead(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -231,7 +251,11 @@ func TestMountConformanceLargeFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -257,7 +281,11 @@ func TestMountConformanceNullFS(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -284,7 +312,11 @@ func TestMountConformanceNestedOverlay(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = fsys.Close() })
+		t.Cleanup(func() {
+			if err := fsys.Close(); err != nil {
+				t.Errorf("fsys.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, fsys)
 
@@ -307,7 +339,11 @@ func TestMountConformanceRsyncArchive(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = archiveFS.Close() })
+		t.Cleanup(func() {
+			if err := archiveFS.Close(); err != nil {
+				t.Errorf("archiveFS.Close() = %v, want nil", err)
+			}
+		})
 
 		m := backend.mount(t, archiveFS)
 
@@ -315,7 +351,11 @@ func TestMountConformanceRsyncArchive(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() { _ = memFS.Close() }()
+		defer func() {
+			if err := memFS.Close(); err != nil {
+				t.Errorf("memFS.Close() = %v, want nil", err)
+			}
+		}()
 
 		if err := Rsync(os.DirFS(m.mountDir), memFS, "."); err != nil {
 			t.Fatalf("Rsync: %v", err)

@@ -466,7 +466,10 @@ func TestNestReadDirFileRead(t *testing.T) {
 	defer validateClose(t, f)()
 
 	buf := make([]byte, 16)
-	n, _ := f.Read(buf)
+	n, err := f.Read(buf)
+	if err != nil {
+		t.Logf("Read() on directory = %v (either an error or n==0 is acceptable)", err)
+	}
 	if n != 0 {
 		t.Errorf("Read() on directory returned %d bytes, want 0", n)
 	}

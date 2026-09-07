@@ -18,6 +18,7 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,9 +69,9 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 	}
 
 	if err := lw.addRecursive(watchRoot); err != nil {
-		_ = w.Close()
+		closeErr := w.Close()
 		cancel()
-		return nil, err
+		return nil, joinErrors(err, closeErr)
 	}
 
 	lw.wg.Add(1)
@@ -175,7 +176,9 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 		if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
 			// New directory: register watches for it and any children that
 			// appeared before the watch was installed.
-			_ = lw.addRecursive(ev.Name)
+			if err := lw.addRecursive(ev.Name); err != nil {
+				slog.Warn("localFS: failed to add recursive watch for new directory", "path", ev.Name, "error", err)
+			}
 		}
 	}
 
@@ -186,7 +189,11 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 		// the event loop. Use a goroutine with short timeout as a safety net.
 		done := make(chan struct{})
 		go func() {
-			_ = lw.watcher.Remove(ev.Name)
+			if err := lw.watcher.Remove(ev.Name); err != nil {
+				// Expected in the common case: fsnotify already dropped the
+				// watch on its own when the path was deleted or renamed away.
+				slog.Debug("localFS: failed to remove watch for deleted path", "path", ev.Name, "error", err)
+			}
 			close(done)
 		}()
 		select {

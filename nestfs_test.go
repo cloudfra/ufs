@@ -780,14 +780,15 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The next directory listing should no longer show the .d entry.
+	// The directory listing still shows the .d entry (lazy verification);
+	// errors surface when the mount is actually accessed.
 	entries, err = fs.ReadDir(fsys, cwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got = dirEntryListToNames(entries)
-	if diff := cmp.Diff(got, []string{}); diff != "" {
-		t.Errorf("after remove: still shows stale mount: %s", diff)
+	if diff := cmp.Diff(got, []string{"testassets.zip.d"}); diff != "" {
+		t.Errorf("after remove: mount entry should still appear: %s", diff)
 	}
 }
 

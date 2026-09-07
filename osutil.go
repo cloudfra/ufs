@@ -187,6 +187,10 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 		return "", err
 	}
 
+	if err := f.Sync(); err != nil {
+		return "", err
+	}
+
 	return archiveFilename, nil
 }
 

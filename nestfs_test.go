@@ -744,7 +744,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destZip, data, 0o644); err != nil {
+	if err := os.WriteFile(destZip, data, testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 

@@ -247,7 +247,7 @@ const (
 	testSubscription = "projects/test-project/subscriptions/gcs-events-sub"
 )
 
-func newPstestGCSFS(tb testing.TB, bucket, baseDir string) (*gcsFS, *pstest.Server) {
+func newPstestGCSFS(tb testing.TB, bucket string, baseDir string) (*gcsFS, *pstest.Server) {
 	tb.Helper()
 	srv := pstest.NewServer()
 	tb.Cleanup(func() {

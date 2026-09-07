@@ -48,13 +48,13 @@ func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
 			subdir += fmt.Sprintf("d%d/", l)
 		}
 		dirPath := dir + "/" + subdir
-		if err := os.MkdirAll(dirPath, 0o755); err != nil {
+		if err := os.MkdirAll(dirPath, testDirectoryPermission); err != nil {
 			t.Fatal(err)
 		}
 		name := subdir + fmt.Sprintf("file_%d.dat", i)
 		data := seedData(byte(i%256), fileBytes)
 		lfsPath := dir + "/" + name
-		if err := os.WriteFile(lfsPath, data, 0o644); err != nil {
+		if err := os.WriteFile(lfsPath, data, testFilePermission); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -62,14 +62,14 @@ func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
 }
 
 // mustMemFS creates a memFS and attaches t.Cleanup to close it.
-func mustMemFS(t testing.TB, name string) FS {
+func mustMemFS(tb testing.TB, name string) FS {
 	fsys, err := newMemFS(name)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
-			t.Fatal(err)
+			tb.Fatal(err)
 		}
 	})
 	return fsys
@@ -226,7 +226,7 @@ func BenchmarkRsyncLarge(b *testing.B) {
 // --- List benchmarks (use memFS — ListFiles falls through to WalkDir on memFS) ---
 
 func BenchmarkListFilesSmall(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
+	fsys := mustMemFS(b, "memory://")
 	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
 		b.Fatal(err)
 	}
@@ -667,7 +667,7 @@ func BenchmarkNestFSReadDir(b *testing.B) {
 	for i := range 1000 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		data := bytes.Repeat([]byte("Nest"), 128)
-		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
+		if err := os.WriteFile(dir+"/"+name, data, testFilePermission); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -693,7 +693,7 @@ func BenchmarkNestFSReadFile(b *testing.B) {
 	for i := range 100 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		data := bytes.Repeat([]byte("Nest"), 128)
-		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
+		if err := os.WriteFile(dir+"/"+name, data, testFilePermission); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -721,7 +721,7 @@ func BenchmarkLocalFSReadDir(b *testing.B) {
 	data := bytes.Repeat([]byte("LocData"), 64) // ~600B each
 	for i := range 1000 {
 		name := fmt.Sprintf("file_%d.dat", i)
-		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
+		if err := os.WriteFile(dir+"/"+name, data, testFilePermission); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -748,7 +748,7 @@ func BenchmarkLocalFSListFiles(b *testing.B) {
 	data := bytes.Repeat([]byte("L"), 512)
 	for i := range 5000 {
 		name := fmt.Sprintf("file_%d.dat", i)
-		if err := os.WriteFile(dir+"/"+name, data, 0o644); err != nil {
+		if err := os.WriteFile(dir+"/"+name, data, testFilePermission); err != nil {
 			b.Fatal(err)
 		}
 	}

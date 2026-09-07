@@ -29,11 +29,11 @@ linters:
     - noctx
     #- goconst
     #- gosec
-    #- gocritic
-    #- unconvert
+    - gocritic
+    - unconvert
     #- unparam
-    #- prealloc
-    #- revive
+    - prealloc
+    - revive
   exclusions:
     paths:
       - "build/"

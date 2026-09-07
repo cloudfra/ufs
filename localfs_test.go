@@ -151,13 +151,13 @@ func TestLocalFSRemove(t *testing.T) {
 	defer validateClose(t, fsys)()
 
 	// Create a file and a subdirectory with a child.
-	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), testDirectoryPermission); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "sub", "child.txt"), []byte("child"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "sub", "child.txt"), []byte("child"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 
@@ -191,13 +191,13 @@ func TestLocalFSRemoveAll(t *testing.T) {
 	}
 	defer validateClose(t, fsys)()
 
-	if err := os.MkdirAll(filepath.Join(dir, "tree", "deep"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "tree", "deep"), testDirectoryPermission); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "tree", "deep", "leaf.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "tree", "deep", "leaf.txt"), []byte("x"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("keep"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("keep"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 

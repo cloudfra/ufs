@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mholt/archives"
@@ -187,7 +188,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 	// is a directory within the archive (its dirFile.Close is a no-op that never
 	// references the opened file). Passing a Stream makes ArchiveFS reuse this
 	// single file instead, so the only handle to close is the one we own here.
-	file, err := os.Open(name)
+	file, err := os.Open(filepath.Clean(name))
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}

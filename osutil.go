@@ -173,7 +173,7 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 		return "", fmt.Errorf("resolved path %q escapes download directory %q", archiveFilename, baseDir)
 	}
 
-	f, err := os.Create(archiveFilename)
+	f, err := os.Create(filepath.Clean(archiveFilename))
 	if err != nil {
 		return "", err
 	}

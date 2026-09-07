@@ -173,7 +173,7 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 		return err
 	}
 	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), testFilePermission); err != nil {
 			return err
 		}
 	}

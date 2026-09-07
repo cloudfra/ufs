@@ -126,7 +126,7 @@ func TestHostMountClose(t *testing.T) {
 	requireProjFS(t)
 
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,7 +156,7 @@ func TestHostMountContextCancel(t *testing.T) {
 	requireProjFS(t)
 
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 
@@ -214,7 +214,7 @@ func TestHostMountReadOnlyMkdir(t *testing.T) {
 func TestHostMountReadOnlyRemove(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 

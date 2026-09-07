@@ -478,7 +478,7 @@ func setupNestFSWithArchive(t *testing.T) FS {
 	t.Helper()
 	dir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 
@@ -655,7 +655,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Create conf.d as a real directory (base name "conf" is not an archive).
-	if err := os.MkdirAll(filepath.Join(dir, "conf.d"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "conf.d"), testDirectoryPermission); err != nil {
 		t.Fatal(err)
 	}
 
@@ -691,10 +691,10 @@ func TestIsMountedArchiveDir(t *testing.T) {
 func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(dir, "subdir"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "subdir"), testDirectoryPermission); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested"), testFilePermission); err != nil {
 		t.Fatal(err)
 	}
 

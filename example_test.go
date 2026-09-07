@@ -18,7 +18,8 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
+	"os"
 )
 
 // ExampleNew_memory demonstrates a volatile in-memory file system. All data is
@@ -27,28 +28,34 @@ func ExampleNew_memory() {
 	ctx := context.Background()
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("cannot mount filesystem", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Fatal(err)
+			slog.Error("cannot close filesystem", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	f, err := fsys.Create("hello.txt")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("cannot create file", "error", err)
+		os.Exit(1)
 	}
 	if _, err := f.WriteString("hello, world"); err != nil {
-		log.Fatal(err)
+		slog.Error("cannot write to file", "error", err)
+		os.Exit(1)
 	}
 	if err := f.Close(); err != nil {
-		log.Fatal(err)
+		slog.Error("cannot close file", "error", err)
+		os.Exit(1)
 	}
 
 	data, err := fsys.ReadFile("hello.txt")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("cannot read file", "error", err)
+		os.Exit(1)
 	}
 	fmt.Println(string(data))
 	// Output: hello, world
@@ -61,29 +68,34 @@ func ExampleNew_null() {
 	ctx := context.Background()
 	fsys, err := New(ctx, "null://")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("cannot mount filesystem", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Fatal(err)
+			slog.Error("cannot close filesystem", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	f, err := fsys.Create("discard.txt")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("cannot create file", "error", err)
+		os.Exit(1)
 	}
 	n, writeErr := f.WriteString("this data is discarded")
 	fmt.Printf("wrote %d bytes, err=%v\n", n, writeErr)
 
 	if err := f.Close(); err != nil {
-		log.Fatal(err)
+		slog.Error("cannot close file", "error", err)
+		os.Exit(1)
 	}
 
 	// ReadFile always returns an empty byte slice, not an error.
 	data, err := fsys.ReadFile("discard.txt")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("cannot read file", "error", err)
+		os.Exit(1)
 	}
 	fmt.Printf("read %d bytes\n", len(data))
 	// Output:
@@ -96,42 +108,51 @@ func ExampleCopy() {
 	ctx := context.Background()
 	src, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatalf("failed to create source FS: %v", err)
+		slog.Error("failed to create source FS", "error", err)
+		os.Exit(1)
 	}
 	dst, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatalf("failed to create destination FS: %v", err)
+		slog.Error("failed to create destination FS", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := src.Close(); err != nil {
-			log.Fatalf("failed to close source FS: %v", err)
+			slog.Error("failed to close source FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 	defer func() {
 		if err := dst.Close(); err != nil {
-			log.Fatalf("failed to close destination FS: %v", err)
+			slog.Error("failed to close destination FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	f, err := src.Create("hello.txt")
 	if err != nil {
-		log.Fatalf("failed to create file in source FS: %v", err)
+		slog.Error("failed to create file in source FS", "error", err)
+		os.Exit(1)
 	}
 
 	if _, err = f.WriteString("hello"); err != nil {
-		log.Fatalf("failed to write to file in source FS: %v", err)
+		slog.Error("failed to write to file in source FS", "error", err)
+		os.Exit(1)
 	}
 	if err := f.Close(); err != nil {
-		log.Fatalf("failed to close file in source FS: %v", err)
+		slog.Error("failed to close file in source FS", "error", err)
+		os.Exit(1)
 	}
 
 	if err := Copy(src, "hello.txt", dst, "copy.txt"); err != nil {
-		log.Fatal(err)
+		slog.Error("failed to copy file", "error", err)
+		os.Exit(1)
 	}
 
 	data, err := dst.ReadFile("copy.txt")
 	if err != nil {
-		log.Fatalf("failed to read copied file: %v", err)
+		slog.Error("failed to read copied file", "error", err)
+		os.Exit(1)
 	}
 	fmt.Println(string(data))
 	// Output: hello
@@ -142,46 +163,56 @@ func ExampleRsync() {
 	ctx := context.Background()
 	src, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatalf("failed to create source FS: %v", err)
+		slog.Error("failed to create source FS", "error", err)
+		os.Exit(1)
 	}
 	dst, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatalf("failed to create destination FS: %v", err)
+		slog.Error("failed to create destination FS", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := src.Close(); err != nil {
-			log.Fatalf("failed to close source FS: %v", err)
+			slog.Error("failed to close source FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 	defer func() {
 		if err := dst.Close(); err != nil {
-			log.Fatalf("failed to close destination FS: %v", err)
+			slog.Error("failed to close destination FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	if err := src.MkdirAll("subdir", fs.ModePerm); err != nil {
-		log.Fatalf("failed to create directory: %v", err)
+		slog.Error("failed to create directory", "error", err)
+		os.Exit(1)
 	}
 	for _, name := range []string{"a.txt", "subdir/b.txt"} {
 		f, err := src.Create(name)
 		if err != nil {
-			log.Fatalf("failed to create file: %v", err)
+			slog.Error("failed to create file", "error", err)
+			os.Exit(1)
 		}
 		if _, err := f.WriteString("content"); err != nil {
-			log.Fatalf("failed to write to file: %v", err)
+			slog.Error("failed to write to file", "error", err)
+			os.Exit(1)
 		}
 		if err := f.Close(); err != nil {
-			log.Fatalf("failed to close file: %v", err)
+			slog.Error("failed to close file", "error", err)
+			os.Exit(1)
 		}
 	}
 
 	if err := Rsync(src, dst, "."); err != nil {
-		log.Fatal(err)
+		slog.Error("failed to rsync files", "error", err)
+		os.Exit(1)
 	}
 
 	files, err := ListFiles(dst, ".")
 	if err != nil {
-		log.Fatalf("failed to list files: %v", err)
+		slog.Error("failed to list files", "error", err)
+		os.Exit(1)
 	}
 	for _, p := range files {
 		fmt.Println(p)
@@ -196,30 +227,36 @@ func ExampleListFiles() {
 	ctx := context.Background()
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to create FS", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
+			slog.Error("failed to close FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-		log.Fatalf("failed to create directory: %v", err)
+		slog.Error("failed to create directory", "error", err)
+		os.Exit(1)
 	}
 	for _, name := range []string{"a.txt", "b.txt", "subdir/c.txt"} {
 		f, err := fsys.Create(name)
 		if err != nil {
-			log.Fatalf("failed to create file: %v", err)
+			slog.Error("failed to create file", "error", err)
+			os.Exit(1)
 		}
 		if err := f.Close(); err != nil {
-			log.Fatalf("failed to close file: %v", err)
+			slog.Error("failed to close file", "error", err)
+			os.Exit(1)
 		}
 	}
 
 	files, err := ListFiles(fsys, ".")
 	if err != nil {
-		log.Fatalf("failed to list files: %v", err)
+		slog.Error("failed to list files", "error", err)
+		os.Exit(1)
 	}
 	for _, p := range files {
 		fmt.Println(p)
@@ -235,28 +272,34 @@ func ExampleList() {
 	ctx := context.Background()
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to create FS", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
+			slog.Error("failed to close FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-		log.Fatalf("failed to create directory: %v", err)
+		slog.Error("failed to create directory", "error", err)
+		os.Exit(1)
 	}
 	f, err := fsys.Create("subdir/c.txt")
 	if err != nil {
-		log.Fatalf("cannot create file: %v", err)
+		slog.Error("cannot create file", "error", err)
+		os.Exit(1)
 	}
 	if err := f.Close(); err != nil {
-		log.Fatalf("failed to close file: %v", err)
+		slog.Error("failed to close file", "error", err)
+		os.Exit(1)
 	}
 
 	entries, err := List(fsys, ".")
 	if err != nil {
-		log.Fatalf("failed to list entries: %v", err)
+		slog.Error("failed to list entries", "error", err)
+		os.Exit(1)
 	}
 	for _, p := range entries {
 		fmt.Println(p)
@@ -272,21 +315,25 @@ func ExampleForEachFilename() {
 	ctx := context.Background()
 	fsys, err := New(ctx, "memory://")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to create FS", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
+			slog.Error("failed to close FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	for _, name := range []string{"a.txt", "b.txt"} {
 		f, err := fsys.Create(name)
 		if err != nil {
-			log.Fatalf("failed to create file: %v", err)
+			slog.Error("failed to create file", "error", err)
+			os.Exit(1)
 		}
 		if err := f.Close(); err != nil {
-			log.Fatalf("failed to close file: %v", err)
+			slog.Error("failed to close file", "error", err)
+			os.Exit(1)
 		}
 	}
 
@@ -294,7 +341,8 @@ func ExampleForEachFilename() {
 		fmt.Println(name)
 		return nil
 	}); err != nil {
-		log.Fatalf("failed to iterate over filenames: %v", err)
+		slog.Error("failed to iterate over filenames", "error", err)
+		os.Exit(1)
 	}
 	// Output:
 	// a.txt
@@ -307,18 +355,21 @@ func ExampleCreateURI() {
 	// A memory FS with no nested mounts.
 	uri, err := CreateURI("memory://", nil)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to create URI", "error", err)
+		os.Exit(1)
 	}
 	fmt.Println(uri)
 
 	// Open it — New accepts URIs produced by CreateURI.
 	fsys, err := New(ctx, uri)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("cannot mount filesystem", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := fsys.Close(); err != nil {
-			log.Fatalf("failed to close FS: %v", err)
+			slog.Error("failed to close FS", "error", err)
+			os.Exit(1)
 		}
 	}()
 	fmt.Println(fsys.URI())

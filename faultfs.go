@@ -112,6 +112,10 @@ func (fsys *faultFS) String() string {
 	return fmt.Sprintf("faultFS(%s)", fsys.inner)
 }
 
+func (fsys *faultFS) readOnlyAt(name string) bool {
+	return isReadOnlyAt(fsys.inner, name)
+}
+
 func (fsys *faultFS) maybeInjectFault(op, name string) error {
 	if err := validPath(op, name); err != nil {
 		return err

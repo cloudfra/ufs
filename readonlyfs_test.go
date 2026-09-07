@@ -102,3 +102,58 @@ func TestReadOnlyString(t *testing.T) {
 		t.Errorf("String() should contain %q, got: %q", nullFSPrefix, got)
 	}
 }
+
+// TestIsReadOnlyAt covers the read-only mount forms host-mount adapters
+// (FUSE, ProjFS) rely on to reflect read-only status in stat/listing
+// responses: a genuinely writable FS, the [ReadOnly] wrapper, an inherently
+// read-only [archiveFS], and [FaultInjector] passing the status through from
+// whatever it wraps.
+func TestIsReadOnlyAt(t *testing.T) {
+	t.Parallel()
+
+	memfs, err := New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = memfs.Close() })
+	if isReadOnlyAt(memfs, "anything") {
+		t.Error("writable memFS reported read-only")
+	}
+
+	ro := ReadOnly(memfs)
+	if !isReadOnlyAt(ro, "anything") {
+		t.Error("ReadOnly-wrapped FS not reported read-only")
+	}
+
+	archiveFsys := mustArchiveFS(t)
+	if !isReadOnlyAt(archiveFsys, "anything") {
+		t.Error("archiveFS not reported read-only")
+	}
+
+	if isReadOnlyAt(FaultInjector(memfs, FaultConfig{}), "anything") {
+		t.Error("FaultInjector wrapping a writable FS reported read-only")
+	}
+	if !isReadOnlyAt(FaultInjector(ro, FaultConfig{}), "anything") {
+		t.Error("FaultInjector wrapping a read-only FS did not pass read-only status through")
+	}
+}
+
+// TestIsReadOnlyAtNestFSMountedArchive covers nestFS's auto-mounted-archive
+// form: a plain file backed directly by the base FS is writable, while a
+// path routed through an archive nestFS transparently mounts (the ".d"
+// virtual directories) is read-only.
+func TestIsReadOnlyAtNestFSMountedArchive(t *testing.T) {
+	t.Parallel()
+	fsys, err := newNestFS(t.Context(), cwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer validateClose(t, fsys)()
+
+	if isReadOnlyAt(fsys, "testing/testassets/files/index.html") {
+		t.Error("plain localFS-backed path reported read-only")
+	}
+	if !isReadOnlyAt(fsys, "testing/testassets/archives/nested-testassets.zip.d/index.html") {
+		t.Error("path inside an auto-mounted archive not reported read-only")
+	}
+}

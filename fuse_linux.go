@@ -143,7 +143,7 @@ func (n *fuseNode) Getattr(_ context.Context, _ fusefs.FileHandle, out *fuse.Att
 	if err != nil {
 		return fuseErrno(err)
 	}
-	fuseAttrFromFileInfo(fi, &out.Attr)
+	fuseAttrFromFileInfo(fi, &out.Attr, isReadOnlyAt(n.fsys, n.path))
 	return 0
 }
 
@@ -154,7 +154,7 @@ func (n *fuseNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 		return nil, fuseErrno(err)
 	}
 	child := n.newChild(ctx, childPath, fi)
-	fuseAttrFromFileInfo(fi, &out.Attr)
+	fuseAttrFromFileInfo(fi, &out.Attr, isReadOnlyAt(n.fsys, childPath))
 	return child, 0
 }
 
@@ -169,9 +169,13 @@ func (n *fuseNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) 
 		if infoErr != nil {
 			continue
 		}
+		mode := fuseMode(info.Mode())
+		if isReadOnlyAt(n.fsys, n.childPath(e.Name())) {
+			mode &^= writePermBits
+		}
 		fuseEntries = append(fuseEntries, fuse.DirEntry{
 			Name: e.Name(),
-			Mode: fuseMode(info.Mode()),
+			Mode: mode,
 		})
 	}
 	return fusefs.NewListDirStream(fuseEntries), 0
@@ -225,7 +229,7 @@ func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, 
 		return nil, nil, 0, fuseErrno(statErr)
 	}
 	child := n.newChild(ctx, childPath, fi)
-	fuseAttrFromFileInfo(fi, &out.Attr)
+	fuseAttrFromFileInfo(fi, &out.Attr, false)
 	return child, &fuseFileHandle{file: f}, 0, 0
 }
 
@@ -248,7 +252,7 @@ func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fus
 		return nil, fuseErrno(err)
 	}
 	child := n.newChild(ctx, childPath, fi)
-	fuseAttrFromFileInfo(fi, &out.Attr)
+	fuseAttrFromFileInfo(fi, &out.Attr, false)
 	return child, 0
 }
 
@@ -348,9 +352,20 @@ func fuseErrno(err error) syscall.Errno {
 	return syscall.EIO
 }
 
-func fuseAttrFromFileInfo(fi fs.FileInfo, attr *fuse.Attr) {
+// writePermBits are the POSIX owner/group/other write permission bits.
+const writePermBits = 0o222
+
+// fuseAttrFromFileInfo populates attr from fi. readOnly strips the write
+// permission bits from the reported mode without altering fi or the
+// underlying FS — used when the path is served by a mount (or sub-mount)
+// whose writes are guaranteed to fail, so `ls -la` reflects that.
+func fuseAttrFromFileInfo(fi fs.FileInfo, attr *fuse.Attr, readOnly bool) {
 	attr.Size = clampToUint64(fi.Size())
-	attr.Mode = fuseMode(fi.Mode())
+	mode := fuseMode(fi.Mode())
+	if readOnly {
+		mode &^= writePermBits
+	}
+	attr.Mode = mode
 	mt := fi.ModTime()
 	attr.SetTimes(&mt, &mt, &mt)
 	if fi.IsDir() {

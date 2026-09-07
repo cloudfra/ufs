@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path"
 	"sort"
 	"sync"
 	"unsafe"
@@ -43,6 +44,28 @@ const (
 	hresultOutOfMemory  = 0x8007000E // HRESULT_FROM_WIN32(ERROR_OUTOFMEMORY)
 	hresultFail         = 0x80004005 // E_FAIL
 )
+
+// Windows FILE_ATTRIBUTE_* bits used when reporting file/directory attributes.
+const (
+	fileAttributeReadOnly  = 0x1
+	fileAttributeDirectory = 0x10
+	fileAttributeNormal    = 0x80
+)
+
+// fileAttributesFor computes the FILE_ATTRIBUTES value ProjFS should report
+// for info, adding FILE_ATTRIBUTE_READONLY when readOnly is true so that
+// directory listings and stat responses reflect a mount (or sub-mount, for
+// composite FS types) whose writes are guaranteed to fail.
+func fileAttributesFor(info fs.FileInfo, readOnly bool) uint32 {
+	attrs := uint32(fileAttributeNormal)
+	if info.IsDir() {
+		attrs = fileAttributeDirectory
+	}
+	if readOnly {
+		attrs |= fileAttributeReadOnly
+	}
+	return attrs
+}
 
 func hresultName(hr uintptr) string {
 	switch hr {
@@ -286,10 +309,8 @@ func getDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID, se
 		}
 		if info.IsDir() {
 			fbi.IsDirectory = 1
-			fbi.FileAttributes = 0x10 // FILE_ATTRIBUTE_DIRECTORY
-		} else {
-			fbi.FileAttributes = 0x80 // FILE_ATTRIBUTE_NORMAL
 		}
+		fbi.FileAttributes = fileAttributesFor(info, isReadOnlyAt(s.fsys, path.Join(session.path, e.Name())))
 
 		slog.Debug("projfs: GetDirEnum filling entry",
 			"name", e.Name(),
@@ -348,10 +369,8 @@ func getPlaceholderCB(callbackData *prjCallbackData) uintptr {
 	info.FileBasicInfo.ChangeTime = goTimeToFiletime(fi.ModTime())
 	if fi.IsDir() {
 		info.FileBasicInfo.IsDirectory = 1
-		info.FileBasicInfo.FileAttributes = 0x10 // FILE_ATTRIBUTE_DIRECTORY
-	} else {
-		info.FileBasicInfo.FileAttributes = 0x80 // FILE_ATTRIBUTE_NORMAL
 	}
+	info.FileBasicInfo.FileAttributes = fileAttributesFor(fi, isReadOnlyAt(s.fsys, p))
 
 	slog.Debug("projfs: GetPlaceholder writing placeholder",
 		"path", p,

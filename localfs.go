@@ -215,7 +215,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	if err != nil {
 		return nil, err
 	}
-	osFS, err := os.OpenRoot(absPath)
+	osFS, err := osOpenRoot(absPath)
 	if err != nil {
 		return nil, err
 	}

@@ -33,11 +33,6 @@ import (
 	"github.com/xyproto/randomstring"
 )
 
-const (
-	testDirectoryPermission = 0o750
-	testFilePermission      = 0o600
-)
-
 type fsTestCase struct {
 	name       string
 	createFS   func(tb testing.TB) FS
@@ -290,13 +285,13 @@ func osTempDir() string {
 }
 
 func mustTemp(tb testing.TB) string {
-	tempDir, err := os.MkdirTemp("", "")
+	tempDir, err := osMkdirTemp("", "")
 	if err != nil {
 		tb.Fatal(err)
 	}
 
 	tb.Cleanup(func() {
-		if err := os.RemoveAll(tempDir); err != nil {
+		if err := osRemoveAll(tempDir); err != nil {
 			tb.Error(err)
 		}
 	})

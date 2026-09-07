@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -182,7 +181,7 @@ func TestTempMountFSReadLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.Symlink("target.txt", filepath.Join(tempDir, "link.txt")); err != nil {
+	if err := osSymlink("target.txt", filepath.Join(tempDir, "link.txt")); err != nil {
 		t.Fatalf("Symlink failed: %v", err)
 	}
 
@@ -219,7 +218,7 @@ func TestTempMountFSLstat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.Symlink("lstat_file.txt", filepath.Join(tempDir, "lstat_link.txt")); err != nil {
+	if err := osSymlink("lstat_file.txt", filepath.Join(tempDir, "lstat_link.txt")); err != nil {
 		t.Fatalf("Symlink failed: %v", err)
 	}
 

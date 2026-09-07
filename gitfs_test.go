@@ -18,7 +18,6 @@ package ufs
 
 import (
 	"io"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -98,13 +97,13 @@ func TestNewGitFSInvalid(t *testing.T) {
 }
 
 func TestNewGitFSLocalRepo(t *testing.T) {
-	srcDir, err := os.MkdirTemp("", "gitfssrc*.git")
+	srcDir, err := osMkdirTemp("", "gitfssrc*.git")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := os.RemoveAll(srcDir); err != nil {
-			t.Errorf("os.RemoveAll(%q) = %v", srcDir, err)
+		if err := osRemoveAll(srcDir); err != nil {
+			t.Errorf("osRemoveAll(%q) = %v", srcDir, err)
 		}
 	}()
 
@@ -137,13 +136,13 @@ func TestNewGitFSLocalRepo(t *testing.T) {
 }
 
 func TestNewGitFSNoGitDir(t *testing.T) {
-	srcDir, err := os.MkdirTemp("", "gitfssrc*.git")
+	srcDir, err := osMkdirTemp("", "gitfssrc*.git")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := os.RemoveAll(srcDir); err != nil {
-			t.Errorf("os.RemoveAll(%q) = %v", srcDir, err)
+		if err := osRemoveAll(srcDir); err != nil {
+			t.Errorf("osRemoveAll(%q) = %v", srcDir, err)
 		}
 	}()
 
@@ -173,7 +172,7 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 		return err
 	}
 	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), testFilePermission); err != nil {
+		if err := osWriteFile(filepath.Join(dir, name), []byte(content)); err != nil {
 			return err
 		}
 	}

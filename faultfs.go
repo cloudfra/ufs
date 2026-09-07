@@ -74,10 +74,17 @@ func (c *FaultConfig) clampedErrorRate() float64 {
 	}
 }
 
-func newCryptoRand() *rand.Rand {
+func newCryptoRand() (*rand.Rand, error) {
 	var seed [32]byte
-	_, _ = crand.Read(seed[:])
-	return rand.New(rand.NewChaCha8(seed))
+	bytesRead, err := crand.Read(seed[:])
+	if err != nil {
+		return nil, fmt.Errorf("cannot get random seed, %w", err)
+	}
+	if bytesRead != 32 {
+		return nil, fmt.Errorf("read less than the required 32 bytes (read %d bytes) for random seed, %+v", bytesRead, seed)
+	}
+
+	return rand.New(rand.NewChaCha8(seed)), nil //nolint:gosec // RNG is used for random jitter latency and error rates.
 }
 
 type faultFS struct {
@@ -91,13 +98,17 @@ type faultFS struct {
 
 // FaultInjector wraps inner as an [FS] that injects configurable latency and
 // errors. Close always delegates to inner without fault injection.
-func FaultInjector(inner FS, cfg FaultConfig) FS {
+func newFaultFS(inner FS, cfg FaultConfig) (FS, error) {
+	rng, err := newCryptoRand()
+	if err != nil {
+		return nil, fmt.Errorf("cannot create faultFS, %w", err)
+	}
 	return &faultFS{
 		inner:     inner,
 		cfg:       cfg,
 		errorRate: cfg.clampedErrorRate(),
-		rng:       newCryptoRand(),
-	}
+		rng:       rng,
+	}, nil
 }
 
 func (fsys *faultFS) getDeviceInfo() map[string]deviceInfo {

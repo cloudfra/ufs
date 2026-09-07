@@ -57,7 +57,7 @@ func TestOSDeleteFile(t *testing.T) {
 	})
 
 	t.Run("existing", func(t *testing.T) {
-		f, err := os.CreateTemp("", "ufs-osutil-test-*.txt")
+		f, err := osCreateTemp("", "ufs-osutil-test-*.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +76,7 @@ func TestOSDeleteFile(t *testing.T) {
 }
 
 func TestTryOSDeleteFile(t *testing.T) {
-	f, err := os.CreateTemp("", "ufs-try-delete-*.txt")
+	f, err := osCreateTemp("", "ufs-try-delete-*.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestTryOSDeleteFile(t *testing.T) {
 }
 
 func TestOSDeleteDirectoryExists(t *testing.T) {
-	dir, err := os.MkdirTemp("", "ufs-del-dir-*")
+	dir, err := osMkdirTemp("", "ufs-del-dir-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestOSDeleteDirectoryExists(t *testing.T) {
 }
 
 func TestTryOSDeleteDirectory(t *testing.T) {
-	dir, err := os.MkdirTemp("", "ufs-try-del-dir-*")
+	dir, err := osMkdirTemp("", "ufs-try-del-dir-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestDialControl(t *testing.T) {
 func testArchiveServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	zipPath := createZipFromDir(t, testAssetsFilesDir)
-	zipData, err := os.ReadFile(zipPath)
+	zipData, err := osReadFile(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestDownloadFile(t *testing.T) {
 		if filepath.Base(path) != "testassets.zip" {
 			t.Errorf("filename = %q, want %q", filepath.Base(path), "testassets.zip")
 		}
-		data, err := os.ReadFile(path)
+		data, err := osReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile() = %v", err)
 		}
@@ -447,12 +447,12 @@ func TestDownloadFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("downloadFileWith() = %v", err)
 		}
-		got, err := os.ReadFile(path)
+		got, err := osReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		zipPath := createZipFromDir(t, testAssetsFilesDir)
-		want, err := os.ReadFile(zipPath)
+		want, err := osReadFile(zipPath)
 		if err != nil {
 			t.Fatal(err)
 		}

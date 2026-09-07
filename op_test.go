@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -478,12 +477,12 @@ func setupNestFSWithArchive(t *testing.T) FS {
 	t.Helper()
 	dir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "readme.txt"), []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
 
 	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := os.Create(zipPath)
+	zf, err := osCreate(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +642,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create data.zip (virtual .d should be detected).
-	zf, err := os.Create(filepath.Join(dir, "data.zip"))
+	zf, err := osCreate(filepath.Join(dir, "data.zip"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -655,7 +654,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Create conf.d as a real directory (base name "conf" is not an archive).
-	if err := os.MkdirAll(filepath.Join(dir, "conf.d"), testDirectoryPermission); err != nil {
+	if err := osMkdirAll(filepath.Join(dir, "conf.d")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -691,15 +690,15 @@ func TestIsMountedArchiveDir(t *testing.T) {
 func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(dir, "subdir"), testDirectoryPermission); err != nil {
+	if err := osMkdirAll(filepath.Join(dir, "subdir")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested")); err != nil {
 		t.Fatal(err)
 	}
 
 	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := os.Create(zipPath)
+	zf, err := osCreate(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -703,7 +703,7 @@ func (f *nestFile) Close() error {
 		if err := f.tmpFile.Close(); err != nil {
 			return err
 		}
-		if err := os.Remove(name); err != nil {
+		if err := osRemove(name); err != nil {
 			return err
 		}
 		f.tmpFile = nil
@@ -762,20 +762,20 @@ func polyfillSeekReadAtMemory(nf *nestFile, f fs.File) error {
 }
 
 func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
-	tmp, err := os.CreateTemp("", "ufs-polyfill-*.tmp")
+	tmp, err := osCreateTemp("", "ufs-polyfill-*.tmp")
 	if err != nil {
 		fCloseErr := f.Close()
 		return joinErrors(err, fCloseErr)
 	}
 	if _, err := io.Copy(tmp, f); err != nil {
 		closeErr := tmp.Close()
-		removeErr := os.Remove(tmp.Name())
+		removeErr := osRemove(tmp.Name())
 		fCloseErr := f.Close()
 		return joinErrors(err, closeErr, removeErr, fCloseErr)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		closeErr := tmp.Close()
-		removeErr := os.Remove(tmp.Name())
+		removeErr := osRemove(tmp.Name())
 		fCloseErr := f.Close()
 		return joinErrors(err, closeErr, removeErr, fCloseErr)
 	}

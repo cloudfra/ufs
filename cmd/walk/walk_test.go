@@ -29,7 +29,7 @@ func TestRunLocalDir(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	for _, name := range []string{"a.txt", "b.txt"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("data"), testFilePermission); err != nil {
+		if err := os.WriteFile(filepath.Clean(filepath.Join(dir, name)), []byte("data"), testFilePermission); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -42,11 +42,11 @@ func TestRunLocalDirNested(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "sub")
-	if err := os.MkdirAll(sub, testDirectoryPermission); err != nil {
+	if err := os.MkdirAll(filepath.Clean(sub), testDirectoryPermission); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"root.txt", filepath.Join("sub", "nested.txt")} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("content"), testFilePermission); err != nil {
+		if err := os.WriteFile(filepath.Clean(filepath.Join(dir, name)), []byte("content"), testFilePermission); err != nil {
 			t.Fatal(err)
 		}
 	}

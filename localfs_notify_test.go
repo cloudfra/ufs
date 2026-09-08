@@ -109,7 +109,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), testFilePermission); err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	if err := os.WriteFile(filepath.Join(dir, "a", "b", "deep.txt"), []byte("data"), testFilePermission); err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	if err := os.MkdirAll(filepath.Join(dir, "new", "sub"), testDirectoryPermission); err != nil {
 		t.Fatal(err)
@@ -264,7 +264,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	cancel()
 
@@ -306,7 +306,7 @@ func TestWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	if err := os.WriteFile(filepath.Join(dir, "watched", "inside.txt"), []byte("y"), testFilePermission); err != nil {
 		t.Fatal(err)
@@ -417,7 +417,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	const writers = 5
 	const filesPerWriter = 10
@@ -464,7 +464,7 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	for i := range 30 {
 		p := filepath.Join(dir, fmt.Sprintf("ephemeral_%d.txt", i))
@@ -499,7 +499,7 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	// Rapidly create nested directory trees to race addRecursive with new
 	// events arriving for the child directories.
@@ -581,7 +581,7 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	// Remove all watched directories at once.
 	for i := range 5 {

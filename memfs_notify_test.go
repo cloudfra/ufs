@@ -35,7 +35,7 @@ func TestMemWatchCreateWriteRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	f, err := fsys.Create("hello.txt")
 	if err != nil {
@@ -78,7 +78,7 @@ func TestMemWatchNestedDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	if err := fsys.MkdirAll("a/b", fs.ModePerm); err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestMemWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	if _, err := fsys.Create("watched/inside.txt"); err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestMemWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	cancel()
 
@@ -224,7 +224,7 @@ func TestMemWatchRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	if err := fsys.RemoveAll("dir"); err != nil {
 		t.Fatal(err)
@@ -405,7 +405,7 @@ func TestMemWatchRaceCloseAndCancel(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		_ = closer.Close()
+		validateClose(t, closer)
 	}()
 	wg.Wait()
 }

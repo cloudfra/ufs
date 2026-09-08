@@ -315,7 +315,7 @@ func TestGCSWatchPubSub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	srv.Publish(testTopic, nil, map[string]string{
 		"eventType": storage.ObjectFinalizeEvent,
@@ -339,7 +339,7 @@ func TestGCSWatchPubSubDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	srv.Publish(testTopic, nil, map[string]string{
 		"eventType": storage.ObjectDeleteEvent,
@@ -363,7 +363,7 @@ func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	// Wrong bucket — should be filtered out.
 	srv.Publish(testTopic, nil, map[string]string{
@@ -428,7 +428,7 @@ func TestGCSWatchPubSubNestedPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = closer.Close() }()
+	defer validateClose(t, closer)()
 
 	srv.Publish(testTopic, nil, map[string]string{
 		"eventType": storage.ObjectFinalizeEvent,

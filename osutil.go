@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"net"
@@ -201,12 +202,12 @@ func createOSTempDirectory() (string, func() error, error) {
 }
 
 func osExists(path string) bool {
-	_, err := os.Stat(path)
+	_, err := osStat(path)
 	return err == nil
 }
 
 func osDeleteDirectory(path string) error {
-	if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
+	if err := osRemoveAll(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot delete directory %q, %w", path, err)
 	}
 	return nil
@@ -219,7 +220,7 @@ func tryOSDeleteDirectory(path string) {
 }
 
 func osDeleteFile(path string) error {
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := osRemove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot delete file %q, %w", path, err)
 	}
 	return nil
@@ -249,4 +250,75 @@ func clampToUint64(n int64) uint64 {
 		return 0
 	}
 	return uint64(n)
+}
+
+const (
+	defaultFilePermissions      = 0o600
+	defaultDirectoryPermissions = 0o750
+)
+
+func osMkdir(name string) error {
+	return os.Mkdir(filepath.Clean(name), defaultDirectoryPermissions)
+}
+
+func osMkdirAll(name string) error {
+	return os.MkdirAll(filepath.Clean(name), defaultDirectoryPermissions)
+}
+
+func osRemove(name string) error {
+	return os.Remove(filepath.Clean(name))
+}
+
+func osRemoveAll(name string) error {
+	return os.RemoveAll(filepath.Clean(name))
+}
+
+func osCreate(name string) (*os.File, error) {
+	return os.Create(filepath.Clean(name))
+}
+
+func osReadFile(name string) ([]byte, error) {
+	return os.ReadFile(filepath.Clean(name))
+}
+
+func osStat(name string) (os.FileInfo, error) {
+	return os.Stat(filepath.Clean(name))
+}
+
+func osWriteFile(name string, data []byte) error {
+	return os.WriteFile(filepath.Clean(name), data, defaultFilePermissions)
+}
+
+func osReadDir(name string) ([]os.DirEntry, error) {
+	return os.ReadDir(filepath.Clean(name))
+}
+
+func osDirFS(name string) fs.FS {
+	return os.DirFS(filepath.Clean(name))
+}
+
+func osOpenRoot(name string) (*os.Root, error) {
+	return os.OpenRoot(filepath.Clean(name))
+}
+
+func osSymlink(oldname string, newname string) error {
+	return os.Symlink(filepath.Clean(oldname), filepath.Clean(newname))
+}
+
+func osOpen(name string) (*os.File, error) {
+	return os.Open(filepath.Clean(name))
+}
+
+func osCreateTemp(dir string, pattern string) (*os.File, error) {
+	if dir != "" {
+		dir = filepath.Clean(dir)
+	}
+	return os.CreateTemp(dir, pattern)
+}
+
+func osMkdirTemp(dir string, pattern string) (string, error) {
+	if dir != "" {
+		dir = filepath.Clean(dir)
+	}
+	return os.MkdirTemp(dir, pattern)
 }

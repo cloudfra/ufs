@@ -28,10 +28,10 @@ linters:
     - bodyclose
     - noctx
     #- goconst
-    #- gosec
+    - gosec
     - gocritic
     - unconvert
-    #- unparam
+    # - unparam
     - prealloc
     - revive
   exclusions:

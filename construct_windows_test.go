@@ -17,7 +17,6 @@
 package ufs
 
 import (
-	"os"
 	"testing"
 )
 
@@ -91,7 +90,7 @@ func TestNewWindowsDriveLetters(t *testing.T) {
 		letter := letter
 		t.Run(letter+":", func(t *testing.T) {
 			root := letter + `:\`
-			if _, err := os.Stat(root); err != nil {
+			if _, err := osStat(root); err != nil {
 				t.Skipf("drive %s: not available: %v", letter, err)
 			}
 			for _, name := range []string{

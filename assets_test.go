@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"testing"
 )
 
@@ -53,7 +52,7 @@ func TestAssets(t *testing.T) {
 				if err != nil {
 					return nil, err
 				}
-				if err := copyFSToFS(os.DirFS(testAssetsFilesDir), fsys); err != nil {
+				if err := copyFSToFS(osDirFS(testAssetsFilesDir), fsys); err != nil {
 					if closeErr := fsys.Close(); closeErr != nil {
 						return nil, joinErrors(err, fmt.Errorf("failed to close FS after error: %v", closeErr))
 					}
@@ -98,7 +97,7 @@ func TestAssets(t *testing.T) {
 // loadTestAssets walks testAssetsFilesDir and returns a path→content map for every file.
 func loadTestAssets(tb testing.TB) map[string][]byte {
 	tb.Helper()
-	src := os.DirFS(testAssetsFilesDir)
+	src := osDirFS(testAssetsFilesDir)
 	result := make(map[string][]byte)
 	err := fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -134,15 +133,15 @@ func copyFSToFS(src fs.FS, dst FS) error {
 // The caller does not need to remove the file; tb.Cleanup handles it.
 func createZipFromDir(tb testing.TB, dir string) string {
 	tb.Helper()
-	src := os.DirFS(dir)
+	src := osDirFS(dir)
 
-	tmp, err := os.CreateTemp("", "testassets-*.zip")
+	tmp, err := osCreateTemp("", "testassets-*.zip")
 	if err != nil {
 		tb.Fatalf("createZipFromDir: CreateTemp: %v", err)
 	}
 	tmpName := tmp.Name()
 	tb.Cleanup(func() {
-		if err := os.Remove(tmpName); err != nil {
+		if err := osRemove(tmpName); err != nil {
 			tb.Fatalf("createZipFromDir: Cleanup: %v", err)
 		}
 	})

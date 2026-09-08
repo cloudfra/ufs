@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -126,7 +125,7 @@ func TestHostMountClose(t *testing.T) {
 	requireProjFS(t)
 
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -142,7 +141,7 @@ func TestHostMountClose(t *testing.T) {
 		t.Fatalf("HostMount: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(mountDir, "f.txt")); err != nil {
+	if _, err := osStat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before close: %v", err)
 	}
 
@@ -156,7 +155,7 @@ func TestHostMountContextCancel(t *testing.T) {
 	requireProjFS(t)
 
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,7 +173,7 @@ func TestHostMountContextCancel(t *testing.T) {
 	}
 	defer func() { _ = server.Close() }()
 
-	if _, err := os.Stat(filepath.Join(mountDir, "f.txt")); err != nil {
+	if _, err := osStat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before cancel: %v", err)
 	}
 
@@ -214,7 +213,7 @@ func TestHostMountReadOnlyMkdir(t *testing.T) {
 func TestHostMountReadOnlyRemove(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -226,12 +225,12 @@ func TestHostMountReadOnlyRemove(t *testing.T) {
 
 	mountDir := testProjFSMount(t, fsys)
 
-	err = os.Remove(filepath.Join(mountDir, "keep.txt"))
+	err = osRemove(filepath.Join(mountDir, "keep.txt"))
 	if err == nil {
 		t.Fatal("remove on mount succeeded, want access denied")
 	}
 
-	data, err := os.ReadFile(filepath.Join(mountDir, "keep.txt"))
+	data, err := osReadFile(filepath.Join(mountDir, "keep.txt"))
 	if err != nil {
 		t.Fatalf("ReadFile after failed remove: %v", err)
 	}
@@ -296,7 +295,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	// Read every file back through the OS mount and verify content.
 	for _, f := range files {
 		osPath := filepath.Join(mountDir, filepath.FromSlash(f.path))
-		got, err := os.ReadFile(osPath)
+		got, err := osReadFile(osPath)
 		if err != nil {
 			t.Errorf("ReadFile(%q): %v", f.path, err)
 			continue
@@ -313,7 +312,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	// Verify Stat on each file reports correct size and type.
 	for _, f := range files {
 		osPath := filepath.Join(mountDir, filepath.FromSlash(f.path))
-		fi, err := os.Stat(osPath)
+		fi, err := osStat(osPath)
 		if err != nil {
 			t.Errorf("Stat(%q): %v", f.path, err)
 			continue
@@ -327,7 +326,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	}
 
 	// Verify directory listings at the root.
-	rootEntries, err := os.ReadDir(mountDir)
+	rootEntries, err := osReadDir(mountDir)
 	if err != nil {
 		t.Fatalf("ReadDir(root): %v", err)
 	}
@@ -342,7 +341,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	}
 
 	// Verify subdirectory listing.
-	subEntries, err := os.ReadDir(filepath.Join(mountDir, "subdir"))
+	subEntries, err := osReadDir(filepath.Join(mountDir, "subdir"))
 	if err != nil {
 		t.Fatalf("ReadDir(subdir): %v", err)
 	}
@@ -357,7 +356,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	}
 
 	// Verify non-existent file returns appropriate error.
-	_, err = os.Stat(filepath.Join(mountDir, "does-not-exist.txt"))
+	_, err = osStat(filepath.Join(mountDir, "does-not-exist.txt"))
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(nonexistent) error = %v, want ErrNotExist", err)
 	}

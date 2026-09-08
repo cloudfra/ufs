@@ -111,7 +111,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 	}
 	defer validateClose(t, closer)()
 
-	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "hello.txt"), []byte("hi")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,7 +119,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 		return ev.op == NotifyCreate && ev.path == "hello.txt"
 	})
 
-	if err := os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("updated"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "hello.txt"), []byte("updated")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -127,7 +127,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 		return ev.op == NotifyWrite && ev.path == "hello.txt"
 	})
 
-	if err := os.Remove(filepath.Join(dir, "hello.txt")); err != nil {
+	if err := osRemove(filepath.Join(dir, "hello.txt")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,7 +140,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	skipIfUnsupported(t)
 	dir := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(dir, "a", "b"), testDirectoryPermission); err != nil {
+	if err := osMkdirAll(filepath.Join(dir, "a", "b")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,7 +160,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	}
 	defer validateClose(t, closer)()
 
-	if err := os.WriteFile(filepath.Join(dir, "a", "b", "deep.txt"), []byte("data"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "a", "b", "deep.txt"), []byte("data")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -189,7 +189,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 	}
 	defer validateClose(t, closer)()
 
-	if err := os.MkdirAll(filepath.Join(dir, "new", "sub"), testDirectoryPermission); err != nil {
+	if err := osMkdirAll(filepath.Join(dir, "new", "sub")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -198,7 +198,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 		return ev.op == NotifyCreate && ev.path == "new"
 	})
 
-	if err := os.WriteFile(filepath.Join(dir, "new", "sub", "file.txt"), []byte("x"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "new", "sub", "file.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -234,7 +234,7 @@ func TestWatchCloseStopsDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "after.txt"), []byte("x"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "after.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -271,7 +271,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 	// Give the goroutine time to observe cancellation.
 	time.Sleep(200 * time.Millisecond)
 
-	if err := os.WriteFile(filepath.Join(dir, "post_cancel.txt"), []byte("x"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "post_cancel.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -288,7 +288,7 @@ func TestWatchSubdirectory(t *testing.T) {
 	skipIfUnsupported(t)
 	dir := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(dir, "watched"), testDirectoryPermission); err != nil {
+	if err := osMkdirAll(filepath.Join(dir, "watched")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -308,7 +308,7 @@ func TestWatchSubdirectory(t *testing.T) {
 	}
 	defer validateClose(t, closer)()
 
-	if err := os.WriteFile(filepath.Join(dir, "watched", "inside.txt"), []byte("y"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(dir, "watched", "inside.txt"), []byte("y")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -387,7 +387,7 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := range 50 {
-			_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("churn_%d.txt", i)), []byte("x"), testFilePermission)
+			_ = osWriteFile(filepath.Join(dir, fmt.Sprintf("churn_%d.txt", i)), []byte("x"))
 		}
 	}()
 
@@ -429,7 +429,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 			defer wg.Done()
 			for f := range filesPerWriter {
 				name := fmt.Sprintf("w%d_f%d.txt", w, f)
-				_ = os.WriteFile(filepath.Join(dir, name), []byte("data"), testFilePermission)
+				_ = osWriteFile(filepath.Join(dir, name), []byte("data"))
 			}
 		}()
 	}
@@ -468,12 +468,16 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 
 	for i := range 30 {
 		p := filepath.Join(dir, fmt.Sprintf("ephemeral_%d.txt", i))
-		_ = os.WriteFile(p, []byte("x"), testFilePermission)
-		_ = os.Remove(p)
+		if err := osWriteFile(p, []byte("x")); err != nil {
+			t.Error(err)
+		}
+		if err := osRemove(filepath.Clean(p)); err != nil && !os.IsNotExist(err) {
+			t.Error(err)
+		}
 	}
 
 	// Verify the watcher is still alive and functional after the churn.
-	if err := os.WriteFile(filepath.Join(dir, "survivor.txt"), []byte("ok"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Clean(filepath.Join(dir, "survivor.txt")), []byte("ok")); err != nil {
 		t.Fatal(err)
 	}
 	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
@@ -505,10 +509,12 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	// events arriving for the child directories.
 	for i := range 10 {
 		nested := filepath.Join(dir, fmt.Sprintf("d%d", i), "a", "b")
-		if err := os.MkdirAll(nested, testDirectoryPermission); err != nil {
+		if err := osMkdirAll(filepath.Clean(nested)); err != nil {
 			t.Fatal(err)
 		}
-		_ = os.WriteFile(filepath.Join(nested, "leaf.txt"), []byte("x"), testFilePermission)
+		if err := osWriteFile(filepath.Clean(filepath.Join(nested, "leaf.txt")), []byte("x")); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// The watcher must survive the rapid nesting. Verify by writing a file
@@ -518,7 +524,7 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 		return ev.op == NotifyCreate
 	})
 
-	if err := os.WriteFile(filepath.Join(dir, "still_alive.txt"), []byte("ok"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Clean(filepath.Join(dir, "still_alive.txt")), []byte("ok")); err != nil {
 		t.Fatal(err)
 	}
 	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
@@ -562,7 +568,7 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 
 	// Pre-create several directories.
 	for i := range 5 {
-		if err := os.MkdirAll(filepath.Join(dir, fmt.Sprintf("rmdir%d", i)), testDirectoryPermission); err != nil {
+		if err := osMkdirAll(filepath.Clean(filepath.Join(dir, fmt.Sprintf("rmdir%d", i)))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -585,11 +591,11 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 
 	// Remove all watched directories at once.
 	for i := range 5 {
-		_ = os.RemoveAll(filepath.Join(dir, fmt.Sprintf("rmdir%d", i)))
+		_ = osRemoveAll(filepath.Clean(filepath.Join(dir, fmt.Sprintf("rmdir%d", i))))
 	}
 
 	// Watcher must still be alive — confirm by creating a new file.
-	if err := os.WriteFile(filepath.Join(dir, "after_rmdir.txt"), []byte("ok"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Clean(filepath.Join(dir, "after_rmdir.txt")), []byte("ok")); err != nil {
 		t.Fatal(err)
 	}
 	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {

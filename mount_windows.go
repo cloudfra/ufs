@@ -23,7 +23,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
 	"sort"
 	"sync"
 	"unsafe"
@@ -505,7 +504,7 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 	)
 
 	// Log mount path state before we touch it — critical for diagnosing "directory inaccessible".
-	if fi, err := os.Stat(mountPath); err != nil {
+	if fi, err := osStat(mountPath); err != nil {
 		slog.Warn("projfs: mount path Stat failed", "mountPath", mountPath, "error", err)
 	} else {
 		slog.Info("projfs: mount path exists",
@@ -515,7 +514,7 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 			"modTime", fi.ModTime(),
 		)
 	}
-	if entries, err := os.ReadDir(mountPath); err != nil {
+	if entries, err := osReadDir(mountPath); err != nil {
 		slog.Warn("projfs: mount path ReadDir failed", "mountPath", mountPath, "error", err)
 	} else {
 		names := make([]string, len(entries))

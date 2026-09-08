@@ -18,7 +18,6 @@ import (
 	"context"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -44,7 +43,7 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 		return nil, &fs.PathError{Op: "watch", Path: name, Err: err}
 	}
 
-	fi, err := os.Stat(watchRoot)
+	fi, err := osStat(watchRoot)
 	if err != nil {
 		return nil, &fs.PathError{Op: "watch", Path: name, Err: err}
 	}
@@ -172,7 +171,7 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	}
 
 	if ev.Has(fsnotify.Create) {
-		if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
+		if fi, err := osStat(ev.Name); err == nil && fi.IsDir() {
 			// New directory: register watches for it and any children that
 			// appeared before the watch was installed.
 			_ = lw.addRecursive(ev.Name)

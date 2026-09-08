@@ -16,7 +16,6 @@ package ufs
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -537,7 +536,7 @@ func TestNewFromFstabNoRoot(t *testing.T) {
 func TestNewFromFstabLocalFS(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello"), testFilePermission); err != nil {
+	if err := osWriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
 

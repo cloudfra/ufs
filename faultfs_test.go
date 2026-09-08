@@ -23,11 +23,52 @@ import (
 	"time"
 )
 
+func TestNewCryptoRand(t *testing.T) {
+	// 1. Initialize the random generator
+	r, err := newCryptoRand()
+	// 2. Assert no errors occurred during system entropy reading
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// 3. Assert the returned generator is not nil
+	if r == nil {
+		t.Fatal("expected a valid *rand.Rand instance, got nil")
+	}
+
+	// 4. Verify the generator is functional by pulling a few values
+	val1 := r.Uint64()
+	val2 := r.Uint64()
+
+	// While technically possible for them to be equal, the odds are 1 in 2^64.
+	// If they are equal, it might indicate the generator is broken or seeding failed silently.
+	if val1 == val2 {
+		t.Errorf("expected different random values, but got the same value twice: %d", val1)
+	}
+}
+
+func TestNewCryptoRand_MultipleInstances(t *testing.T) {
+	// Ensure that creating multiple instances yields different seeds/sequences
+	r1, err1 := newCryptoRand()
+	r2, err2 := newCryptoRand()
+
+	if err1 != nil || err2 != nil {
+		t.Fatalf("failed to initialize generators: %v, %v", err1, err2)
+	}
+
+	if r1.Uint64() == r2.Uint64() {
+		t.Error("expected two separately created generators to produce different sequences")
+	}
+}
+
 func TestFaultInjectorDelegatesWhenNoFaults(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{})
+	fsys, err := newFaultFS(inner, FaultConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer validateClose(t, fsys)()
 
 	if _, err := fsys.Open("."); err != nil {
@@ -60,9 +101,12 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{
+	fsys, err := newFaultFS(inner, FaultConfig{
 		ErrorRate: 1.0,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer validateClose(t, fsys)()
 
 	tests := []struct {
@@ -95,9 +139,12 @@ func TestFaultInjectorReturnsRealisticErrors(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{
+	fsys, err := newFaultFS(inner, FaultConfig{
 		ErrorRate: 1.0,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer validateClose(t, fsys)()
 
 	seen := map[syscall.Errno]bool{}
@@ -122,9 +169,12 @@ func TestFaultInjectorErrorRate(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{
+	fsys, err := newFaultFS(inner, FaultConfig{
 		ErrorRate: 0.5,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer validateClose(t, fsys)()
 
 	var errors, successes int
@@ -152,7 +202,12 @@ func TestFaultInjectorErrorRateClamping(t *testing.T) {
 
 	t.Run("above_one", func(t *testing.T) {
 		t.Parallel()
-		fsys := FaultInjector(inner, FaultConfig{ErrorRate: 5.0})
+		fsys, err := newFaultFS(inner, FaultConfig{
+			ErrorRate: 5.0,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer validateClose(t, fsys)()
 		for range 10 {
 			if _, err := fsys.Stat("."); err == nil {
@@ -163,7 +218,12 @@ func TestFaultInjectorErrorRateClamping(t *testing.T) {
 
 	t.Run("negative", func(t *testing.T) {
 		t.Parallel()
-		fsys := FaultInjector(inner, FaultConfig{ErrorRate: -1.0})
+		fsys, err := newFaultFS(inner, FaultConfig{
+			ErrorRate: -1.0,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer validateClose(t, fsys)()
 		for range 10 {
 			if _, err := fsys.Stat("."); err != nil {
@@ -178,9 +238,12 @@ func TestFaultInjectorLatency(t *testing.T) {
 
 	inner := makeNullFS(nullFSPrefix)
 	latency := 50 * time.Millisecond
-	fsys := FaultInjector(inner, FaultConfig{
+	fsys, err := newFaultFS(inner, FaultConfig{
 		Latency: latency,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer validateClose(t, fsys)()
 
 	start := time.Now()
@@ -201,9 +264,12 @@ func TestFaultInjectorLatencyJitter(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{
+	fsys, err := newFaultFS(inner, FaultConfig{
 		LatencyJitter: 100 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer validateClose(t, fsys)()
 
 	start := time.Now()
@@ -221,9 +287,12 @@ func TestFaultInjectorCloseAlwaysDelegates(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{
+	fsys, err := newFaultFS(inner, FaultConfig{
 		ErrorRate: 1.0,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if err := fsys.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil (should not inject faults)", err)
@@ -234,7 +303,10 @@ func TestFaultInjectorInvalidPaths(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{})
+	fsys, err := newFaultFS(inner, FaultConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer validateClose(t, fsys)()
 
 	for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
@@ -278,7 +350,10 @@ func TestFaultInjectorString(t *testing.T) {
 	t.Parallel()
 
 	inner := makeNullFS(nullFSPrefix)
-	fsys := FaultInjector(inner, FaultConfig{})
+	fsys, err := newFaultFS(inner, FaultConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	got := fsys.String()
 	if !strings.Contains(got, "faultFS(") {
@@ -303,12 +378,18 @@ func TestFaultInjectorZeroValueConfig(t *testing.T) {
 		t.Error("non-zero FaultConfig.isZero() = true, want false")
 	}
 
-	fsys := applyWrappers(inner, MountSpecOptions{Fault: &cfg})
+	fsys, err := applyWrappers(inner, MountSpecOptions{Fault: &cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := fsys.(*faultFS); ok {
 		t.Error("applyWrappers with zero-value FaultConfig should not wrap in faultFS")
 	}
 
-	fsys = applyWrappers(inner, MountSpecOptions{Fault: &nonZero})
+	fsys, err = applyWrappers(inner, MountSpecOptions{Fault: &nonZero})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := fsys.(*faultFS); !ok {
 		t.Error("applyWrappers with non-zero FaultConfig should wrap in faultFS")
 	}

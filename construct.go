@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -308,7 +307,7 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 		return newTempMountRemoteArchiveFS(ctx, name)
 	}
 
-	stat, err := os.Stat(name)
+	stat, err := osStat(name)
 	if err == nil && stat != nil {
 		return newLocalFS(name)
 	}
@@ -424,14 +423,18 @@ var defaultRootSpec = MountSpec{
 
 // applyWrappers applies the configured wrapper layers from opts to fsys.
 // Wrappers are applied in a fixed order: ReadOnly first, then FaultInjector.
-func applyWrappers(fsys FS, opts MountSpecOptions) FS {
+func applyWrappers(fsys FS, opts MountSpecOptions) (FS, error) {
+	var err error
 	if opts.ReadOnly {
 		fsys = ReadOnly(fsys)
 	}
 	if !opts.Fault.isZero() {
-		fsys = FaultInjector(fsys, *opts.Fault)
+		fsys, err = newFaultFS(fsys, *opts.Fault)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return fsys
+	return fsys, nil
 }
 
 func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
@@ -452,7 +455,10 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	rootFS := applyWrappers(baseFS, root.Options)
+	rootFS, err := applyWrappers(baseFS, root.Options)
+	if err != nil {
+		return nil, err
+	}
 	nFS := makeNestFS(ctx, rootFS)
 
 	for _, m := range mounts {
@@ -460,7 +466,10 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 		if err != nil {
 			return nil, joinErrors(err, nFS.Close())
 		}
-		mountFS := applyWrappers(mountBaseFS, m.Options)
+		mountFS, err := applyWrappers(mountBaseFS, m.Options)
+		if err != nil {
+			return nil, err
+		}
 		mountNestFS := makeNestFS(ctx, mountFS)
 		if err := nFS.addMount(m.MountPoint, mountNestFS); err != nil {
 			return nil, joinErrors(err, mountNestFS.Close(), nFS.Close())

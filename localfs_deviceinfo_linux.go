@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -32,7 +31,7 @@ func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath
 	}
-	f, err := os.Open(procMountsPath)
+	f, err := osOpen(procMountsPath)
 	if err != nil {
 		return defaultDeviceMap
 	}
@@ -187,7 +186,7 @@ func linuxBaseDevice(devicePath string) string {
 // linuxRotational reads the kernel's rotational flag for a block device.
 // Returns 0 for SSD/NVMe, 1 for spinning HDD, -1 if the value cannot be determined.
 func linuxRotational(dev string) int {
-	data, err := os.ReadFile(filepath.Clean("/sys/block/" + dev + "/queue/rotational"))
+	data, err := osReadFile(filepath.Clean("/sys/block/" + dev + "/queue/rotational"))
 	if err != nil {
 		return -1
 	}

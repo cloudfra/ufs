@@ -18,6 +18,7 @@ package ufs
 
 import (
 	"fmt"
+	"math"
 	"time"
 	"unsafe"
 
@@ -187,6 +188,11 @@ func hresultToError(hr uintptr) error {
 	if hr == 0 {
 		return nil
 	}
+	// A value above the 32-bit range is not a valid HRESULT; report it as a
+	// failure instead of silently narrowing it.
+	if hr > math.MaxUint32 {
+		return fmt.Errorf("invalid 64-bit HRESULT: 0x%X", hr)
+	}
 	hr32 := uint32(hr)
 	if hr32>>16 == 0x8007 {
 		return windows.Errno(hr32 & 0xFFFF)
@@ -196,21 +202,21 @@ func hresultToError(hr uintptr) error {
 
 func prjMarkDirectoryAsPlaceholder(rootPathName *uint16, targetPathName *uint16, versionInfo *prjPlaceholderVersionInfo, virtualizationInstanceID *windows.GUID) error {
 	hr, _, _ := procPrjMarkDirectoryAsPlaceholder.Call(
-		uintptr(unsafe.Pointer(rootPathName)),
-		uintptr(unsafe.Pointer(targetPathName)),
-		uintptr(unsafe.Pointer(versionInfo)),
-		uintptr(unsafe.Pointer(virtualizationInstanceID)),
+		uintptr(unsafe.Pointer(rootPathName)),             //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(targetPathName)),           //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(versionInfo)),              //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(virtualizationInstanceID)), //nolint:gosec // ProjFS FFI arg
 	)
 	return hresultToError(hr)
 }
 
 func prjStartVirtualizing(virtualizationRootPath *uint16, callbacks *prjCallbacks, instanceContext uintptr, options *prjStartVirtualizingOptions, namespaceVirtualizationContext *uintptr) error {
 	hr, _, _ := procPrjStartVirtualizing.Call(
-		uintptr(unsafe.Pointer(virtualizationRootPath)),
-		uintptr(unsafe.Pointer(callbacks)),
+		uintptr(unsafe.Pointer(virtualizationRootPath)), //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(callbacks)),              //nolint:gosec // ProjFS FFI arg
 		instanceContext,
-		uintptr(unsafe.Pointer(options)),
-		uintptr(unsafe.Pointer(namespaceVirtualizationContext)),
+		uintptr(unsafe.Pointer(options)),                        //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(namespaceVirtualizationContext)), //nolint:gosec // ProjFS FFI arg
 	)
 	return hresultToError(hr)
 }
@@ -222,8 +228,8 @@ func prjStopVirtualizing(namespaceVirtualizationContext uintptr) {
 func prjWritePlaceholderInfo(namespaceVirtualizationContext uintptr, destinationFileName *uint16, placeholderInfo *prjPlaceholderInfo, placeholderInfoSize uint32) error {
 	hr, _, _ := procPrjWritePlaceholderInfo.Call(
 		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(destinationFileName)),
-		uintptr(unsafe.Pointer(placeholderInfo)),
+		uintptr(unsafe.Pointer(destinationFileName)), //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(placeholderInfo)),     //nolint:gosec // ProjFS FFI arg
 		uintptr(placeholderInfoSize),
 	)
 	return hresultToError(hr)
@@ -232,7 +238,7 @@ func prjWritePlaceholderInfo(namespaceVirtualizationContext uintptr, destination
 func prjWriteFileData(namespaceVirtualizationContext uintptr, dataStreamID *windows.GUID, buffer unsafe.Pointer, byteOffset uint64, length uint32) error {
 	hr, _, _ := procPrjWriteFileData.Call(
 		namespaceVirtualizationContext,
-		uintptr(unsafe.Pointer(dataStreamID)),
+		uintptr(unsafe.Pointer(dataStreamID)), //nolint:gosec // ProjFS FFI arg
 		uintptr(buffer),
 		uintptr(byteOffset),
 		uintptr(length),
@@ -245,7 +251,9 @@ func prjAllocateAlignedBuffer(namespaceVirtualizationContext uintptr, size uint6
 		namespaceVirtualizationContext,
 		uintptr(size),
 	)
-	return unsafe.Pointer(ptr) //nolint:govet // syscall returns uintptr that must be converted to unsafe.Pointer
+	// A syscall result must be interpreted as the pointer it actually is.
+	//nolint:gosec // FFI: uintptr from a syscall is an unsafe.Pointer by contract
+	return unsafe.Pointer(ptr) //nolint:govet
 }
 
 func prjFreeAlignedBuffer(buffer unsafe.Pointer) {
@@ -254,8 +262,8 @@ func prjFreeAlignedBuffer(buffer unsafe.Pointer) {
 
 func prjFillDirEntryBuffer(fileName *uint16, fileBasicInfo *prjFileBasicInfo, dirEntryBufferHandle uintptr) error {
 	hr, _, _ := procPrjFillDirEntryBuffer.Call(
-		uintptr(unsafe.Pointer(fileName)),
-		uintptr(unsafe.Pointer(fileBasicInfo)),
+		uintptr(unsafe.Pointer(fileName)),      //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(fileBasicInfo)), //nolint:gosec // ProjFS FFI arg
 		dirEntryBufferHandle,
 	)
 	return hresultToError(hr)
@@ -263,16 +271,19 @@ func prjFillDirEntryBuffer(fileName *uint16, fileBasicInfo *prjFileBasicInfo, di
 
 func prjFileNameCompare(fileName1 *uint16, fileName2 *uint16) int32 {
 	r, _, _ := procPrjFileNameCompare.Call(
-		uintptr(unsafe.Pointer(fileName1)),
-		uintptr(unsafe.Pointer(fileName2)),
+		uintptr(unsafe.Pointer(fileName1)), //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(fileName2)), //nolint:gosec // ProjFS FFI arg
 	)
-	return int32(r)
+	// r is a 32-bit signed comparison result returned in a uintptr, where a
+	// negative value is carried as e.g. 0xFFFFFFFF; truncating to int32 is the
+	// correct re-interpretation and cannot be provably bounded for gosec.
+	return int32(r) //nolint:gosec
 }
 
 func prjFileNameMatch(fileNameToCheck *uint16, pattern *uint16) bool {
 	r, _, _ := procPrjFileNameMatch.Call(
-		uintptr(unsafe.Pointer(fileNameToCheck)),
-		uintptr(unsafe.Pointer(pattern)),
+		uintptr(unsafe.Pointer(fileNameToCheck)), //nolint:gosec // ProjFS FFI arg
+		uintptr(unsafe.Pointer(pattern)),         //nolint:gosec // ProjFS FFI arg
 	)
 	return r != 0
 }

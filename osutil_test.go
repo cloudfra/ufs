@@ -91,6 +91,36 @@ func TestTryOSDeleteFile(t *testing.T) {
 	}
 }
 
+func TestOSMkdir(t *testing.T) {
+	parent, err := osMkdirTemp("", "ufs-mkdir-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := osRemoveAll(parent); err != nil {
+			t.Errorf("cleanup remove %q: %v", parent, err)
+		}
+	})
+
+	dir := filepath.Join(parent, "newdir")
+	if err := osMkdir(dir); err != nil {
+		t.Fatalf("osMkdir(existing parent) = %v, want nil", err)
+	}
+	if _, err := osStat(dir); err != nil {
+		t.Errorf("Stat after osMkdir: %v, want the new dir to exist", err)
+	}
+
+	if err := osMkdir(dir); err == nil {
+		t.Error("osMkdir(existing) = nil, want an error")
+	} else if !os.IsExist(err) {
+		t.Errorf("osMkdir(existing) = %v, want fs.ErrExist", err)
+	}
+
+	if err := osMkdir(filepath.Join(parent, "a", "b")); err == nil {
+		t.Error("osMkdir(missing parent) = nil, want an error")
+	}
+}
+
 func TestOSDeleteDirectoryExists(t *testing.T) {
 	dir, err := osMkdirTemp("", "ufs-del-dir-*")
 	if err != nil {
@@ -669,6 +699,31 @@ func TestClampToUint64(t *testing.T) {
 			t.Parallel()
 			if got := clampToUint64(tc.in); got != tc.want {
 				t.Errorf("clampToUint64(%d) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClampToInt64(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   uint64
+		want int64
+	}{
+		{"zero", 0, 0},
+		{"positive", 42, 42},
+		{"max_int64", uint64(math.MaxInt64), math.MaxInt64},
+		{"above_max_int64", uint64(math.MaxInt64) + 1, math.MaxInt64},
+		{"max_uint64", math.MaxUint64, math.MaxInt64},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := clampToInt64(tc.in); got != tc.want {
+				t.Errorf("clampToInt64(%d) = %d, want %d", tc.in, got, tc.want)
 			}
 		})
 	}

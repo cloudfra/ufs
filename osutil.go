@@ -252,6 +252,15 @@ func clampToUint64(n int64) uint64 {
 	return uint64(n)
 }
 
+// clampToInt64 converts a non-negative uint64 to int64, clamping any value
+// above math.MaxInt64 to math.MaxInt64 so the conversion cannot overflow.
+func clampToInt64(n uint64) int64 {
+	if n > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(n)
+}
+
 const (
 	defaultFilePermissions      = 0o600
 	defaultDirectoryPermissions = 0o750

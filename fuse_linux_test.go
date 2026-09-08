@@ -173,7 +173,7 @@ func TestHostMountCreateWriteRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testHostMount(t, fsys)
 
@@ -203,7 +203,7 @@ func TestHostMountOpenWriteOnlyNoTrunc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testHostMount(t, fsys)
 
@@ -212,14 +212,18 @@ func TestHostMountOpenWriteOnlyNoTrunc(t *testing.T) {
 	// O_WRONLY without O_TRUNC must be rejected (ufs.Create always truncates).
 	fd, err := syscall.Open(mountedFile, syscall.O_WRONLY, 0)
 	if err == nil {
-		_ = syscall.Close(fd)
+		if err := syscall.Close(fd); err != nil {
+			t.Errorf("close() failed, %s", err)
+		}
 		t.Fatal("open O_WRONLY without O_TRUNC succeeded, want error")
 	}
 
 	// O_RDWR without O_TRUNC must also be rejected.
 	fd, err = syscall.Open(mountedFile, syscall.O_RDWR, 0)
 	if err == nil {
-		_ = syscall.Close(fd)
+		if err := syscall.Close(fd); err != nil {
+			t.Errorf("close() failed, %s", err)
+		}
 		t.Fatal("open O_RDWR without O_TRUNC succeeded, want error")
 	}
 
@@ -239,7 +243,7 @@ func TestHostMountWriteAtOffset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testHostMount(t, fsys)
 
@@ -265,7 +269,7 @@ func TestHostMountMkdir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testHostMount(t, fsys)
 
@@ -289,7 +293,7 @@ func TestHostMountMkdirExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testHostMount(t, fsys)
 
@@ -312,7 +316,7 @@ func TestHostMountRemoveFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testHostMount(t, fsys)
 
@@ -334,7 +338,7 @@ func TestHostMountRemoveDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testHostMount(t, fsys)
 
@@ -358,7 +362,7 @@ func TestHostMountReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &fuseReadOnlyFS{fsys}
 	mountDir := testHostMount(t, roFS)
@@ -382,7 +386,7 @@ func TestHostMountClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := t.TempDir()
 	server, err := HostMount(t.Context(), fsys, mountDir)
@@ -421,7 +425,7 @@ func TestHostMountContextCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	ctx, cancel := context.WithCancel(t.Context())
 	mountDir := t.TempDir()
@@ -454,7 +458,7 @@ func TestHostMountReadOnlyMkdir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &fuseReadOnlyFS{fsys}
 	mountDir := testHostMount(t, roFS)
@@ -476,7 +480,7 @@ func TestHostMountReadOnlyRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &fuseReadOnlyFS{fsys}
 	mountDir := testHostMount(t, roFS)

@@ -134,7 +134,7 @@ func TestHostMountClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := t.TempDir()
 	server, err := HostMount(t.Context(), fsys, mountDir)
@@ -164,7 +164,7 @@ func TestHostMountContextCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	ctx, cancel := context.WithCancel(t.Context())
 	mountDir := t.TempDir()
@@ -191,10 +191,10 @@ func TestHostMountReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &projfsReadOnlyFS{fsys}
-	_ = testProjFSMount(t, roFS)
+	t.Log(testProjFSMount(t, roFS))
 	t.Skip("ProjFS cannot intercept new file creation or mkdir — writes materialize to local NTFS")
 }
 
@@ -204,10 +204,10 @@ func TestHostMountReadOnlyMkdir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &projfsReadOnlyFS{fsys}
-	_ = testProjFSMount(t, roFS)
+	t.Log(testProjFSMount(t, roFS))
 	t.Skip("ProjFS cannot intercept new file creation or mkdir — writes materialize to local NTFS")
 }
 
@@ -222,7 +222,7 @@ func TestHostMountReadOnlyRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := testProjFSMount(t, fsys)
 
@@ -272,7 +272,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = fsys.Close() })
+	t.Cleanup(validateClose(t, fsys))
 
 	for _, f := range files {
 		w, err := fsys.Create(f.path)
@@ -280,7 +280,9 @@ func TestProjFSMountReadBack(t *testing.T) {
 			t.Fatalf("Create(%q): %v", f.path, err)
 		}
 		if _, err := w.Write(f.content); err != nil {
-			_ = w.Close()
+			if err := w.Close(); t != nil {
+				t.Errorf("cannot close writer, %s", err)
+			}
 			t.Fatalf("Write(%q): %v", f.path, err)
 		}
 		if err := w.Close(); err != nil {

@@ -6,7 +6,7 @@ toolchain go1.26.6
 
 require (
 	cloud.google.com/go/pubsub/v2 v2.7.0
-	cloud.google.com/go/storage v1.67.0
+	cloud.google.com/go/storage v1.67.1
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/fsouza/fake-gcs-server v1.55.1
 	github.com/go-git/go-git/v5 v5.19.2
@@ -14,7 +14,7 @@ require (
 	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/mholt/archives v0.1.5
 	github.com/xyproto/randomstring v1.2.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.48.0
 	google.golang.org/api v0.297.0
 	google.golang.org/grpc v1.83.2
 	gopkg.in/yaml.v3 v3.0.1
@@ -93,15 +93,15 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go4.org v0.0.0-20260112195520-a5071408f32f // indirect
-	golang.org/x/crypto v0.56.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/genproto v0.0.0-20260831171406-18b4a7587f8a // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260831171406-18b4a7587f8a // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260831171406-18b4a7587f8a // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/time v0.16.0 // indirect
+	google.golang.org/genproto v0.0.0-20260908043556-f8649ddbbfe6 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260908043556-f8649ddbbfe6 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260908043556-f8649ddbbfe6 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )

@@ -188,7 +188,9 @@ func initCallbacks() {
 }
 
 func serverFromContext(callbackData *prjCallbackData) *projfsMountServer {
-	return (*projfsMountServer)(unsafe.Pointer(callbackData.InstanceContext)) //nolint:govet // ProjFS callback context is a pointer stored as uintptr
+	// ProjFS stores the server pointer in the callback context as an opaque
+	// uintptr; the round-trip through unsafe.Pointer is the FFI contract.
+	return (*projfsMountServer)(unsafe.Pointer(callbackData.InstanceContext)) //nolint:gosec,govet
 }
 
 func startDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID) uintptr {
@@ -404,16 +406,19 @@ func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint
 	}
 	defer prjFreeAlignedBuffer(buf)
 
+	// buf holds exactly `length` bytes, so the view is in bounds by construction.
+	//nolint:gosec // FFI: interpret the ProjFS-allocated buffer as a byte slice
 	dest := unsafe.Slice((*byte)(buf), length)
 
 	var n int
 	var readMethod string
+	off := clampToInt64(byteOffset)
 	if ra, ok := f.(io.ReaderAt); ok {
 		readMethod = "ReaderAt"
-		n, err = ra.ReadAt(dest, int64(byteOffset))
+		n, err = ra.ReadAt(dest, off)
 	} else if seeker, ok := f.(io.Seeker); ok {
 		readMethod = "Seeker"
-		if _, err = seeker.Seek(int64(byteOffset), io.SeekStart); err != nil {
+		if _, err = seeker.Seek(off, io.SeekStart); err != nil {
 			slog.Error("projfs: GetFileData Seek failed", "path", p, "offset", byteOffset, "error", err)
 			return projfsHRESULT(err)
 		}
@@ -441,7 +446,7 @@ func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint
 		return hr
 	}
 
-	if err := prjWriteFileData(callbackData.NamespaceVirtualizationContext, &callbackData.DataStreamID, buf, byteOffset, uint32(n)); err != nil {
+	if err := prjWriteFileData(callbackData.NamespaceVirtualizationContext, &callbackData.DataStreamID, buf, byteOffset, clampToUint32(n)); err != nil {
 		hr := projfsHRESULT(err)
 		slog.Error("projfs: GetFileData WriteFileData failed", "path", p, "error", err, "bytesWritten", n, "hresult", hresultName(hr))
 		return hr
@@ -618,8 +623,10 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 		"optsPoolThreadCount", opts.PoolThreadCount,
 		"optsConcurrentThreadCount", opts.ConcurrentThreadCount,
 		"optsMappingsCount", opts.NotificationMappingsCount,
+		//nolint:gosec // log-only: print the raw server pointer address
 		"instanceContext", fmt.Sprintf("0x%X", uintptr(unsafe.Pointer(s))),
 	)
+	//nolint:gosec // FFI: pass the server as the ProjFS instance context pointer
 	if err := prjStartVirtualizing(rootPathPtr, &cbs, uintptr(unsafe.Pointer(s)), &opts, &s.nsCtx); err != nil {
 		slog.Error("projfs: StartVirtualizing failed", "mountPath", mountPath, "error", err, "errorType", fmt.Sprintf("%T", err))
 		return nil, fmt.Errorf("cannot start ProjFS virtualization at %q: %w", mountPath, err)

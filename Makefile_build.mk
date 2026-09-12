@@ -141,7 +141,11 @@ lint-go: build/toolchain/bin/golangci-lint$(EXE) build/toolchain/bin/gofumpt$(EX
 	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/gofumpt$(EXE)" -l -w .
 	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/golangci-lint$(EXE)" fmt ./...
 	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/golangci-lint$(EXE)" run ./...
+	# The "rpc" build tag gates all gRPC/grpc-gateway code (see Makefile_proto.mk);
+	# lint it too, on top of the default (tagless) pass above.
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/golangci-lint$(EXE)" run --build-tags=rpc ./...
 	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/revive$(EXE)" -set_exit_status -exclude=build/... ./...
+	$(IGNORE_LINT_CHECK)GOFLAGS=-tags=rpc "$(REPOSITORY_ROOT)/build/toolchain/bin/revive$(EXE)" -set_exit_status -exclude=build/... ./...
 
 lint-docker: build/toolchain/bin/hadolint$(EXE)
 	$(IGNORE_LINT_CHECK)$(FIND) cmd -iname 'Dockerfile*' -exec "$(REPOSITORY_ROOT)/build/toolchain/bin/hadolint$(EXE)" --ignore=DL3066 {} +
@@ -160,6 +164,7 @@ lint-markdown: build/toolchain/bin/rumdl$(EXE)
 
 lint-vuln: build/toolchain/bin/govulncheck$(EXE)
 	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/govulncheck$(EXE)" ./...
+	$(IGNORE_LINT_CHECK)"$(REPOSITORY_ROOT)/build/toolchain/bin/govulncheck$(EXE)" -tags rpc ./...
 
 bench: $(TEST_ASSETS)
 	$(GO) test -bench=. -benchmem -tags testing ${SOURCE_DIRS}
@@ -171,9 +176,13 @@ test: test-go test-tf
 
 test-go: $(TEST_ASSETS)
 	$(GO) test -shuffle=on -tags testing ${SOURCE_DIRS}
+	# Also exercise the "rpc" build tag (gRPC/grpc-gateway code), on top of the
+	# default (tagless) pass above.
+	$(GO) test -shuffle=on -tags testing,rpc ${SOURCE_DIRS}
 
 test-deflake: $(TEST_ASSETS)
 	CGO_ENABLED=1 $(GO) test -shuffle=on -tags testing $(GO_RACE) ${SOURCE_DIRS} -cover -count $(GO_TEST_COUNT) -test.short
+	CGO_ENABLED=1 $(GO) test -shuffle=on -tags testing,rpc $(GO_RACE) ${SOURCE_DIRS} -cover -count $(GO_TEST_COUNT) -test.short
 
 ifneq ($(wildcard install/terraform),)
 test-tf: build/toolchain/bin/terraform$(EXE) $(TEST_ASSETS)
@@ -200,8 +209,11 @@ coverage.xml: coverage.txt build/toolchain/bin/gocover-cobertura$(EXE)
 	"$(REPOSITORY_ROOT)/build/toolchain/bin/gocover-cobertura$(EXE)" < $< > $@
 
 deps:
-	$(GO_WITH_PROXY) get -u ./...
-	$(GO_WITH_PROXY) mod tidy
+	# rpc build tag so tooling sees the gRPC/grpc-gateway imports gated behind
+	# it and doesn't prune them as unused. "go mod tidy" (unlike "go get") has
+	# no -tags flag, so it goes through GOFLAGS instead.
+	$(GO_WITH_PROXY) get -u -tags rpc ./...
+	GOFLAGS=-tags=rpc $(GO_WITH_PROXY) mod tidy
 	$(GO_WITH_PROXY) mod download
 
 clean:

@@ -236,10 +236,8 @@ func TestArchiveFSRemoveAll(t *testing.T) {
 	}
 }
 
-//nolint:unused // only referenced by disabled reproduction tests below
 const testNoDirArchive = "testing/testassets/archives/nodir-testassets.zip"
 
-//nolint:unused // only referenced by disabled reproduction tests below
 func mustNoDirArchiveFS(t *testing.T) FS {
 	t.Helper()
 	fsys, err := newArchiveFSFromLocalFS(context.Background(), testNoDirArchive)
@@ -254,13 +252,7 @@ func mustNoDirArchiveFS(t *testing.T) FS {
 	return fsys
 }
 
-// xTestArchiveFSOpenImplicitDir reproduces https://github.com/cloudfra/ufs/pull/250:
-// Open() on an implicit directory (no explicit zip entry) fails to report
-// IsDir() and does not return a fs.ReadDirFile before the archive has been
-// indexed by a ReadDir call. Disabled (x-prefixed) until a fix lands.
-//
-//nolint:unused // disabled reproduction test, see comment above
-func xTestArchiveFSOpenImplicitDir(t *testing.T) {
+func TestArchiveFSOpenImplicitDir(t *testing.T) {
 	fsys := mustNoDirArchiveFS(t)
 
 	f, err := fsys.Open("onetwothree")
@@ -300,12 +292,7 @@ func xTestArchiveFSOpenImplicitDir(t *testing.T) {
 	}
 }
 
-// xTestArchiveFSStatImplicitDir reproduces https://github.com/cloudfra/ufs/pull/250:
-// Stat() on an implicit directory reports IsDir() = false before the archive
-// has been indexed. Disabled (x-prefixed) until a fix lands.
-//
-//nolint:unused // disabled reproduction test, see comment above
-func xTestArchiveFSStatImplicitDir(t *testing.T) {
+func TestArchiveFSStatImplicitDir(t *testing.T) {
 	fsys := mustNoDirArchiveFS(t)
 
 	info, err := fsys.Stat("onetwothree")
@@ -317,11 +304,7 @@ func xTestArchiveFSStatImplicitDir(t *testing.T) {
 	}
 }
 
-// xTestArchiveFSReadDirImplicitDir accompanies the other implicit-dir
-// reproduction tests. Disabled (x-prefixed) alongside them for consistency.
-//
-//nolint:unused // disabled reproduction test, see comment above
-func xTestArchiveFSReadDirImplicitDir(t *testing.T) {
+func TestArchiveFSReadDirImplicitDir(t *testing.T) {
 	fsys := mustNoDirArchiveFS(t)
 
 	rfs, ok := fsys.(fs.ReadDirFS)
@@ -342,14 +325,50 @@ func xTestArchiveFSReadDirImplicitDir(t *testing.T) {
 	}
 }
 
+// TestArchiveFSImplicitDirRootAndNested covers an archive with no explicit
+// directory entries anywhere, where plain files live at the archive root
+// alongside implicit nested directories. Root listing, and Open/Stat of the
+// root-level files, must work correctly even when nested implicit
+// directories are resolved first (before any ReadDir has indexed the
+// archive), and vice versa.
+func TestArchiveFSImplicitDirRootAndNested(t *testing.T) {
+	fsys := mustNoDirArchiveFS(t)
+
+	assertDir(t, fsys, ".", []string{"1.txt", "2.txt", "onetwothree", "sixseven"})
+
+	for _, name := range []string{"1.txt", "2.txt"} {
+		info, err := fsys.Stat(name)
+		if err != nil {
+			t.Fatalf("Stat(%q) = %v, want nil", name, err)
+		}
+		if info.IsDir() {
+			t.Errorf("Stat(%q).IsDir() = true, want false", name)
+		}
+
+		f, err := fsys.Open(name)
+		if err != nil {
+			t.Fatalf("Open(%q) = %v, want nil", name, err)
+		}
+		validateClose(t, f)()
+	}
+
+	for _, name := range []string{"onetwothree", "sixseven"} {
+		info, err := fsys.Stat(name)
+		if err != nil {
+			t.Fatalf("Stat(%q) = %v, want nil", name, err)
+		}
+		if !info.IsDir() {
+			t.Errorf("Stat(%q).IsDir() = false, want true", name)
+		}
+	}
+}
+
 // createArchiveWithEntries builds a temp zip containing exactly the named
 // entries and returns its path. An entry whose name ends with "/" becomes a
 // directory entry; every other entry is a file carrying a small non-empty
 // payload. The temp file is removed via t.Cleanup. This lets a test precisely
 // control which directories are present as explicit entries (trailing slash)
 // and which must be inferred from child file paths (implicit).
-//
-//nolint:unused // only referenced by disabled reproduction tests below
 func createArchiveWithEntries(t *testing.T, entries ...string) string {
 	t.Helper()
 
@@ -388,8 +407,6 @@ func createArchiveWithEntries(t *testing.T, entries ...string) string {
 // mustArchiveFromEntries mounts a freshly built zip (from the given entries) as
 // an archiveFS and registers cleanup to close it, mirroring mustArchiveFS and
 // mustNoDirArchiveFS but giving tests full control over the directory entries.
-//
-//nolint:unused // only referenced by disabled reproduction tests below
 func mustArchiveFromEntries(t *testing.T, entries ...string) FS {
 	t.Helper()
 
@@ -410,12 +427,7 @@ func mustArchiveFromEntries(t *testing.T, entries ...string) FS {
 // directory entries and several layers of nesting. Open and Stat on each
 // implicit directory level must report a directory, and this must hold even
 // when Open/Stat run before any ReadDir has populated the archive index.
-// xTestArchiveFSImplicitDirMultipleLayers reproduces
-// https://github.com/cloudfra/ufs/pull/250 across several layers of nested
-// implicit directories. Disabled (x-prefixed) until a fix lands.
-//
-//nolint:unused // disabled reproduction test, see comment above
-func xTestArchiveFSImplicitDirMultipleLayers(t *testing.T) {
+func TestArchiveFSImplicitDirMultipleLayers(t *testing.T) {
 	fsys := mustArchiveFromEntries(t,
 		"deep/5.txt",
 		"deep/x/3.txt",
@@ -472,12 +484,7 @@ func xTestArchiveFSImplicitDirMultipleLayers(t *testing.T) {
 // directories have explicit entries and some do not. Listing and opening an
 // implicit directory that sits under an explicit parent directory must work
 // even when Open/Stat runs before any ReadDir has occurred.
-// xTestArchiveFSImplicitDirMixedExplicit reproduces
-// https://github.com/cloudfra/ufs/pull/250 for an implicit directory nested
-// under an explicit parent directory. Disabled (x-prefixed) until a fix lands.
-//
-//nolint:unused // disabled reproduction test, see comment above
-func xTestArchiveFSImplicitDirMixedExplicit(t *testing.T) {
+func TestArchiveFSImplicitDirMixedExplicit(t *testing.T) {
 	// "onetwothree/" is an explicit directory entry; "onetwothree/sixseven"
 	// has no directory entry of its own, so it is implicit.
 	fsys := mustArchiveFromEntries(t,

@@ -19,9 +19,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/mholt/archives"
 )
@@ -59,13 +63,72 @@ func isMountableArchivePath(name string) bool {
 }
 
 type archiveFS struct {
-	fsys   fs.FS
-	name   string
-	closer io.Closer
+	fsys    fs.FS
+	name    string
+	closer  io.Closer
+	indexed sync.Once
+	// isIndexed is set once ensureIndexed has successfully built the
+	// underlying archive's implicit-directory index, letting openInner skip
+	// straight to fsys.fsys.Open on every later call instead of repeating the
+	// detect-mismatch-then-retry dance. It stays false if indexing failed, so
+	// a failed attempt keeps falling back to the slow path (which still works
+	// for every explicit entry; only unindexed implicit directories need the
+	// index).
+	isIndexed atomic.Bool
 }
 
 func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
 	return archiveDeviceInfoMap
+}
+
+// ensureIndexed triggers the underlying archives.ArchiveFS's implicit-directory
+// index build, which requires a full pass over every entry: the mholt/archives
+// library has no mode to index directory structure alone, so this is the
+// cheapest correct option without bypassing the library to parse archives
+// ourselves. It runs at most once per archiveFS (sync.Once) and only when
+// openInner has already detected that Open() returned the wrong entry for an
+// implicit directory, so well-formed archives and plain file access never pay
+// this cost.
+func (fsys *archiveFS) ensureIndexed() {
+	fsys.indexed.Do(func() {
+		rdfs, ok := fsys.fsys.(fs.ReadDirFS)
+		if !ok {
+			return
+		}
+		if _, err := rdfs.ReadDir("."); err != nil {
+			slog.Warn("failed to index archive", "name", fsys.name, "error", err)
+			return
+		}
+		fsys.isIndexed.Store(true)
+	})
+}
+
+// openInner opens name in the underlying FS. If the archive returns an entry
+// whose name doesn't match (implicit directory bug in non-indexed archives),
+// it triggers an index build and retries once. Once the archive is known to be
+// indexed, name always resolves correctly on the first try, so later calls
+// skip the detect-and-retry dance entirely.
+func (fsys *archiveFS) openInner(name string) (fs.File, error) {
+	if fsys.isIndexed.Load() {
+		return fsys.fsys.Open(name)
+	}
+
+	f, err := fsys.fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if name == "." {
+		return f, nil
+	}
+	info, statErr := f.Stat()
+	if statErr != nil || info.Name() == path.Base(name) {
+		return f, nil
+	}
+	if err := f.Close(); err != nil {
+		return nil, fmt.Errorf("cannot close %q, %w", name, err)
+	}
+	fsys.ensureIndexed()
+	return fsys.fsys.Open(name)
 }
 
 func (fsys *archiveFS) URI() *url.URL {
@@ -84,7 +147,7 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if err := validPath("open", name); err != nil {
 		return nil, err
 	}
-	return fsys.fsys.Open(name)
+	return fsys.openInner(name)
 }
 
 func (fsys *archiveFS) Close() error {
@@ -101,16 +164,12 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
-	f, err := fsys.fsys.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	stat, statErr := f.Stat()
-	closeErr := f.Close()
-	if statErr != nil {
-		return nil, joinErrors(statErr, closeErr)
-	}
-	return stat, closeErr
+	// archives.ArchiveFS.Stat resolves implicit directories correctly on its
+	// own (it compares the full in-archive path, not just the base name), so
+	// unlike Open it never needs ensureIndexed. Using fs.Stat here also
+	// avoids opening (and decompressing into) a content stream just to read
+	// metadata.
+	return fs.Stat(fsys.fsys, name)
 }
 
 func (fsys *archiveFS) Create(name string) (File, error) {

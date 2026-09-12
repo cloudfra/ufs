@@ -1,0 +1,227 @@
+// Copyright 2026 Jeremy Edwards
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+edition = "2024";
+
+package cloudfra.ufs;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/go_features.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/cloudfra/ufs/proto";
+
+// grpc-gateway's generated code accesses request fields directly (the
+// classic Go struct API) rather than through opaque-API accessors, which
+// edition 2024 defaults to.
+option features.(pb.go).api_level = API_OPEN;
+
+// Match proto3's implicit field presence (plain value types instead of
+// pointers), which is what grpc-gateway's generated code expects.
+option features.field_presence = IMPLICIT;
+
+// File is the resource representation of a node (regular file or directory)
+// in a [ufs.ReadFS] tree. It mirrors [ufs.FileInfo].
+//
+// File names follow [fs.ValidPath]: forward-slash separated, no leading
+// slash, no "." or ".." components. The root directory is always ".".
+message File {
+  option (google.api.resource) = {
+    type: "ufs.cloudfra.io/File"
+    pattern: "{path=**}"
+    singular: "file"
+    plural: "files"
+  };
+
+  // The path of the file, relative to the root of the file system.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Length in bytes for regular files; system-dependent for others.
+  int64 size = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // File mode bits, as defined by Go's io/fs.FileMode.
+  uint32 mode = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The time the file was last modified.
+  google.protobuf.Timestamp mod_time = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Whether the file is a directory. Equivalent to mode's directory bit.
+  bool is_dir = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// FileSystemInfo describes the file system as a whole. It is a singleton
+// resource (AIP-156): there is exactly one, and it has no name field.
+message FileSystemInfo {
+  // The URI that identifies this file system, as returned by [ufs.ReadFS.URI].
+  // Can be passed to ufs.New to reconstruct an equivalent file system.
+  // Empty if the file system has no meaningful URI.
+  string uri = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // A human-readable description of how the file system is composed, as
+  // returned by [ufs.ReadFS.String]. Intended for debugging and logging, not
+  // programmatic use.
+  string description = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// SymlinkHandling controls whether a lookup follows a symbolic link to its
+// target or reports on the link itself.
+enum SymlinkHandling {
+  // Equivalent to SYMLINK_HANDLING_FOLLOW.
+  SYMLINK_HANDLING_UNSPECIFIED = 0;
+
+  // Follow the symbolic link and describe its target. Equivalent to
+  // [ufs.ReadFS.Stat] / [fs.Stat].
+  SYMLINK_HANDLING_FOLLOW = 1;
+
+  // Do not follow the symbolic link; describe the link itself. Equivalent to
+  // [fs.ReadLinkFS.Lstat].
+  SYMLINK_HANDLING_NO_FOLLOW = 2;
+}
+
+message GetFileRequest {
+  // The path of the file to retrieve.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // Whether to follow a trailing symbolic link at name. Defaults to
+  // SYMLINK_HANDLING_FOLLOW.
+  SymlinkHandling symlink_handling = 2;
+}
+
+message ListFilesRequest {
+  // The directory whose immediate children should be listed. "." lists the
+  // root directory.
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The maximum number of files to return. The service may return fewer
+  // than this value. If unspecified, the server picks a reasonable default.
+  int32 page_size = 2;
+
+  // A page token received from a previous ListFiles call, used to retrieve
+  // the next page.
+  string page_token = 3;
+}
+
+message ListFilesResponse {
+  // The immediate children of the requested parent directory, sorted by
+  // filename, as returned by [ufs.ReadFS.ReadDir].
+  repeated File files = 1;
+
+  // A token that can be sent as page_token to retrieve the next page. Empty
+  // if there are no more files.
+  string next_page_token = 2;
+}
+
+message ReadFileRequest {
+  // The path of the file to read.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The byte offset to start reading from. 0 reads from the start of the
+  // file.
+  int64 offset = 2;
+
+  // The maximum number of bytes to return across the whole stream. 0 (the
+  // default) reads to the end of the file.
+  int64 limit = 3;
+}
+
+message ReadFileResponse {
+  // A chunk of file content. Chunks are delivered in order starting at
+  // offset and are concatenated by the client to reconstruct the requested
+  // range.
+  bytes data = 1;
+}
+
+message ReadLinkRequest {
+  // The path of the symbolic link to resolve.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+message ReadLinkResponse {
+  // The destination path of the symbolic link, as returned by
+  // [ufs.ReadFS.ReadLink]. May be relative to the link's directory.
+  string target = 1;
+}
+
+message GetFileSystemInfoRequest {}
+
+// ReadFS exposes the read-only surface of a [ufs.ReadFS] file system over
+// RPC: metadata lookup, directory listing, symbolic link resolution, and
+// streaming file content.
+//
+// ufs.ReadFS's io.Closer.Close is intentionally not exposed here: it tears
+// down the entire underlying file system (e.g. unmounting or disconnecting
+// a cloud storage client) rather than acting on a single request, and is a
+// server-lifecycle concern rather than a per-client one.
+//
+// Errors follow standard gRPC canonical codes: a lookup for a path that does
+// not exist returns NOT_FOUND (wrapping fs.ErrNotExist), and an operation
+// forbidden by the backend returns PERMISSION_DENIED (wrapping
+// fs.ErrPermission).
+service ReadFS {
+  // GetFile returns metadata for the file at name. Equivalent to
+  // [ufs.ReadFS.Stat], or [ufs.ReadFS.Lstat] when symlink_handling is
+  // SYMLINK_HANDLING_NO_FOLLOW.
+  rpc GetFile(GetFileRequest) returns (File) {
+    option (google.api.http) = {
+      get: "/v1/{name=**}"
+    };
+  }
+
+  // ListFiles returns the immediate children of a directory. Equivalent to
+  // [ufs.ReadFS.ReadDir].
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse) {
+    option (google.api.http) = {
+      get: "/v1/files"
+    };
+  }
+
+  // ReadFile streams the content of the file at name. Equivalent to opening
+  // the file via [ufs.ReadFS.Open] and reading its contents, or
+  // [ufs.ReadFS.ReadFile] when the client buffers the full stream.
+  rpc ReadFile(ReadFileRequest) returns (stream ReadFileResponse) {
+    option (google.api.http) = {
+      get: "/v1/{name=**}:read"
+    };
+  }
+
+  // ReadLink returns the destination of the symbolic link at name.
+  // Equivalent to [ufs.ReadFS.ReadLink].
+  rpc ReadLink(ReadLinkRequest) returns (ReadLinkResponse) {
+    option (google.api.http) = {
+      get: "/v1/{name=**}:readLink"
+    };
+  }
+
+  // GetFileSystemInfo describes the file system itself. Equivalent to
+  // [ufs.ReadFS.URI] and [ufs.ReadFS.String].
+  rpc GetFileSystemInfo(GetFileSystemInfoRequest) returns (FileSystemInfo) {
+    option (google.api.http) = {
+      get: "/v1/fileSystemInfo"
+    };
+  }
+}

@@ -13,7 +13,10 @@
 # limitations under the License.
 
 REGISTRY = ghcr.io/cloudfra
-PROTOS =
+PROTOS = proto/ufs.pb.go
+PROTOS += proto/ufs_grpc.pb.go
+PROTOS += proto/ufs.pb.gw.go
+PROTOS += proto/ufs.swagger.json
 TEST_ASSETS =
 ASSETS = $(PROTOS)
 GO_PACKAGE = github.com/cloudfra/ufs

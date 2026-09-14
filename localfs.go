@@ -36,7 +36,7 @@ var (
 )
 
 type localFSInterface interface {
-	FS
+	WriteFS
 	fs.GlobFS
 	realAbsPathGet
 }

@@ -30,7 +30,7 @@ const (
 
 var (
 	_ File           = (*nullFile)(nil)
-	_ FS             = (*nullFS)(nil)
+	_ WriteFS        = (*nullFS)(nil)
 	_ fs.GlobFS      = (*nullFS)(nil)
 	_ fs.ReadDirFile = (*nullReadDirFile)(nil)
 

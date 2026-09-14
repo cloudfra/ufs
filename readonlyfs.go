@@ -16,7 +16,7 @@ package ufs
 
 import "io/fs"
 
-var _ FS = (*readOnlyFS)(nil)
+var _ WriteFS = (*readOnlyFS)(nil)
 
 // readOnlyFS wraps a [ReadFS] and satisfies [FS] by returning
 // [fs.ErrPermission] for all write operations.

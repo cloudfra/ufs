@@ -40,8 +40,8 @@ const (
 )
 
 var (
-	_ FS   = (*gcsFS)(nil)
-	_ File = (*gcsFile)(nil)
+	_ WriteFS = (*gcsFS)(nil)
+	_ File    = (*gcsFile)(nil)
 )
 
 type gcsFS struct {

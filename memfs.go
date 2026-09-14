@@ -34,8 +34,7 @@ const (
 
 var (
 	_ File           = (*memFile)(nil)
-	_ FS             = (*memFS)(nil)
-	_ Remover        = (*memFS)(nil)
+	_ WriteFS        = (*memFS)(nil)
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
 )

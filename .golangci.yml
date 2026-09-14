@@ -26,14 +26,12 @@ linters:
   default: standard
   enable:
     - bodyclose
-    - noctx
-    #- goconst
-    - gosec
     - gocritic
-    - unconvert
-    # - unparam
+    - gosec
+    - noctx
     - prealloc
     - revive
+    - unconvert
   exclusions:
     paths:
       - "build/"

@@ -213,7 +213,7 @@ testing/testassets/files/assets/deep/5.txt:
 	mkdir -p $(dir $@)
 	echo -n $@ > $@
 
-testassets: $(TEST_ASSETS)
+fileassets: $(TEST_FILE_ASSETS)
 archiveassets: $(TEST_ARCHIVE_ASSETS)
 
-.PHONY: testassets archiveassets
+.PHONY: fileassets archiveassets

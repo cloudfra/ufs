@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-var _ FS = (*faultFS)(nil)
+var _ WriteFS = (*faultFS)(nil)
 
 // faultErrors is a set of realistic errors that applications commonly
 // encounter from file system operations.

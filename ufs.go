@@ -91,10 +91,24 @@ type ExternalPathGet interface {
 	ExternalPath(path string) string
 }
 
-// Renamer is an optional interface that a file system may implement to support
+// CopyFileFS is an optional interface that a file system may implement to support
+// file copying. It is embedded in [FS], so every writable backend
+// must implement it.
+type CopyFileFS interface {
+	// CopyFile copies a file from srcPath to dstPath. It returns an error
+	// wrapping [fs.ErrNotExist] if srcPath does not exist, or an error if dstPath
+	// already exists. Copying the root (".") returns [fs.ErrPermission].
+	//
+	// CopyFile is not guaranteed to be atomic; some backends may implement it as
+	// a read-and-write operation. Callers should not assume that the file at
+	// dstPath is created if CopyFile returns an error.
+	CopyFile(srcPath, dstPath string) error
+}
+
+// RenameFileFS is an optional interface that a file system may implement to support
 // file and directory renaming. It is embedded in [FS], so every writable backend
 // must implement it.
-type Renamer interface {
+type RenameFileFS interface {
 	// Rename moves a file or directory from oldPath to newPath. It returns an
 	// error wrapping [fs.ErrNotExist] if oldPath does not exist, or an error if
 	// newPath already exists. Renaming the root (".") returns [fs.ErrPermission].
@@ -141,10 +155,9 @@ type ReadFS interface {
 	String() string
 }
 
-// Remover is an optional interface that a file system may implement to support
-// file and directory deletion. It is embedded in [FS], so every writable
-// backend must implement it.
-type Remover interface {
+// RemoveFileFS provides file and directory deletion. It is embedded in [WriteFS],
+// so every writable backend must implement it.
+type RemoveFileFS interface {
 	// Remove deletes the file or empty directory at name. It returns an error
 	// wrapping [fs.ErrNotExist] if name does not exist, or an error if name is
 	// a non-empty directory. Removing the root (".") returns [fs.ErrPermission].
@@ -155,13 +168,11 @@ type Remover interface {
 	RemoveAll(name string) error
 }
 
-// FS is a read-write file system. It extends [ReadFS] with file creation,
+// WriteFS is a read-write file system. It extends [ReadFS] with file creation,
 // directory creation, and deletion.
-type FS interface {
+type WriteFS interface {
 	ReadFS
-	Remover
-
-	// TODO: Implement Renamer
+	RemoveFileFS
 
 	// Create opens a new writable file at name, replacing any existing file at
 	// that path. Parent directories are not created automatically; call
@@ -173,6 +184,17 @@ type FS interface {
 	// exists. Backends that do not have a real directory concept (e.g. GCS) treat
 	// this as a no-op.
 	MkdirAll(name string, perm fs.FileMode) error
+}
+
+// FS is the top-level file system interface returned by the public
+// constructors. It extends [WriteFS] and will add file copying
+// ([CopyFileFS]) and renaming ([RenameFileFS]); until those are implemented
+// it is equivalent to [WriteFS]. Every concrete value is a *nestFS.
+type FS interface {
+	WriteFS
+
+	// Copy(srcPath, dstPath string) error
+	// TODO: Implement RenameFS
 }
 
 // ListFilenames is an optional interface that a file system may implement to

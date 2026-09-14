@@ -97,7 +97,7 @@ func TestInvalidPath(t *testing.T) {
 			t.Run(fmt.Sprintf("Remove/%s/%s", fsysTC.name, path), func(t *testing.T) {
 				t.Parallel()
 				fsys := fsysTC.createFS(t)
-				if r, ok := fsys.(Remover); ok {
+				if r, ok := fsys.(RemoveFileFS); ok {
 					err := r.Remove(path)
 					assertInvalidPathError(t, path, err, "remove")
 				}
@@ -106,7 +106,7 @@ func TestInvalidPath(t *testing.T) {
 			t.Run(fmt.Sprintf("RemoveAll/%s/%s", fsysTC.name, path), func(t *testing.T) {
 				t.Parallel()
 				fsys := fsysTC.createFS(t)
-				if r, ok := fsys.(Remover); ok {
+				if r, ok := fsys.(RemoveFileFS); ok {
 					err := r.RemoveAll(path)
 					assertInvalidPathError(t, path, err, "removeall")
 				}

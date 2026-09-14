@@ -26,7 +26,7 @@ const (
 )
 
 var (
-	_ FS        = (*angryFS)(nil)
+	_ WriteFS   = (*angryFS)(nil)
 	_ fs.GlobFS = (*angryFS)(nil)
 
 	errAngry = fs.ErrInvalid

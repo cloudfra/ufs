@@ -36,7 +36,7 @@ const (
 )
 
 var (
-	_ FS = (*archiveFS)(nil)
+	_ WriteFS = (*archiveFS)(nil)
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 

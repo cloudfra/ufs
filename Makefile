@@ -13,13 +13,17 @@
 # limitations under the License.
 
 REGISTRY = ghcr.io/cloudfra
-PROTOS =
 TEST_ASSETS =
 ASSETS = $(PROTOS)
 GO_PACKAGE = github.com/cloudfra/ufs
 ALL_APPS = ufsmount walk
 PRODUCTION=1
 PLAN9_PLATFORMS:=
+
+PROTOS = proto/ufs.pb.go
+PROTOS += proto/ufs_grpc.pb.go
+PROTOS += proto/ufs.pb.gw.go
+PROTOS += proto/ufs.swagger.json
 
 ZIP = zip
 RAR = rar

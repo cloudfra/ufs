@@ -19,11 +19,11 @@ ASSETS = $(PROTOS)
 GO_PACKAGE = github.com/cloudfra/ufs
 ALL_APPS = ufsmount walk
 PRODUCTION=1
+PLAN9_PLATFORMS:=
 
 ZIP = zip
 RAR = rar
 TAR = tar
 SEVENZIP = 7z
 
-include Makefile_testassets.mk
 include Makefile_build.mk

@@ -33,6 +33,70 @@ option features.(pb.go).api_level = API_OPEN;
 // pointers), which is what grpc-gateway's generated code expects.
 option features.field_presence = IMPLICIT;
 
+// FilePermissions captures the access and type flags of a single node in a
+// backend-agnostic form, so a client need not know which OS the backend uses.
+// It tracks individual flags rather than any one OS's permission scheme: a
+// backend that does not report a flag simply leaves it unset.
+message FilePermissions {
+  // The file can be read.
+  bool read = 1;
+
+  // The file can be written.
+  bool write = 2;
+
+  // The file can be executed.
+  bool execute = 3;
+
+  // The entry is a directory.
+  bool dir = 4;
+
+  // The entry is a symbolic link rather than a regular file or directory.
+  bool symlink = 5;
+
+  // Group flag. Semantics are defined by the providing backend.
+  bool group = 6;
+}
+
+// FileAttributes is a per-node metadata record whose `name` references the
+// [File] resource. Beyond that reference it carries the node's identity (uid),
+// its descriptive attributes (absolute path, size, access/type flags), and its
+// lifecycle timestamps.
+message FileAttributes {
+  // The [File] resource this record describes, by its name.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The node's absolute, OS-level path as known by the backend. Empty for
+  // backends with no native absolute path (e.g. object storage).
+  string absolute_path = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Length in bytes for regular files; system-dependent for others.
+  int64 size = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The access and type flags for the node, see [FilePermissions].
+  FilePermissions permission = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Creation time, as reported by backends that track it (e.g. NTFS). AIP-148
+  // standard field; empty if the backend does not provide a creation time.
+  google.protobuf.Timestamp create_time = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The time the node was last modified, as returned by [fs.FileInfo.ModTime]
+  // (the standard AIP-148 `update_time` field). Empty if the backend does not
+  // report one.
+  google.protobuf.Timestamp update_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Last access time, as reported by backends that track it (a file-system
+  // concept, not an AIP-148 standard field).
+  google.protobuf.Timestamp access_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // A stable, system-assigned unique identifier for the node (e.g. the inode
+  // number or a backend object ID), per AIP-148. Empty for backends that have
+  // no such identifier.
+  string uid = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
 // File is the resource representation of a node (regular file or directory)
 // in a [ufs.ReadFS] tree. It mirrors [ufs.FileInfo].
 //

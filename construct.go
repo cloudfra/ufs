@@ -282,6 +282,9 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 	if isMemFSUri(name) {
 		return newMemFS(name)
 	}
+	if isBoltFSUri(name) {
+		return newBoltFS(name)
+	}
 	if isAngryFSUri(name) {
 		return newAngryFS(name)
 	}

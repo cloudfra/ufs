@@ -46,7 +46,7 @@ var (
 		wantString: angryFSPrefix,
 	}
 
-	readWriteFSTestCaseList = []fsTestCase{
+	readWriteFSTestCaseList = append([]fsTestCase{
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
@@ -93,7 +93,7 @@ var (
 			},
 			wantString: memFSPrefix,
 		},
-	}
+	}, boltFSTestCaseList()...)
 
 	readOnlyFSTestCaseList = []fsTestCase{
 		{

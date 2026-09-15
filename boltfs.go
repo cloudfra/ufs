@@ -45,22 +45,21 @@ var (
 	_ fs.GlobFS      = (*boltFS)(nil)
 	_ fs.ReadDirFile = (*boltDirFile)(nil)
 
-	// rootBucket is the name of the top-level bolt bucket that represents the
-	// root ("." / cwdPath) directory of the file system.
-	rootBucket = []byte(cwdPath)
-
-	// dirSelfKey is the reserved key, stored inside every directory bucket
-	// (including the root), that holds that directory's own mode/modTime
-	// record. It can never collide with a real file or directory name because
-	// fs.ValidPath forbids path elements named "." or "..".
-	dirSelfKey = []byte(cwdPath)
+	// selfKey serves two roles that happen to share the same value: it is the
+	// name of the top-level bolt bucket that represents the root ("." /
+	// cwdPath) directory of the file system, and it is the reserved key,
+	// stored inside every directory bucket (including the root), that holds
+	// that directory's own mode/modTime record. It can never collide with a
+	// real file or directory name because fs.ValidPath forbids path elements
+	// named "." or "..".
+	selfKey = []byte(cwdPath)
 )
 
 // boltFS is a file system backed by a single BoltDB (bbolt) file. Directories
 // are represented as nested buckets (see traverseBucket) and files are stored
 // as a key/value pair within their parent directory's bucket. Each directory
 // bucket carries its own metadata (mode, modTime) under the reserved
-// dirSelfKey.
+// selfKey.
 type boltFS struct {
 	mu      sync.RWMutex
 	name    string
@@ -72,54 +71,14 @@ type boltFS struct {
 }
 
 // boltFile is an open read-write handle for a regular file. Writes are
-// buffered in memory and only persisted back to the bolt database when the
-// file is closed, so that a sequence of Write/WriteString calls costs a
-// single bolt transaction instead of one per call.
+// buffered in memory (via the embedded bufFile) and only persisted back to
+// the bolt database when the file is closed, so that a sequence of
+// Write/WriteString calls costs a single bolt transaction instead of one per
+// call.
 type boltFile struct {
-	mu      sync.Mutex
-	fsys    *boltFS
-	path    string
-	content []byte
-	offset  int64
-	mode    fs.FileMode
-	modTime time.Time
-	dirty   bool
-}
-
-func (f *boltFile) Stat() (fs.FileInfo, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return &fsInfo{
-		name:    path.Base(f.path),
-		size:    int64(len(f.content)),
-		mode:    f.mode,
-		modTime: f.modTime,
-		isDir:   false,
-	}, nil
-}
-
-func (f *boltFile) Read(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.offset >= int64(len(f.content)) {
-		return 0, io.EOF
-	}
-	n := copy(p, f.content[f.offset:])
-	f.offset += int64(n)
-	return n, nil
-}
-
-func (f *boltFile) ReadAt(p []byte, off int64) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if off >= int64(len(f.content)) {
-		return 0, io.EOF
-	}
-	n := copy(p, f.content[off:])
-	if off+int64(n) >= int64(len(f.content)) {
-		return n, io.EOF
-	}
-	return n, nil
+	bufFile
+	fsys  *boltFS
+	dirty bool
 }
 
 func (f *boltFile) Write(p []byte) (int, error) {
@@ -138,27 +97,6 @@ func (f *boltFile) WriteString(s string) (int, error) {
 	f.dirty = true
 
 	return len(s), nil
-}
-
-func (f *boltFile) Seek(offset int64, whence int) (int64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	var newOffset int64
-	switch whence {
-	case io.SeekStart:
-		newOffset = offset
-	case io.SeekCurrent:
-		newOffset = f.offset + offset
-	case io.SeekEnd:
-		newOffset = int64(len(f.content)) + offset
-	default:
-		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
-	}
-	if newOffset < 0 {
-		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, newOffset, fs.ErrInvalid))
-	}
-	f.offset = newOffset
-	return f.offset, nil
 }
 
 // Close persists any buffered writes to the bolt database, if the file was
@@ -273,32 +211,32 @@ func decodeBoltRecord(data []byte) (fs.FileMode, time.Time, []byte, error) {
 }
 
 // rootBucketTx returns the top-level bucket representing the file system
-// root. On a writable transaction it is created (along with its dirSelfKey
+// root. On a writable transaction it is created (along with its selfKey
 // metadata) if missing; on a read-only transaction a missing root bucket
 // results in fs.ErrNotExist.
 func rootBucketTx(tx *bolt.Tx) (*bolt.Bucket, error) {
 	if tx.Writable() {
-		bkt, err := tx.CreateBucketIfNotExists(rootBucket)
+		bkt, err := tx.CreateBucketIfNotExists(selfKey)
 		if err != nil {
 			return nil, err
 		}
 		ensureDirSelf(bkt)
 		return bkt, nil
 	}
-	bkt := tx.Bucket(rootBucket)
+	bkt := tx.Bucket(selfKey)
 	if bkt == nil {
 		return nil, fs.ErrNotExist
 	}
 	return bkt, nil
 }
 
-// ensureDirSelf stores a default dirSelfKey record in bkt if one is not
+// ensureDirSelf stores a default selfKey record in bkt if one is not
 // already present. It must only be called on a writable transaction.
 func ensureDirSelf(bkt *bolt.Bucket) {
-	if bkt.Get(dirSelfKey) != nil {
+	if bkt.Get(selfKey) != nil {
 		return
 	}
-	_ = bkt.Put(dirSelfKey, encodeBoltRecord(fs.ModeDir|fs.ModePerm, time.Now(), nil))
+	_ = bkt.Put(selfKey, encodeBoltRecord(fs.ModeDir|fs.ModePerm, time.Now(), nil))
 }
 
 // traverseBucket walks name's directory components, returning the bucket
@@ -432,11 +370,13 @@ func (fsys *boltFS) Open(name string) (fs.File, error) {
 				return err
 			}
 			file = &boltFile{
-				fsys:    fsys,
-				path:    name,
-				content: bytes.Clone(content),
-				mode:    mode,
-				modTime: modTime,
+				fsys: fsys,
+				bufFile: bufFile{
+					path:    name,
+					content: bytes.Clone(content),
+					mode:    mode,
+					modTime: modTime,
+				},
 			}
 			return nil
 		})
@@ -463,7 +403,7 @@ func (fsys *boltFS) openDir(name string) (*boltDirFile, error) {
 			if err != nil {
 				return err
 			}
-			m, mt, _, err := decodeBoltRecord(bkt.Get(dirSelfKey))
+			m, mt, _, err := decodeBoltRecord(bkt.Get(selfKey))
 			if err != nil {
 				return err
 			}
@@ -489,13 +429,13 @@ func (fsys *boltFS) listDir(dir string) ([]fs.DirEntry, error) {
 				return err
 			}
 			return bkt.ForEach(func(k, v []byte) error {
-				if bytes.Equal(k, dirSelfKey) {
+				if bytes.Equal(k, selfKey) {
 					return nil
 				}
 				name := string(k)
 				if v == nil {
 					sub := bkt.Bucket(k)
-					mode, modTime, _, derr := decodeBoltRecord(sub.Get(dirSelfKey))
+					mode, modTime, _, derr := decodeBoltRecord(sub.Get(selfKey))
 					if derr != nil {
 						return derr
 					}
@@ -578,10 +518,12 @@ func (fsys *boltFS) Create(name string) (File, error) {
 	}
 
 	return &boltFile{
-		fsys:    fsys,
-		path:    name,
-		mode:    mode,
-		modTime: now,
+		fsys: fsys,
+		bufFile: bufFile{
+			path:    name,
+			mode:    mode,
+			modTime: now,
+		},
 	}, nil
 }
 
@@ -591,6 +533,11 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 	}
 	if err := validPath("mkdir", name); err != nil {
 		return err
+	}
+	if name == cwdPath {
+		// The root always exists; splitPath(cwdPath) would otherwise yield a
+		// single "." component that collides with selfKey.
+		return nil
 	}
 
 	now := time.Now()
@@ -617,7 +564,7 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 					return err
 				}
 				if !existed {
-					if err := bkt.Put(dirSelfKey, encodeBoltRecord(fs.ModeDir|perm, now, nil)); err != nil {
+					if err := bkt.Put(selfKey, encodeBoltRecord(fs.ModeDir|perm, now, nil)); err != nil {
 						return err
 					}
 					created = append(created, accum)
@@ -731,7 +678,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 				if err != nil {
 					return err
 				}
-				mode, modTime, _, derr := decodeBoltRecord(bkt.Get(dirSelfKey))
+				mode, modTime, _, derr := decodeBoltRecord(bkt.Get(selfKey))
 				if derr != nil {
 					return derr
 				}
@@ -744,7 +691,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 			}
 			keyBytes := []byte(key)
 			if sub := bkt.Bucket(keyBytes); sub != nil {
-				mode, modTime, _, derr := decodeBoltRecord(sub.Get(dirSelfKey))
+				mode, modTime, _, derr := decodeBoltRecord(sub.Get(selfKey))
 				if derr != nil {
 					return derr
 				}
@@ -800,7 +747,7 @@ func (fsys *boltFS) Glob(pattern string) ([]string, error) {
 	var matches []string
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.View(func(tx *bolt.Tx) error {
-			bkt := tx.Bucket(rootBucket)
+			bkt := tx.Bucket(selfKey)
 			if bkt == nil {
 				return nil
 			}
@@ -818,7 +765,7 @@ func (fsys *boltFS) Glob(pattern string) ([]string, error) {
 // (whose own path is prefix), appending matches to *matches.
 func boltGlobWalk(bkt *bolt.Bucket, prefix, pattern string, matches *[]string) error {
 	return bkt.ForEach(func(k, v []byte) error {
-		if bytes.Equal(k, dirSelfKey) {
+		if bytes.Equal(k, selfKey) {
 			return nil
 		}
 		full := string(k)
@@ -859,7 +806,7 @@ func (fsys *boltFS) Remove(name string) error {
 			if sub := bkt.Bucket(keyBytes); sub != nil {
 				empty := true
 				if err := sub.ForEach(func(k, _ []byte) error {
-					if !bytes.Equal(k, dirSelfKey) {
+					if !bytes.Equal(k, selfKey) {
 						empty = false
 					}
 					return nil
@@ -898,7 +845,7 @@ func (fsys *boltFS) RemoveAll(name string) error {
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.Update(func(tx *bolt.Tx) error {
 			if name == cwdPath {
-				bkt := tx.Bucket(rootBucket)
+				bkt := tx.Bucket(selfKey)
 				if bkt == nil {
 					return nil
 				}
@@ -940,7 +887,7 @@ func (fsys *boltFS) RemoveAll(name string) error {
 // read-only and safe to call while enumerating bkt.
 func collectPaths(bkt *bolt.Bucket, prefix string, removed *[]string) error {
 	return bkt.ForEach(func(k, v []byte) error {
-		if bytes.Equal(k, dirSelfKey) {
+		if bytes.Equal(k, selfKey) {
 			return nil
 		}
 		full := prefix + "/" + string(k)
@@ -955,12 +902,12 @@ func collectPaths(bkt *bolt.Bucket, prefix string, removed *[]string) error {
 }
 
 // removeAllChildren deletes every child of bkt (whose own path is prefix),
-// leaving bkt itself (and its dirSelfKey) intact, appending the full path of
+// leaving bkt itself (and its selfKey) intact, appending the full path of
 // everything removed to *removed.
 func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error {
 	var keys [][]byte
 	if err := bkt.ForEach(func(k, _ []byte) error {
-		if bytes.Equal(k, dirSelfKey) {
+		if bytes.Equal(k, selfKey) {
 			return nil
 		}
 		keys = append(keys, append([]byte(nil), k...))
@@ -1005,6 +952,10 @@ func makeBoltFS(name string) (*boltFS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve %q, %w", localPath, err)
 	}
+	// TODO: plumb bolt.Options (Timeout, ReadOnly, NoSync, NoFreelistSync,
+	// etc.) and the file mode through query parameters on the bolt: URI
+	// instead of hardcoding them here, mirroring how other backends (e.g.
+	// nestFS mounts) take configuration via the URI.
 	db, err := bolt.Open(absPath, 0o600, &bolt.Options{
 		Timeout: time.Minute,
 	})

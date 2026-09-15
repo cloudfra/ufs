@@ -21,7 +21,6 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
@@ -47,7 +46,7 @@ var (
 		wantString: angryFSPrefix,
 	}
 
-	readWriteFSTestCaseList = []fsTestCase{
+	readWriteFSTestCaseList = append([]fsTestCase{
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
@@ -94,23 +93,7 @@ var (
 			},
 			wantString: memFSPrefix,
 		},
-		{
-			name: "boltFS",
-			createFS: func(tb testing.TB) FS {
-				fsys, err := makeBoltFS(boltFSPrefix + filepath.Join(mustTemp(tb), "test.db"))
-				if err != nil {
-					tb.Fatalf("cannot create boltFS file system, %s", err)
-				}
-				tb.Cleanup(func() {
-					if err := fsys.Close(); err != nil {
-						tb.Errorf("Close() = %v", err)
-					}
-				})
-				return fsys
-			},
-			wantString: boltFSPrefix,
-		},
-	}
+	}, boltFSTestCaseList()...)
 
 	readOnlyFSTestCaseList = []fsTestCase{
 		{

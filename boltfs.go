@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// go.etcd.io/bbolt has no support for GOARCH=wasm (it has no MaxAllocSize
+// constant for that architecture, and its mmap-based storage model has no
+// wasm implementation regardless); see boltfs_wasm.go for the stub used on
+// that platform.
+//go:build !wasm
+
 package ufs
 
 import (

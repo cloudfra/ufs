@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !wasm
+
 package ufs
 
 import (
@@ -41,6 +43,31 @@ func newTestBoltFS(t *testing.T) FS {
 		}
 	})
 	return fsys
+}
+
+// boltFSTestCaseList returns boltFS's entry for readWriteFSTestCaseList. It
+// is split out (rather than inlined in testing_test.go) and build-tagged
+// alongside the rest of the boltFS backend, with a nil-returning stub in
+// boltfs_wasm_test.go, since boltFS itself is unavailable on GOARCH=wasm.
+func boltFSTestCaseList() []fsTestCase {
+	return []fsTestCase{
+		{
+			name: "boltFS",
+			createFS: func(tb testing.TB) FS {
+				fsys, err := makeBoltFS(boltFSPrefix + filepath.Join(mustTemp(tb), "test.db"))
+				if err != nil {
+					tb.Fatalf("cannot create boltFS file system, %s", err)
+				}
+				tb.Cleanup(func() {
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
+				})
+				return fsys
+			},
+			wantString: boltFSPrefix,
+		},
+	}
 }
 
 func TestIsBoltFSUri(t *testing.T) {

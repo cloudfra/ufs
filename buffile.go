@@ -64,6 +64,9 @@ func (f *bufFile) Read(p []byte) (int, error) {
 func (f *bufFile) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if off < 0 {
+		return 0, pathError("readat", f.path, fmt.Errorf("offset %d is negative: %w", off, fs.ErrInvalid))
+	}
 	if off >= int64(len(f.content)) {
 		return 0, io.EOF
 	}

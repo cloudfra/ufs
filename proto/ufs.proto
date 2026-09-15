@@ -97,6 +97,18 @@ message FileAttributes {
   string uid = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// SnapshotLogEntry records a single write (Create, MkdirAll, Remove, or
+// RemoveAll) made through a [ufs.SnapshotFS].
+message SnapshotLogEntry {
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  string operation = 2;
+
+  // The file's attributes immediately before the operation touched it: for a
+  // create/mkdir, the resulting node; for a remove/removeall, the node that
+  // existed and was deleted. Absent if attributes could not be captured.
+  FileAttributes metadata = 3;
+}
+
 // File is the resource representation of a node (regular file or directory)
 // in a [ufs.ReadFS] tree. It mirrors [ufs.FileInfo].
 //

@@ -1,0 +1,338 @@
+// Copyright 2026 Jeremy Edwards
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package ufs
+
+import (
+	"bytes"
+	"errors"
+	"io/fs"
+	"path/filepath"
+	"sort"
+	"testing"
+
+	"github.com/cloudfra/ufs"
+	ufsTesting "github.com/cloudfra/ufs/testing"
+)
+
+// mountSetup holds the result of mounting a file system for testing.
+type mountSetup struct {
+	mountDir string
+}
+
+// mountBackend describes a host-mount backend for conformance testing.
+type mountBackend struct {
+	name  string
+	mount func(t *testing.T, fsys ufs.ReadFS) mountSetup
+	skip  func(t *testing.T)
+}
+
+// mountBackends is populated by platform-specific init() functions in
+// mount_conformance_linux_test.go and mount_conformance_windows_test.go.
+var mountBackends []mountBackend
+
+// mountConformanceRun runs fn for each registered mount backend as a subtest.
+func mountConformanceRun(t *testing.T, fn func(t *testing.T, backend mountBackend)) {
+	t.Helper()
+	if len(mountBackends) == 0 {
+		t.Skip("no mount backends registered on this platform")
+	}
+	for _, backend := range mountBackends {
+		t.Run(backend.name, func(t *testing.T) {
+			t.Parallel()
+			backend.skip(t)
+			fn(t, backend)
+		})
+	}
+}
+
+func TestMountConformanceReadFile(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		srcDir := t.TempDir()
+		if err := osWriteFile(filepath.Join(srcDir, "hello.txt"), []byte("world")); err != nil {
+			t.Fatal(err)
+		}
+
+		fsys, err := New(t.Context(), srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		data, err := osReadFile(filepath.Join(m.mountDir, "hello.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "world" {
+			t.Errorf("ReadFile = %q, want %q", data, "world")
+		}
+	})
+}
+
+func TestMountConformanceStat(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		srcDir := t.TempDir()
+		content := []byte("test content")
+		if err := osWriteFile(filepath.Join(srcDir, "file.txt"), content); err != nil {
+			t.Fatal(err)
+		}
+		if err := osMkdirAll(filepath.Join(srcDir, "subdir")); err != nil {
+			t.Fatal(err)
+		}
+
+		fsys, err := New(t.Context(), srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		fi, err := osStat(filepath.Join(m.mountDir, "file.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fi.IsDir() {
+			t.Error("file.txt reported as directory")
+		}
+		if fi.Size() != int64(len(content)) {
+			t.Errorf("Size = %d, want %d", fi.Size(), len(content))
+		}
+
+		di, err := osStat(filepath.Join(m.mountDir, "subdir"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !di.IsDir() {
+			t.Error("subdir not reported as directory")
+		}
+	})
+}
+
+func TestMountConformanceReadDir(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		srcDir := t.TempDir()
+		for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+			if err := osWriteFile(filepath.Join(srcDir, name), []byte("data")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := osMkdirAll(filepath.Join(srcDir, "sub")); err != nil {
+			t.Fatal(err)
+		}
+
+		fsys, err := New(t.Context(), srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		entries, err := osReadDir(m.mountDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := make([]string, len(entries))
+		for idx, e := range entries {
+			names[idx] = e.Name()
+		}
+		sort.Strings(names)
+		want := []string{"a.txt", "b.txt", "c.txt", "sub"}
+		if len(names) != len(want) {
+			t.Fatalf("ReadDir got %v, want %v", names, want)
+		}
+		for i, n := range names {
+			if n != want[i] {
+				t.Errorf("entry[%d] = %q, want %q", i, n, want[i])
+			}
+		}
+	})
+}
+
+func TestMountConformanceStatNotExist(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		srcDir := t.TempDir()
+
+		fsys, err := New(t.Context(), srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		_, err = osStat(filepath.Join(m.mountDir, "nonexistent.txt"))
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Stat(nonexistent) = %v, want ErrNotExist", err)
+		}
+	})
+}
+
+func TestMountConformanceNestedRead(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		srcDir := t.TempDir()
+		nested := filepath.Join(srcDir, "a", "b")
+		if err := osMkdirAll(nested); err != nil {
+			t.Fatal(err)
+		}
+		if err := osWriteFile(filepath.Join(nested, "deep.txt"), []byte("deep")); err != nil {
+			t.Fatal(err)
+		}
+
+		fsys, err := New(t.Context(), srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		data, err := osReadFile(filepath.Join(m.mountDir, "a", "b", "deep.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "deep" {
+			t.Errorf("ReadFile = %q, want %q", data, "deep")
+		}
+	})
+}
+
+func TestMountConformanceLargeFile(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		srcDir := t.TempDir()
+		size := 256 * 1024
+		content := make([]byte, size)
+		for i := range content {
+			content[i] = byte(i % 251)
+		}
+		if err := osWriteFile(filepath.Join(srcDir, "large.bin"), content); err != nil {
+			t.Fatal(err)
+		}
+
+		fsys, err := New(t.Context(), srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		data, err := osReadFile(filepath.Join(m.mountDir, "large.bin"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) != size {
+			t.Fatalf("len = %d, want %d", len(data), size)
+		}
+		for i, b := range data {
+			if b != byte(i%251) {
+				t.Fatalf("byte[%d] = %d, want %d", i, b, byte(i%251))
+			}
+		}
+	})
+}
+
+func TestMountConformanceNullFS(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		fsys, err := New(t.Context(), "null:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		entries, err := osReadDir(m.mountDir)
+		if err != nil {
+			t.Fatalf("ReadDir: %v", err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("ReadDir returned %d entries, want 0", len(entries))
+		}
+	})
+}
+
+func TestMountConformanceNestedOverlay(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		uri, err := CreateURI("memory://", map[string]string{
+			"cache": "null:",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fsys, err := New(t.Context(), uri)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		cacheDir := filepath.Join(m.mountDir, "cache")
+		fi, err := osStat(cacheDir)
+		if err != nil {
+			t.Fatalf("Stat cache: %v", err)
+		}
+		if !fi.IsDir() {
+			t.Errorf("cache IsDir = false, want true")
+		}
+	})
+}
+
+func TestMountConformanceRsyncArchive(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		archivePath := filepath.Join("testing", "testassets", "archives", "testassets.tar.gz")
+		archiveFS, err := New(t.Context(), "archive://"+archivePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(ufsTesting.ValidateClose(t, archiveFS))
+
+		m := backend.mount(t, archiveFS)
+
+		memFS, err := New(t.Context(), "memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ufsTesting.ValidateClose(t, memFS)()
+
+		if err := Rsync(osDirFS(m.mountDir), memFS, "."); err != nil {
+			t.Fatalf("Rsync: %v", err)
+		}
+
+		wantFiles := loadTestAssets(t)
+		for filePath, wantData := range wantFiles {
+			got, err := fs.ReadFile(memFS, filePath)
+			if err != nil {
+				t.Errorf("ReadFile(%q): %v", filePath, err)
+				continue
+			}
+			if !bytes.Equal(got, wantData) {
+				t.Errorf("ReadFile(%q): got %d bytes, want %d bytes", filePath, len(got), len(wantData))
+			}
+		}
+	})
+}

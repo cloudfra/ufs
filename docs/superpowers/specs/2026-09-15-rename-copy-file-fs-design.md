@@ -1,15 +1,26 @@
 # Embed RenameFileFS/CopyFileFS in FS — Design Spec
 
+**Revision note:** this spec was first written before PR #281 ("FS Driver
+Registration") landed on `main`. Review feedback on the original version
+pointed out that #281's direction — pushing every non-`nestFS` backend down
+to the `WriteFS` surface — removes most of the "every backend needs a
+stub" problem the original version described. This revision replaces that
+finding and the per-backend plan; the interface change, the dispatch
+algorithm, and the `gcsFS`/`localFS` optimizations are unchanged. It also
+adds a guard for a real gap flagged in review: renaming/copying a path
+that is itself a mount point, or contains one.
+
 ## Goal
 
 `ufs.go` already defines `CopyFileFS` and `RenameFileFS` as optional
 interfaces, but `FS` does not embed them yet (the embedding is stubbed out
 with a `// TODO: Implement RenameFS` comment). Embed both interfaces into
-`FS` so every writable backend exposes `Rename` and `CopyFile`, and make
-`nestFS` — the mount-aware dispatcher returned by `New` — detect when the
-source and destination of a rename/copy land on the same underlying
-backend and that backend implements the optimized interface, delegating to
-it directly instead of falling back to a generic read+write.
+`FS` so `nestFS` — the mount-aware dispatcher returned by `New` and the
+*only* type meant to implement `FS` — exposes `Rename` and `CopyFile`,
+detecting when the source and destination of a rename/copy land on the
+same underlying backend and that backend implements the optimized
+interface, delegating to it directly instead of falling back to a generic
+read+write.
 
 ## Current state
 
@@ -36,39 +47,88 @@ contract every implementation must follow:
 - Neither is guaranteed atomic; callers must not assume partial failure
   leaves either side untouched.
 
-No backend implements either interface today — grepping the codebase
-turns up zero `func (fsys *X) Rename(` or `CopyFile(` definitions. Since
-`FS` embeds `WriteFS` (not yet `CopyFileFS`/`RenameFileFS`), this compiles
-fine today.
+No backend implements either interface today. Since `FS` embeds `WriteFS`
+(not yet `CopyFileFS`/`RenameFileFS`), this compiles fine today.
 
-## Key finding: every rw backend is returned directly as `FS`
+Separately, `main` gained a real driver registry in PR #281
+(`register.go`): `Register(Driver{Name, MatchFunc, CreateFunc, Priority})`,
+with every in-tree backend (`angryFS`, `gcsFS`, `localFS`, `memFS`,
+`nullFS`, `archiveFS`, `gitFS`/`tempMountFS`) self-registering via its own
+`init()`. `construct.go`'s `newBaseFS` is now just
+`getRegistrar().match(name)` + `.create(ctx, name)` — the old hardcoded
+`isXFSUri` chain is gone. This is orthogonal to (and already solves) the
+"how does `New()` find a backend" problem; it does not by itself change
+what interface a backend must implement to be usable, which is what this
+spec is about.
 
-`CLAUDE.md`'s architecture table implies only `nestFS` needs new methods
-("Every concrete value is a `*nestFS`" — true only for the value returned
-by the *public* `New()`). In practice, many more concrete types are
-returned as `FS` from internal constructors (`newLocalFS`, `newMemFS`,
-`newAngryFS`, `newNullFS`, `newBaseFS`, `newFaultFS`, `newTempMountFS`,
-`newGitFS`, `NewEmbedFS`, and `newBaseFS`'s direct returns of `*archiveFS`
-/ `*gcsFS`). Since Go requires a concrete type to implement every method
-of an interface at the point it's assigned to that interface, embedding
-`CopyFileFS`/`RenameFileFS` into `FS` is a **compile-time forcing
-function**: every one of these concrete types must gain `Rename` and
-`CopyFile` methods, not just `nestFS`.
+## Key finding: the backend-facing surface is still typed `FS`, not `WriteFS`
 
-Confirmed by attempting the interface change: the build breaks in
-`nestfs.go`, `localfs.go` (via `newLocalFS`), `memfs.go`, `angryfs.go`,
-`nullfs.go`, `archivefs.go`, `gcsfs.go`, `readonlyfs.go`, `faultfs.go`,
-`tempmountfs.go`, and `embedfs.go` — eleven files, not one.
+Despite PR #272's title ("Split writable backends into WriteFS, keeping
+only nestFS as FS"), the actual field and function types that sit between
+a driver and `nestFS` are still `FS` today:
 
-A second finding changed the plan for one of them: `gcsFS` looks
-read-only in the architecture table (`Type: ro`), but its `Create`,
-`MkdirAll`, `Remove`, and `RemoveAll` are **real** GCS API calls, already
-covered by `TestGCSFS`, `TestGCSFSRemove`, `TestGCSFSRemoveAll` against a
-fake GCS server (`github.com/fsouza/fake-gcs-server/fakestorage`). The
-`ro` in the table describes the typical deployment (wrapped in
-`ReadOnly()` by a mount spec), not the concrete type's capability. Its
-`CopyFile`/`Rename` should follow its *own* real pattern, not the
-error-stub pattern used by genuinely read-only types like `archiveFS`.
+- `nestFS.fsys` is typed `FS`.
+- `Driver.CreateFunc` (in `register.go`) is
+  `func(context.Context, string) (FS, error)` — every backend's
+  registered constructor (`newAngryFS`, `newGCSFS`, `newLocalFS`,
+  `newMemFS`, `newNullFS`, the `archive`/`http-archive` closures in
+  `archivefs.go`, `newGitFS`) must return `FS` to satisfy it.
+- `ReadOnly(inner ReadFS) FS`, `newFaultFS(inner FS, cfg) (FS, error)`,
+  and `tempMountFS.lfs FS` — the three wrapper/passthrough layers that sit
+  between a raw backend and `nestFS` — are all `FS`-typed too.
+- `FSBuilder.MountFS(path string, fsys FS)` and its internal
+  `fsBuildMount.fsys FS` field are the same.
+- `NewEmbedFS(name string, fsys embed.FS) FS` is the same.
+
+#272 already updated each backend's own `var _ WriteFS = (*X)(nil)`
+compile-time assertion (previously `_ FS`), correctly anticipating that
+backends themselves should only need `WriteFS`. But the *plumbing that
+carries a backend into `nestFS`* was never changed, so today, embedding
+`CopyFileFS`/`RenameFileFS` into `FS` would still be a compile-time
+forcing function requiring `Rename`/`CopyFile` on every one of: `angryFS`,
+`archiveFS`, `embedFS`, `faultFS`, `gcsFS`, `localFS`, `memFS`, `nullFS`,
+`readOnlyFS`, `tempMountFS` — ten types, for no reason other than the
+plumbing's declared type.
+
+**Fix (this spec's actual scope, per review feedback): re-type the
+plumbing as `WriteFS`.** Change:
+
+| Symbol | From | To |
+|---|---|---|
+| `nestFS.fsys` (nestfs.go) | `FS` | `WriteFS` |
+| `Driver.CreateFunc` (register.go) | `func(context.Context, string) (FS, error)` | `func(context.Context, string) (WriteFS, error)` |
+| Every backend's registered constructor (`newAngryFS`, `newGCSFS`, `newLocalFS`, `newMemFS`, `newNullFS`, `newGitFS`, the two closures in `archivefs.go`'s `init()`, `newTempMountRemoteArchiveFS`) | return `(FS, error)` | return `(WriteFS, error)` |
+| `ReadOnly` (readonlyfs.go) | `func ReadOnly(inner ReadFS) FS` | `func ReadOnly(inner ReadFS) WriteFS` |
+| `newFaultFS` / `faultFS.inner` (faultfs.go) | `FS` | `WriteFS` |
+| `tempMountFS.lfs` (tempmountfs.go) | `FS` | `WriteFS` |
+| `FSBuilder.fsBuildMount.fsys`, `FSBuilder.MountFS` (construct.go) | `FS` | `WriteFS` |
+| `applyWrappers` (construct.go) | `func(fsys FS, opts MountSpecOptions) (FS, error)` | `func(fsys WriteFS, opts MountSpecOptions) (WriteFS, error)` |
+| `makeNestFS` (nestfs.go) | `func(ctx context.Context, fsys FS, args ...FSArgs) *nestFS` | `func(ctx context.Context, fsys WriteFS, args ...FSArgs) *nestFS` |
+| `NewEmbedFS` (embedfs.go) | `func NewEmbedFS(name string, fsys embed.FS) FS` | `func NewEmbedFS(name string, fsys embed.FS) WriteFS` |
+
+None of these ten backend/wrapper types need code changes beyond their
+return-type annotations — they already implement everything `WriteFS`
+requires. `nestFS` becomes the *only* type in the package required to
+implement `CopyFileFS`/`RenameFileFS`, matching its existing sole-`FS`
+role (`var _ FS = (*nestFS)(nil)`).
+
+**Compatibility note:** `ReadOnly`, `FSBuilder.MountFS`, and `NewEmbedFS`
+are public API. This narrows their return/parameter type from `FS` to
+`WriteFS`. A caller passing an `FS` value in is unaffected (`FS` embeds
+`WriteFS`, so it's still assignable); a caller that declared
+`var x ufs.FS = ufs.ReadOnly(...)` breaks and must change the declared
+type to `ufs.WriteFS`. Given #272 already signaled this direction and the
+package is mid-refactor (multiple breaking interface changes landed
+recently: #272, #281), this is treated as an acceptable breaking change
+rather than something to shim around.
+
+`gcsFS` still gets its own optimized `CopyFile`/`Rename` (see below) —
+that finding from the original spec is unchanged: its `Create`/`Remove`
+are real GCS API calls (covered by `TestGCSFS`, `TestGCSFSRemove`,
+`TestGCSFSRemoveAll` against a fake GCS server), so its `Rename`/`CopyFile`
+should be real GCS server-side operations, not stubs — this is now purely
+an *optional* addition (`gcsFS` implementing `CopyFileFS`/`RenameFileFS`
+for `nestFS` to detect), not something required for `gcsFS` to compile.
 
 ## Architecture
 
@@ -95,6 +155,7 @@ backend-relative sub-path via `getFSAndSubpath(name) (*nestFS, string, error)`
 ```go
 func (fsys *nestFS) Rename(oldPath, newPath string) error {
 	// validPath both, reject "." with fs.ErrPermission
+	// reject if oldPath is, or contains, a mount boundary (see below)
 	oldMountFS, oldSub, err := fsys.getFSAndSubpath(oldPath)
 	newMountFS, newSub, err := fsys.getFSAndSubpath(newPath)
 
@@ -137,11 +198,42 @@ Both fallbacks operate through `fsys` itself as both "source FS" and
 "dest FS" (same object, different paths), so cross-mount routing is
 handled automatically by `nestFS`'s own `Open`/`Create`/`Stat`/`Remove`.
 
-`copyFileGeneric` is also reused directly by `localFS.CopyFile` (see
-below), since `localFS` has no native copy optimization to offer beyond
-what `io.Copy` already gets for free.
+`copyFileGeneric` is the only option for `localFS.CopyFile` too if
+`localFS` chooses to implement `CopyFileFS` — see below, `localFS` does
+not implement it at all, so this is purely an `op.go` helper for the
+`nestFS` fallback.
 
-### Correctness gotcha: `os.Root.Rename` does not error on existing destination
+### Correctness gotcha #1: mount boundaries (review feedback)
+
+Review flagged: *"what if we are attempting to move a directory that is
+actually a mounted file?"* Two distinct hazards, both handled the same
+way — reject up front rather than silently corrupting mount state:
+
+1. **`oldPath` is itself a mount point**, or a directory *containing* one
+   (e.g. renaming `"ab"` when a separate `FS` is mounted at `"ab/nested"`).
+   `nestFS`'s directory-walk fallback (`ForEachFilename` via `fs.WalkDir`)
+   transparently descends into mounted sub-FSes when reading, so it would
+   happily copy files that live in a *different* backend into the
+   destination — silently changing which backend owns that data — and
+   then `RemoveAll(oldPath)` would delete the source side while the
+   mount's registration in `fsys.mounts.m` still points at the
+   now-nonexistent old path. Fix: before doing anything, check whether
+   `oldPath` equals or prefixes any entry in `fsys.mounts.m` (a small
+   helper alongside `mountMap.getDirectoryList`/`getClosestMount`); if so,
+   return an error wrapping `fs.ErrInvalid` ("cannot rename/copy a path
+   that is or contains a mount point").
+2. **`oldPath` is a virtual archive-mount directory** (`isMountedArchiveDir`,
+   e.g. `"foo.zip.d"`) — synthetic, backed by the real file `"foo.zip"`,
+   not a normal directory. Same fix: reject with the same error before
+   proceeding.
+
+This is a deliberate scope limitation, not full support for relocating a
+mount — moving a mount's registration correctly (updating `mountMap.m`,
+handling the mounted `*nestFS`'s own lifecycle) is a materially bigger
+feature nobody has asked for. Rejecting clearly is safe; silently
+corrupting mount state is not.
+
+### Correctness gotcha #2: `os.Root.Rename` does not error on existing destination
 
 `os.Rename` / `os.Root.Rename` follow POSIX `rename(2)` semantics: if
 `newpath` exists and is not a directory, it is **silently replaced**, not
@@ -158,46 +250,46 @@ interface not requiring it.
 
 ## Per-backend plan
 
+Only three types need any code beyond the type-signature changes in the
+table above — and for all three, implementing `CopyFileFS`/`RenameFileFS`
+is now purely optional (an opt-in optimization `nestFS` detects), not
+required for anything to compile:
+
 | Backend | Rename | CopyFile | Rationale |
 |---|---|---|---|
-| `nestFS` | dispatch-or-fallback (above) | dispatch-or-fallback (above) | the mount-aware router |
-| `localFS` | `Stat(dst)` existence check, then `osFS.Rename` | `copyFileGeneric` shared helper | `os.Root.Rename` is a real atomic optimization; no native bulk-copy primitive exists on `os.Root`, and `io.Copy` between two `*os.File` already gets the `copy_file_range`/sendfile fast path via `os.File`'s `ReaderFrom`/`WriterTo` — confirmed `wrapFile` returns `*os.File` unwrapped since it already satisfies `File` |
+| `nestFS` | dispatch-or-fallback (above), with the mount-boundary guard | dispatch-or-fallback (above) | the only type required to implement `FS` |
+| `localFS` | `Stat(dst)` existence check, then `osFS.Rename` | *(not implemented — falls back to `nestFS`'s generic `copyFileGeneric`)* | `os.Root.Rename` is a real atomic optimization; no native bulk-copy primitive exists on `os.Root`, and `io.Copy` between two `*os.File` already gets the `copy_file_range`/sendfile fast path via `os.File`'s `ReaderFrom`/`WriterTo` — confirmed `wrapFile` returns `*os.File` unwrapped since it already satisfies `File`, so the generic fallback is already about as fast as a bespoke implementation would be |
 | `memFS` | move matching map keys (exact key + `prefix+"/"` for descendants) under one lock, no data copy | duplicate the node's `content` bytes directly (`bytes.Clone`); error if source `isDir` | flat-map storage makes both genuinely cheaper than the generic Open/Create round trip |
-| `gcsFS` | file: `CopyFile` + `Remove`. Directory: list objects under the `oldPath+"/"` prefix, server-side copy each to the equivalent `newPath` key, then `RemoveAll(oldPath)` | `bucket.Object(dst).CopierFrom(bucket.Object(src)).Run(ctx)` — GCS server-side copy, no bytes transit through this process | matches its *actual* existing pattern (real API calls, not stubs); confirmed with user this scope is in, including directory/prefix iteration, over the safer ErrPermission-stub alternative |
-| `angryFS` | returns `errAngry` | returns `errAngry` | matches every other method on this type |
-| `nullFS` | no-op, returns `nil` | no-op, returns `nil` | matches `Remove`/`MkdirAll`/`RemoveAll` |
-| `archiveFS` | `fs.ErrPermission` ("archiveFS mounts are read-only, cannot ...") | same | matches existing `Create`/`Remove` stub pattern — this one *is* genuinely read-only |
-| `readOnlyFS` | `fs.ErrPermission` | `fs.ErrPermission` | matches `Create`/`Remove` |
-| `embedFS` | `fs.ErrPermission` ("embedFS is read-only, cannot ...") | same | matches `Create`/`Remove` |
-| `faultFS` | delegates to `inner` through `maybeInjectFault` | same | matches every other passthrough method |
-| `tempMountFS` | delegates to `fsys.lfs` | delegates to `fsys.lfs` | thin wrapper around an inner `FS` (always a `*localFS` today) |
+| `gcsFS` | file: `CopyFile` + `Remove`. Directory: list objects under the `oldPath+"/"` prefix, server-side copy each to the equivalent `newPath` key, then `RemoveAll(oldPath)` | `bucket.Object(dst).CopierFrom(bucket.Object(src)).Run(ctx)` — GCS server-side copy, no bytes transit through this process | matches its *actual* existing pattern (real API calls, not stubs); confirmed with user this scope is in, including directory/prefix iteration, over a permission-denied stub |
 
-Every `var _ WriteFS = (*X)(nil)` compile-time assertion for a type in
-this list becomes `var _ FS = (*X)(nil)`, so the compiler enforces full
-conformance at the declaration site instead of wherever the type happens
-to be returned as `FS`.
+Every other backend (`angryFS`, `archiveFS`, `embedFS`, `faultFS`,
+`nullFS`, `readOnlyFS`, `tempMountFS`) needs **no changes** once the
+plumbing is `WriteFS`-typed — they simply don't implement
+`CopyFileFS`/`RenameFileFS`, and `nestFS`'s generic fallback (which only
+needs `WriteFS`: `Open`/`Create`/`Stat`/`Remove`/`RemoveAll`/`MkdirAll`)
+handles them correctly, including read-only ones (the fallback's own
+`Create`/`Remove` calls surface the backend's existing `fs.ErrPermission`
+naturally).
 
 ## Files to change
 
 | File | Change |
 |---|---|
 | `ufs.go` | Embed `CopyFileFS`, `RenameFileFS` into `FS`; update doc comment |
+| `register.go` | `Driver.CreateFunc` return type `FS` → `WriteFS` |
+| `nestfs.go` | `nestFS.fsys` and `makeNestFS` param type `FS` → `WriteFS`; add `Rename`, `CopyFile` with same-mount dispatch + fallback; add the mount-boundary check helper used by both |
+| `construct.go` | `applyWrappers`, `FSBuilder.fsBuildMount.fsys`, `FSBuilder.MountFS` type `FS` → `WriteFS` |
+| `readonlyfs.go` | `ReadOnly` return type `FS` → `WriteFS` |
+| `faultfs.go` | `faultFS.inner`, `newFaultFS` types `FS` → `WriteFS` |
+| `tempmountfs.go` | `tempMountFS.lfs` type `FS` → `WriteFS`; update `newTempMountRemoteArchiveFS`/related return types |
+| `embedfs.go` | `NewEmbedFS` return type `FS` → `WriteFS` |
+| `angryfs.go`, `gcsfs.go`, `localfs.go`, `memfs.go`, `nullfs.go`, `archivefs.go`, `gitfs.go` | Registered constructor return type `FS` → `WriteFS` (no behavior change) |
 | `op.go` | Add `copyFileGeneric` and `renameAcrossFS` helpers |
-| `nestfs.go` | Add `Rename`, `CopyFile` with same-mount dispatch + fallback |
-| `localfs.go` | Add `Rename` (existence check + `osFS.Rename`), `CopyFile` (via `copyFileGeneric`) |
+| `localfs.go` | Add `Rename` (existence check + `osFS.Rename`) |
 | `memfs.go` | Add `Rename` (in-place key move), `CopyFile` (in-place content duplicate) |
 | `gcsfs.go` | Add `Rename`, `CopyFile` using `CopierFrom` server-side copy |
-| `angryfs.go` | Add `Rename`/`CopyFile` returning `errAngry`; upgrade assertion to `FS` |
-| `nullfs.go` | Add no-op `Rename`/`CopyFile`; upgrade assertion to `FS` |
-| `archivefs.go` | Add `Rename`/`CopyFile` returning `fs.ErrPermission`; upgrade assertion to `FS` |
-| `readonlyfs.go` | Add `Rename`/`CopyFile` returning `fs.ErrPermission`; upgrade assertion to `FS` |
-| `embedfs.go` | Add `Rename`/`CopyFile` returning `fs.ErrPermission`; upgrade assertion to `FS` |
-| `faultfs.go` | Add `Rename`/`CopyFile` delegating through `maybeInjectFault`; upgrade assertion to `FS` |
-| `tempmountfs.go` | Add `Rename`/`CopyFile` delegating to `fsys.lfs`; add `FS` assertion |
 | `testing_test.go` | Extend shared table-driven harness with rename/copy cases across all backends |
-| `nestfs_test.go` | Add a test-only fake `WriteFS` implementing `RenameFileFS`/`CopyFileFS` with call counters, mounted twice, to prove same-mount dispatch and cross-mount fallback |
-| `readonlyfs_test.go` | Add `CopyFile`/`Rename` to the existing table-driven permission-denied tests |
-| `faultfs_test.go` | Add `CopyFile`/`Rename` to the existing no-fault/always-fault table tests |
+| `nestfs_test.go` | Add a test-only fake `WriteFS` implementing `RenameFileFS`/`CopyFileFS` with call counters, mounted twice, to prove same-mount dispatch and cross-mount fallback; add a mount-boundary rejection test |
 | `gcsfs_test.go` | Add `CopyFile`/`Rename` tests against the fake GCS server (file copy, directory/prefix rename, dest-exists error, missing-src error) |
 
 ## Test plan
@@ -212,6 +304,8 @@ variants via `appendNestFSTestCase`):
 - Rename onto an existing destination → `fs.ErrExist`.
 - Rename a missing source → `fs.ErrNotExist`.
 - Rename `"."` → `fs.ErrPermission`.
+- Rename/copy a path that is, or contains, a mount point → rejected with
+  the mount-boundary error, mount state left untouched.
 - Copy a file; verify both paths exist with identical content, source
   untouched.
 - Copy a directory → error (file-only interface).
@@ -232,6 +326,8 @@ variants via `appendNestFSTestCase`):
 - Neither `Rename` nor `CopyFile` is atomic across mounts, or for
   directory renames within a single mount that falls back to the generic
   path (matches the documented contract).
+- Renaming/copying a path that is or contains a mount point is rejected
+  outright rather than supported — see "Correctness gotcha #1" above.
 - The generic directory-rename fallback does not recreate wholly empty
   subdirectories at the destination — an existing limitation shared with
   `Rsync`, not a new regression.
@@ -244,8 +340,9 @@ variants via `appendNestFSTestCase`):
 
 ## Status
 
-Design only — no implementation code has landed yet. This spec captures
-the brainstorming and discovery from that session (including the interface
-survey that expanded scope from "just `nestFS`" to eleven files) so the
-next implementation pass can start from a verified plan instead of
-re-deriving it via trial compilation.
+Design only — no implementation code has landed yet. This revision
+incorporates PR #280 review feedback: the `WriteFS`-vs-`FS` plumbing fix
+that shrinks the required-change set from ten backend types down to just
+`nestFS`, plus the two optional optimizers (`localFS`/`memFS`) and
+`gcsFS`; and the mount-boundary guard for rename/copy. Next step is the
+implementation pass against this plan.

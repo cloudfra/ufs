@@ -134,7 +134,7 @@ type ReadFS interface {
 
 	fmt.Stringer
 
-	deviceInfoGet
+	DeviceInfoGet
 
 	// TODO: Implement ExternalPathGet
 
@@ -257,4 +257,27 @@ type Watcher interface {
 	// The hook is called serially from a single background goroutine; it
 	// should not block for long.
 	Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error)
+}
+
+// deviceInfo contains platform agnostic information about the backing device of this file system.
+type DeviceInfo struct {
+	// Name of the device as specified by the OS or the ufs implementation
+	Name string
+	// DeviceType is the type of device that backs the FS.
+	DeviceType string
+	// ThreadCount is the recommended number of threads to access the device.
+	ThreadCount int
+}
+
+// String representation of deviceInfo.
+func (info DeviceInfo) String() string {
+	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d}", info.Name, info.DeviceType, info.ThreadCount)
+}
+
+// deviceInfoGet provides an interface to obtain the device backend information of a FS.
+type DeviceInfoGet interface {
+	// GetDeviceInfo returns a map based on the relative path of the device.
+	//
+	// The root of the FS has the key ".".
+	GetDeviceInfo() map[string]DeviceInfo
 }

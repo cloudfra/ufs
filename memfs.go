@@ -209,13 +209,8 @@ func (fsys *memFS) Open(name string) (fs.File, error) {
 		return fsys.openDir(name)
 	}
 	return &memFile{
-		fsys: fsys,
-		bufFile: bufFile{
-			path:    name,
-			content: bytes.Clone(node.content),
-			mode:    node.mode,
-			modTime: node.modTime,
-		},
+		fsys:    fsys,
+		bufFile: newBufFile(name, bytes.Clone(node.content), node.mode, node.modTime),
 	}, nil
 }
 
@@ -313,12 +308,8 @@ func (fsys *memFS) Create(name string) (File, error) {
 	}
 
 	return &memFile{
-		fsys: fsys,
-		bufFile: bufFile{
-			path:    name,
-			mode:    node.mode,
-			modTime: node.modTime,
-		},
+		fsys:    fsys,
+		bufFile: newBufFile(name, nil, node.mode, node.modTime),
 	}, nil
 }
 

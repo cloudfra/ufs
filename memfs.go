@@ -16,6 +16,7 @@ package ufs
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -38,6 +39,14 @@ var (
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
 )
+
+func init() {
+	Register(Driver{
+		Name:       "memory",
+		MatchFunc:  isMemFSUri,
+		CreateFunc: newMemFS,
+	})
+}
 
 var errDirNotEmpty = errors.New("directory not empty")
 
@@ -635,7 +644,7 @@ func (fsys *memFS) RemoveAll(name string) error {
 	return nil
 }
 
-func newMemFS(name string) (FS, error) {
+func newMemFS(_ context.Context, name string) (FS, error) {
 	return makeMemFS(name), nil
 }
 

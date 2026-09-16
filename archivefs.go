@@ -48,6 +48,22 @@ var (
 	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
 )
 
+func init() {
+	Register(Driver{
+		Name:      "archive",
+		MatchFunc: isArchiveFSUri,
+		CreateFunc: func(ctx context.Context, name string) (FS, error) {
+			return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
+		},
+	})
+	Register(Driver{
+		Name:       "http-archive",
+		MatchFunc:  isTempMountRemoteArchiveURI,
+		CreateFunc: newTempMountRemoteArchiveFS,
+		Priority:   10000,
+	})
+}
+
 func isArchiveFSUri(name string) bool {
 	return strings.HasPrefix(name, archiveFSPrefix)
 }
@@ -280,6 +296,10 @@ func makeArchiveFS(fsys fs.FS, name string, closer io.Closer) *archiveFS {
 		name:   name,
 		closer: closer,
 	}
+}
+
+func isTempMountRemoteArchiveURI(name string) bool {
+	return strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://")
 }
 
 func newTempMountRemoteArchiveFS(ctx context.Context, name string) (FS, error) {

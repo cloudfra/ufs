@@ -37,7 +37,7 @@ func seedData(seed byte, n int) []byte {
 func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
 	t.Helper()
 	dir := t.TempDir()
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
 
 // mustMemFS creates a memFS and attaches t.Cleanup to close it.
 func mustMemFS(tb testing.TB, name string) FS {
-	fsys, err := newMemFS(name)
+	fsys, err := newMemFS(tb.Context(), name)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func mustMemFS(tb testing.TB, name string) FS {
 // --- Copy benchmarks (pure memFS — no backend issues) ---
 
 func BenchmarkCopySmall(b *testing.B) {
-	src, err := newMemFS("memory://src")
+	src, err := newMemFS(b.Context(), "memory://src")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func BenchmarkCopySmall(b *testing.B) {
 	}
 
 	for b.Loop() {
-		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -108,7 +108,7 @@ func BenchmarkCopySmall(b *testing.B) {
 }
 
 func BenchmarkCopyMedium(b *testing.B) {
-	src, err := newMemFS("memory://src")
+	src, err := newMemFS(b.Context(), "memory://src")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func BenchmarkCopyMedium(b *testing.B) {
 	}
 
 	for b.Loop() {
-		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -138,7 +138,7 @@ func BenchmarkCopyMedium(b *testing.B) {
 }
 
 func BenchmarkCopyLarge(b *testing.B) {
-	src, err := newMemFS("memory://src")
+	src, err := newMemFS(b.Context(), "memory://src")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func BenchmarkCopyLarge(b *testing.B) {
 	}
 
 	for b.Loop() {
-		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -174,7 +174,7 @@ func BenchmarkRsyncSmall(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -192,7 +192,7 @@ func BenchmarkRsyncMedium(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -210,7 +210,7 @@ func BenchmarkRsyncLarge(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -660,7 +660,7 @@ func BenchmarkMemFSRemoveAll(b *testing.B) {
 
 func BenchmarkNestFSReadDir(b *testing.B) {
 	dir := b.TempDir()
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(b.Context(), dir)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -686,7 +686,7 @@ func BenchmarkNestFSReadDir(b *testing.B) {
 
 func BenchmarkNestFSReadFile(b *testing.B) {
 	dir := b.TempDir()
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(b.Context(), dir)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -714,7 +714,7 @@ func BenchmarkNestFSReadFile(b *testing.B) {
 
 func BenchmarkLocalFSReadDir(b *testing.B) {
 	dir := b.TempDir()
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(b.Context(), dir)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -741,7 +741,7 @@ func BenchmarkLocalFSReadDir(b *testing.B) {
 
 func BenchmarkLocalFSListFiles(b *testing.B) {
 	dir := b.TempDir()
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(b.Context(), dir)
 	if err != nil {
 		b.Fatal(err)
 	}

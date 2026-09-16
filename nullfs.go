@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -50,6 +51,14 @@ var (
 	}
 	nullDeviceInfoMap = newDeviceInfoMap(nullDeviceInfo)
 )
+
+func init() {
+	Register(Driver{
+		Name:       "null",
+		MatchFunc:  isNullFSUri,
+		CreateFunc: newNullFS,
+	})
+}
 
 type nullFile struct {
 	name string
@@ -237,7 +246,7 @@ func (fsys *nullFS) RemoveAll(name string) error {
 	return nil
 }
 
-func newNullFS(name string) (FS, error) {
+func newNullFS(_ context.Context, name string) (FS, error) {
 	return makeNullFS(name), nil
 }
 

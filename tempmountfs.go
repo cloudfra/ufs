@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -96,7 +97,7 @@ func (fsys *tempMountFS) RemoveAll(name string) error {
 	return fsys.lfs.RemoveAll(name)
 }
 
-func newTempMountFS(uri string, prepare func(string) error) (FS, error) {
+func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (FS, error) {
 	tempDir, cleanup, err := createOSTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
@@ -108,7 +109,7 @@ func newTempMountFS(uri string, prepare func(string) error) (FS, error) {
 		return nil, joinErrors(fmt.Errorf("cannot prepare temp directory %s, %w", uri, err), cleanupErr)
 	}
 
-	lfs, err := newLocalFS(tempDir)
+	lfs, err := newLocalFS(ctx, tempDir)
 	if err != nil {
 		cleanupErr := cleanup()
 		return nil, joinErrors(fmt.Errorf("cannot create local fs for temp directory %s, %w", uri, err), cleanupErr)

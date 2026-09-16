@@ -18,6 +18,7 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,14 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )
+
+func init() {
+	Register(Driver{
+		Name:       "git",
+		MatchFunc:  isGitFSUri,
+		CreateFunc: newGitFS,
+	})
+}
 
 func prepareGitDirectory(name string, gitURL string) error {
 	var err error
@@ -44,12 +53,12 @@ func prepareGitDirectory(name string, gitURL string) error {
 	return nil
 }
 
-func newGitFS(name string) (FS, error) {
+func newGitFS(ctx context.Context, name string) (FS, error) {
 	if !isGitFSUri(name) {
 		return nil, fmt.Errorf("%q is not a valid git repository", name)
 	}
 
-	return newTempMountFS(name, func(tempDir string) error {
+	return newTempMountFS(ctx, name, func(tempDir string) error {
 		return prepareGitDirectory(tempDir, name)
 	})
 }

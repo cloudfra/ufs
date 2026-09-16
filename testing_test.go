@@ -51,7 +51,7 @@ var (
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
 				dir := mustTemp(tb)
-				fsys, err := newLocalFS(dir)
+				fsys, err := newLocalFS(tb.Context(), dir)
 				if err != nil {
 					tb.Fatalf("cannot create localFS file system, %s", err)
 				}
@@ -67,7 +67,7 @@ var (
 		{
 			name: "tempMountFS",
 			createFS: func(tb testing.TB) FS {
-				fsys, err := newTempMountFS("test://", func(string) error { return nil })
+				fsys, err := newTempMountFS(tb.Context(), "test://", func(string) error { return nil })
 				if err != nil {
 					tb.Fatalf("cannot create tempMountFS file system, %s", err)
 				}
@@ -256,11 +256,13 @@ func mkdirForTest(tb testing.TB, fsys FS, dirs ...string) {
 	}
 }
 
+/*
 func newFSFuncWithoutContext(fn func(name string) (FS, error)) func(context.Context, string) (FS, error) {
 	return func(_ context.Context, name string) (FS, error) {
 		return fn(name)
 	}
 }
+*/
 
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
 	tb.Helper()

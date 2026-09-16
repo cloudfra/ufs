@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -34,6 +35,15 @@ var (
 	_ File             = (*os.File)(nil)
 	_ localFSInterface = (*localFS)(nil)
 )
+
+func init() {
+	Register(Driver{
+		Name:       "local",
+		MatchFunc:  isLocalFSUri,
+		CreateFunc: newLocalFS,
+		Priority:   10000,
+	})
+}
 
 type localFSInterface interface {
 	WriteFS
@@ -224,10 +234,20 @@ func makeLocalFS(name string) (*localFS, error) {
 	}, nil
 }
 
-func newLocalFS(name string) (FS, error) {
+func newLocalFS(ctx context.Context, name string) (FS, error) {
+	if isMountableArchivePath(name) {
+		return newArchiveFSFromLocalFS(ctx, name)
+	}
 	return makeLocalFS(name)
 }
 
 func isLocalFSUri(name string) bool {
-	return strings.HasPrefix(name, localFSPrefix) || !strings.Contains(name, "://")
+	if strings.HasPrefix(name, localFSPrefix) || !strings.Contains(name, "://") {
+		return true
+	}
+	stat, err := osStat(name)
+	if err == nil && stat != nil {
+		return true
+	}
+	return false
 }

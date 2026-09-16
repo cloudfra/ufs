@@ -271,13 +271,6 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 
 	dirs := fsys.mounts.getDirectoryList(name)
 	for _, dir := range dirs {
-		if strings.HasSuffix(dir, archiveDirExt) && isMountableArchivePath(strings.TrimSuffix(dir, archiveDirExt)) {
-			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
-			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
-				fsys.mounts.remove(path.Join(name, dir))
-				continue
-			}
-		}
 		appendEntry[dir] = makeVirtualDirEntry(dir)
 	}
 

@@ -92,49 +92,8 @@ type memFS struct {
 // immediately synced back to the filesystem node so that subsequent Open calls
 // observe the latest content.
 type memFile struct {
-	mu      sync.Mutex
-	fsys    *memFS
-	path    string
-	content []byte
-	offset  int64
-	mode    fs.FileMode
-	modTime time.Time
-}
-
-func (f *memFile) Stat() (fs.FileInfo, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return &fsInfo{
-		name:    path.Base(f.path),
-		size:    int64(len(f.content)),
-		mode:    f.mode,
-		modTime: f.modTime,
-		isDir:   false,
-	}, nil
-}
-
-func (f *memFile) Read(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.offset >= int64(len(f.content)) {
-		return 0, io.EOF
-	}
-	n := copy(p, f.content[f.offset:])
-	f.offset += int64(n)
-	return n, nil
-}
-
-func (f *memFile) ReadAt(p []byte, off int64) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if off >= int64(len(f.content)) {
-		return 0, io.EOF
-	}
-	n := copy(p, f.content[off:])
-	if off+int64(n) >= int64(len(f.content)) {
-		return n, io.EOF
-	}
-	return n, nil
+	bufFile
+	fsys *memFS
 }
 
 func (f *memFile) Write(p []byte) (int, error) {
@@ -160,27 +119,6 @@ func (f *memFile) WriteString(s string) (int, error) {
 	}
 
 	return len(s), nil
-}
-
-func (f *memFile) Seek(offset int64, whence int) (int64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	var newOffset int64
-	switch whence {
-	case io.SeekStart:
-		newOffset = offset
-	case io.SeekCurrent:
-		newOffset = f.offset + offset
-	case io.SeekEnd:
-		newOffset = int64(len(f.content)) + offset
-	default:
-		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
-	}
-	if newOffset < 0 {
-		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, newOffset, fs.ErrInvalid))
-	}
-	f.offset = newOffset
-	return f.offset, nil
 }
 
 func (f *memFile) Close() error {
@@ -281,10 +219,7 @@ func (fsys *memFS) Open(name string) (fs.File, error) {
 	}
 	return &memFile{
 		fsys:    fsys,
-		path:    name,
-		content: bytes.Clone(node.content),
-		mode:    node.mode,
-		modTime: node.modTime,
+		bufFile: newBufFile(name, bytes.Clone(node.content), node.mode, node.modTime),
 	}, nil
 }
 
@@ -383,9 +318,7 @@ func (fsys *memFS) Create(name string) (File, error) {
 
 	return &memFile{
 		fsys:    fsys,
-		path:    name,
-		mode:    node.mode,
-		modTime: node.modTime,
+		bufFile: newBufFile(name, nil, node.mode, node.modTime),
 	}, nil
 }
 

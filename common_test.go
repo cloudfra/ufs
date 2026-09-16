@@ -134,7 +134,7 @@ func assertInvalidPathError(t *testing.T, path string, err error, wantOp string)
 }
 
 func TestFSConventions(t *testing.T) {
-	srcFS, err := newLocalFS(testLocalFSName)
+	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}

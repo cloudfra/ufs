@@ -23,7 +23,7 @@ import (
 )
 
 func TestNewTempMountFS(t *testing.T) {
-	fsys, err := newTempMountFS("test://", func(string) error { return nil })
+	fsys, err := newTempMountFS(t.Context(), "test://", func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,14 +36,14 @@ func TestNewTempMountFS(t *testing.T) {
 }
 
 func TestTempMountFSFileSystem(t *testing.T) {
-	testFileSystem(t, func(_ context.Context, name string) (FS, error) {
-		return newTempMountFS(name, func(string) error { return nil })
+	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
+		return newTempMountFS(ctx, name, func(string) error { return nil })
 	}, "temp://")
 }
 
 func TestTempMountFSCleanup(t *testing.T) {
 	var capturedDir string
-	fsys, err := newTempMountFS("test://", func(dir string) error {
+	fsys, err := newTempMountFS(t.Context(), "test://", func(dir string) error {
 		capturedDir = dir
 		return nil
 	})
@@ -74,7 +74,7 @@ func TestTempMountFSCloseError(t *testing.T) {
 func TestTempMountFSPrepareError(t *testing.T) {
 	var capturedDir string
 	wantErr := errors.New("prepare failed")
-	_, err := newTempMountFS("test://", func(dir string) error {
+	_, err := newTempMountFS(t.Context(), "test://", func(dir string) error {
 		capturedDir = dir
 		return wantErr
 	})
@@ -87,7 +87,7 @@ func TestTempMountFSPrepareError(t *testing.T) {
 }
 
 func TestTempMountFSRemove(t *testing.T) {
-	fsys, err := newTempMountFS("test://", func(string) error { return nil })
+	fsys, err := newTempMountFS(t.Context(), "test://", func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestTempMountFSRemove(t *testing.T) {
 }
 
 func TestTempMountFSRemoveAll(t *testing.T) {
-	fsys, err := newTempMountFS("test://", func(string) error { return nil })
+	fsys, err := newTempMountFS(t.Context(), "test://", func(string) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestTempMountFSRemoveAll(t *testing.T) {
 func TestTempMountFSReadLink(t *testing.T) {
 	skipTestOnWindows(t)
 	var tempDir string
-	fsys, err := newTempMountFS("test://", func(dir string) error {
+	fsys, err := newTempMountFS(t.Context(), "test://", func(dir string) error {
 		tempDir = dir
 		return nil
 	})
@@ -201,7 +201,7 @@ func TestTempMountFSReadLink(t *testing.T) {
 func TestTempMountFSLstat(t *testing.T) {
 	skipTestOnWindows(t)
 	var tempDir string
-	fsys, err := newTempMountFS("test://", func(dir string) error {
+	fsys, err := newTempMountFS(t.Context(), "test://", func(dir string) error {
 		tempDir = dir
 		return nil
 	})

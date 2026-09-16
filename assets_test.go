@@ -41,14 +41,14 @@ func TestAssets(t *testing.T) {
 	}{
 		{
 			name: "localFS",
-			createFS: func(_ testing.TB) (FS, error) {
-				return newLocalFS(testAssetsFilesDir)
+			createFS: func(tb testing.TB) (FS, error) {
+				return newLocalFS(tb.Context(), testAssetsFilesDir)
 			},
 		},
 		{
 			name: "memFS",
-			createFS: func(_ testing.TB) (FS, error) {
-				fsys, err := newMemFS("mem://")
+			createFS: func(tb testing.TB) (FS, error) {
+				fsys, err := newMemFS(tb.Context(), "mem://")
 				if err != nil {
 					return nil, err
 				}

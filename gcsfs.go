@@ -44,6 +44,14 @@ var (
 	_ File    = (*gcsFile)(nil)
 )
 
+func init() {
+	Register(Driver{
+		Name:       "gcs",
+		MatchFunc:  isGCSFSUri,
+		CreateFunc: newGCSFS,
+	})
+}
+
 type gcsFS struct {
 	ctx          context.Context
 	bucket       string
@@ -521,7 +529,11 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 	return nil
 }
 
-func newGCSFS(ctx context.Context, name string) (*gcsFS, error) {
+func newGCSFS(ctx context.Context, name string) (FS, error) {
+	return makeGCSFS(ctx, name)
+}
+
+func makeGCSFS(ctx context.Context, name string) (*gcsFS, error) {
 	gcsClient, err := storage.NewClient(ctx)
 	if err != nil {
 		if strings.Contains(err.Error(), "credentials") {
@@ -535,10 +547,10 @@ func newGCSFS(ctx context.Context, name string) (*gcsFS, error) {
 		}
 	}
 
-	return newGCSFSWithClient(ctx, gcsClient, name)
+	return makeGCSFSWithClient(ctx, gcsClient, name)
 }
 
-func newGCSFSWithClient(ctx context.Context, gcsClient *storage.Client, name string) (*gcsFS, error) {
+func makeGCSFSWithClient(ctx context.Context, gcsClient *storage.Client, name string) (*gcsFS, error) {
 	bucket, objectDir, err := parseGCSPath(name, "init")
 	if err != nil {
 		return nil, err

@@ -89,7 +89,7 @@ func TestNewGitFSInvalid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := newGitFS(tt.url); err == nil {
+			if _, err := newGitFS(t.Context(), tt.url); err == nil {
 				t.Fatalf("newGitFS(%q) = nil error, want error", tt.url)
 			}
 		})
@@ -114,7 +114,7 @@ func TestNewGitFSLocalRepo(t *testing.T) {
 		t.Fatalf("initTestGitRepo: %v", err)
 	}
 
-	fsys, err := newGitFS(srcDir)
+	fsys, err := newGitFS(t.Context(), srcDir)
 	if err != nil {
 		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
 	}
@@ -152,7 +152,7 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 		t.Fatalf("initTestGitRepo: %v", err)
 	}
 
-	fsys, err := newGitFS(srcDir)
+	fsys, err := newGitFS(t.Context(), srcDir)
 	if err != nil {
 		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
 	}

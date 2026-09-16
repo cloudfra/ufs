@@ -22,6 +22,7 @@ package ufs
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -60,6 +61,14 @@ var (
 	// named "." or "..".
 	selfKey = []byte(cwdPath)
 )
+
+func init() {
+	Register(Driver{
+		Name:       "bolt",
+		MatchFunc:  isBoltFSUri,
+		CreateFunc: newBoltFS,
+	})
+}
 
 // boltFS is a file system backed by a single BoltDB (bbolt) file. Directories
 // are represented as nested buckets (see traverseBucket) and files are stored
@@ -376,13 +385,8 @@ func (fsys *boltFS) Open(name string) (fs.File, error) {
 				return err
 			}
 			file = &boltFile{
-				fsys: fsys,
-				bufFile: bufFile{
-					path:    name,
-					content: bytes.Clone(content),
-					mode:    mode,
-					modTime: modTime,
-				},
+				fsys:    fsys,
+				bufFile: newBufFile(name, bytes.Clone(content), mode, modTime),
 			}
 			return nil
 		})
@@ -524,12 +528,8 @@ func (fsys *boltFS) Create(name string) (File, error) {
 	}
 
 	return &boltFile{
-		fsys: fsys,
-		bufFile: bufFile{
-			path:    name,
-			mode:    mode,
-			modTime: now,
-		},
+		fsys:    fsys,
+		bufFile: newBufFile(name, nil, mode, now),
 	}, nil
 }
 
@@ -944,7 +944,7 @@ func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error
 	return nil
 }
 
-func newBoltFS(name string) (FS, error) {
+func newBoltFS(_ context.Context, name string) (FS, error) {
 	return makeBoltFS(name)
 }
 

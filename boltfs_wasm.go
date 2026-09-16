@@ -17,6 +17,7 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -27,11 +28,19 @@ import (
 // below.
 const boltFSPrefix = "bolt:"
 
+func init() {
+	Register(Driver{
+		Name:       "bolt",
+		MatchFunc:  isBoltFSUri,
+		CreateFunc: newBoltFS,
+	})
+}
+
 // boltFS is unavailable on GOARCH=wasm: go.etcd.io/bbolt has no
 // MaxAllocSize constant for that architecture, and its mmap-based storage
 // model has no wasm implementation regardless. newBoltFS reports that
 // clearly instead of failing the build.
-func newBoltFS(name string) (FS, error) {
+func newBoltFS(_ context.Context, name string) (FS, error) {
 	return nil, fmt.Errorf("boltFS (%q) is not supported on this platform: go.etcd.io/bbolt does not support GOARCH=wasm", name)
 }
 

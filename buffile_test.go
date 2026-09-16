@@ -24,12 +24,8 @@ import (
 )
 
 func newTestBufFile(pathName, content string) *bufFile {
-	return &bufFile{
-		path:    pathName,
-		content: []byte(content),
-		mode:    0o644,
-		modTime: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
-	}
+	f := newBufFile(pathName, []byte(content), 0o644, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	return &f
 }
 
 func TestBufFileStat(t *testing.T) {

@@ -151,7 +151,7 @@ func TestAngryFSStatInvalid(t *testing.T) {
 }
 
 func mustAngryFS(tb testing.TB) FS {
-	fsys, err := newAngryFS(angryFSPrefix)
+	fsys, err := newAngryFS(tb.Context(), angryFSPrefix)
 	if err != nil {
 		tb.Fatalf("newAngryFS() returned error, %s", err)
 	}

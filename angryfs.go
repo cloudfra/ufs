@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -38,6 +39,14 @@ var (
 	}
 	angryDeviceInfoMap = newDeviceInfoMap(angryDeviceInfo)
 )
+
+func init() {
+	Register(Driver{
+		Name:       "angry",
+		MatchFunc:  isAngryFSUri,
+		CreateFunc: newAngryFS,
+	})
+}
 
 type angryFS struct {
 	name string
@@ -137,7 +146,7 @@ func (fsys *angryFS) RemoveAll(name string) error {
 	return pathError("removeall", name, errAngry)
 }
 
-func newAngryFS(name string) (FS, error) {
+func newAngryFS(_ context.Context, name string) (FS, error) {
 	return makeAngryFS(name), nil
 }
 

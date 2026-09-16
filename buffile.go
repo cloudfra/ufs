@@ -38,40 +38,57 @@ type bufFile struct {
 	modTime time.Time
 }
 
+// newBufFile returns a bufFile populated with path, content, mode and
+// modTime, so every embedding backend constructs it the same way instead of
+// listing the struct's fields (and risking missing one) at each call site.
+func newBufFile(path string, content []byte, mode fs.FileMode, modTime time.Time) bufFile {
+	return bufFile{
+		path:    path,
+		content: content,
+		mode:    mode,
+		modTime: modTime,
+	}
+}
+
 func (f *bufFile) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return &fsInfo{
+	info := &fsInfo{
 		name:    path.Base(f.path),
 		size:    int64(len(f.content)),
 		mode:    f.mode,
 		modTime: f.modTime,
 		isDir:   false,
-	}, nil
+	}
+	f.mu.Unlock()
+	return info, nil
 }
 
 func (f *bufFile) Read(p []byte) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	if f.offset >= int64(len(f.content)) {
+		f.mu.Unlock()
 		return 0, io.EOF
 	}
 	n := copy(p, f.content[f.offset:])
 	f.offset += int64(n)
+	f.mu.Unlock()
 	return n, nil
 }
 
 func (f *bufFile) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	if off < 0 {
+		f.mu.Unlock()
 		return 0, pathError("readat", f.path, fmt.Errorf("offset %d is negative: %w", off, fs.ErrInvalid))
 	}
 	if off >= int64(len(f.content)) {
+		f.mu.Unlock()
 		return 0, io.EOF
 	}
 	n := copy(p, f.content[off:])
-	if off+int64(n) >= int64(len(f.content)) {
+	atEnd := off+int64(n) >= int64(len(f.content))
+	f.mu.Unlock()
+	if atEnd {
 		return n, io.EOF
 	}
 	return n, nil
@@ -79,7 +96,6 @@ func (f *bufFile) ReadAt(p []byte, off int64) (int, error) {
 
 func (f *bufFile) Seek(offset int64, whence int) (int64, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	var newOffset int64
 	switch whence {
 	case io.SeekStart:
@@ -89,11 +105,14 @@ func (f *bufFile) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		newOffset = int64(len(f.content)) + offset
 	default:
+		f.mu.Unlock()
 		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
 	}
 	if newOffset < 0 {
+		f.mu.Unlock()
 		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, newOffset, fs.ErrInvalid))
 	}
 	f.offset = newOffset
-	return f.offset, nil
+	f.mu.Unlock()
+	return newOffset, nil
 }

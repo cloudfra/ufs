@@ -279,42 +279,16 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 	if strings.HasPrefix(name, embedFSPrefix) {
 		return nil, pathError("mount", name, fmt.Errorf("embed:// file systems must be created with NewEmbedFS, not New(): %w", fs.ErrInvalid))
 	}
-	if isMemFSUri(name) {
-		return newMemFS(name)
+	r := getRegistrar()
+	driver, err := r.match(name)
+	if err != nil {
+		return nil, pathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s, %w", name, runtime.GOOS, err))
 	}
-	if isBoltFSUri(name) {
-		return newBoltFS(name)
+	fsys, err := r.create(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
 	}
-	if isAngryFSUri(name) {
-		return newAngryFS(name)
-	}
-	if isNullFSUri(name) {
-		return newNullFS(name)
-	}
-	if isArchiveFSUri(name) {
-		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
-	}
-	if isGitFSUri(name) {
-		return newGitFS(name)
-	}
-	if isLocalFSUri(name) {
-		if isMountableArchivePath(name) {
-			return newArchiveFSFromLocalFS(ctx, name)
-		}
-		return newLocalFS(name)
-	}
-	if isGCSFSUri(name) {
-		return newGCSFS(ctx, name)
-	}
-	if strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://") {
-		return newTempMountRemoteArchiveFS(ctx, name)
-	}
-
-	stat, err := osStat(name)
-	if err == nil && stat != nil {
-		return newLocalFS(name)
-	}
-	return nil, pathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s, %w", name, runtime.GOOS, err))
+	return fsys, nil
 }
 
 // MountSpec describes a single mount entry with a source URI, a mount point,

@@ -66,7 +66,7 @@ func TestIsNullFSUri(t *testing.T) {
 }
 
 func TestNewNullFS(t *testing.T) {
-	fsys, err := newNullFS("null://")
+	fsys, err := newNullFS(t.Context(), "null://")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestNullFileWriteString(t *testing.T) {
 }
 
 func TestNullFSCreate(t *testing.T) {
-	fsys, err := newNullFS("null://")
+	fsys, err := newNullFS(t.Context(), "null://")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +281,7 @@ func TestNullFSCreate(t *testing.T) {
 }
 
 func TestNullFileOperations(t *testing.T) {
-	fsys, err := newNullFS("null://")
+	fsys, err := newNullFS(t.Context(), "null://")
 	if err != nil {
 		t.Fatal(err)
 	}

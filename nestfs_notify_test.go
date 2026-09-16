@@ -107,7 +107,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 }
 
 func TestNestFSWatchUnsupportedBackend(t *testing.T) {
-	inner, err := newNullFS("null://")
+	inner, err := newNullFS(t.Context(), "null://")
 	if err != nil {
 		t.Fatal(err)
 	}

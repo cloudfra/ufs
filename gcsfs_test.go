@@ -242,7 +242,7 @@ func TestParseGCSPathErrors(t *testing.T) {
 func TestGCSFS(t *testing.T) {
 	client := createStorage(t)
 	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
-		return newGCSFSWithClient(ctx, client, name)
+		return makeGCSFSWithClient(ctx, client, name)
 	}, "gs://first")
 }
 
@@ -314,7 +314,7 @@ func createStorage(tb testing.TB) *storage.Client {
 func TestGCSFSRemove(t *testing.T) {
 	client := createStorage(t)
 	ctx := t.Context()
-	fsys, err := newGCSFSWithClient(ctx, client, "gs://first")
+	fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 
 	t.Run("subtree", func(t *testing.T) {
 		client := createStorage(t)
-		fsys, err := newGCSFSWithClient(ctx, client, "gs://first")
+		fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -366,7 +366,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 
 	t.Run("not_exist_is_noop", func(t *testing.T) {
 		client := createStorage(t)
-		fsys, err := newGCSFSWithClient(ctx, client, "gs://first")
+		fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -379,7 +379,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 
 	t.Run("root", func(t *testing.T) {
 		client := createStorage(t)
-		fsys, err := newGCSFSWithClient(ctx, client, "gs://first")
+		fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 		if err != nil {
 			t.Fatal(err)
 		}

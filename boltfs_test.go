@@ -91,7 +91,7 @@ func TestIsBoltFSUri(t *testing.T) {
 }
 
 func TestNewBoltFS(t *testing.T) {
-	fsys, err := newBoltFS(testBoltFSURI(t))
+	fsys, err := newBoltFS(t.Context(), testBoltFSURI(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestNewBoltFS(t *testing.T) {
 }
 
 func TestBoltFS(t *testing.T) {
-	testFileSystem(t, newFSFuncWithoutContext(newBoltFS), testBoltFSURI(t))
+	testFileSystem(t, newBoltFS, testBoltFSURI(t))
 }
 
 func TestBoltFSCreate(t *testing.T) {
@@ -804,7 +804,7 @@ func TestBoltFileDirRead(t *testing.T) {
 }
 
 func TestBoltFSClosedOperations(t *testing.T) {
-	fsys, err := newBoltFS(testBoltFSURI(t))
+	fsys, err := newBoltFS(t.Context(), testBoltFSURI(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -951,7 +951,7 @@ func TestBoltFSRemoveAll(t *testing.T) {
 }
 
 func TestBoltFSRemoveClosedFS(t *testing.T) {
-	fsys, _ := newBoltFS(testBoltFSURI(t))
+	fsys, _ := newBoltFS(t.Context(), testBoltFSURI(t))
 	if err := fsys.Close(); err != nil {
 		t.Fatal(err)
 	}

@@ -27,7 +27,7 @@ import (
 )
 
 func TestRsync(t *testing.T) {
-	srcFS, err := newLocalFS(testLocalFSName)
+	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
@@ -64,7 +64,7 @@ func TestRsync(t *testing.T) {
 }
 
 func TestRsyncAngry(t *testing.T) {
-	srcFS, err := newLocalFS(testLocalFSName)
+	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
@@ -79,7 +79,7 @@ func TestRsyncAngry(t *testing.T) {
 }
 
 func TestRsyncNull(t *testing.T) {
-	srcFS, err := newLocalFS(testLocalFSName)
+	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
@@ -104,7 +104,7 @@ func TestRsyncNull(t *testing.T) {
 // setupListFS creates a memFS with: a.txt, dir/b.txt, dir/c.txt.
 func setupListFS(t *testing.T) FS {
 	t.Helper()
-	fsys, err := newMemFS("memory://test")
+	fsys, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,11 +131,11 @@ func setupListFS(t *testing.T) FS {
 // --- Copy ---
 
 func TestCopy(t *testing.T) {
-	src, err := newMemFS("memory://src")
+	src, err := newMemFS(t.Context(), "memory://src")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dst, err := newMemFS("memory://dst")
+	dst, err := newMemFS(t.Context(), "memory://dst")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,11 +184,11 @@ func TestCopy(t *testing.T) {
 }
 
 func TestCopyOpenError(t *testing.T) {
-	src, err := newAngryFS("angry://")
+	src, err := newAngryFS(t.Context(), "angry://")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dst, err := newMemFS("memory://dst")
+	dst, err := newMemFS(t.Context(), "memory://dst")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestCopyOpenError(t *testing.T) {
 }
 
 func TestCopyCreateError(t *testing.T) {
-	src, err := newMemFS("memory://src")
+	src, err := newMemFS(t.Context(), "memory://src")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestCopyCreateError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst, err := newAngryFS("angry://")
+	dst, err := newAngryFS(t.Context(), "angry://")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func (lf *listFilenamesFS) ListFilenames(_ string) ([]string, error) {
 }
 
 func TestListFilesInterface(t *testing.T) {
-	inner, err := newMemFS("memory://test")
+	inner, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func (f *forEachFilenameFS) ForEachFilename(_ string, fn func(string) error) err
 }
 
 func TestForEachFilenameInterface(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, _ := newMemFS(t.Context(), "memory://test")
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)
@@ -427,7 +427,7 @@ func (f *forEachFileInfoFS) ForEachFileInfo(_ string, fn func(fs.FileInfo) error
 }
 
 func TestForEachFileInfoInterface(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, _ := newMemFS(t.Context(), "memory://test")
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)
@@ -501,7 +501,7 @@ func setupNestFSWithArchive(t *testing.T) FS {
 		t.Fatal(err)
 	}
 
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,7 +658,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -717,7 +717,7 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lfs, err := newLocalFS(dir)
+	lfs, err := newLocalFS(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,7 +747,7 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 
 func setupRemoveFS(t *testing.T) FS {
 	t.Helper()
-	fsys, err := newMemFS("memory://test")
+	fsys, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -805,7 +805,7 @@ func TestRemoveNonEmptyDir(t *testing.T) {
 type noRemoverFS struct{ fs.FS }
 
 func TestRemoveFallback(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, _ := newMemFS(t.Context(), "memory://test")
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)
@@ -875,7 +875,7 @@ func TestRemoveAllRoot(t *testing.T) {
 }
 
 func TestRemoveAllFallback(t *testing.T) {
-	inner, _ := newMemFS("memory://test")
+	inner, _ := newMemFS(t.Context(), "memory://test")
 	defer func() {
 		if err := inner.Close(); err != nil {
 			t.Errorf("failed to close inner FS: %v", err)

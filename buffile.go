@@ -36,6 +36,13 @@ type bufFile struct {
 	offset  int64
 	mode    fs.FileMode
 	modTime time.Time
+
+	// dirty marks that content has been written since the file was opened (or
+	// since the last commit) and has not yet been persisted back to the
+	// backing store. Backends that sync on every write (memFile) leave it
+	// unused; backends that defer persistence to Close (boltFile) set it in
+	// Write/WriteString and clear it once the buffered content is committed.
+	dirty bool
 }
 
 // newBufFile returns a bufFile populated with path, content, mode and

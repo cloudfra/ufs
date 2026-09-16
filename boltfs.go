@@ -23,7 +23,6 @@ package ufs
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"io/fs"
@@ -36,14 +35,14 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	pb "github.com/cloudfra/ufs/proto"
 )
 
 const (
 	boltFSPrefix = "bolt:"
-
-	// boltRecordHeaderSize is the fixed-size header (mode + modTime) that
-	// precedes a file's content in its stored record.
-	boltRecordHeaderSize = 4 + 8
 )
 
 var (
@@ -71,7 +70,7 @@ func init() {
 }
 
 // boltFS is a file system backed by a single BoltDB (bbolt) file. Directories
-// are represented as nested buckets (see traverseBucket) and files are stored
+// are represented as nested buckets (see getOrCreateBucket) and files are stored
 // as a key/value pair within their parent directory's bucket. Each directory
 // bucket carries its own metadata (mode, modTime) under the reserved
 // selfKey.
@@ -92,26 +91,29 @@ type boltFS struct {
 // call.
 type boltFile struct {
 	bufFile
-	fsys  *boltFS
-	dirty bool
+	fsys *boltFS
 }
 
+// Write appends p to the file's in-memory content. Unlike memFile, it does
+// not touch the underlying bolt database; the content is only persisted (and
+// NotifyWrite fired, with modTime set to the commit time) when Close is
+// called.
 func (f *boltFile) Write(p []byte) (int, error) {
-	return f.WriteString(string(p))
+	f.mu.Lock()
+	f.content = append(f.content, p...)
+	f.dirty = true
+	n := len(p)
+	f.mu.Unlock()
+	return n, nil
 }
 
-// WriteString appends s to the file's in-memory content. Unlike memFile, it
-// does not touch the underlying bolt database; the content is only persisted
-// (and NotifyWrite fired) when Close is called.
 func (f *boltFile) WriteString(s string) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	f.content = append(f.content, s...)
-	f.modTime = time.Now()
 	f.dirty = true
-
-	return len(s), nil
+	n := len(s)
+	f.mu.Unlock()
+	return n, nil
 }
 
 // Close persists any buffered writes to the bolt database, if the file was
@@ -125,7 +127,8 @@ func (f *boltFile) Close() error {
 	}
 	content := bytes.Clone(f.content)
 	mode := f.mode
-	modTime := f.modTime
+	modTime := time.Now()
+	f.modTime = modTime
 	fsPath := f.path
 	f.dirty = false
 	f.mu.Unlock()
@@ -147,11 +150,15 @@ func (fsys *boltFS) writeFileContent(name string, mode fs.FileMode, modTime time
 		return fs.ErrClosed
 	}
 	return db.Update(func(tx *bolt.Tx) error {
-		bkt, key, err := traverseBucket(tx, name)
+		bkt, key, err := getOrCreateBucket(tx, name)
 		if err != nil {
 			return err
 		}
-		return bkt.Put([]byte(key), encodeBoltRecord(mode, modTime, content))
+		record, err := encodeBoltRecord(mode, modTime, content)
+		if err != nil {
+			return err
+		}
+		return bkt.Put([]byte(key), record)
 	})
 }
 
@@ -202,27 +209,30 @@ func (d *boltDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-// encodeBoltRecord serializes mode, modTime and content into the byte slice
-// stored as a bolt value. The layout is a fixed 12-byte header (mode as
-// uint32, modTime as UnixNano int64) followed by the raw content.
-func encodeBoltRecord(mode fs.FileMode, modTime time.Time, content []byte) []byte {
-	buf := make([]byte, boltRecordHeaderSize+len(content))
-	binary.LittleEndian.PutUint32(buf[0:4], uint32(mode))
-	binary.LittleEndian.PutUint64(buf[4:12], uint64(modTime.UnixNano()))
-	copy(buf[boltRecordHeaderSize:], content)
-	return buf
+// encodeBoltRecord serializes mode, modTime and content into the protobuf
+// wire encoding of pb.BoltFileRecord, the value stored for each file's key
+// in the bolt database.
+func encodeBoltRecord(mode fs.FileMode, modTime time.Time, content []byte) ([]byte, error) {
+	data, err := proto.Marshal(&pb.BoltFileRecord{
+		Mode:    uint32(mode),
+		ModTime: timestamppb.New(modTime),
+		Content: content,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("cannot marshal bolt record: %w", err)
+	}
+	return data, nil
 }
 
 // decodeBoltRecord is the inverse of encodeBoltRecord. The returned content
-// aliases data and must be cloned before data.
+// aliases the record's internal buffer and must be cloned before data is
+// discarded (e.g. once the enclosing bolt transaction ends).
 func decodeBoltRecord(data []byte) (fs.FileMode, time.Time, []byte, error) {
-	if len(data) < boltRecordHeaderSize {
-		return 0, time.Time{}, nil, fmt.Errorf("corrupt bolt record: %d bytes", len(data))
+	var rec pb.BoltFileRecord
+	if err := proto.Unmarshal(data, &rec); err != nil {
+		return 0, time.Time{}, nil, fmt.Errorf("corrupt bolt record: %w", err)
 	}
-	mode := fs.FileMode(binary.LittleEndian.Uint32(data[0:4]))
-	//nolint:gosec // round-trip of a value written as uint64(time.Time.UnixNano()) by encodeBoltRecord; the bit pattern is exact in both directions.
-	modTime := time.Unix(0, int64(binary.LittleEndian.Uint64(data[4:12])))
-	return mode, modTime, data[boltRecordHeaderSize:], nil
+	return fs.FileMode(rec.GetMode()), rec.GetModTime().AsTime(), rec.GetContent(), nil
 }
 
 // rootBucketTx returns the top-level bucket representing the file system
@@ -235,7 +245,9 @@ func rootBucketTx(tx *bolt.Tx) (*bolt.Bucket, error) {
 		if err != nil {
 			return nil, err
 		}
-		ensureDirSelf(bkt)
+		if err := ensureDirSelf(bkt); err != nil {
+			return nil, err
+		}
 		return bkt, nil
 	}
 	bkt := tx.Bucket(selfKey)
@@ -245,23 +257,27 @@ func rootBucketTx(tx *bolt.Tx) (*bolt.Bucket, error) {
 	return bkt, nil
 }
 
-// ensureDirSelf stores a default selfKey record in bkt if one is not
-// already present. It must only be called on a writable transaction.
-func ensureDirSelf(bkt *bolt.Bucket) {
+// ensureDirSelf stores a default selfKey record in bkt if one is not already
+// present. It must only be called on a writable transaction.
+func ensureDirSelf(bkt *bolt.Bucket) error {
 	if bkt.Get(selfKey) != nil {
-		return
+		return nil
 	}
-	_ = bkt.Put(selfKey, encodeBoltRecord(fs.ModeDir|fs.ModePerm, time.Now(), nil))
+	record, err := encodeBoltRecord(fs.ModeDir|fs.ModePerm, time.Now(), nil)
+	if err != nil {
+		return err
+	}
+	return bkt.Put(selfKey, record)
 }
 
-// traverseBucket walks name's directory components, returning the bucket
+// getOrCreateBucket walks name's directory components, returning the bucket
 // that should directly contain name's final path element together with that
 // element. On a writable transaction, missing intermediate directory buckets
 // are created (with default metadata) as the walk proceeds; on a read-only
 // transaction a missing bucket results in fs.ErrNotExist. Callers pass name
 // == cwdPath's own components only for non-root paths; use rootBucketTx
 // directly (or dirBucket) to resolve the root itself.
-func traverseBucket(tx *bolt.Tx, name string) (*bolt.Bucket, string, error) {
+func getOrCreateBucket(tx *bolt.Tx, name string) (*bolt.Bucket, string, error) {
 	parts := splitPath(name)
 	lastPartIdx := len(parts) - 1
 	lastPart := parts[lastPartIdx]
@@ -278,7 +294,9 @@ func traverseBucket(tx *bolt.Tx, name string) (*bolt.Bucket, string, error) {
 			if err != nil {
 				return nil, "", err
 			}
-			ensureDirSelf(bkt)
+			if err := ensureDirSelf(bkt); err != nil {
+				return nil, "", err
+			}
 			continue
 		}
 		bkt = bkt.Bucket(key)
@@ -297,7 +315,7 @@ func dirBucket(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
 	if name == cwdPath {
 		return rootBucketTx(tx)
 	}
-	parent, last, err := traverseBucket(tx, name)
+	parent, last, err := getOrCreateBucket(tx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +325,9 @@ func dirBucket(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
 		if err != nil {
 			return nil, err
 		}
-		ensureDirSelf(bkt)
+		if err := ensureDirSelf(bkt); err != nil {
+			return nil, err
+		}
 		return bkt, nil
 	}
 	bkt := parent.Bucket(key)
@@ -367,7 +387,7 @@ func (fsys *boltFS) Open(name string) (fs.File, error) {
 	isDir := false
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.View(func(tx *bolt.Tx) error {
-			bkt, key, err := traverseBucket(tx, name)
+			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
 				return err
 			}
@@ -505,7 +525,7 @@ func (fsys *boltFS) Create(name string) (File, error) {
 	var existed bool
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.Update(func(tx *bolt.Tx) error {
-			bkt, key, err := traverseBucket(tx, name)
+			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
 				return err
 			}
@@ -514,7 +534,11 @@ func (fsys *boltFS) Create(name string) (File, error) {
 				return fmt.Errorf("%q is a directory: %w", name, fs.ErrInvalid)
 			}
 			existed = bkt.Get(keyBytes) != nil
-			return bkt.Put(keyBytes, encodeBoltRecord(mode, now, nil))
+			record, err := encodeBoltRecord(mode, now, nil)
+			if err != nil {
+				return err
+			}
+			return bkt.Put(keyBytes, record)
 		})
 	})
 	if err != nil {
@@ -570,7 +594,11 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 					return err
 				}
 				if !existed {
-					if err := bkt.Put(selfKey, encodeBoltRecord(fs.ModeDir|perm, now, nil)); err != nil {
+					record, err := encodeBoltRecord(fs.ModeDir|perm, now, nil)
+					if err != nil {
+						return err
+					}
+					if err := bkt.Put(selfKey, record); err != nil {
 						return err
 					}
 					created = append(created, accum)
@@ -598,7 +626,7 @@ func (fsys *boltFS) ReadFile(name string) ([]byte, error) {
 	var content []byte
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.View(func(tx *bolt.Tx) error {
-			bkt, key, err := traverseBucket(tx, name)
+			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
 				return err
 			}
@@ -633,7 +661,7 @@ func (fsys *boltFS) ReadLink(name string) (string, error) {
 	}
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.View(func(tx *bolt.Tx) error {
-			bkt, key, err := traverseBucket(tx, name)
+			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
 				return err
 			}
@@ -691,7 +719,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 				info = &fsInfo{name: cwdPath, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true}
 				return nil
 			}
-			bkt, key, err := traverseBucket(tx, name)
+			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
 				return err
 			}
@@ -804,7 +832,7 @@ func (fsys *boltFS) Remove(name string) error {
 	}
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.Update(func(tx *bolt.Tx) error {
-			bkt, key, err := traverseBucket(tx, name)
+			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
 				return err
 			}
@@ -857,7 +885,7 @@ func (fsys *boltFS) RemoveAll(name string) error {
 				}
 				return removeAllChildren(bkt, cwdPath, &removed)
 			}
-			bkt, key, err := traverseBucket(tx, name)
+			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
 				if err == fs.ErrNotExist {
 					return nil

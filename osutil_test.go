@@ -26,124 +26,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
-
-func TestCreateOSTempDirectory(t *testing.T) {
-	dir, cleanup, err := createOSTempDirectory()
-	if err != nil {
-		t.Error(err)
-	}
-	if !osExists(dir) {
-		t.Errorf("'%s' does not exist when it should", dir)
-	}
-
-	if !strings.Contains(dir, "goapp") {
-		t.Errorf("'%s' does not contain 'goapp'", dir)
-	}
-	if err := cleanup(); err != nil {
-		t.Errorf("failed to cleanup temp directory: %v", err)
-	}
-	if osExists(dir) {
-		t.Errorf("'%s' exists when it should not", dir)
-	}
-}
-
-func TestOSDeleteFile(t *testing.T) {
-	t.Run("nonexistent", func(t *testing.T) {
-		err := osDeleteFile("/nonexistent/path/that/cannot/exist-" + t.Name() + ".txt")
-		if err != nil {
-			t.Errorf("osDeleteFile(nonexistent) = %v, want nil", err)
-		}
-	})
-
-	t.Run("existing", func(t *testing.T) {
-		f, err := osCreateTemp("", "ufs-osutil-test-*.txt")
-		if err != nil {
-			t.Fatal(err)
-		}
-		p := f.Name()
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := osDeleteFile(p); err != nil {
-			t.Errorf("osDeleteFile(existing) = %v, want nil", err)
-		}
-		if osExists(p) {
-			t.Errorf("%q still exists after osDeleteFile", p)
-		}
-	})
-}
-
-func TestTryOSDeleteFile(t *testing.T) {
-	f, err := osCreateTemp("", "ufs-try-delete-*.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := f.Name()
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	tryOSDeleteFile(p)
-	if osExists(p) {
-		t.Errorf("%q still exists after tryOSDeleteFile", p)
-	}
-}
-
-func TestOSMkdir(t *testing.T) {
-	parent, err := osMkdirTemp("", "ufs-mkdir-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := osRemoveAll(parent); err != nil {
-			t.Errorf("cleanup remove %q: %v", parent, err)
-		}
-	})
-
-	dir := filepath.Join(parent, "newdir")
-	if err := osMkdir(dir); err != nil {
-		t.Fatalf("osMkdir(existing parent) = %v, want nil", err)
-	}
-	if _, err := osStat(dir); err != nil {
-		t.Errorf("Stat after osMkdir: %v, want the new dir to exist", err)
-	}
-
-	if err := osMkdir(dir); err == nil {
-		t.Error("osMkdir(existing) = nil, want an error")
-	} else if !os.IsExist(err) {
-		t.Errorf("osMkdir(existing) = %v, want fs.ErrExist", err)
-	}
-
-	if err := osMkdir(filepath.Join(parent, "a", "b")); err == nil {
-		t.Error("osMkdir(missing parent) = nil, want an error")
-	}
-}
-
-func TestOSDeleteDirectoryExists(t *testing.T) {
-	dir, err := osMkdirTemp("", "ufs-del-dir-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := osDeleteDirectory(dir); err != nil {
-		t.Errorf("osDeleteDirectory(existing) = %v, want nil", err)
-	}
-	if osExists(dir) {
-		t.Errorf("%q still exists after osDeleteDirectory", dir)
-	}
-}
-
-func TestTryOSDeleteDirectory(t *testing.T) {
-	dir, err := osMkdirTemp("", "ufs-try-del-dir-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tryOSDeleteDirectory(dir)
-	if osExists(dir) {
-		t.Errorf("%q still exists after tryOSDeleteDirectory", dir)
-	}
-}
 
 func TestNewRemoteArchive(t *testing.T) {
 	fsys, err := New(t.Context(), "https://github.com/mholt/archives/archive/refs/heads/main.zip")
@@ -297,7 +182,7 @@ func TestDialControl(t *testing.T) {
 func testArchiveServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	zipPath := createZipFromDir(t, testAssetsFilesDir)
-	zipData, err := osReadFile(zipPath)
+	zipData, err := osutil.ReadFile(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +235,7 @@ func TestDownloadFile(t *testing.T) {
 		if filepath.Base(path) != "testassets.zip" {
 			t.Errorf("filename = %q, want %q", filepath.Base(path), "testassets.zip")
 		}
-		data, err := osReadFile(path)
+		data, err := osutil.ReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile() = %v", err)
 		}
@@ -477,12 +362,12 @@ func TestDownloadFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("downloadFileWith() = %v", err)
 		}
-		got, err := osReadFile(path)
+		got, err := osutil.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		zipPath := createZipFromDir(t, testAssetsFilesDir)
-		want, err := osReadFile(zipPath)
+		want, err := osutil.ReadFile(zipPath)
 		if err != nil {
 			t.Fatal(err)
 		}

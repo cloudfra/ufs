@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestParseYAMLMountSpec(t *testing.T) {
@@ -536,7 +538,7 @@ func TestNewFromFstabNoRoot(t *testing.T) {
 func TestNewFromFstabLocalFS(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
-	if err := osWriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
 

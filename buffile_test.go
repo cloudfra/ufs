@@ -357,6 +357,57 @@ func TestBufFileSeek(t *testing.T) {
 	})
 }
 
+func TestBufFileWriteAtOffsetLocked(t *testing.T) {
+	t.Run("zero_length_is_noop", func(t *testing.T) {
+		f := newTestBufFile("x.txt", "abc")
+		if dst := f.writeAtOffsetLocked(0); dst != nil {
+			t.Errorf("writeAtOffsetLocked(0) = %v, want nil", dst)
+		}
+		if f.offset != 0 {
+			t.Errorf("offset after zero-length write = %d, want 0", f.offset)
+		}
+		if string(f.content) != "abc" {
+			t.Errorf("content after zero-length write = %q, want %q", f.content, "abc")
+		}
+	})
+
+	t.Run("fits_within_existing_content_overwrites_in_place", func(t *testing.T) {
+		f := newTestBufFile("x.txt", "abcdef")
+		dst := f.writeAtOffsetLocked(3)
+		copy(dst, "XYZ")
+		if string(f.content) != "XYZdef" {
+			t.Errorf("content = %q, want %q", f.content, "XYZdef")
+		}
+		if f.offset != 3 {
+			t.Errorf("offset = %d, want 3", f.offset)
+		}
+	})
+
+	t.Run("extends_past_current_end", func(t *testing.T) {
+		f := newTestBufFile("x.txt", "abc")
+		f.offset = 3
+		dst := f.writeAtOffsetLocked(2)
+		copy(dst, "de")
+		if string(f.content) != "abcde" {
+			t.Errorf("content = %q, want %q", f.content, "abcde")
+		}
+	})
+
+	t.Run("offset_past_end_zero_pads_gap", func(t *testing.T) {
+		f := newTestBufFile("x.txt", "ab")
+		f.offset = 5
+		dst := f.writeAtOffsetLocked(2)
+		copy(dst, "XY")
+		want := "ab\x00\x00\x00XY"
+		if string(f.content) != want {
+			t.Errorf("content = %q, want %q", f.content, want)
+		}
+		if f.offset != 7 {
+			t.Errorf("offset = %d, want 7", f.offset)
+		}
+	})
+}
+
 // TestBufFileConcurrentAccess exercises Read, ReadAt, Seek and Stat from many
 // goroutines at once. It exists to be run with the race detector (make test
 // runs go test -race): bufFile's mu must serialize all of these.

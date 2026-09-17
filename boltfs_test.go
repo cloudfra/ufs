@@ -240,6 +240,145 @@ func TestBoltFileSeek(t *testing.T) {
 	}
 }
 
+// TestBoltFileWriteAtOffset exercises the io.ReadWriteSeeker contract that
+// File embeds: Write must write at the current offset (overwriting existing
+// bytes or extending the file), not always append to the end. Mirrors
+// TestMemFileWriteAtOffset (memfs_test.go).
+func TestBoltFileWriteAtOffset(t *testing.T) {
+	newFile := func(t *testing.T, fsys FS, name, initial string) File {
+		t.Helper()
+		f, err := fsys.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString(initial); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+
+	readAll := func(t *testing.T, f File) string {
+		t.Helper()
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	t.Run("write_overwrites_in_place_after_seek", func(t *testing.T) {
+		fsys := newTestBoltFS(t)
+		f := newFile(t, fsys, "overwrite.txt", "hello world")
+		defer validateClose(t, f)()
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		n, err := f.Write([]byte("HI"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 2 {
+			t.Errorf("Write() = %d, want 2", n)
+		}
+		if got := readAll(t, f); got != "HIllo world" {
+			t.Errorf("content = %q, want %q", got, "HIllo world")
+		}
+	})
+
+	t.Run("write_string_overwrites_in_place_after_seek", func(t *testing.T) {
+		fsys := newTestBoltFS(t)
+		f := newFile(t, fsys, "overwrite2.txt", "hello world")
+		defer validateClose(t, f)()
+		if _, err := f.Seek(6, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		n, err := f.WriteString("THERE")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != len("THERE") {
+			t.Errorf("WriteString() = %d, want %d", n, len("THERE"))
+		}
+		if got := readAll(t, f); got != "hello THERE" {
+			t.Errorf("content = %q, want %q", got, "hello THERE")
+		}
+	})
+
+	t.Run("write_past_end_extends_and_zero_pads_gap", func(t *testing.T) {
+		fsys := newTestBoltFS(t)
+		f := newFile(t, fsys, "sparse.txt", "abc")
+		defer validateClose(t, f)()
+		if _, err := f.Seek(5, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		n, err := f.Write([]byte("XY"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != 2 {
+			t.Errorf("Write() = %d, want 2", n)
+		}
+		want := "abc\x00\x00XY"
+		if got := readAll(t, f); got != want {
+			t.Errorf("content = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("write_advances_offset_so_sequential_writes_still_append", func(t *testing.T) {
+		fsys := newTestBoltFS(t)
+		f, err := fsys.Create("sequential.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer validateClose(t, f)()
+		if _, err := f.Write([]byte("abc")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte("def")); err != nil {
+			t.Fatal(err)
+		}
+		if got := readAll(t, f); got != "abcdef" {
+			t.Errorf("content = %q, want %q", got, "abcdef")
+		}
+	})
+
+	t.Run("overwrite_persists_to_reopened_file", func(t *testing.T) {
+		fsys := newTestBoltFS(t)
+		f, err := fsys.Create("persist-overwrite.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString("hello world"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString("HELLO"); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		f2, err := fsys.Open("persist-overwrite.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer validateClose(t, f2)()
+		data, err := io.ReadAll(f2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "HELLO world" {
+			t.Errorf("reopened content = %q, want %q", string(data), "HELLO world")
+		}
+	})
+}
+
 func TestBoltFileReadAt(t *testing.T) {
 	fsys := newTestBoltFS(t)
 

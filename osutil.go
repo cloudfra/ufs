@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"math"
 	"net"
@@ -191,47 +190,6 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	return archiveFilename, nil
 }
 
-func createOSTempDirectory() (string, func() error, error) {
-	tmpDir, err := os.MkdirTemp(os.TempDir(), "goapp")
-	if err != nil {
-		return "", func() error { return nil }, fmt.Errorf("cannot create temp directory, %w", err)
-	}
-	return tmpDir, func() error {
-		return osDeleteDirectory(tmpDir)
-	}, nil
-}
-
-func osExists(path string) bool {
-	_, err := osStat(path)
-	return err == nil
-}
-
-func osDeleteDirectory(path string) error {
-	if err := osRemoveAll(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("cannot delete directory %q, %w", path, err)
-	}
-	return nil
-}
-
-func tryOSDeleteDirectory(path string) {
-	if err := osDeleteDirectory(path); err != nil {
-		slog.Warn("failed to delete directory", "path", path, "error", err)
-	}
-}
-
-func osDeleteFile(path string) error {
-	if err := osRemove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("cannot delete file %q, %w", path, err)
-	}
-	return nil
-}
-
-func tryOSDeleteFile(path string) {
-	if err := osDeleteFile(path); err != nil {
-		slog.Warn("failed to delete file", "path", path, "error", err)
-	}
-}
-
 // clampToUint32 converts n to uint32, clamping negative values to 0 and
 // values above math.MaxUint32 to math.MaxUint32.
 func clampToUint32(n int) uint32 {
@@ -259,75 +217,4 @@ func clampToInt64(n uint64) int64 {
 		return math.MaxInt64
 	}
 	return int64(n)
-}
-
-const (
-	defaultFilePermissions      = 0o600
-	defaultDirectoryPermissions = 0o750
-)
-
-func osMkdir(name string) error {
-	return os.Mkdir(filepath.Clean(name), defaultDirectoryPermissions)
-}
-
-func osMkdirAll(name string) error {
-	return os.MkdirAll(filepath.Clean(name), defaultDirectoryPermissions)
-}
-
-func osRemove(name string) error {
-	return os.Remove(filepath.Clean(name))
-}
-
-func osRemoveAll(name string) error {
-	return os.RemoveAll(filepath.Clean(name))
-}
-
-func osCreate(name string) (*os.File, error) {
-	return os.Create(filepath.Clean(name))
-}
-
-func osReadFile(name string) ([]byte, error) {
-	return os.ReadFile(filepath.Clean(name))
-}
-
-func osStat(name string) (os.FileInfo, error) {
-	return os.Stat(filepath.Clean(name))
-}
-
-func osWriteFile(name string, data []byte) error {
-	return os.WriteFile(filepath.Clean(name), data, defaultFilePermissions)
-}
-
-func osReadDir(name string) ([]os.DirEntry, error) {
-	return os.ReadDir(filepath.Clean(name))
-}
-
-func osDirFS(name string) fs.FS {
-	return os.DirFS(filepath.Clean(name))
-}
-
-func osOpenRoot(name string) (*os.Root, error) {
-	return os.OpenRoot(filepath.Clean(name))
-}
-
-func osSymlink(oldname string, newname string) error {
-	return os.Symlink(filepath.Clean(oldname), filepath.Clean(newname))
-}
-
-func osOpen(name string) (*os.File, error) {
-	return os.Open(filepath.Clean(name))
-}
-
-func osCreateTemp(dir string, pattern string) (*os.File, error) {
-	if dir != "" {
-		dir = filepath.Clean(dir)
-	}
-	return os.CreateTemp(dir, pattern)
-}
-
-func osMkdirTemp(dir string, pattern string) (string, error) {
-	if dir != "" {
-		dir = filepath.Clean(dir)
-	}
-	return os.MkdirTemp(dir, pattern)
 }

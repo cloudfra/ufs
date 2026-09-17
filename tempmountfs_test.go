@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"path/filepath"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestNewTempMountFS(t *testing.T) {
@@ -50,13 +52,13 @@ func TestTempMountFSCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !osExists(capturedDir) {
+	if !osutil.Exists(capturedDir) {
 		t.Error("temp dir should exist before Close")
 	}
 	if err := fsys.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
-	if osExists(capturedDir) {
+	if osutil.Exists(capturedDir) {
 		t.Error("temp dir should be deleted after Close")
 	}
 }
@@ -81,7 +83,7 @@ func TestTempMountFSPrepareError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if capturedDir != "" && osExists(capturedDir) {
+	if capturedDir != "" && osutil.Exists(capturedDir) {
 		t.Error("temp dir should be cleaned up after prepare error")
 	}
 }
@@ -181,7 +183,7 @@ func TestTempMountFSReadLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := osSymlink("target.txt", filepath.Join(tempDir, "link.txt")); err != nil {
+	if err := osutil.Symlink("target.txt", filepath.Join(tempDir, "link.txt")); err != nil {
 		t.Fatalf("Symlink failed: %v", err)
 	}
 
@@ -218,7 +220,7 @@ func TestTempMountFSLstat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := osSymlink("lstat_file.txt", filepath.Join(tempDir, "lstat_link.txt")); err != nil {
+	if err := osutil.Symlink("lstat_file.txt", filepath.Join(tempDir, "lstat_link.txt")); err != nil {
 		t.Fatalf("Symlink failed: %v", err)
 	}
 

@@ -100,20 +100,18 @@ type boltFile struct {
 // called.
 func (f *boltFile) Write(p []byte) (int, error) {
 	f.mu.Lock()
-	f.content = append(f.content, p...)
+	copy(f.writeAtOffsetLocked(len(p)), p)
 	f.dirty = true
-	n := len(p)
 	f.mu.Unlock()
-	return n, nil
+	return len(p), nil
 }
 
 func (f *boltFile) WriteString(s string) (int, error) {
 	f.mu.Lock()
-	f.content = append(f.content, s...)
+	copy(f.writeAtOffsetLocked(len(s)), s)
 	f.dirty = true
-	n := len(s)
 	f.mu.Unlock()
-	return n, nil
+	return len(s), nil
 }
 
 // Close persists any buffered writes to the bolt database, if the file was

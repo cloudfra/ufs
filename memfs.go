@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloudfra/ufs/internal/notifybus"
 )
 
 const (
@@ -84,8 +86,7 @@ type memFS struct {
 	name  string
 	nodes map[string]*memNode
 
-	watchersMu sync.RWMutex
-	watchers   []*memWatcher
+	notifyBus *notifybus.Bus
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -294,12 +295,7 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	fsys.watchersMu.Lock()
-	for _, mw := range fsys.watchers {
-		mw.cancel()
-	}
-	fsys.watchers = nil
-	fsys.watchersMu.Unlock()
+	fsys.notifyBus.CloseAll()
 
 	fsys.mu.Lock()
 	fsys.nodes = nil
@@ -610,6 +606,7 @@ func makeMemFS(name string) *memFS {
 				isDir:   true,
 			},
 		},
+		notifyBus: notifybus.New(),
 	}
 }
 

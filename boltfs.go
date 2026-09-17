@@ -38,6 +38,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/cloudfra/ufs/internal/notifybus"
 	pb "github.com/cloudfra/ufs/proto"
 )
 
@@ -80,8 +81,7 @@ type boltFS struct {
 	absPath string
 	db      *bolt.DB
 
-	watchersMu sync.RWMutex
-	watchers   []*boltWatcher
+	notifyBus *notifybus.Bus
 }
 
 // boltFile is an open read-write handle for a regular file. Writes are
@@ -493,12 +493,7 @@ func (fsys *boltFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *boltFS) Close() error {
-	fsys.watchersMu.Lock()
-	for _, bw := range fsys.watchers {
-		bw.cancel()
-	}
-	fsys.watchers = nil
-	fsys.watchersMu.Unlock()
+	fsys.notifyBus.CloseAll()
 
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
@@ -1001,9 +996,10 @@ func makeBoltFS(name string) (*boltFS, error) {
 		return nil, joinErrors(fmt.Errorf("cannot initialize bolt root bucket for %q, %w", name, err), db.Close())
 	}
 	return &boltFS{
-		name:    name,
-		absPath: absPath,
-		db:      db,
+		name:      name,
+		absPath:   absPath,
+		db:        db,
+		notifyBus: notifybus.New(),
 	}, nil
 }
 

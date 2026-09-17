@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/cloudfra/ufs/internal/download"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/mholt/archives"
 )
@@ -309,7 +310,7 @@ func newTempMountRemoteArchiveFS(ctx context.Context, name string) (FS, error) {
 		return nil, fmt.Errorf("cannot create temp directory, %w", joinErrors(err, cleanupErr))
 	}
 
-	filename, err := downloadFile(ctx, tempDir, name)
+	filename, err := download.File(ctx, tempDir, name)
 	if err != nil {
 		cleanupErr := cleanup()
 		return nil, joinErrors(err, cleanupErr)

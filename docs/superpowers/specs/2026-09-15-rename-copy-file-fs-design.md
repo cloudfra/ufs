@@ -80,7 +80,7 @@ a driver and `nestFS` are still `FS` today:
   `fsBuildMount.fsys FS` field are the same.
 - `NewEmbedFS(name string, fsys embed.FS) FS` is the same.
 
-#272 already updated each backend's own `var _ WriteFS = (*X)(nil)`
+PR #272 already updated each backend's own `var _ WriteFS = (*X)(nil)`
 compile-time assertion (previously `_ FS`), correctly anticipating that
 backends themselves should only need `WriteFS`. But the *plumbing that
 carries a backend into `nestFS`* was never changed, so today, embedding

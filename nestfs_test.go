@@ -24,8 +24,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 func TestNewNestFS(t *testing.T) {
@@ -83,7 +85,7 @@ func TestMountMap(t *testing.T) {
 			wantMountSubPath:        "",
 		},
 		{
-			input:                   cwdPath,
+			input:                   pathutil.CwdPath,
 			wantDirectoryList:       []string{"angry", "mem", "mounts", "null"},
 			wantGetMatchesBySubPath: []string{"angry", "mem", "mounts/angry", "mounts/level2/a/mem", "mounts/level2/a/null", "mounts/level2/angry", "mounts/mem", "mounts/null", "null"},
 			wantMountPath:           "",
@@ -122,7 +124,7 @@ func TestMountMap(t *testing.T) {
 			wantDirectoryList:       []string{},
 			wantGetMatchesBySubPath: []string{""},
 			wantMountPath:           "mounts/level2/a/null",
-			wantMountSubPath:        cwdPath,
+			wantMountSubPath:        pathutil.CwdPath,
 		},
 		{
 			input:                   "mounts/level2/a/null/more",
@@ -136,7 +138,7 @@ func TestMountMap(t *testing.T) {
 			wantDirectoryList:       []string{},
 			wantGetMatchesBySubPath: []string{""},
 			wantMountPath:           "mounts/level2/a/null",
-			wantMountSubPath:        cwdPath,
+			wantMountSubPath:        pathutil.CwdPath,
 		},
 		{
 			input:                   "./mounts/level2/a/mem/./more/stuff",
@@ -150,7 +152,7 @@ func TestMountMap(t *testing.T) {
 			wantDirectoryList:       []string{},
 			wantGetMatchesBySubPath: []string{""},
 			wantMountPath:           "mounts/level2/a/null",
-			wantMountSubPath:        cwdPath,
+			wantMountSubPath:        pathutil.CwdPath,
 		},
 		{
 			input:                   "mounts/level3",
@@ -212,7 +214,7 @@ func TestMountMap(t *testing.T) {
 }
 
 func TestNestFSFull(t *testing.T) {
-	fsys, err := newNestFS(t.Context(), cwdPath)
+	fsys, err := newNestFS(t.Context(), pathutil.CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +293,7 @@ func TestNestedFS(t *testing.T) {
 		wantEntries []string
 	}{
 		{
-			dir:         cwdPath,
+			dir:         pathutil.CwdPath,
 			wantEntries: []string{"a", "mounted"},
 		},
 		{
@@ -382,7 +384,7 @@ func TestGetPotentialArchives(t *testing.T) {
 			want:  []string{},
 		},
 		{
-			input: cwdPath,
+			input: pathutil.CwdPath,
 			want:  []string{},
 		},
 		{
@@ -709,7 +711,7 @@ func TestNestFSValidPathClosed(t *testing.T) {
 	}
 
 	nfs := fsys.(*nestFS)
-	if _, err := nfs.ReadDir(cwdPath); !errors.Is(err, fs.ErrClosed) {
+	if _, err := nfs.ReadDir(pathutil.CwdPath); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("ReadDir on closed nestFS = %v, want fs.ErrClosed", err)
 	}
 	if _, err := nfs.Stat("foo.txt"); !errors.Is(err, fs.ErrClosed) {
@@ -754,7 +756,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	}
 	defer validateClose(t, fsys)()
 
-	entries, err := fs.ReadDir(fsys, cwdPath)
+	entries, err := fs.ReadDir(fsys, pathutil.CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -781,7 +783,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	}
 
 	// The next directory listing should no longer show the .d entry.
-	entries, err = fs.ReadDir(fsys, cwdPath)
+	entries, err = fs.ReadDir(fsys, pathutil.CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}

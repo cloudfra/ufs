@@ -21,8 +21,10 @@ import (
 	"io"
 	"io/fs"
 
-	"github.com/cloudfra/ufs/internal/notifybus"
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/cloudfra/ufs/internal/notifybus"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 var _ Watcher = (*boltFS)(nil)
@@ -33,13 +35,13 @@ var _ Watcher = (*boltFS)(nil)
 // RemoveAll, MkdirAll).
 func (fsys *boltFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
-		return nil, pathError("watch", name, fs.ErrClosed)
+		return nil, pathutil.PathError("watch", name, fs.ErrClosed)
 	}
-	if err := validPath("watch", name); err != nil {
+	if err := pathutil.ValidPath("watch", name); err != nil {
 		return nil, err
 	}
 
-	if name != cwdPath {
+	if name != pathutil.CwdPath {
 		err := fsys.withDB(func(db *bolt.DB) error {
 			return db.View(func(tx *bolt.Tx) error {
 				_, err := dirBucket(tx, name)
@@ -47,7 +49,7 @@ func (fsys *boltFS) Watch(ctx context.Context, name string, hook NotifyHook) (io
 			})
 		})
 		if err != nil {
-			return nil, pathError("watch", name, err)
+			return nil, pathutil.PathError("watch", name, err)
 		}
 	}
 

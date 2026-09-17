@@ -24,8 +24,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/hanwen/go-fuse/v2/fuse"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func requireFUSE(t *testing.T) {

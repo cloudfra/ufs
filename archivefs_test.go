@@ -29,6 +29,7 @@ import (
 
 	"github.com/cloudfra/ufs/internal/download"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const testArchive = "testing/testassets/archives/testassets.tar.gz"
@@ -156,7 +157,7 @@ func TestArchiveFSReadDir(t *testing.T) {
 		t.Fatal("archiveFS does not implement fs.ReadDirFS")
 	}
 
-	entries, err := rfs.ReadDir(cwdPath)
+	entries, err := rfs.ReadDir(pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ReadDir(\".\") = %v, want nil", err)
 	}
@@ -599,7 +600,7 @@ func TestNewRemoteArchive(t *testing.T) {
 	}
 	defer validateClose(t, fsys)()
 
-	if files, err := fsys.ReadDir(cwdPath); files != nil {
+	if files, err := fsys.ReadDir(pathutil.CwdPath); files != nil {
 		t.Logf("files: %v, err: %s", files, err)
 	}
 	if files, err := fsys.ReadDir("archives-main"); files != nil {
@@ -676,7 +677,7 @@ func TestDownloadFileAndMountRedirect(t *testing.T) {
 	ts := testArchiveServer(t)
 
 	fsys := testDownloadAndMount(t, ts, "/redirect-to-archive")
-	entries, err := fsys.ReadDir(cwdPath)
+	entries, err := fsys.ReadDir(pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ReadDir(\".\") = %v", err)
 	}

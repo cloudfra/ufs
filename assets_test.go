@@ -22,6 +22,8 @@ import (
 	"io"
 	"io/fs"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const testAssetsFilesDir = "testing/testassets/files"
@@ -52,7 +54,7 @@ func TestAssets(t *testing.T) {
 				if err != nil {
 					return nil, err
 				}
-				if err := copyFSToFS(osDirFS(testAssetsFilesDir), fsys); err != nil {
+				if err := copyFSToFS(osutil.DirFS(testAssetsFilesDir), fsys); err != nil {
 					if closeErr := fsys.Close(); closeErr != nil {
 						return nil, joinErrors(err, fmt.Errorf("failed to close FS after error: %v", closeErr))
 					}
@@ -97,7 +99,7 @@ func TestAssets(t *testing.T) {
 // loadTestAssets walks testAssetsFilesDir and returns a path→content map for every file.
 func loadTestAssets(tb testing.TB) map[string][]byte {
 	tb.Helper()
-	src := osDirFS(testAssetsFilesDir)
+	src := osutil.DirFS(testAssetsFilesDir)
 	result := make(map[string][]byte)
 	err := fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -133,15 +135,15 @@ func copyFSToFS(src fs.FS, dst FS) error {
 // The caller does not need to remove the file; tb.Cleanup handles it.
 func createZipFromDir(tb testing.TB, dir string) string {
 	tb.Helper()
-	src := osDirFS(dir)
+	src := osutil.DirFS(dir)
 
-	tmp, err := osCreateTemp("", "testassets-*.zip")
+	tmp, err := osutil.CreateTemp("", "testassets-*.zip")
 	if err != nil {
 		tb.Fatalf("createZipFromDir: CreateTemp: %v", err)
 	}
 	tmpName := tmp.Name()
 	tb.Cleanup(func() {
-		if err := osRemove(tmpName); err != nil {
+		if err := osutil.Remove(tmpName); err != nil {
 			tb.Fatalf("createZipFromDir: Cleanup: %v", err)
 		}
 	})

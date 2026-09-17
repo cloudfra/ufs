@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -47,9 +48,9 @@ func prepareGitDirectory(name string, gitURL string) error {
 		return fmt.Errorf("could not clone %s, %w", name, err)
 	}
 
-	tryOSDeleteDirectory(filepath.Join(name, ".git"))
-	tryOSDeleteFile(filepath.Join(name, ".gitignore"))
-	tryOSDeleteFile(filepath.Join(name, ".gitmodules"))
+	osutil.TryDeleteDirectory(filepath.Join(name, ".git"))
+	osutil.TryDeleteFile(filepath.Join(name, ".gitignore"))
+	osutil.TryDeleteFile(filepath.Join(name, ".gitmodules"))
 	return nil
 }
 

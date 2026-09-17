@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 var _ localFSInterface = (*tempMountFS)(nil)
@@ -98,7 +100,7 @@ func (fsys *tempMountFS) RemoveAll(name string) error {
 }
 
 func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (FS, error) {
-	tempDir, cleanup, err := createOSTempDirectory()
+	tempDir, cleanup, err := osutil.NewTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
 		return nil, joinErrors(fmt.Errorf("cannot create temp directory, %w", err), cleanupErr)

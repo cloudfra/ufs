@@ -33,6 +33,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -205,11 +206,11 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        "gs://" + fsys.bucket,
-		deviceType:  "network",
-		threadCount: 1,
+func (fsys *gcsFS) getDeviceInfo() map[string]deviceinfo.Info {
+	return deviceinfo.NewMap(deviceinfo.Info{
+		Name:        "gs://" + fsys.bucket,
+		DeviceType:  "network",
+		ThreadCount: 1,
 	})
 }
 

@@ -28,6 +28,7 @@ import (
 
 	"github.com/mholt/archives"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/download"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -43,12 +44,12 @@ var (
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
-	archiveDeviceInfo = deviceInfo{
-		name:        "archive",
-		deviceType:  "archive",
-		threadCount: 1,
+	archiveDeviceInfo = deviceinfo.Info{
+		Name:        "archive",
+		DeviceType:  "archive",
+		ThreadCount: 1,
 	}
-	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
+	archiveDeviceInfoMap = deviceinfo.NewMap(archiveDeviceInfo)
 )
 
 func init() {
@@ -96,7 +97,7 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 }
 
-func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *archiveFS) getDeviceInfo() map[string]deviceinfo.Info {
 	return archiveDeviceInfoMap
 }
 

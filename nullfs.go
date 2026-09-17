@@ -24,6 +24,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -44,12 +45,12 @@ var (
 		IsDir: true,
 	})
 
-	nullDeviceInfo = deviceInfo{
-		name:        "null",
-		deviceType:  "null",
-		threadCount: 1,
+	nullDeviceInfo = deviceinfo.Info{
+		Name:        "null",
+		DeviceType:  "null",
+		ThreadCount: 1,
 	}
-	nullDeviceInfoMap = newDeviceInfoMap(nullDeviceInfo)
+	nullDeviceInfoMap = deviceinfo.NewMap(nullDeviceInfo)
 )
 
 func init() {
@@ -129,7 +130,7 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *nullFS) getDeviceInfo() map[string]deviceinfo.Info {
 	return nullDeviceInfoMap
 }
 

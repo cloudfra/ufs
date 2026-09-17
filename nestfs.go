@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -71,11 +72,11 @@ type mountMap struct {
 	baseName string
 }
 
-func (m *mountMap) getDeviceInfo() map[string]deviceInfo {
-	combined := map[string]deviceInfo{}
+func (m *mountMap) getDeviceInfo() map[string]deviceinfo.Info {
+	combined := map[string]deviceinfo.Info{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combineDeviceInfo(combined, mountPoint, fsys.getDeviceInfo())
+		combined = deviceinfo.Combine(combined, mountPoint, fsys.getDeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -225,9 +226,9 @@ func (fsys *nestFS) getAbsPath(name string) (string, error) {
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
-func (fsys *nestFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *nestFS) getDeviceInfo() map[string]deviceinfo.Info {
 	base := fsys.fsys.getDeviceInfo()
-	return combineDeviceInfo(base, "", fsys.mounts.getDeviceInfo())
+	return deviceinfo.Combine(base, "", fsys.mounts.getDeviceInfo())
 }
 
 func (fsys *nestFS) URI() *url.URL {

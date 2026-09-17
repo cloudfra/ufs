@@ -125,7 +125,7 @@ func (f *memFile) syncToFSLocked() {
 	if f.fsys != nil {
 		f.fsys.mu.Lock()
 		if node, ok := f.fsys.nodes[f.path]; ok {
-			node.content = bytes.Clone(f.content)
+			node.content = bytes.Clone(f.content.Bytes())
 			node.modTime = now
 		}
 		f.fsys.mu.Unlock()

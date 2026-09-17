@@ -27,6 +27,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/cloudfra/ufs/internal/mathutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"golang.org/x/sys/windows"
 )
@@ -413,7 +414,7 @@ func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint
 
 	var n int
 	var readMethod string
-	off := clampToInt64(byteOffset)
+	off := mathutil.ClampToInt64(byteOffset)
 	if ra, ok := f.(io.ReaderAt); ok {
 		readMethod = "ReaderAt"
 		n, err = ra.ReadAt(dest, off)
@@ -447,7 +448,7 @@ func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint
 		return hr
 	}
 
-	if err := prjWriteFileData(callbackData.NamespaceVirtualizationContext, &callbackData.DataStreamID, buf, byteOffset, clampToUint32(n)); err != nil {
+	if err := prjWriteFileData(callbackData.NamespaceVirtualizationContext, &callbackData.DataStreamID, buf, byteOffset, mathutil.ClampToUint32(n)); err != nil {
 		hr := projfsHRESULT(err)
 		slog.Error("projfs: GetFileData WriteFileData failed", "path", p, "error", err, "bytesWritten", n, "hresult", hresultName(hr))
 		return hr

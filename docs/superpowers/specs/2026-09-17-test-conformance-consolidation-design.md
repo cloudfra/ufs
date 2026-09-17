@@ -1,5 +1,14 @@
 # Test Conformance Consolidation — Design Spec
 
+**Revision note:** this spec was revised after the initial version was
+approved, in light of a broader project direction: `ufs` will eventually
+split its drivers into smaller packages that can be imported
+conditionally (à la `database/sql` drivers), rather than staying one
+monolithic package. That changes where the actual conformance *assertion
+logic* should live — see "Reusable `conformance` package" below. The
+overall consolidation scope (what moves where, which tests get folded)
+is unchanged from the approved version.
+
 ## Goal
 
 Consolidate the duplicated FS-level and File-level test suites scattered
@@ -51,21 +60,77 @@ sitting in `testing_test.go`.
   `testing_test.go`) since 16–29 other backend-specific tests use them
   directly and most need unexported access.
 
-## FS conformance registrar
+## Reusable `conformance` package
 
-New file `conformance_registry_test.go`, **package `ufs`**. Exported (for
-cross-package test use only) types and functions:
+New directory/package `conformance/` (import path
+`github.com/cloudfra/ufs/conformance`), containing **real, non-`_test.go`
+Go files** — not a test-only helper. This is the piece motivated by the
+future driver split: once a driver (say `gcsfs`) moves into its own
+package or module, its own test file needs to run the same conformance
+checks without any dependency on `ufs`'s internal test machinery. A
+`_test.go`-scoped helper only exists inside the package that defines it;
+a real importable package works from anywhere.
+
+`conformance` depends only on `ufs`'s public `FS`/`File` interfaces and
+the stdlib (`testing`, `testing/fstest`) — never on `ufs`'s unexported
+internals or its `_test.go` files, so there's no import cycle: `ufs`'s
+own `_test.go` files (still `package ufs`) are free to import
+`conformance`, since `conformance` only imports the production `ufs`
+package, never the reverse.
 
 ```go
-// FSTestCase describes one FS backend instance a conformance test can
-// exercise. It is exported so package ufs_test's conformance_test.go can
-// consume it without cross-package access to unexported constructors.
+package conformance
+
+// FSTestCase describes one FS backend instance to run the conformance
+// battery against.
 type FSTestCase struct {
 	Name       string
-	NewFS      func(tb testing.TB) FS
+	NewFS      func(tb testing.TB) ufs.FS
 	WantString string
 }
 
+// RunFS runs the standard CRUD + fstest.TestFS battery against tc
+// (today's testFileSystem logic, generalized).
+func RunFS(t *testing.T, tc FSTestCase)
+
+// FileTestCase describes one File-producing backend to run the file-level
+// conformance battery against.
+type FileTestCase struct {
+	Name    string
+	NewFile func(tb testing.TB, name string) (ufs.File, ufs.FS)
+	// SupportsOverwrite is false for backends (gcsFile) whose Write cannot
+	// seek-and-overwrite in place — only append-on-create.
+	SupportsOverwrite bool
+}
+
+// RunFile runs Operations/Seek/ReadAt/ReadDirOnFile/SeekNegative/DirRead
+// checks as subtests, plus WriteAtOffset when SupportsOverwrite is true.
+func RunFile(t *testing.T, tc FileTestCase)
+```
+
+Any backend — in-tree today or split into its own package tomorrow —
+builds a case from its own (possibly unexported) constructors and calls
+`conformance.RunFS`/`conformance.RunFile` directly. No registry is needed
+at that level; registration only matters for *aggregating* all of
+today's in-tree backends into one "run everything" test (below), which
+is a concern local to this module, not something a future standalone
+driver package needs to participate in.
+
+`TestFSMkdirAll`, `TestFSReadFile`, `TestReadOnlyFS`, `TestFS` (the
+already-loop-driven tests, as opposed to the six duplicated one-liners)
+stay as-is in `conformance_test.go` for now rather than also moving into
+`conformance` — they aren't duplicated across backend files today, so
+extracting them isn't needed to solve the current duplication. They're
+reasonable future candidates for `conformance` if a split-out driver
+package ever needs them.
+
+## FS conformance registrar
+
+New file `conformance_registry_test.go`, **package `ufs`**. Exported (for
+cross-package test use only) functions, operating on `conformance.FSTestCase`
+directly rather than a second, locally-defined type:
+
+```go
 type FSTestCategory int
 
 const (
@@ -75,13 +140,13 @@ const (
 	AngryCategory
 )
 
-// RegisterFSTestCase registers an FSTestCase under category. Call from a
-// backend's own _test.go init().
-func RegisterFSTestCase(category FSTestCategory, tc FSTestCase)
+// RegisterFSTestCase registers a conformance.FSTestCase under category.
+// Call from a backend's own _test.go init().
+func RegisterFSTestCase(category FSTestCategory, tc conformance.FSTestCase)
 
 // GetFSTestCases returns the registered cases for category, sorted by Name
 // for deterministic test output.
-func GetFSTestCases(category FSTestCategory) []FSTestCase
+func GetFSTestCases(category FSTestCategory) []conformance.FSTestCase
 ```
 
 Internally this is a plain `map[FSTestCategory][]FSTestCase` guarded by a
@@ -98,7 +163,7 @@ second exported helper:
 ```go
 // WrapNestFS returns cases with each input case doubled: itself, plus a
 // nestFS-wrapped copy named "nestFS.<name>".
-func WrapNestFS(cases []FSTestCase) []FSTestCase
+func WrapNestFS(cases []conformance.FSTestCase) []conformance.FSTestCase
 ```
 
 This keeps `makeNestFS` (unexported) usage inside package `ufs`.
@@ -140,12 +205,14 @@ Contains, moved from `testing_test.go` and six backend files:
 - `getAllTestCaseList`, `getReadWriteTestCaseList`,
   `getAllRegularTestCaseList`, `getAllExceptAngryTestCaseList` — now
   calling `ufs.GetFSTestCases`/`ufs.WrapNestFS`.
-- `testFileSystem`, `mkdirForTest`, `mustFS`, `verifyFS`,
-  `verifyReadOnlyFS` — unchanged bodies, updated to reference `ufs.FS`
-  etc. instead of the bare (package-local) names.
+- `mkdirForTest`, `verifyFS`, `verifyReadOnlyFS` — unchanged bodies,
+  updated to reference `ufs.FS` etc. instead of the bare (package-local)
+  names. (`testFileSystem` and `mustFS` do **not** move here — see below.)
 - `TestFSMkdirAll`, `TestFSReadFile`, `TestReadOnlyFS`, `TestFS` —
-  unchanged bodies.
-- A new consolidated loop replacing the six wrapper tests:
+  unchanged bodies, calling `tc.NewFS(t)` directly (cases are already
+  built, no `mustFS` needed).
+- A new consolidated loop replacing the six wrapper tests, calling the
+  extracted `conformance.RunFS` instead of a local `testFileSystem`:
 
   ```go
   func TestFSConformance(t *testing.T) {
@@ -153,22 +220,19 @@ Contains, moved from `testing_test.go` and six backend files:
   	for _, tc := range ufs.GetFSTestCases(ufs.ReadWriteCategory) {
   		t.Run(tc.Name, func(t *testing.T) {
   			t.Parallel()
-  			testFileSystem(t, tc.NewFS, tc.Name)
+  			conformance.RunFS(t, tc)
   		})
   	}
   }
   ```
 
-  `testFileSystem` takes a `func(ctx, name) (FS, error)` + a `name` to pass
-  through, while `FSTestCase.NewFS` takes a `testing.TB` and returns a
-  ready `FS`. Since the six replaced tests (`TestLocalFS`, `TestMemFS`,
-  `TestBoltFS`, `TestGCSFS`, `TestTempMountFSFileSystem`, `TestNestFS`)
-  each pass a *fresh, empty* FS and a fixed name/URI, `testFileSystem`'s
-  signature changes to accept a `func(tb testing.TB) FS` directly instead
-  of `(ctx, name) (FS, error)` + separate `name` — collapsing `mustFS`'s
-  job into the caller. `mustFS` is then only needed for the two remaining
-  direct callers if any exist after the move (checked during
-  implementation; if unused, it's deleted rather than kept as dead code).
+  `conformance.RunFS`'s signature takes a `conformance.FSTestCase`
+  directly (`NewFS func(tb testing.TB) ufs.FS` + `Name` + `WantString`),
+  which is exactly the registry's element type — no adapter needed. The
+  old `testFileSystem(ctx, newFSFunc, name)` free function is retired:
+  its body becomes `conformance.RunFS`, and `mustFS` (only otherwise used
+  by `localfs_test.go`'s two direct callers) stays put, unchanged, in
+  `testing_test.go` — it never needed to move.
   `gcsFS`'s case keeps its dedicated `TestGCSFS`-style registration inline
   in `gcsfs_test.go`'s `init()` (needs a fake `*storage.Client` built via
   `createStorage(tb)`), registered under `ReadWriteCategory` alongside the
@@ -185,35 +249,33 @@ Backend files lose: `TestLocalFS`, `TestMemFS`, `TestBoltFS`, `TestGCSFS`,
 
 ## File conformance (`fileconformance_test.go`, package `ufs`)
 
-A second, independent registry (same shape, different element type) for
-`File`-level cases:
+Builds `conformance.FileTestCase` values (type defined in the
+`conformance` package, above) from each backend's own constructors and
+calls the extracted `conformance.RunFile` — no local registry needed here
+since there's no separate "run everything" test beyond this one file:
 
 ```go
-type FileTestCase struct {
-	Name string
-	// NewFile returns a freshly-created, writable File plus the FS it
-	// belongs to (needed for ReadDir-on-file / directory-read checks).
-	NewFile func(tb testing.TB, name string) (File, FS)
-	// SupportsOverwrite is false for backends (gcsFile) whose Write
-	// cannot seek-and-overwrite in place — only append-on-create.
-	SupportsOverwrite bool
+var fileTestCases = []conformance.FileTestCase{
+	{Name: "memFile", NewFile: newMemFileForTest, SupportsOverwrite: true},
+	{Name: "boltFile", NewFile: newBoltFileForTest, SupportsOverwrite: true},
+	{Name: "gcsFile", NewFile: newGCSFileForTest, SupportsOverwrite: false},
+}
+
+func TestFileConformance(t *testing.T) {
+	for _, tc := range fileTestCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			conformance.RunFile(t, tc)
+		})
+	}
 }
 ```
 
-Registered cases: `memFile` (via `newMemFS`), `boltFile` (via
-`newTestBoltFS`/`makeBoltFS`) — both `SupportsOverwrite: true`; `gcsFile`
-(via `createStorage(tb)` + `makeGCSFSWithClient`) — `SupportsOverwrite:
-false`, and only wired into the subset of sub-tests that don't require
-overwrite (see below).
-
-Consolidated tests, replacing `TestMemFile*`/`TestBoltFile*` pairs:
-
-- `TestFileOperations` — loops all registered cases (the current
-  `TestMemFileOperations`/`TestBoltFileOperations` body, generalized).
-- `TestFileSeek`, `TestFileReadAt`, `TestFileReadDirOnFile`,
-  `TestFileSeekNegative`, `TestFileDirRead` — same treatment, all cases.
-- `TestFileWriteAtOffset` — only cases with `SupportsOverwrite: true`
-  (skips `gcsFile`).
+`conformance.RunFile` runs `Operations`/`Seek`/`ReadAt`/`ReadDirOnFile`/
+`SeekNegative`/`DirRead` as subtests for every case, plus `WriteAtOffset`
+only when `SupportsOverwrite` is true — so `gcsFile` gets everything
+except `WriteAtOffset`. `newMemFileForTest`/`newBoltFileForTest` wrap
+`newMemFS`/`newTestBoltFS` + `fsys.Create(name)`; `newGCSFileForTest`
+wraps `createStorage(tb)` + `makeGCSFSWithClient` + `fsys.Create(name)`.
 
 `gcsFile`'s inclusion adds new coverage (Read/ReadAt/Seek/Stat semantics
 against a freshly-written object) it didn't have before; this was an
@@ -230,48 +292,53 @@ scope decision and keep their existing dedicated tests untouched.
 
 ## Migration checklist
 
-1. Add `conformance_registry_test.go` (package `ufs`): `FSTestCase`,
-   `FSTestCategory`, `RegisterFSTestCase`, `GetFSTestCases`, `WrapNestFS`.
-2. Add `init()` registrations to `localfs_test.go`, `tempmountfs_test.go`,
+1. Add `conformance/conformance.go` (new package): `FSTestCase`, `RunFS`
+   (body = today's `testFileSystem`), `FileTestCase`, `RunFile` (body =
+   today's 7 file-level checks as subtests, `WriteAtOffset` gated on
+   `SupportsOverwrite`).
+2. Add `conformance_registry_test.go` (package `ufs`): `FSTestCategory`,
+   `RegisterFSTestCase`, `GetFSTestCases`, `WrapNestFS` — operating on
+   `conformance.FSTestCase`.
+3. Add `init()` registrations to `localfs_test.go`, `tempmountfs_test.go`,
    `memfs_test.go`, `boltfs_test.go` (replacing `boltFSTestCaseList()`),
    `nullfs_test.go`, `readonlyfs_test.go`, `gcsfs_test.go`. Remove the
    corresponding hardcoded vars from `testing_test.go`.
-3. Create `conformance_test.go` (package `ufs_test`): move
-   `getAllTestCaseList` & siblings, `testFileSystem`, `mkdirForTest`,
-   `mustFS` (if still needed), `verifyFS`, `verifyReadOnlyFS`,
-   `TestFSMkdirAll`, `TestFSReadFile`, `TestReadOnlyFS`, `TestFS`; add
-   `TestFSConformance` replacing the six wrapper tests. Delete the moved
-   pieces from `testing_test.go` and the six wrapper tests from their
-   backend files.
-4. Add `fileconformance_test.go` (package `ufs`): `FileTestCase` registry
-   + `TestFileOperations`/`TestFileSeek`/`TestFileReadAt`/
-   `TestFileWriteAtOffset`/`TestFileReadDirOnFile`/`TestFileSeekNegative`/
-   `TestFileDirRead`. Register `memFile`, `boltFile`, `gcsFile` cases
-   (inline `init()` or explicit registration calls from
-   `memfs_test.go`/`boltfs_test.go`/`gcsfs_test.go`).
-5. Delete the 7 duplicated `TestMemFile*` functions from `memfs_test.go`
+4. Create `conformance_test.go` (package `ufs_test`): move
+   `getAllTestCaseList` & siblings, `mkdirForTest`, `verifyFS`,
+   `verifyReadOnlyFS`, `TestFSMkdirAll`, `TestFSReadFile`, `TestReadOnlyFS`,
+   `TestFS`; add `TestFSConformance` (calls `conformance.RunFS`) replacing
+   the six wrapper tests. Delete the moved pieces from `testing_test.go`
+   (including the now-retired `testFileSystem`) and the six wrapper tests
+   from their backend files. `mustFS` stays in `testing_test.go` unchanged.
+5. Add `fileconformance_test.go` (package `ufs`): `fileTestCases` slice +
+   `TestFileConformance` (calls `conformance.RunFile` per case), plus the
+   `newMemFileForTest`/`newBoltFileForTest`/`newGCSFileForTest` adapters.
+6. Delete the 7 duplicated `TestMemFile*` functions from `memfs_test.go`
    and 7 `TestBoltFile*` functions from `boltfs_test.go`.
-6. `make test`, `make lint`, `make presubmit` — must pass with identical
+7. `make test`, `make lint`, `make presubmit` — must pass with identical
    effective coverage (same assertions, same backends exercised) plus the
    new `gcsFile` read-side coverage.
 
 ## Risks / open questions resolved during brainstorming
 
-- **Package-boundary access**: `ufs_test`'s `conformance_test.go` can only
-  reach package `ufs` through exported identifiers. `FSTestCase`,
-  `RegisterFSTestCase`, `GetFSTestCases`, `WrapNestFS` are the only new
-  exported-for-test surface, all defined in `_test.go` files, so they
-  don't leak into the real `ufs` public API (`go doc` / production
-  consumers never see them — they only exist in the test binary).
-- **`testFileSystem` signature change**: changing it from
-  `(ctx, newFSFunc, name)` to `(tb, newFS func(tb) FS, name)` touches its
-  6+ current call sites; all are being removed/consolidated as part of
-  this change, so there's no orphaned caller left on the old signature.
+- **Package-boundary access**: `ufs_test`'s `conformance_test.go` reaches
+  package `ufs` only through exported identifiers (`FSTestCategory`,
+  `RegisterFSTestCase`, `GetFSTestCases`, `WrapNestFS`, defined in a
+  `_test.go` file so they never leak into `ufs`'s real public API) plus
+  the genuinely public `conformance` package.
+- **No import cycle**: `conformance` imports only the production `ufs`
+  package (for the `FS`/`File` interfaces); `ufs`'s `_test.go` files
+  import `conformance` back. This is one-directional — `conformance`
+  never imports `ufs`'s test files — so it compiles like any other
+  `package foo` / `package foo_test` + helper-package arrangement.
 - **Double-Close risk**: today's `fsTestCase.createFS` registers
   `tb.Cleanup(Close)` itself, while `testFileSystem` also calls
-  `fsys.Close()` explicitly at the end. `FSTestCase.NewFS` keeps the same
-  `tb.Cleanup(Close)` convention as the existing `fsTestCase.createFS`
-  closures (copied as-is), and `testFileSystem`'s own explicit
-  `fsys.Close()` call is removed in favor of relying on `tb.Cleanup`,
-  matching how `TestFS`/`TestFSMkdirAll` already handle it via
-  `validateClose`.
+  `fsys.Close()` explicitly at the end — already double-closing today for
+  every case routed through `TestFS`/`TestFSMkdirAll` (which also
+  `defer validateClose(t, fsys)()` on top of the `tb.Cleanup`). Since this
+  is pre-existing, tolerated behavior (every in-scope backend's `Close()`
+  already survives a double call), `conformance.RunFS` keeps the same
+  shape: `FSTestCase.NewFS` registers `tb.Cleanup(Close)`, and `RunFS`
+  itself does not call `Close()` a second time — matching how
+  `TestFS`/`TestFSMkdirAll` already rely on `tb.Cleanup` as the source of
+  truth for cleanup.

@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/mathutil"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
@@ -304,7 +305,7 @@ func (fh *fuseFileHandle) Read(_ context.Context, dest []byte, off int64) (fuse.
 func (fh *fuseFileHandle) Write(_ context.Context, data []byte, off int64) (uint32, syscall.Errno) {
 	if wa, ok := fh.file.(io.WriterAt); ok {
 		n, err := wa.WriteAt(data, off)
-		return clampToUint32(n), fuseErrno(err)
+		return mathutil.ClampToUint32(n), fuseErrno(err)
 	}
 	if s, ok := fh.file.(io.Seeker); ok {
 		if _, err := s.Seek(off, io.SeekStart); err != nil {
@@ -316,7 +317,7 @@ func (fh *fuseFileHandle) Write(_ context.Context, data []byte, off int64) (uint
 		return 0, syscall.EBADF
 	}
 	n, err := w.Write(data)
-	return clampToUint32(n), fuseErrno(err)
+	return mathutil.ClampToUint32(n), fuseErrno(err)
 }
 
 func (fh *fuseFileHandle) Release(_ context.Context) syscall.Errno {
@@ -349,7 +350,7 @@ func fuseErrno(err error) syscall.Errno {
 }
 
 func fuseAttrFromFileInfo(fi fs.FileInfo, attr *fuse.Attr) {
-	attr.Size = clampToUint64(fi.Size())
+	attr.Size = mathutil.ClampToUint64(fi.Size())
 	attr.Mode = fuseMode(fi.Mode())
 	mt := fi.ModTime()
 	attr.SetTimes(&mt, &mt, &mt)

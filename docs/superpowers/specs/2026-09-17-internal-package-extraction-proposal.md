@@ -127,8 +127,8 @@ extract-to-`internal/` pattern is proven on lower-traffic code.
 ### 6. `internal/buffile` — from `buffile.go` (flagged, not "little dependency" as-is)
 
 `bufFile` (shared by `memFile` and `boltFile`) only imports stdlib
-(`fmt`, `io`, `io/fs`, `path`, `sync`, `time`) and calls into candidates
-#3/#4 above (`pathError`, `fsInfo`) — build-wise it looks like another
+(`fmt`, `io`, `io/fs`, `path`, `sync`, `time`) and calls into candidates 3
+and 4 above (`pathError`, `fsInfo`) — build-wise it looks like another
 easy win. But `memFile`/`boltFile` don't go through a method API: they
 embed `bufFile` and reach directly into its **unexported fields**
 (`f.mu`, `f.content`, `f.path`, `f.mode`, `f.modTime`, `f.dirty`) and call

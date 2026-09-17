@@ -366,8 +366,8 @@ func TestBufFileWriteAtOffsetLocked(t *testing.T) {
 		if f.offset != 0 {
 			t.Errorf("offset after zero-length write = %d, want 0", f.offset)
 		}
-		if f.content.String() != "abc" {
-			t.Errorf("content after zero-length write = %q, want %q", f.content.String(), "abc")
+		if string(f.content) != "abc" {
+			t.Errorf("content after zero-length write = %q, want %q", f.content, "abc")
 		}
 	})
 
@@ -375,8 +375,8 @@ func TestBufFileWriteAtOffsetLocked(t *testing.T) {
 		f := newTestBufFile("x.txt", "abcdef")
 		dst := f.writeAtOffsetLocked(3)
 		copy(dst, "XYZ")
-		if f.content.String() != "XYZdef" {
-			t.Errorf("content = %q, want %q", f.content.String(), "XYZdef")
+		if string(f.content) != "XYZdef" {
+			t.Errorf("content = %q, want %q", f.content, "XYZdef")
 		}
 		if f.offset != 3 {
 			t.Errorf("offset = %d, want 3", f.offset)
@@ -388,8 +388,8 @@ func TestBufFileWriteAtOffsetLocked(t *testing.T) {
 		f.offset = 3
 		dst := f.writeAtOffsetLocked(2)
 		copy(dst, "de")
-		if f.content.String() != "abcde" {
-			t.Errorf("content = %q, want %q", f.content.String(), "abcde")
+		if string(f.content) != "abcde" {
+			t.Errorf("content = %q, want %q", f.content, "abcde")
 		}
 	})
 
@@ -399,8 +399,8 @@ func TestBufFileWriteAtOffsetLocked(t *testing.T) {
 		dst := f.writeAtOffsetLocked(2)
 		copy(dst, "XY")
 		want := "ab\x00\x00\x00XY"
-		if f.content.String() != want {
-			t.Errorf("content = %q, want %q", f.content.String(), want)
+		if string(f.content) != want {
+			t.Errorf("content = %q, want %q", f.content, want)
 		}
 		if f.offset != 7 {
 			t.Errorf("offset = %d, want 7", f.offset)

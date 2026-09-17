@@ -25,6 +25,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -438,8 +439,8 @@ func TestForEachFileInfoInterface(t *testing.T) {
 	}()
 
 	wantInfos := []fs.FileInfo{
-		&fsInfo{name: "fast.txt", size: 10, mode: fs.ModePerm},
-		&fsInfo{name: "path.txt", size: 20, mode: fs.ModePerm},
+		fsinfo.New(fsinfo.Params{Name: "fast.txt", Size: 10, Mode: fs.ModePerm}),
+		fsinfo.New(fsinfo.Params{Name: "path.txt", Size: 20, Mode: fs.ModePerm}),
 	}
 	fsys := &forEachFileInfoFS{FS: inner, infos: wantInfos}
 

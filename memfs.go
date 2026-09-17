@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/notifybus"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -64,19 +65,19 @@ type memNode struct {
 
 func (n *memNode) size() int64 {
 	if n.isDir {
-		return emptyDirSize
+		return 0
 	}
 	return int64(len(n.content))
 }
 
 func (n *memNode) info() fs.FileInfo {
-	return &fsInfo{
-		name:    n.name,
-		size:    n.size(),
-		mode:    n.mode,
-		modTime: n.modTime,
-		isDir:   n.isDir,
-	}
+	return fsinfo.New(fsinfo.Params{
+		Name:    n.name,
+		Size:    n.size(),
+		Mode:    n.mode,
+		ModTime: n.modTime,
+		IsDir:   n.isDir,
+	})
 }
 
 // memFS is an in-memory file system. All nodes are stored in a flat map keyed
@@ -156,13 +157,12 @@ type memDirFile struct {
 }
 
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{
-		name:    path.Base(d.path),
-		size:    emptyDirSize,
-		mode:    d.mode,
-		modTime: d.modTime,
-		isDir:   true,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:    path.Base(d.path),
+		Mode:    d.mode,
+		ModTime: d.modTime,
+		IsDir:   true,
+	}), nil
 }
 
 func (d *memDirFile) Read([]byte) (int, error) {

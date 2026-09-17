@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -281,15 +282,13 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 				continue
 			}
 		}
-		appendEntry[dir] = makeVirtualDirEntry(dir)
+		appendEntry[dir] = fsinfo.NewVirtualDirEntry(dir)
 	}
 
 	for _, entry := range entries {
 		if isMountableArchivePath(entry.Name()) {
 			mountName := entry.Name() + ".d"
-			appendEntry[mountName] = &virtualDirEntry{
-				name: mountName,
-			}
+			appendEntry[mountName] = fsinfo.NewVirtualDirEntry(mountName)
 		}
 	}
 	if len(appendEntry) == 0 {

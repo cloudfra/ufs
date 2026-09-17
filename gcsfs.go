@@ -33,6 +33,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
+	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -83,13 +84,13 @@ func (f *gcsFile) Stat() (fs.FileInfo, error) {
 	if f.isDir {
 		mode = fs.ModeDir | fs.ModePerm
 	}
-	return &fsInfo{
-		name:    path.Base(f.name),
-		size:    f.size,
-		mode:    mode,
-		modTime: f.modTime,
-		isDir:   f.isDir,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:    path.Base(f.name),
+		Size:    f.size,
+		Mode:    mode,
+		ModTime: f.modTime,
+		IsDir:   f.isDir,
+	}), nil
 }
 
 func (f *gcsFile) Read(p []byte) (int, error) {
@@ -294,7 +295,7 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	if name == pathutil.CwdPath {
-		return &fsInfo{name: pathutil.CwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+		return fsinfo.New(fsinfo.Params{Name: pathutil.CwdPath, Mode: fs.ModeDir | fs.ModePerm, IsDir: true}), nil
 	}
 	if err := pathutil.ValidPath("stat", name); err != nil {
 		return nil, err
@@ -303,12 +304,12 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	objPath := path.Join(fsys.baseDir, name)
 	attrs, err := fsys.client.Bucket(fsys.bucket).Object(objPath).Attrs(fsys.ctx)
 	if err == nil {
-		return &fsInfo{
-			name:    path.Base(name),
-			size:    attrs.Size,
-			mode:    fs.ModePerm,
-			modTime: attrs.Updated,
-		}, nil
+		return fsinfo.New(fsinfo.Params{
+			Name:    path.Base(name),
+			Size:    attrs.Size,
+			Mode:    fs.ModePerm,
+			ModTime: attrs.Updated,
+		}), nil
 	}
 	if !errors.Is(err, storage.ErrObjectNotExist) {
 		return nil, pathutil.PathError("stat", name, err)
@@ -322,7 +323,7 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	if len(entries) == 0 {
 		return nil, pathutil.PathError("stat", name, fs.ErrNotExist)
 	}
-	return &fsInfo{name: path.Base(name), mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+	return fsinfo.New(fsinfo.Params{Name: path.Base(name), Mode: fs.ModeDir | fs.ModePerm, IsDir: true}), nil
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
@@ -356,23 +357,22 @@ func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 			if dirName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-				name:  dirName,
-				mode:  fs.ModeDir | fs.ModePerm,
-				isDir: true,
-			}))
+			entries = append(entries, fs.FileInfoToDirEntry(fsinfo.New(fsinfo.Params{
+				Name:  dirName,
+				Mode:  fs.ModeDir | fs.ModePerm,
+				IsDir: true,
+			})))
 		} else {
 			fileName := strings.TrimPrefix(attrs.Name, listPrefix)
 			if fileName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-				name:    fileName,
-				size:    attrs.Size,
-				mode:    fs.ModePerm,
-				modTime: attrs.Updated,
-				isDir:   false,
-			}))
+			entries = append(entries, fs.FileInfoToDirEntry(fsinfo.New(fsinfo.Params{
+				Name:    fileName,
+				Size:    attrs.Size,
+				Mode:    fs.ModePerm,
+				ModTime: attrs.Updated,
+			})))
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool {

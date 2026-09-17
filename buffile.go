@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -61,13 +62,12 @@ func newBufFile(path string, content []byte, mode fs.FileMode, modTime time.Time
 
 func (f *bufFile) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
-	info := &fsInfo{
-		name:    path.Base(f.path),
-		size:    int64(len(f.content)),
-		mode:    f.mode,
-		modTime: f.modTime,
-		isDir:   false,
-	}
+	info := fsinfo.New(fsinfo.Params{
+		Name:    path.Base(f.path),
+		Size:    int64(len(f.content)),
+		Mode:    f.mode,
+		ModTime: f.modTime,
+	})
 	f.mu.Unlock()
 	return info, nil
 }

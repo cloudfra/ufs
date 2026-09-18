@@ -68,6 +68,9 @@ func init() {
 		Name:       "bolt",
 		MatchFunc:  isBoltFSUri,
 		CreateFunc: newBoltFS,
+		Priority:   1,
+		Standard:   true,
+		ReadWrite:  true,
 	})
 }
 

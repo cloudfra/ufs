@@ -47,6 +47,9 @@ func init() {
 		Name:       "memory",
 		MatchFunc:  isMemFSUri,
 		CreateFunc: newMemFS,
+		Priority:   1,
+		Standard:   true,
+		ReadWrite:  true,
 	})
 }
 

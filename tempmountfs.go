@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/errorutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -34,7 +35,7 @@ type tempMountFS struct {
 	closer func() error
 }
 
-func (fsys *tempMountFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *tempMountFS) getDeviceInfo() map[string]deviceinfo.Info {
 	return fsys.lfs.getDeviceInfo()
 }
 

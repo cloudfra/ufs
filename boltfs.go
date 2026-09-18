@@ -38,7 +38,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/errorutil"
+	"github.com/cloudfra/ufs/internal/fsinfo"
+	"github.com/cloudfra/ufs/internal/notifybus"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	pb "github.com/cloudfra/ufs/proto"
 )
@@ -85,8 +88,7 @@ type boltFS struct {
 	absPath string
 	db      *bolt.DB
 
-	watchersMu sync.RWMutex
-	watchers   []*boltWatcher
+	notifyBus *notifybus.Bus
 }
 
 // boltFile is an open read-write handle for a regular file. Writes are
@@ -177,13 +179,12 @@ type boltDirFile struct {
 }
 
 func (d *boltDirFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{
-		name:    path.Base(d.path),
-		size:    emptyDirSize,
-		mode:    d.mode,
-		modTime: d.modTime,
-		isDir:   true,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:    path.Base(d.path),
+		Mode:    d.mode,
+		ModTime: d.modTime,
+		IsDir:   true,
+	}), nil
 }
 
 func (d *boltDirFile) Read([]byte) (int, error) {
@@ -340,11 +341,11 @@ func dirBucket(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
 	return bkt, nil
 }
 
-func (fsys *boltFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        fsys.name,
-		deviceType:  "bolt",
-		threadCount: 1,
+func (fsys *boltFS) getDeviceInfo() map[string]deviceinfo.Info {
+	return deviceinfo.NewMap(deviceinfo.Info{
+		Name:        fsys.name,
+		DeviceType:  "bolt",
+		ThreadCount: 1,
 	})
 }
 
@@ -472,18 +473,18 @@ func (fsys *boltFS) listDir(dir string) ([]fs.DirEntry, error) {
 					if derr != nil {
 						return derr
 					}
-					entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-						name: name, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true,
-					}))
+					entries = append(entries, fs.FileInfoToDirEntry(fsinfo.New(fsinfo.Params{
+						Name: name, Mode: mode, ModTime: modTime, IsDir: true,
+					})))
 					return nil
 				}
 				mode, modTime, content, derr := decodeBoltRecord(v)
 				if derr != nil {
 					return derr
 				}
-				entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-					name: name, size: int64(len(content)), mode: mode, modTime: modTime, isDir: false,
-				}))
+				entries = append(entries, fs.FileInfoToDirEntry(fsinfo.New(fsinfo.Params{
+					Name: name, Size: int64(len(content)), Mode: mode, ModTime: modTime,
+				})))
 				return nil
 			})
 		})
@@ -498,12 +499,7 @@ func (fsys *boltFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *boltFS) Close() error {
-	fsys.watchersMu.Lock()
-	for _, bw := range fsys.watchers {
-		bw.cancel()
-	}
-	fsys.watchers = nil
-	fsys.watchersMu.Unlock()
+	fsys.notifyBus.CloseAll()
 
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
@@ -719,7 +715,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 				if derr != nil {
 					return derr
 				}
-				info = &fsInfo{name: pathutil.CwdPath, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true}
+				info = fsinfo.New(fsinfo.Params{Name: pathutil.CwdPath, Mode: mode, ModTime: modTime, IsDir: true})
 				return nil
 			}
 			bkt, key, err := getOrCreateBucket(tx, name)
@@ -732,7 +728,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 				if derr != nil {
 					return derr
 				}
-				info = &fsInfo{name: key, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true}
+				info = fsinfo.New(fsinfo.Params{Name: key, Mode: mode, ModTime: modTime, IsDir: true})
 				return nil
 			}
 			data := bkt.Get(keyBytes)
@@ -743,7 +739,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 			if derr != nil {
 				return derr
 			}
-			info = &fsInfo{name: key, size: int64(len(content)), mode: mode, modTime: modTime, isDir: false}
+			info = fsinfo.New(fsinfo.Params{Name: key, Size: int64(len(content)), Mode: mode, ModTime: modTime})
 			return nil
 		})
 	})
@@ -1006,9 +1002,10 @@ func makeBoltFS(name string) (*boltFS, error) {
 		return nil, errorutil.Join(fmt.Errorf("cannot initialize bolt root bucket for %q, %w", name, err), db.Close())
 	}
 	return &boltFS{
-		name:    name,
-		absPath: absPath,
-		db:      db,
+		name:      name,
+		absPath:   absPath,
+		db:        db,
+		notifyBus: notifybus.New(),
 	}, nil
 }
 

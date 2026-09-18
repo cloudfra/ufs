@@ -24,9 +24,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
+	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestNewNestFS(t *testing.T) {
@@ -444,10 +446,6 @@ func TestNestFSStat(t *testing.T) {
 	}
 }
 
-func TestNestFS(t *testing.T) {
-	testFileSystem(t, newNestFS, "memory://")
-}
-
 func TestNestReadDirFileRead(t *testing.T) {
 	fsys, err := newNestFS(t.Context(), "memory://")
 	if err != nil {
@@ -812,7 +810,7 @@ func newTestBareFile(name, content string) *testBareFile {
 }
 
 func (f *testBareFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{name: f.name, size: f.r.Size()}, nil
+	return fsinfo.New(fsinfo.Params{Name: f.name, Size: f.r.Size()}), nil
 }
 func (f *testBareFile) Read(p []byte) (int, error) { return f.r.Read(p) }
 func (f *testBareFile) Close() error               { return nil }
@@ -859,7 +857,7 @@ func newTestSeekerFile(name, content string) *testSeekerFile {
 }
 
 func (f *testSeekerFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{name: f.name, size: f.r.Size()}, nil
+	return fsinfo.New(fsinfo.Params{Name: f.name, Size: f.r.Size()}), nil
 }
 func (f *testSeekerFile) Read(p []byte) (int, error)                { return f.r.Read(p) }
 func (f *testSeekerFile) Close() error                              { return nil }

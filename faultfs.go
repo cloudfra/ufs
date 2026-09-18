@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -113,7 +114,7 @@ func newFaultFS(inner FS, cfg FaultConfig) (FS, error) {
 	}, nil
 }
 
-func (fsys *faultFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *faultFS) getDeviceInfo() map[string]deviceinfo.Info {
 	return fsys.inner.getDeviceInfo()
 }
 

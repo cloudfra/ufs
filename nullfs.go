@@ -24,6 +24,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
+	"github.com/cloudfra/ufs/internal/fsinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -37,21 +39,18 @@ var (
 	_ fs.GlobFS      = (*nullFS)(nil)
 	_ fs.ReadDirFile = (*nullReadDirFile)(nil)
 
-	nullDirStat = &fsInfo{
-		name:    ".",
-		size:    emptyDirSize,
-		mode:    fs.ModeDir | fs.ModePerm,
-		modTime: unixEpochTime,
-		isDir:   true,
-		sys:     nil,
-	}
+	nullDirStat = fsinfo.New(fsinfo.Params{
+		Name:  ".",
+		Mode:  fs.ModeDir | fs.ModePerm,
+		IsDir: true,
+	})
 
-	nullDeviceInfo = deviceInfo{
-		name:        "null",
-		deviceType:  "null",
-		threadCount: 1,
+	nullDeviceInfo = deviceinfo.Info{
+		Name:        "null",
+		DeviceType:  "null",
+		ThreadCount: 1,
 	}
-	nullDeviceInfoMap = newDeviceInfoMap(nullDeviceInfo)
+	nullDeviceInfoMap = deviceinfo.NewMap(nullDeviceInfo)
 )
 
 func init() {
@@ -72,19 +71,14 @@ type nullFile struct {
 func (n *nullFile) Stat() (fs.FileInfo, error) {
 	isDir := pathutil.IsDirName(n.name)
 	mode := fs.ModePerm
-	size := int64(0)
 	if isDir {
 		mode = fs.ModeDir | fs.ModePerm
-		size = emptyDirSize
 	}
-	return &fsInfo{
-		name:    path.Base(n.name),
-		size:    size,
-		mode:    mode,
-		modTime: unixEpochTime,
-		isDir:   isDir,
-		sys:     nil,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:  path.Base(n.name),
+		Mode:  mode,
+		IsDir: isDir,
+	}), nil
 }
 
 func (n *nullFile) Read(_ []byte) (int, error) {
@@ -139,7 +133,7 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *nullFS) getDeviceInfo() map[string]deviceinfo.Info {
 	return nullDeviceInfoMap
 }
 
@@ -211,19 +205,14 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 	}
 	isDir := pathutil.IsDirName(name)
 	mode := fs.ModePerm
-	size := int64(0)
 	if isDir {
 		mode = fs.ModeDir | fs.ModePerm
-		size = emptyDirSize
 	}
-	return &fsInfo{
-		name:    name,
-		size:    size,
-		mode:    mode,
-		modTime: unixEpochTime,
-		isDir:   isDir,
-		sys:     nil,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:  name,
+		Mode:  mode,
+		IsDir: isDir,
+	}), nil
 }
 
 func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {

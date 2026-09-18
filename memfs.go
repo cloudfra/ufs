@@ -28,6 +28,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
+	"github.com/cloudfra/ufs/internal/fsinfo"
+	"github.com/cloudfra/ufs/internal/notifybus"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -66,19 +69,19 @@ type memNode struct {
 
 func (n *memNode) size() int64 {
 	if n.isDir {
-		return emptyDirSize
+		return 0
 	}
 	return int64(len(n.content))
 }
 
 func (n *memNode) info() fs.FileInfo {
-	return &fsInfo{
-		name:    n.name,
-		size:    n.size(),
-		mode:    n.mode,
-		modTime: n.modTime,
-		isDir:   n.isDir,
-	}
+	return fsinfo.New(fsinfo.Params{
+		Name:    n.name,
+		Size:    n.size(),
+		Mode:    n.mode,
+		ModTime: n.modTime,
+		IsDir:   n.isDir,
+	})
 }
 
 // memFS is an in-memory file system. All nodes are stored in a flat map keyed
@@ -89,8 +92,7 @@ type memFS struct {
 	name  string
 	nodes map[string]*memNode
 
-	watchersMu sync.RWMutex
-	watchers   []*memWatcher
+	notifyBus *notifybus.Bus
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -159,13 +161,12 @@ type memDirFile struct {
 }
 
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{
-		name:    path.Base(d.path),
-		size:    emptyDirSize,
-		mode:    d.mode,
-		modTime: d.modTime,
-		isDir:   true,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:    path.Base(d.path),
+		Mode:    d.mode,
+		ModTime: d.modTime,
+		IsDir:   true,
+	}), nil
 }
 
 func (d *memDirFile) Read([]byte) (int, error) {
@@ -194,11 +195,11 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-func (fsys *memFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        fsys.name,
-		deviceType:  "memory",
-		threadCount: 2,
+func (fsys *memFS) getDeviceInfo() map[string]deviceinfo.Info {
+	return deviceinfo.NewMap(deviceinfo.Info{
+		Name:        fsys.name,
+		DeviceType:  "memory",
+		ThreadCount: 2,
 	})
 }
 
@@ -299,12 +300,7 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	fsys.watchersMu.Lock()
-	for _, mw := range fsys.watchers {
-		mw.cancel()
-	}
-	fsys.watchers = nil
-	fsys.watchersMu.Unlock()
+	fsys.notifyBus.CloseAll()
 
 	fsys.mu.Lock()
 	fsys.nodes = nil
@@ -615,6 +611,7 @@ func makeMemFS(name string) *memFS {
 				isDir:   true,
 			},
 		},
+		notifyBus: notifybus.New(),
 	}
 }
 

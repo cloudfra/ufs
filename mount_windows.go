@@ -27,10 +27,11 @@ import (
 	"sync"
 	"unsafe"
 
+	"golang.org/x/sys/windows"
+
 	"github.com/cloudfra/ufs/internal/mathutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"golang.org/x/sys/windows"
 )
 
 // utf16Str is a pointer to a null-terminated UTF-16 string (Windows LPCWSTR).

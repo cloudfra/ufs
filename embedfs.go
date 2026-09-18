@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -32,11 +33,11 @@ type embedFS struct {
 	fsys embed.FS
 }
 
-func (fsys *embedFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        "/dev/embed/" + fsys.name,
-		deviceType:  "memory",
-		threadCount: 1,
+func (fsys *embedFS) getDeviceInfo() map[string]deviceinfo.Info {
+	return deviceinfo.NewMap(deviceinfo.Info{
+		Name:        "/dev/embed/" + fsys.name,
+		DeviceType:  "memory",
+		ThreadCount: 1,
 	})
 }
 

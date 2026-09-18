@@ -23,9 +23,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
+
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/fsnotify/fsnotify"
 )
 
 var _ Watcher = (*localFS)(nil)

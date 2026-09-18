@@ -23,19 +23,20 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const procMountsPath = "/proc/self/mounts"
 
-func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *localFS) getDeviceInfo() map[string]deviceinfo.Info {
 	rootPath := fsys.osFS.Name()
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath
 	}
 	f, err := osutil.Open(procMountsPath)
 	if err != nil {
-		return defaultDeviceMap
+		return deviceinfo.DefaultMap
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -51,7 +52,7 @@ type linuxMountEntry struct {
 	fsType     string
 }
 
-func linuxDeviceMapFromReader(rootPath string, r io.Reader) map[string]deviceInfo {
+func linuxDeviceMapFromReader(rootPath string, r io.Reader) map[string]deviceinfo.Info {
 	entries := parseLinuxMounts(r)
 	return buildLinuxDeviceMap(rootPath, entries)
 }
@@ -80,8 +81,8 @@ func parseLinuxMounts(r io.Reader) []linuxMountEntry {
 	return entries
 }
 
-func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]deviceInfo {
-	result := map[string]deviceInfo{".": defaultDeviceInfo}
+func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]deviceinfo.Info {
+	result := map[string]deviceinfo.Info{".": deviceinfo.Default}
 
 	// Find the mount that best covers rootPath (longest prefix match).
 	bestMatchLen := -1
@@ -102,7 +103,7 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]
 			continue
 		}
 		di := linuxMakeDeviceInfo(m)
-		if di.name != getParentDeviceInfo(result, rel).name {
+		if di.Name != deviceinfo.GetParent(result, rel).Name {
 			result[rel] = di
 		}
 	}
@@ -110,13 +111,13 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]
 	return result
 }
 
-func linuxMakeDeviceInfo(m linuxMountEntry) deviceInfo {
+func linuxMakeDeviceInfo(m linuxMountEntry) deviceinfo.Info {
 	dt, tc := linuxDeviceTypeAndThreads(m)
 	name := m.device
 	if name == "none" || name == "" {
 		name = m.fsType
 	}
-	return deviceInfo{name: name, deviceType: dt, threadCount: tc}
+	return deviceinfo.Info{Name: name, DeviceType: dt, ThreadCount: tc}
 }
 
 func linuxDeviceTypeAndThreads(m linuxMountEntry) (string, int) {

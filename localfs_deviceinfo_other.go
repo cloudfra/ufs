@@ -16,6 +16,8 @@
 
 package ufs
 
-func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
-	return defaultDeviceMap
+import "github.com/cloudfra/ufs/internal/deviceinfo"
+
+func (fsys *localFS) getDeviceInfo() map[string]deviceinfo.Info {
+	return deviceinfo.DefaultMap
 }

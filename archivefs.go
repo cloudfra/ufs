@@ -26,10 +26,13 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/mholt/archives"
+
+	"github.com/cloudfra/ufs/internal/deviceinfo"
+	"github.com/cloudfra/ufs/internal/download"
 	"github.com/cloudfra/ufs/internal/errorutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/mholt/archives"
 )
 
 const (
@@ -42,12 +45,12 @@ var (
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
-	archiveDeviceInfo = deviceInfo{
-		name:        "archive",
-		deviceType:  "archive",
-		threadCount: 1,
+	archiveDeviceInfo = deviceinfo.Info{
+		Name:        "archive",
+		DeviceType:  "archive",
+		ThreadCount: 1,
 	}
-	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
+	archiveDeviceInfoMap = deviceinfo.NewMap(archiveDeviceInfo)
 )
 
 func init() {
@@ -100,7 +103,7 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 }
 
-func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *archiveFS) getDeviceInfo() map[string]deviceinfo.Info {
 	return archiveDeviceInfoMap
 }
 
@@ -232,6 +235,9 @@ func (fsys *archiveFS) ReadLink(name string) (string, error) {
 }
 
 func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
+	if err := pathutil.ValidPath("lstat", name); err != nil {
+		return nil, err
+	}
 	// Archives contain no symlinks, so Lstat == Stat.
 	return fsys.Stat(name)
 }
@@ -316,7 +322,7 @@ func newTempMountRemoteArchiveFS(ctx context.Context, name string) (FS, error) {
 		return nil, fmt.Errorf("cannot create temp directory, %w", errorutil.Join(err, cleanupErr))
 	}
 
-	filename, err := downloadFile(ctx, tempDir, name)
+	filename, err := download.File(ctx, tempDir, name)
 	if err != nil {
 		cleanupErr := cleanup()
 		return nil, errorutil.Join(err, cleanupErr)

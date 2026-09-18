@@ -22,11 +22,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 func TestIsGitFSUri(t *testing.T) {
@@ -167,7 +168,7 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 }
 
 // initTestGitRepo creates a git repo at dir with the given files committed.
-func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
+func initTestGitRepo(t testing.TB, dir string, files map[string]string) error {
 	t.Helper()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -186,6 +187,7 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 		return err
 	}
 	_, err = w.Commit("init", &git.CommitOptions{
+		AllowEmptyCommits: true,
 		Author: &object.Signature{
 			Name:  "Test",
 			Email: "test@test.com",

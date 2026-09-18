@@ -16,255 +16,23 @@ package ufs
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"reflect"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/xyproto/randomstring"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/google/go-cmp/cmp"
-	"github.com/xyproto/randomstring"
 )
-
-type fsTestCase struct {
-	name       string
-	createFS   func(tb testing.TB) FS
-	wantString string
-}
-
-var (
-	angryFSTestCase = fsTestCase{
-		name:       "angryFS",
-		createFS:   mustAngryFS,
-		wantString: angryFSPrefix,
-	}
-
-	readWriteFSTestCaseList = append([]fsTestCase{
-		{
-			name: "localFS",
-			createFS: func(tb testing.TB) FS {
-				dir := mustTemp(tb)
-				fsys, err := newLocalFS(tb.Context(), dir)
-				if err != nil {
-					tb.Fatalf("cannot create localFS file system, %s", err)
-				}
-				tb.Cleanup(func() {
-					if err := fsys.Close(); err != nil {
-						tb.Errorf("Close() = %v", err)
-					}
-				})
-				return fsys
-			},
-			wantString: "file://" + osTempDir(),
-		},
-		{
-			name: "tempMountFS",
-			createFS: func(tb testing.TB) FS {
-				fsys, err := newTempMountFS(tb.Context(), "test://", func(string) error { return nil })
-				if err != nil {
-					tb.Fatalf("cannot create tempMountFS file system, %s", err)
-				}
-				tb.Cleanup(func() {
-					if err := fsys.Close(); err != nil {
-						tb.Errorf("Close() = %v", err)
-					}
-				})
-				return fsys
-			},
-			wantString: "test:",
-		},
-		{
-			name: "memFS",
-			createFS: func(tb testing.TB) FS {
-				fsys := makeMemFS(memFSPrefix)
-				tb.Cleanup(func() {
-					if err := fsys.Close(); err != nil {
-						tb.Errorf("Close() = %v", err)
-					}
-				})
-				return fsys
-			},
-			wantString: memFSPrefix,
-		},
-	}, boltFSTestCaseList()...)
-
-	readOnlyFSTestCaseList = []fsTestCase{
-		{
-			name: "nullFS",
-			createFS: func(tb testing.TB) FS {
-				fsys := makeNullFS(nullFSPrefix)
-				tb.Cleanup(func() {
-					if err := fsys.Close(); err != nil {
-						tb.Errorf("Close() = %v", err)
-					}
-				})
-				return fsys
-			},
-			wantString: nullFSPrefix,
-		},
-	}
-
-	// permDeniedFSTestCaseList holds FSes whose write operations return
-	// fs.ErrPermission rather than succeeding silently.
-	permDeniedFSTestCaseList = []fsTestCase{
-		{
-			name: "readOnlyFS",
-			createFS: func(tb testing.TB) FS {
-				inner := makeNullFS(nullFSPrefix)
-				tb.Cleanup(func() {
-					if err := inner.Close(); err != nil {
-						tb.Fatalf("failed to close inner FS: %v", err)
-					}
-				})
-				return ReadOnly(inner)
-			},
-			wantString: nullFSPrefix,
-		},
-	}
-
-	testassetFilenameList = []string{
-		pathutil.CwdPath,
-		"files/index.html",
-		"archives/nested-testassets.zip",
-	}
-
-	testassetDirList = map[string][]string{
-		pathutil.CwdPath: {},
-		"files":          {},
-		"archives":       {},
-	}
-
-	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
-)
-
-func getReadWriteTestCaseList() []fsTestCase {
-	return readWriteFSTestCaseList
-}
-
-func getAllTestCaseList() []fsTestCase {
-	return appendNestFSTestCase(append(append(readOnlyFSTestCaseList, readWriteFSTestCaseList...), angryFSTestCase))
-}
-
-func getAllRegularTestCaseList() []fsTestCase {
-	return appendNestFSTestCase(readWriteFSTestCaseList)
-}
-
-func getAllExceptAngryTestCaseList() []fsTestCase {
-	return appendNestFSTestCase(append(readOnlyFSTestCaseList, readWriteFSTestCaseList...))
-}
-
-func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
-	ctx := context.Background()
-	result := make([]fsTestCase, len(tcl)*2)
-	for idx, tc := range tcl {
-		result[idx*2] = tc
-		result[idx*2+1] = fsTestCase{
-			name: "nestFS." + tc.name,
-			createFS: func(tb testing.TB) FS {
-				return makeNestFS(ctx, tc.createFS(tb))
-			},
-		}
-	}
-	return result
-}
-
-func testFileSystem(t *testing.T, newFSFunc func(ctx context.Context, name string) (FS, error), name string) {
-	t.Helper()
-	fsys := mustFS(t, newFSFunc, name)
-
-	wantFiles := []string{"a", "ab/b/c", "ab/d/c", "def", "abc", "abc.txt", "temp/abc.txt"}
-
-	mkdirForTest(t, fsys, "ab/b")
-	mkdirForTest(t, fsys, "temp")
-	mkdirForTest(t, fsys, "ab/d")
-
-	for _, name := range wantFiles {
-		t.Run(fmt.Sprintf("crud_%s", name), func(t *testing.T) {
-			wantData := randomString(1000)
-			if wf, err := fsys.Create(name); err != nil {
-				t.Errorf("cannot create file %q, %s", name, err)
-			} else {
-				info, err := wf.Stat()
-				if err != nil {
-					t.Errorf("cannot Stat() %q, %s", name, err)
-				}
-				if info == nil {
-					t.Fatalf("info is nil")
-				}
-				if info.IsDir() != false {
-					t.Errorf("%q is a directory, want file", name)
-				}
-				if n, err := io.WriteString(wf, wantData); err != nil {
-					t.Errorf("cannot write file content to %q, %s", name, err)
-				} else if n != len(wantData) {
-					t.Errorf("contents written to file does not match the size got %d, want %d", n, len(wantData))
-				}
-				if err := wf.Close(); err != nil {
-					t.Errorf("failed to Close() write file %q, %s", name, err)
-				}
-			}
-
-			if rf, err := fsys.Open(name); err != nil {
-				t.Errorf("cannot open file %q, %s", name, err)
-			} else {
-				if rf == nil {
-					t.Fatal("rf is nil")
-				}
-				info, err := rf.Stat()
-				if err != nil {
-					t.Errorf("cannot Stat() %q, %s", name, err)
-				}
-				if info == nil {
-					t.Fatal("info is nil")
-				}
-				if info.IsDir() != false {
-					t.Errorf("%q is a directory, want file", name)
-				}
-				if got, err := io.ReadAll(rf); err != nil {
-					t.Errorf("cannot read file content to %q, %s", name, err)
-				} else if diff := cmp.Diff(wantData, string(got)); diff != "" {
-					t.Errorf("io.ReadAll(%s) mismatch (-want +got):\n%s\nwant: %q\ngot: %q", name, diff, wantData, string(got))
-				}
-				if err := rf.Close(); err != nil {
-					t.Errorf("failed to Close() read file %q, %s", name, err)
-				}
-			}
-		})
-	}
-
-	if err := fstest.TestFS(fsys, wantFiles...); err != nil {
-		t.Errorf("fstest.TestFS failed for %q: %v", name, err)
-	}
-
-	if err := fsys.Close(); err != nil {
-		t.Errorf("error on Close(), %v", err)
-	}
-}
-
-func mkdirForTest(tb testing.TB, fsys FS, dirs ...string) {
-	tb.Helper()
-	dir := path.Join(dirs...)
-	if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-		tb.Fatalf("cannot create directory %q, %s", dir, err)
-	}
-}
-
-/*
-func newFSFuncWithoutContext(fn func(name string) (FS, error)) func(context.Context, string) (FS, error) {
-	return func(_ context.Context, name string) (FS, error) {
-		return fn(name)
-	}
-}
-*/
 
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
 	tb.Helper()
@@ -280,7 +48,15 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 	return fsys
 }
 
+// randomStringMu guards randomstring.HumanFriendlyString, which reads and
+// advances a package-level *rand.Rand with no internal locking of its own.
+// Needed because randomString is now called concurrently from many more
+// parallel subtests (across every conformance driver) than before.
+var randomStringMu sync.Mutex
+
 func randomString(size int) string {
+	randomStringMu.Lock()
+	defer randomStringMu.Unlock()
 	return randomstring.HumanFriendlyString(size)
 }
 
@@ -308,102 +84,6 @@ func mustTime(s string) time.Time {
 		panic(err)
 	}
 	return val
-}
-
-func TestFSMkdirAll(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getAllExceptAngryTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
-			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-				t.Errorf("MkdirAll() = %v, want nil", err)
-			}
-		})
-	}
-}
-
-func TestFSReadFile(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getReadWriteTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			wantData := randomString(100)
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
-			f, err := fsys.Create("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("Create failed: %v", err)
-			}
-			if _, err := io.WriteString(f, wantData); err != nil {
-				t.Fatalf("WriteString failed: %v", err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatalf("Close failed: %v", err)
-			}
-
-			rfs, ok := fsys.(fs.ReadFileFS)
-			if !ok {
-				t.Skip("does not implement fs.ReadFileFS")
-			}
-			got, err := rfs.ReadFile("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("ReadFile failed: %v", err)
-			}
-			if diff := cmp.Diff(wantData, string(got)); diff != "" {
-				t.Errorf("ReadFile mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func verifyFS(t *testing.T, fsys FS) {
-	verifyReadOnlyFS(t, fsys)
-}
-
-func verifyReadOnlyFS(t *testing.T, fsys fs.FS) {
-	t.Helper()
-	if fsys == nil {
-		t.Fatal("file system is nil")
-	}
-	if _, ok := fsys.(ReadFS); !ok {
-		t.Errorf("file system does not implement ReadFS")
-	}
-}
-
-func TestReadOnlyFS(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range append(append(readWriteFSTestCaseList, readOnlyFSTestCaseList...), permDeniedFSTestCaseList...) {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
-			if fsys == nil {
-				t.Fatalf("file system is nil")
-			}
-			verifyReadOnlyFS(t, fsys)
-			validateClose(t, fsys)()
-		})
-	}
-}
-
-func TestFS(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range readWriteFSTestCaseList {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
-			if fsys == nil {
-				t.Fatalf("file system is nil")
-			}
-			verifyFS(t, fsys)
-			validateClose(t, fsys)()
-		})
-	}
 }
 
 func must(tb testing.TB, err error) {

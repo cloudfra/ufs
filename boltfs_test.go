@@ -103,10 +103,6 @@ func TestNewBoltFS(t *testing.T) {
 	defer validateClose(t, fsys)()
 }
 
-func TestBoltFS(t *testing.T) {
-	testFileSystem(t, newBoltFS, testBoltFSURI(t))
-}
-
 func TestBoltFSCreate(t *testing.T) {
 	fsys := newTestBoltFS(t)
 

@@ -25,10 +25,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cloudfra/ufs/internal/mathutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+
+	"github.com/cloudfra/ufs/internal/mathutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // Not implemented FUSE operations (ufs has no support for these):

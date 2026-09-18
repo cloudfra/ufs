@@ -59,6 +59,9 @@ func init() {
 		Name:       "null",
 		MatchFunc:  isNullFSUri,
 		CreateFunc: newNullFS,
+		Priority:   1,
+		Standard:   true,
+		ReadWrite:  false,
 	})
 }
 

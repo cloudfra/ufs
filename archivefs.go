@@ -57,12 +57,17 @@ func init() {
 		CreateFunc: func(ctx context.Context, name string) (FS, error) {
 			return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
 		},
+		Priority:  1,
+		Standard:  true,
+		ReadWrite: false,
 	})
 	Register(Driver{
 		Name:       "http-archive",
 		MatchFunc:  isTempMountRemoteArchiveURI,
 		CreateFunc: newTempMountRemoteArchiveFS,
 		Priority:   10000,
+		Standard:   true,
+		ReadWrite:  false,
 	})
 }
 

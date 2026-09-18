@@ -20,10 +20,11 @@ import (
 	"context"
 	"io"
 	"io/fs"
-	"strings"
-	"sync"
 
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/cloudfra/ufs/internal/notifybus"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 var _ Watcher = (*boltFS)(nil)
@@ -34,13 +35,13 @@ var _ Watcher = (*boltFS)(nil)
 // RemoveAll, MkdirAll).
 func (fsys *boltFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
-		return nil, pathError("watch", name, fs.ErrClosed)
+		return nil, pathutil.PathError("watch", name, fs.ErrClosed)
 	}
-	if err := validPath("watch", name); err != nil {
+	if err := pathutil.ValidPath("watch", name); err != nil {
 		return nil, err
 	}
 
-	if name != cwdPath {
+	if name != pathutil.CwdPath {
 		err := fsys.withDB(func(db *bolt.DB) error {
 			return db.View(func(tx *bolt.Tx) error {
 				_, err := dirBucket(tx, name)
@@ -48,106 +49,17 @@ func (fsys *boltFS) Watch(ctx context.Context, name string, hook NotifyHook) (io
 			})
 		})
 		if err != nil {
-			return nil, pathError("watch", name, err)
+			return nil, pathutil.PathError("watch", name, err)
 		}
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	bw := &boltWatcher{
-		fsys:   fsys,
-		prefix: name,
-		hook:   hook,
-		cancel: cancel,
-		done:   make(chan struct{}),
-		events: make(chan boltNotifyEvent, 256),
-	}
-
-	fsys.watchersMu.Lock()
-	fsys.watchers = append(fsys.watchers, bw)
-	fsys.watchersMu.Unlock()
-
-	go bw.loop(ctx)
-
-	return bw, nil
-}
-
-type boltWatcher struct {
-	fsys   *boltFS
-	prefix string
-	hook   NotifyHook
-	cancel context.CancelFunc
-
-	closeOnce sync.Once
-	done      chan struct{}
-	events    chan boltNotifyEvent
-}
-
-type boltNotifyEvent struct {
-	op   NotifyOp
-	path string
-}
-
-func (bw *boltWatcher) Close() error {
-	bw.closeOnce.Do(func() {
-		bw.cancel()
-		<-bw.done
-		bw.fsys.removeWatcher(bw)
+	sub := fsys.notifyBus.Subscribe(ctx, name, func(op notifybus.Op, path string) {
+		hook(NotifyOp(op), path)
 	})
-	return nil
-}
-
-func (bw *boltWatcher) loop(ctx context.Context) {
-	defer close(bw.done)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case ev, ok := <-bw.events:
-			if !ok {
-				return
-			}
-			bw.hook(ev.op, ev.path)
-		}
-	}
-}
-
-// matches reports whether path falls under this watcher's watched prefix.
-func (bw *boltWatcher) matches(path string) bool {
-	if bw.prefix == cwdPath {
-		return path != cwdPath
-	}
-	return path == bw.prefix || strings.HasPrefix(path, bw.prefix+"/")
-}
-
-// send enqueues an event if the path matches. Non-blocking: drops events if
-// the channel is full (best-effort, same as OS watchers).
-func (bw *boltWatcher) send(op NotifyOp, path string) {
-	if !bw.matches(path) {
-		return
-	}
-	select {
-	case bw.events <- boltNotifyEvent{op: op, path: path}:
-	default:
-	}
-}
-
-func (fsys *boltFS) removeWatcher(bw *boltWatcher) {
-	fsys.watchersMu.Lock()
-	defer fsys.watchersMu.Unlock()
-	for i, w := range fsys.watchers {
-		if w == bw {
-			fsys.watchers = append(fsys.watchers[:i], fsys.watchers[i+1:]...)
-			return
-		}
-	}
+	return sub, nil
 }
 
 // notify sends an event to all active watchers.
 func (fsys *boltFS) notify(op NotifyOp, path string) {
-	fsys.watchersMu.RLock()
-	watchers := fsys.watchers
-	fsys.watchersMu.RUnlock()
-	for _, bw := range watchers {
-		bw.send(op, path)
-	}
+	fsys.notifyBus.Publish(notifybus.Op(op), path)
 }

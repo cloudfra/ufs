@@ -21,6 +21,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/cloudfra/ufs/internal/fsinfo"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // localFSNormalizePath strips the "file://" URI prefix and converts a
@@ -42,11 +45,11 @@ func localFSNormalizePath(name string) string {
 // validLocalPath extends validPath by also rejecting backslash paths on Windows,
 // since os.Root accepts them as separators but fs.FS requires forward slashes only.
 func validLocalPath(op, name string) error {
-	if err := validPath(op, name); err != nil {
+	if err := pathutil.ValidPath(op, name); err != nil {
 		return err
 	}
-	if strings.Contains(name, windowsPathSeparator) {
-		return pathError(op, name, fs.ErrInvalid)
+	if strings.Contains(name, pathutil.WindowsSeparator) {
+		return pathutil.PathError(op, name, fs.ErrInvalid)
 	}
 	return nil
 }
@@ -77,12 +80,11 @@ func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
 	if !fi.IsDir() || fi.Size() == 0 {
 		return fi
 	}
-	return &fsInfo{
-		name:    fi.Name(),
-		size:    0,
-		mode:    fi.Mode(),
-		modTime: fi.ModTime(),
-		isDir:   true,
-		sys:     fi.Sys(),
-	}
+	return fsinfo.New(fsinfo.Params{
+		Name:    fi.Name(),
+		Mode:    fi.Mode(),
+		ModTime: fi.ModTime(),
+		IsDir:   true,
+		Sys:     fi.Sys(),
+	})
 }

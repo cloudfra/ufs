@@ -27,6 +27,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloudfra/ufs/internal/deviceinfo"
+	"github.com/cloudfra/ufs/internal/fsinfo"
+	"github.com/cloudfra/ufs/internal/notifybus"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const (
@@ -61,19 +66,19 @@ type memNode struct {
 
 func (n *memNode) size() int64 {
 	if n.isDir {
-		return emptyDirSize
+		return 0
 	}
 	return int64(len(n.content))
 }
 
 func (n *memNode) info() fs.FileInfo {
-	return &fsInfo{
-		name:    n.name,
-		size:    n.size(),
-		mode:    n.mode,
-		modTime: n.modTime,
-		isDir:   n.isDir,
-	}
+	return fsinfo.New(fsinfo.Params{
+		Name:    n.name,
+		Size:    n.size(),
+		Mode:    n.mode,
+		ModTime: n.modTime,
+		IsDir:   n.isDir,
+	})
 }
 
 // memFS is an in-memory file system. All nodes are stored in a flat map keyed
@@ -84,8 +89,7 @@ type memFS struct {
 	name  string
 	nodes map[string]*memNode
 
-	watchersMu sync.RWMutex
-	watchers   []*memWatcher
+	notifyBus *notifybus.Bus
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -154,13 +158,12 @@ type memDirFile struct {
 }
 
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{
-		name:    path.Base(d.path),
-		size:    emptyDirSize,
-		mode:    d.mode,
-		modTime: d.modTime,
-		isDir:   true,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:    path.Base(d.path),
+		Mode:    d.mode,
+		ModTime: d.modTime,
+		IsDir:   true,
+	}), nil
 }
 
 func (d *memDirFile) Read([]byte) (int, error) {
@@ -189,11 +192,11 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-func (fsys *memFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        fsys.name,
-		deviceType:  "memory",
-		threadCount: 2,
+func (fsys *memFS) getDeviceInfo() map[string]deviceinfo.Info {
+	return deviceinfo.NewMap(deviceinfo.Info{
+		Name:        fsys.name,
+		DeviceType:  "memory",
+		ThreadCount: 2,
 	})
 }
 
@@ -215,12 +218,12 @@ func (fsys *memFS) isClosed() bool {
 
 func (fsys *memFS) Open(name string) (fs.File, error) {
 	if fsys.isClosed() {
-		return nil, pathError("open", name, fs.ErrClosed)
+		return nil, pathutil.PathError("open", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
-		return fsys.openDir(cwdPath)
+	if name == pathutil.CwdPath {
+		return fsys.openDir(pathutil.CwdPath)
 	}
-	if err := validPath("open", name); err != nil {
+	if err := pathutil.ValidPath("open", name); err != nil {
 		return nil, err
 	}
 
@@ -229,7 +232,7 @@ func (fsys *memFS) Open(name string) (fs.File, error) {
 	fsys.mu.RUnlock()
 
 	if !ok {
-		return nil, pathError("open", name, fs.ErrNotExist)
+		return nil, pathutil.PathError("open", name, fs.ErrNotExist)
 	}
 	if node.isDir {
 		return fsys.openDir(name)
@@ -267,14 +270,14 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 	defer fsys.mu.RUnlock()
 
 	prefix := dir + "/"
-	if dir == cwdPath {
+	if dir == pathutil.CwdPath {
 		prefix = ""
 	}
 
 	var entries []fs.DirEntry
 	seen := make(map[string]struct{})
 	for key, node := range fsys.nodes {
-		if key == cwdPath {
+		if key == pathutil.CwdPath {
 			continue
 		}
 		rest, ok := strings.CutPrefix(key, prefix)
@@ -294,12 +297,7 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	fsys.watchersMu.Lock()
-	for _, mw := range fsys.watchers {
-		mw.cancel()
-	}
-	fsys.watchers = nil
-	fsys.watchersMu.Unlock()
+	fsys.notifyBus.CloseAll()
 
 	fsys.mu.Lock()
 	fsys.nodes = nil
@@ -309,9 +307,9 @@ func (fsys *memFS) Close() error {
 
 func (fsys *memFS) Create(name string) (File, error) {
 	if fsys.isClosed() {
-		return nil, pathError("create", name, fs.ErrClosed)
+		return nil, pathutil.PathError("create", name, fs.ErrClosed)
 	}
-	if err := validPath("create", name); err != nil {
+	if err := pathutil.ValidPath("create", name); err != nil {
 		return nil, err
 	}
 	fsys.mu.Lock()
@@ -341,16 +339,16 @@ func (fsys *memFS) Create(name string) (File, error) {
 
 func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 	if fsys.isClosed() {
-		return pathError("mkdir", name, fs.ErrClosed)
+		return pathutil.PathError("mkdir", name, fs.ErrClosed)
 	}
-	if err := validPath("mkdir", name); err != nil {
+	if err := pathutil.ValidPath("mkdir", name); err != nil {
 		return err
 	}
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
 	now := time.Now()
-	parts := splitPath(name)
+	parts := pathutil.SplitPath(name)
 	accum := ""
 	var created []string
 	for i, part := range parts {
@@ -381,10 +379,10 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 // path. Must be called with fsys.mu held for writing.
 func (fsys *memFS) ensureParentsLocked(name string, now time.Time) {
 	dir := path.Dir(name)
-	if dir == cwdPath {
+	if dir == pathutil.CwdPath {
 		return
 	}
-	parts := splitPath(dir)
+	parts := pathutil.SplitPath(dir)
 	accum := ""
 	for i, part := range parts {
 		if part == "" {
@@ -407,98 +405,98 @@ func (fsys *memFS) ensureParentsLocked(name string, now time.Time) {
 
 func (fsys *memFS) ReadFile(name string) ([]byte, error) {
 	if fsys.isClosed() {
-		return nil, pathError("readfile", name, fs.ErrClosed)
+		return nil, pathutil.PathError("readfile", name, fs.ErrClosed)
 	}
-	if err := validPath("readfile", name); err != nil {
+	if err := pathutil.ValidPath("readfile", name); err != nil {
 		return nil, err
 	}
 	fsys.mu.RLock()
 	defer fsys.mu.RUnlock()
 	node, ok := fsys.nodes[name]
 	if !ok {
-		return nil, pathError("readfile", name, fs.ErrNotExist)
+		return nil, pathutil.PathError("readfile", name, fs.ErrNotExist)
 	}
 	return bytes.Clone(node.content), nil
 }
 
 func (fsys *memFS) ReadLink(name string) (string, error) {
 	if fsys.isClosed() {
-		return "", pathError("readlink", name, fs.ErrClosed)
+		return "", pathutil.PathError("readlink", name, fs.ErrClosed)
 	}
-	if err := validPath("readlink", name); err != nil {
+	if err := pathutil.ValidPath("readlink", name); err != nil {
 		return "", err
 	}
 	fsys.mu.RLock()
 	defer fsys.mu.RUnlock()
 	if _, ok := fsys.nodes[name]; !ok {
-		return "", pathError("readlink", name, fs.ErrNotExist)
+		return "", pathutil.PathError("readlink", name, fs.ErrNotExist)
 	}
 	// memFS has no symlinks; every extant path is a regular file or directory.
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", pathutil.PathError("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *memFS) Stat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
-		return nil, pathError("stat", name, fs.ErrClosed)
+		return nil, pathutil.PathError("stat", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
+	if name == pathutil.CwdPath {
 		fsys.mu.RLock()
-		node := fsys.nodes[cwdPath]
+		node := fsys.nodes[pathutil.CwdPath]
 		fsys.mu.RUnlock()
 		return node.info(), nil
 	}
-	if err := validPath("stat", name); err != nil {
+	if err := pathutil.ValidPath("stat", name); err != nil {
 		return nil, err
 	}
 	fsys.mu.RLock()
 	defer fsys.mu.RUnlock()
 	node, ok := fsys.nodes[name]
 	if !ok {
-		return nil, pathError("stat", name, fs.ErrNotExist)
+		return nil, pathutil.PathError("stat", name, fs.ErrNotExist)
 	}
 	return node.info(), nil
 }
 
 func (fsys *memFS) Lstat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
-		return nil, pathError("lstat", name, fs.ErrClosed)
+		return nil, pathutil.PathError("lstat", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
+	if name == pathutil.CwdPath {
 		fsys.mu.RLock()
-		node := fsys.nodes[cwdPath]
+		node := fsys.nodes[pathutil.CwdPath]
 		fsys.mu.RUnlock()
 		return node.info(), nil
 	}
-	if err := validPath("lstat", name); err != nil {
+	if err := pathutil.ValidPath("lstat", name); err != nil {
 		return nil, err
 	}
 	fsys.mu.RLock()
 	defer fsys.mu.RUnlock()
 	node, ok := fsys.nodes[name]
 	if !ok {
-		return nil, pathError("lstat", name, fs.ErrNotExist)
+		return nil, pathutil.PathError("lstat", name, fs.ErrNotExist)
 	}
 	return node.info(), nil
 }
 
 func (fsys *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if fsys.isClosed() {
-		return nil, pathError("readdir", name, fs.ErrClosed)
+		return nil, pathutil.PathError("readdir", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
-		return fsys.listDir(cwdPath)
+	if name == pathutil.CwdPath {
+		return fsys.listDir(pathutil.CwdPath)
 	}
-	if err := validPath("readdir", name); err != nil {
+	if err := pathutil.ValidPath("readdir", name); err != nil {
 		return nil, err
 	}
 	fsys.mu.RLock()
 	node, ok := fsys.nodes[name]
 	fsys.mu.RUnlock()
 	if !ok {
-		return nil, pathError("readdir", name, fs.ErrNotExist)
+		return nil, pathutil.PathError("readdir", name, fs.ErrNotExist)
 	}
 	if !node.isDir {
-		return nil, pathError("readdir", name, fs.ErrInvalid)
+		return nil, pathutil.PathError("readdir", name, fs.ErrInvalid)
 	}
 	return fsys.listDir(name)
 }
@@ -512,7 +510,7 @@ func (fsys *memFS) Glob(pattern string) ([]string, error) {
 
 	var matches []string
 	for key := range fsys.nodes {
-		if key == cwdPath {
+		if key == pathutil.CwdPath {
 			continue
 		}
 		matched, err := path.Match(pattern, key)
@@ -529,25 +527,25 @@ func (fsys *memFS) Glob(pattern string) ([]string, error) {
 
 func (fsys *memFS) Remove(name string) error {
 	if fsys.isClosed() {
-		return pathError("remove", name, fs.ErrClosed)
+		return pathutil.PathError("remove", name, fs.ErrClosed)
 	}
-	if err := validPath("remove", name); err != nil {
+	if err := pathutil.ValidPath("remove", name); err != nil {
 		return err
 	}
-	if name == cwdPath {
-		return pathError("remove", name, fs.ErrPermission)
+	if name == pathutil.CwdPath {
+		return pathutil.PathError("remove", name, fs.ErrPermission)
 	}
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 	node, ok := fsys.nodes[name]
 	if !ok {
-		return pathError("remove", name, fs.ErrNotExist)
+		return pathutil.PathError("remove", name, fs.ErrNotExist)
 	}
 	if node.isDir {
 		prefix := name + "/"
 		for key := range fsys.nodes {
 			if strings.HasPrefix(key, prefix) {
-				return pathError("remove", name, errDirNotEmpty)
+				return pathutil.PathError("remove", name, errDirNotEmpty)
 			}
 		}
 	}
@@ -558,13 +556,13 @@ func (fsys *memFS) Remove(name string) error {
 
 func (fsys *memFS) RemoveAll(name string) error {
 	if fsys.isClosed() {
-		return pathError("removeall", name, fs.ErrClosed)
+		return pathutil.PathError("removeall", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
+	if name == pathutil.CwdPath {
 		fsys.mu.Lock()
 		var removed []string
 		for key := range fsys.nodes {
-			if key != cwdPath {
+			if key != pathutil.CwdPath {
 				removed = append(removed, key)
 				delete(fsys.nodes, key)
 			}
@@ -575,7 +573,7 @@ func (fsys *memFS) RemoveAll(name string) error {
 		}
 		return nil
 	}
-	if err := validPath("removeall", name); err != nil {
+	if err := pathutil.ValidPath("removeall", name); err != nil {
 		return err
 	}
 	fsys.mu.Lock()
@@ -603,13 +601,14 @@ func makeMemFS(name string) *memFS {
 	return &memFS{
 		name: name,
 		nodes: map[string]*memNode{
-			cwdPath: {
-				name:    cwdPath,
+			pathutil.CwdPath: {
+				name:    pathutil.CwdPath,
 				mode:    fs.ModeDir | fs.ModePerm,
 				modTime: now,
 				isDir:   true,
 			},
 		},
+		notifyBus: notifybus.New(),
 	}
 }
 

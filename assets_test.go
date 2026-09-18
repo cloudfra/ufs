@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const testAssetsFilesDir = "testing/testassets/files"
@@ -56,7 +57,7 @@ func TestAssets(t *testing.T) {
 				}
 				if err := copyFSToFS(osutil.DirFS(testAssetsFilesDir), fsys); err != nil {
 					if closeErr := fsys.Close(); closeErr != nil {
-						return nil, joinErrors(err, fmt.Errorf("failed to close FS after error: %v", closeErr))
+						return nil, pathutil.JoinErrors(err, fmt.Errorf("failed to close FS after error: %v", closeErr))
 					}
 					return nil, err
 				}
@@ -101,7 +102,7 @@ func loadTestAssets(tb testing.TB) map[string][]byte {
 	tb.Helper()
 	src := osutil.DirFS(testAssetsFilesDir)
 	result := make(map[string][]byte)
-	err := fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -120,8 +121,8 @@ func loadTestAssets(tb testing.TB) map[string][]byte {
 
 // copyFSToFS copies all files and directories from src into dst.
 func copyFSToFS(src fs.FS, dst FS) error {
-	return fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || p == cwdPath {
+	return fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || p == pathutil.CwdPath {
 			return err
 		}
 		if d.IsDir() {
@@ -149,8 +150,8 @@ func createZipFromDir(tb testing.TB, dir string) string {
 	})
 
 	zw := zip.NewWriter(tmp)
-	err = fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || p == cwdPath {
+	err = fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || p == pathutil.CwdPath {
 			return err
 		}
 		w, err := zw.Create(p)

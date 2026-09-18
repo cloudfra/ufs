@@ -25,9 +25,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cloudfra/ufs/internal/mathutil"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+
+	"github.com/cloudfra/ufs/internal/mathutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // Not implemented FUSE operations (ufs has no support for these):
@@ -78,7 +80,7 @@ var (
 func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer, error) {
 	root := &fuseNode{
 		fsys: fsys,
-		path: cwdPath,
+		path: pathutil.CwdPath,
 	}
 
 	// TODO: Accept mount options (e.g. forwarding the URI query parameter

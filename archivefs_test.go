@@ -16,13 +16,20 @@ package ufs
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/download"
+	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const testArchive = "testing/testassets/archives/testassets.tar.gz"
@@ -150,7 +157,7 @@ func TestArchiveFSReadDir(t *testing.T) {
 		t.Fatal("archiveFS does not implement fs.ReadDirFS")
 	}
 
-	entries, err := rfs.ReadDir(cwdPath)
+	entries, err := rfs.ReadDir(pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ReadDir(\".\") = %v, want nil", err)
 	}
@@ -581,6 +588,152 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 						t.Errorf("%s(%q) succeeded, want error", tc.name, path)
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestNewRemoteArchive(t *testing.T) {
+	fsys, err := New(t.Context(), "https://github.com/mholt/archives/archive/refs/heads/main.zip")
+	if err != nil {
+		t.Error(err)
+	}
+	defer validateClose(t, fsys)()
+
+	if files, err := fsys.ReadDir(pathutil.CwdPath); files != nil {
+		t.Logf("files: %v, err: %s", files, err)
+	}
+	if files, err := fsys.ReadDir("archives-main"); files != nil {
+		t.Logf("files: %v, err: %s", files, err)
+	}
+}
+
+func testArchiveServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	zipPath := createZipFromDir(t, testAssetsFilesDir)
+	zipData, err := osutil.ReadFile(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/testassets.zip", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		if _, err := w.Write(zipData); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
+	})
+	mux.HandleFunc("/redirect-to-archive", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/testassets.zip", http.StatusFound)
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) FS {
+	t.Helper()
+	ctx := t.Context()
+	client := ts.Client()
+	dir := t.TempDir()
+
+	archivePath, err := download.FileWith(ctx, client, dir, ts.URL+urlPath)
+	if err != nil {
+		t.Fatalf("download.FileWith(%q) = %v", urlPath, err)
+	}
+	fsys, err := newArchiveFSFromLocalFS(ctx, archivePath)
+	if err != nil {
+		t.Fatalf("newArchiveFSFromLocalFS() = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
+	return fsys
+}
+
+func TestDownloadFileAndMount(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+	wantFiles := loadTestAssets(t)
+
+	fsys := testDownloadAndMount(t, ts, "/testassets.zip")
+	for filePath, wantData := range wantFiles {
+		t.Run(filePath, func(t *testing.T) {
+			t.Parallel()
+			got, err := fs.ReadFile(fsys, filePath)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) = %v", filePath, err)
+			}
+			if !bytes.Equal(got, wantData) {
+				t.Errorf("ReadFile(%q): got %d bytes, want %d bytes", filePath, len(got), len(wantData))
+			}
+		})
+	}
+}
+
+func TestDownloadFileAndMountRedirect(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+
+	fsys := testDownloadAndMount(t, ts, "/redirect-to-archive")
+	entries, err := fsys.ReadDir(pathutil.CwdPath)
+	if err != nil {
+		t.Fatalf("ReadDir(\".\") = %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("ReadDir(\".\") returned no entries, want at least one")
+	}
+}
+
+func TestDownloadFileAndMountReadDir(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+
+	fsys := testDownloadAndMount(t, ts, "/testassets.zip")
+	entries, err := fsys.ReadDir("assets")
+	if err != nil {
+		t.Fatalf("ReadDir(\"assets\") = %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("ReadDir(\"assets\") returned no entries, want at least one")
+	}
+}
+
+func TestDownloadFileAndMountStat(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+
+	fsys := testDownloadAndMount(t, ts, "/testassets.zip")
+	info, err := fsys.Stat("index.html")
+	if err != nil {
+		t.Fatalf("Stat(\"index.html\") = %v", err)
+	}
+	if info.IsDir() {
+		t.Error("Stat(\"index.html\").IsDir() = true, want false")
+	}
+	if info.Size() == 0 {
+		t.Error("Stat(\"index.html\").Size() = 0, want > 0")
+	}
+}
+
+func TestNewRemoteArchiveSSRFBlocked(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		uri  string
+	}{
+		{"loopback", "http://127.0.0.1/evil.zip"},
+		{"private 10", "http://10.0.0.1/evil.zip"},
+		{"metadata", "http://169.254.169.254/latest/meta-data/"},
+		{"ipv6 loopback", "http://[::1]/evil.zip"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(t.Context(), tc.uri)
+			if err == nil {
+				t.Fatalf("New(%q) should have been blocked", tc.uri)
 			}
 		})
 	}

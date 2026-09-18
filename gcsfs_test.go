@@ -26,6 +26,8 @@ import (
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/googleapi"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 var fakeUpdatedTime = mustTime("2006-01-02T15:04:05Z")
@@ -48,7 +50,7 @@ func TestIsGCSFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: cwdPath,
+			name: pathutil.CwdPath,
 			want: false,
 		},
 		{
@@ -385,10 +387,10 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		}
 		defer validateClose(t, fsys)()
 
-		if err := fsys.RemoveAll(cwdPath); err != nil {
+		if err := fsys.RemoveAll(pathutil.CwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)
 		}
-		entries, err := fsys.ReadDir(cwdPath)
+		entries, err := fsys.ReadDir(pathutil.CwdPath)
 		if err != nil {
 			t.Fatalf("ReadDir after RemoveAll('.') = %v, want nil", err)
 		}

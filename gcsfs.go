@@ -53,6 +53,9 @@ func init() {
 		Name:       "gcs",
 		MatchFunc:  isGCSFSUri,
 		CreateFunc: newGCSFS,
+		Priority:   1,
+		Standard:   true,
+		ReadWrite:  true,
 	})
 }
 

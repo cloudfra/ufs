@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const (
@@ -46,7 +47,7 @@ func TestIsLocalFSUri(t *testing.T) {
 		{name: "file:", want: true},
 		{name: "file://", want: true},
 		{name: "filefs://", want: false},
-		{name: cwdPath, want: true},
+		{name: pathutil.CwdPath, want: true},
 		{name: "/root/user", want: true},
 		{name: "/tmp", want: true},
 		{name: "mem://", want: false},
@@ -222,12 +223,12 @@ func TestLocalFSRemoveAll(t *testing.T) {
 }
 
 func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
-	fsys, err := osutil.OpenRoot(cwdPath)
+	fsys, err := osutil.OpenRoot(pathutil.CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer validateClose(t, fsys)()
-	f, err := fsys.Open(cwdPath)
+	f, err := fsys.Open(pathutil.CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +238,7 @@ func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if entry.Name() == cwdPath {
+		if entry.Name() == pathutil.CwdPath {
 			t.Errorf("entry list contains '.', %v", entries)
 		}
 	}

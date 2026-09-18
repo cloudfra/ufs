@@ -38,6 +38,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/cloudfra/ufs/internal/errorutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	pb "github.com/cloudfra/ufs/proto"
 )
 
@@ -53,12 +55,12 @@ var (
 
 	// selfKey serves two roles that happen to share the same value: it is the
 	// name of the top-level bolt bucket that represents the root ("." /
-	// cwdPath) directory of the file system, and it is the reserved key,
+	// pathutil.CwdPath) directory of the file system, and it is the reserved key,
 	// stored inside every directory bucket (including the root), that holds
 	// that directory's own mode/modTime record. It can never collide with a
 	// real file or directory name because fs.ValidPath forbids path elements
 	// named "." or "..".
-	selfKey = []byte(cwdPath)
+	selfKey = []byte(pathutil.CwdPath)
 )
 
 func init() {
@@ -132,7 +134,7 @@ func (f *boltFile) Close() error {
 	f.mu.Unlock()
 
 	if err := f.fsys.writeFileContent(fsPath, mode, modTime, content); err != nil {
-		return pathError("close", fsPath, err)
+		return pathutil.PathError("close", fsPath, err)
 	}
 	f.fsys.notify(NotifyWrite, fsPath)
 	return nil
@@ -273,10 +275,10 @@ func ensureDirSelf(bkt *bolt.Bucket) error {
 // element. On a writable transaction, missing intermediate directory buckets
 // are created (with default metadata) as the walk proceeds; on a read-only
 // transaction a missing bucket results in fs.ErrNotExist. Callers pass name
-// == cwdPath's own components only for non-root paths; use rootBucketTx
+// == pathutil.CwdPath's own components only for non-root paths; use rootBucketTx
 // directly (or dirBucket) to resolve the root itself.
 func getOrCreateBucket(tx *bolt.Tx, name string) (*bolt.Bucket, string, error) {
-	parts := splitPath(name)
+	parts := pathutil.SplitPath(name)
 	lastPartIdx := len(parts) - 1
 	lastPart := parts[lastPartIdx]
 	dirParts := parts[:lastPartIdx]
@@ -306,11 +308,11 @@ func getOrCreateBucket(tx *bolt.Tx, name string) (*bolt.Bucket, string, error) {
 }
 
 // dirBucket resolves the bucket representing the directory at name (name may
-// be cwdPath for the root). On a writable transaction missing buckets along
+// be pathutil.CwdPath for the root). On a writable transaction missing buckets along
 // the way are created; on a read-only transaction a missing bucket results in
 // fs.ErrNotExist.
 func dirBucket(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
-	if name == cwdPath {
+	if name == pathutil.CwdPath {
 		return rootBucketTx(tx)
 	}
 	parent, last, err := getOrCreateBucket(tx, name)
@@ -372,12 +374,12 @@ func (fsys *boltFS) withDB(fn func(db *bolt.DB) error) error {
 
 func (fsys *boltFS) Open(name string) (fs.File, error) {
 	if fsys.isClosed() {
-		return nil, pathError("open", name, fs.ErrClosed)
+		return nil, pathutil.PathError("open", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
-		return fsys.openDir(cwdPath)
+	if name == pathutil.CwdPath {
+		return fsys.openDir(pathutil.CwdPath)
 	}
-	if err := validPath("open", name); err != nil {
+	if err := pathutil.ValidPath("open", name); err != nil {
 		return nil, err
 	}
 
@@ -410,7 +412,7 @@ func (fsys *boltFS) Open(name string) (fs.File, error) {
 		})
 	})
 	if err != nil {
-		return nil, pathError("open", name, err)
+		return nil, pathutil.PathError("open", name, err)
 	}
 	if isDir {
 		return fsys.openDir(name)
@@ -421,7 +423,7 @@ func (fsys *boltFS) Open(name string) (fs.File, error) {
 func (fsys *boltFS) openDir(name string) (*boltDirFile, error) {
 	entries, err := fsys.listDir(name)
 	if err != nil {
-		return nil, pathError("open", name, err)
+		return nil, pathutil.PathError("open", name, err)
 	}
 	mode := fs.ModeDir | fs.ModePerm
 	var modTime time.Time
@@ -512,9 +514,9 @@ func (fsys *boltFS) Close() error {
 
 func (fsys *boltFS) Create(name string) (File, error) {
 	if fsys.isClosed() {
-		return nil, pathError("create", name, fs.ErrClosed)
+		return nil, pathutil.PathError("create", name, fs.ErrClosed)
 	}
-	if err := validPath("create", name); err != nil {
+	if err := pathutil.ValidPath("create", name); err != nil {
 		return nil, err
 	}
 
@@ -540,7 +542,7 @@ func (fsys *boltFS) Create(name string) (File, error) {
 		})
 	})
 	if err != nil {
-		return nil, pathError("create", name, err)
+		return nil, pathutil.PathError("create", name, err)
 	}
 
 	if existed {
@@ -557,13 +559,13 @@ func (fsys *boltFS) Create(name string) (File, error) {
 
 func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 	if fsys.isClosed() {
-		return pathError("mkdir", name, fs.ErrClosed)
+		return pathutil.PathError("mkdir", name, fs.ErrClosed)
 	}
-	if err := validPath("mkdir", name); err != nil {
+	if err := pathutil.ValidPath("mkdir", name); err != nil {
 		return err
 	}
-	if name == cwdPath {
-		// The root always exists; splitPath(cwdPath) would otherwise yield a
+	if name == pathutil.CwdPath {
+		// The root always exists; pathutil.SplitPath(pathutil.CwdPath) would otherwise yield a
 		// single "." component that collides with selfKey.
 		return nil
 	}
@@ -577,7 +579,7 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 				return err
 			}
 			accum := ""
-			for i, part := range splitPath(name) {
+			for i, part := range pathutil.SplitPath(name) {
 				if part == "" {
 					continue
 				}
@@ -606,7 +608,7 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 		})
 	})
 	if err != nil {
-		return pathError("mkdir", name, err)
+		return pathutil.PathError("mkdir", name, err)
 	}
 	for _, p := range created {
 		fsys.notify(NotifyCreate, p)
@@ -616,9 +618,9 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 
 func (fsys *boltFS) ReadFile(name string) ([]byte, error) {
 	if fsys.isClosed() {
-		return nil, pathError("readfile", name, fs.ErrClosed)
+		return nil, pathutil.PathError("readfile", name, fs.ErrClosed)
 	}
-	if err := validPath("readfile", name); err != nil {
+	if err := pathutil.ValidPath("readfile", name); err != nil {
 		return nil, err
 	}
 	var content []byte
@@ -645,16 +647,16 @@ func (fsys *boltFS) ReadFile(name string) ([]byte, error) {
 		})
 	})
 	if err != nil {
-		return nil, pathError("readfile", name, err)
+		return nil, pathutil.PathError("readfile", name, err)
 	}
 	return content, nil
 }
 
 func (fsys *boltFS) ReadLink(name string) (string, error) {
 	if fsys.isClosed() {
-		return "", pathError("readlink", name, fs.ErrClosed)
+		return "", pathutil.PathError("readlink", name, fs.ErrClosed)
 	}
-	if err := validPath("readlink", name); err != nil {
+	if err := pathutil.ValidPath("readlink", name); err != nil {
 		return "", err
 	}
 	err := fsys.withDB(func(db *bolt.DB) error {
@@ -671,18 +673,18 @@ func (fsys *boltFS) ReadLink(name string) (string, error) {
 		})
 	})
 	if err != nil {
-		return "", pathError("readlink", name, err)
+		return "", pathutil.PathError("readlink", name, err)
 	}
 	// boltFS has no symlinks; every extant path is a regular file or directory.
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", pathutil.PathError("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *boltFS) Stat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
-		return nil, pathError("stat", name, fs.ErrClosed)
+		return nil, pathutil.PathError("stat", name, fs.ErrClosed)
 	}
-	if name != cwdPath {
-		if err := validPath("stat", name); err != nil {
+	if name != pathutil.CwdPath {
+		if err := pathutil.ValidPath("stat", name); err != nil {
 			return nil, err
 		}
 	}
@@ -691,10 +693,10 @@ func (fsys *boltFS) Stat(name string) (fs.FileInfo, error) {
 
 func (fsys *boltFS) Lstat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
-		return nil, pathError("lstat", name, fs.ErrClosed)
+		return nil, pathutil.PathError("lstat", name, fs.ErrClosed)
 	}
-	if name != cwdPath {
-		if err := validPath("lstat", name); err != nil {
+	if name != pathutil.CwdPath {
+		if err := pathutil.ValidPath("lstat", name); err != nil {
 			return nil, err
 		}
 	}
@@ -705,7 +707,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 	var info fs.FileInfo
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.View(func(tx *bolt.Tx) error {
-			if name == cwdPath {
+			if name == pathutil.CwdPath {
 				bkt, err := rootBucketTx(tx)
 				if err != nil {
 					return err
@@ -714,7 +716,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 				if derr != nil {
 					return derr
 				}
-				info = &fsInfo{name: cwdPath, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true}
+				info = &fsInfo{name: pathutil.CwdPath, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true}
 				return nil
 			}
 			bkt, key, err := getOrCreateBucket(tx, name)
@@ -743,19 +745,19 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 		})
 	})
 	if err != nil {
-		return nil, pathError(op, name, err)
+		return nil, pathutil.PathError(op, name, err)
 	}
 	return info, nil
 }
 
 func (fsys *boltFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if fsys.isClosed() {
-		return nil, pathError("readdir", name, fs.ErrClosed)
+		return nil, pathutil.PathError("readdir", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
-		return fsys.listDir(cwdPath)
+	if name == pathutil.CwdPath {
+		return fsys.listDir(pathutil.CwdPath)
 	}
-	if err := validPath("readdir", name); err != nil {
+	if err := pathutil.ValidPath("readdir", name); err != nil {
 		return nil, err
 	}
 	info, err := fsys.statPath("readdir", name)
@@ -763,11 +765,11 @@ func (fsys *boltFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		return nil, err
 	}
 	if !info.IsDir() {
-		return nil, pathError("readdir", name, fs.ErrInvalid)
+		return nil, pathutil.PathError("readdir", name, fs.ErrInvalid)
 	}
 	entries, err := fsys.listDir(name)
 	if err != nil {
-		return nil, pathError("readdir", name, err)
+		return nil, pathutil.PathError("readdir", name, err)
 	}
 	return entries, nil
 }
@@ -783,7 +785,7 @@ func (fsys *boltFS) Glob(pattern string) ([]string, error) {
 			if bkt == nil {
 				return nil
 			}
-			return boltGlobWalk(bkt, cwdPath, pattern, &matches)
+			return boltGlobWalk(bkt, pathutil.CwdPath, pattern, &matches)
 		})
 	})
 	if err != nil {
@@ -801,7 +803,7 @@ func boltGlobWalk(bkt *bolt.Bucket, prefix, pattern string, matches *[]string) e
 			return nil
 		}
 		full := string(k)
-		if prefix != cwdPath {
+		if prefix != pathutil.CwdPath {
 			full = prefix + "/" + full
 		}
 		matched, err := path.Match(pattern, full)
@@ -820,13 +822,13 @@ func boltGlobWalk(bkt *bolt.Bucket, prefix, pattern string, matches *[]string) e
 
 func (fsys *boltFS) Remove(name string) error {
 	if fsys.isClosed() {
-		return pathError("remove", name, fs.ErrClosed)
+		return pathutil.PathError("remove", name, fs.ErrClosed)
 	}
-	if err := validPath("remove", name); err != nil {
+	if err := pathutil.ValidPath("remove", name); err != nil {
 		return err
 	}
-	if name == cwdPath {
-		return pathError("remove", name, fs.ErrPermission)
+	if name == pathutil.CwdPath {
+		return pathutil.PathError("remove", name, fs.ErrPermission)
 	}
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.Update(func(tx *bolt.Tx) error {
@@ -857,7 +859,7 @@ func (fsys *boltFS) Remove(name string) error {
 		})
 	})
 	if err != nil {
-		return pathError("remove", name, err)
+		return pathutil.PathError("remove", name, err)
 	}
 	fsys.notify(NotifyRemove, name)
 	return nil
@@ -865,10 +867,10 @@ func (fsys *boltFS) Remove(name string) error {
 
 func (fsys *boltFS) RemoveAll(name string) error {
 	if fsys.isClosed() {
-		return pathError("removeall", name, fs.ErrClosed)
+		return pathutil.PathError("removeall", name, fs.ErrClosed)
 	}
-	if name != cwdPath {
-		if err := validPath("removeall", name); err != nil {
+	if name != pathutil.CwdPath {
+		if err := pathutil.ValidPath("removeall", name); err != nil {
 			return err
 		}
 	}
@@ -876,12 +878,12 @@ func (fsys *boltFS) RemoveAll(name string) error {
 	var removed []string
 	err := fsys.withDB(func(db *bolt.DB) error {
 		return db.Update(func(tx *bolt.Tx) error {
-			if name == cwdPath {
+			if name == pathutil.CwdPath {
 				bkt := tx.Bucket(selfKey)
 				if bkt == nil {
 					return nil
 				}
-				return removeAllChildren(bkt, cwdPath, &removed)
+				return removeAllChildren(bkt, pathutil.CwdPath, &removed)
 			}
 			bkt, key, err := getOrCreateBucket(tx, name)
 			if err != nil {
@@ -906,7 +908,7 @@ func (fsys *boltFS) RemoveAll(name string) error {
 		})
 	})
 	if err != nil {
-		return pathError("removeall", name, err)
+		return pathutil.PathError("removeall", name, err)
 	}
 	for _, p := range removed {
 		fsys.notify(NotifyRemove, p)
@@ -949,7 +951,7 @@ func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error
 	}
 	for _, k := range keys {
 		full := string(k)
-		if prefix != cwdPath {
+		if prefix != pathutil.CwdPath {
 			full = prefix + "/" + full
 		}
 		if sub := bkt.Bucket(k); sub != nil {
@@ -998,7 +1000,7 @@ func makeBoltFS(name string) (*boltFS, error) {
 		_, err := rootBucketTx(tx)
 		return err
 	}); err != nil {
-		return nil, joinErrors(fmt.Errorf("cannot initialize bolt root bucket for %q, %w", name, err), db.Close())
+		return nil, errorutil.Join(fmt.Errorf("cannot initialize bolt root bucket for %q, %w", name, err), db.Close())
 	}
 	return &boltFS{
 		name:    name,

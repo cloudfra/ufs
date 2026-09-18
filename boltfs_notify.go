@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -34,13 +35,13 @@ var _ Watcher = (*boltFS)(nil)
 // RemoveAll, MkdirAll).
 func (fsys *boltFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
-		return nil, pathError("watch", name, fs.ErrClosed)
+		return nil, pathutil.PathError("watch", name, fs.ErrClosed)
 	}
-	if err := validPath("watch", name); err != nil {
+	if err := pathutil.ValidPath("watch", name); err != nil {
 		return nil, err
 	}
 
-	if name != cwdPath {
+	if name != pathutil.CwdPath {
 		err := fsys.withDB(func(db *bolt.DB) error {
 			return db.View(func(tx *bolt.Tx) error {
 				_, err := dirBucket(tx, name)
@@ -48,7 +49,7 @@ func (fsys *boltFS) Watch(ctx context.Context, name string, hook NotifyHook) (io
 			})
 		})
 		if err != nil {
-			return nil, pathError("watch", name, err)
+			return nil, pathutil.PathError("watch", name, err)
 		}
 	}
 
@@ -113,8 +114,8 @@ func (bw *boltWatcher) loop(ctx context.Context) {
 
 // matches reports whether path falls under this watcher's watched prefix.
 func (bw *boltWatcher) matches(path string) bool {
-	if bw.prefix == cwdPath {
-		return path != cwdPath
+	if bw.prefix == pathutil.CwdPath {
+		return path != pathutil.CwdPath
 	}
 	return path == bw.prefix || strings.HasPrefix(path, bw.prefix+"/")
 }

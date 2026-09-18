@@ -15,15 +15,17 @@
 package ufs
 
 import (
-	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
+// pathTestCases feeds both the pathutil-level checks that historically lived
+// alongside it (now in internal/pathutil/pathutil_test.go) and
+// TestIsMountableArchivePath (archivefs_test.go), which is why it still
+// lives here rather than moving with the rest of path_test.go's contents.
 var pathTestCases = []struct {
 	input                      string
 	wantTrimSlash              string
@@ -43,12 +45,12 @@ var pathTestCases = []struct {
 		wantIsMountableArchivePath: false,
 	},
 	{
-		input:                      cwdPath,
-		wantTrimSlash:              cwdPath,
-		wantSplitPath:              []string{cwdPath},
+		input:                      pathutil.CwdPath,
+		wantTrimSlash:              pathutil.CwdPath,
+		wantSplitPath:              []string{pathutil.CwdPath},
 		wantIsCwd:                  true,
 		wantIsDirName:              true,
-		wantCoerceUnix:             cwdPath,
+		wantCoerceUnix:             pathutil.CwdPath,
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -215,239 +217,6 @@ var pathTestCases = []struct {
 	},
 }
 
-func TestRemovePathPrefix(t *testing.T) {
-	t.Parallel()
-	testCases := []struct {
-		path       string
-		removePath string
-		want       string
-		wantOk     bool
-	}{
-		{
-			path:       "",
-			removePath: "",
-			want:       cwdPath,
-			wantOk:     true,
-		},
-		{
-			path:       cwdPath,
-			removePath: "",
-			want:       cwdPath,
-			wantOk:     true,
-		},
-		{
-			path:       "",
-			removePath: cwdPath,
-			want:       cwdPath,
-			wantOk:     true,
-		},
-		{
-			path:       cwdPath,
-			removePath: "abc/def",
-			want:       cwdPath,
-			wantOk:     false,
-		},
-		{
-			path:       "abc/def",
-			removePath: "",
-			want:       "abc/def",
-			wantOk:     true,
-		},
-		{
-			path:       "abc/def",
-			removePath: "abc",
-			want:       "def",
-			wantOk:     true,
-		},
-		{
-			path:       "abc/def",
-			removePath: "abc/d",
-			want:       "abc/def",
-			wantOk:     false,
-		},
-		{
-			path:       "abc/def",
-			removePath: "abc/def",
-			want:       cwdPath,
-			wantOk:     true,
-		},
-		{
-			path:       "a/b/c",
-			removePath: "a/b",
-			want:       "c",
-			wantOk:     true,
-		},
-		{
-			path:       "a/b/c/",
-			removePath: "a/b/",
-			want:       "c",
-			wantOk:     true,
-		},
-		{
-			path:       "a/b/c",
-			removePath: "a/b/",
-			want:       "c",
-			wantOk:     true,
-		},
-		{
-			path:       "a/b/c/",
-			removePath: "a/b",
-			want:       "c",
-			wantOk:     true,
-		},
-		{
-			path:       "a/b",
-			removePath: "a/b/c",
-			want:       "a/b",
-			wantOk:     false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s - %s", tc.path, tc.removePath), func(t *testing.T) {
-			t.Parallel()
-			got, gotOk := removePathPrefix(tc.path, tc.removePath)
-			if got != tc.want {
-				t.Errorf("path: got: %q, want: %q", got, tc.want)
-			}
-			if gotOk != tc.wantOk {
-				t.Errorf("ok: got: %t, want: %t", gotOk, tc.wantOk)
-			}
-		})
-	}
-}
-
-func TestTrimSlash(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			if got := trimSlash(tc.input); got != tc.wantTrimSlash {
-				t.Errorf("trimSlash(%q) got: %v, want: %v", tc.input, got, tc.wantTrimSlash)
-			}
-		})
-	}
-}
-
-func TestSplitPath(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			got := splitPath(tc.input)
-			if diff := cmp.Diff(got, tc.wantSplitPath); diff != "" {
-				t.Errorf("splitPath(%q) got: %v, want: %v, diff: %s", tc.input, got, tc.wantTrimSlash, diff)
-			}
-		})
-	}
-}
-
-func TestIsCwd(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(fmt.Sprintf("%q", tc.input), func(t *testing.T) {
-			t.Parallel()
-			if got := isCwd(tc.input); got != tc.wantIsCwd {
-				t.Errorf("isCwd(%q) got: %v, want: %v", tc.input, got, tc.wantIsCwd)
-			}
-		})
-	}
-}
-
-func TestIsDirName(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(fmt.Sprintf("%q", tc.input), func(t *testing.T) {
-			t.Parallel()
-			if got := isDirName(tc.input); got != tc.wantIsDirName {
-				t.Errorf("isDirName(%q) got: %v, want: %v", tc.input, got, tc.wantIsDirName)
-			}
-		})
-	}
-}
-
-func TestValidPath(t *testing.T) {
-	t.Parallel()
-	testCases := []struct {
-		input   string
-		wantErr bool
-	}{
-		{input: cwdPath, wantErr: false},
-		{input: "./.", wantErr: true},
-		{input: "a\\b\\.\\..\\c", wantErr: false},
-		{input: "a/b/./../c", wantErr: true},
-		{input: "a/b/../c", wantErr: true},
-		{input: "C:/", wantErr: true},
-		{input: "C:\\", wantErr: false},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			err := validPath("open", tc.input)
-
-			if tc.wantErr {
-				if err == nil || !strings.Contains(err.Error(), "is not a valid path for") {
-					t.Errorf("validPath(open, %s) expected to contain 'is not a valid path for', got: %q", tc.input, err)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("validPath(open, %s) returned error %q, want nil", tc.input, err)
-				}
-			}
-		})
-	}
-}
-
-func TestJoinErrors(t *testing.T) {
-	t.Parallel()
-
-	errA := errors.New("error A")
-	errB := errors.New("error B")
-
-	testCases := []struct {
-		name       string
-		errs       []error
-		wantNil    bool
-		wantSameAs error // non-nil: result must be this exact value (no wrapper)
-		wantIsA    bool
-		wantIsB    bool
-	}{
-		{name: "no args", errs: nil, wantNil: true},
-		{name: "single nil", errs: []error{nil}, wantNil: true},
-		{name: "multiple nils", errs: []error{nil, nil, nil}, wantNil: true},
-		{name: "single error", errs: []error{errA}, wantSameAs: errA, wantIsA: true},
-		{name: "nil then error", errs: []error{nil, errA}, wantSameAs: errA, wantIsA: true},
-		{name: "error then nil", errs: []error{errA, nil}, wantSameAs: errA, wantIsA: true},
-		{name: "two errors", errs: []error{errA, errB}, wantIsA: true, wantIsB: true},
-		{name: "nil two errors nil", errs: []error{nil, errA, errB, nil}, wantIsA: true, wantIsB: true},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := joinErrors(tc.errs...)
-			if tc.wantNil {
-				if got != nil {
-					t.Errorf("joinErrors() = %v, want nil", got)
-				}
-				return
-			}
-			if got == nil {
-				t.Fatalf("joinErrors() = nil, want non-nil")
-			}
-			if tc.wantSameAs != nil && got != tc.wantSameAs {
-				t.Errorf("joinErrors() returned a wrapped error; want the identical error value, got %v", got)
-			}
-			if tc.wantIsA && !errors.Is(got, errA) {
-				t.Errorf("joinErrors(): errors.Is(result, errA) = false, want true")
-			}
-			if tc.wantIsB && !errors.Is(got, errB) {
-				t.Errorf("joinErrors(): errors.Is(result, errB) = false, want true")
-			}
-		})
-	}
-}
-
 func TestAbsPath(t *testing.T) {
 	t.Parallel()
 
@@ -496,19 +265,6 @@ func TestAbsPath(t *testing.T) {
 				if !strings.Contains(err.Error(), "not accessible outside") {
 					t.Errorf("error = %q, want it to mention 'not accessible outside'", err)
 				}
-			}
-		})
-	}
-}
-
-func TestCoerceUnix(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			got := coerceUnix(tc.input)
-			if got != tc.wantCoerceUnix {
-				t.Errorf("coerceUnix(%q) got: %q, want: %q", tc.input, got, tc.wantCoerceUnix)
 			}
 		})
 	}

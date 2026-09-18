@@ -29,6 +29,7 @@ import (
 
 	"github.com/cloudfra/ufs/internal/mathutil"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	"golang.org/x/sys/windows"
 )
 
@@ -99,9 +100,9 @@ func notificationName(n uint32) string {
 // fs.ValidPath. ProjFS passes nil for the root directory.
 func projfsPath(name utf16Str) string {
 	if name == nil {
-		return cwdPath
+		return pathutil.CwdPath
 	}
-	return coerceUnix(windows.UTF16PtrToString(name))
+	return pathutil.CoerceUnix(windows.UTF16PtrToString(name))
 }
 
 func cbDataAttrs(callbackData *prjCallbackData) []any {

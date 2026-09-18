@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"strings"
 	"sync"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 var _ Watcher = (*memFS)(nil)
@@ -29,22 +31,22 @@ var _ Watcher = (*memFS)(nil)
 // through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
 func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
-		return nil, pathError("watch", name, fs.ErrClosed)
+		return nil, pathutil.PathError("watch", name, fs.ErrClosed)
 	}
-	if err := validPath("watch", name); err != nil {
+	if err := pathutil.ValidPath("watch", name); err != nil {
 		return nil, err
 	}
 
 	fsys.mu.RLock()
-	if name != cwdPath {
+	if name != pathutil.CwdPath {
 		node, ok := fsys.nodes[name]
 		if !ok {
 			fsys.mu.RUnlock()
-			return nil, pathError("watch", name, fs.ErrNotExist)
+			return nil, pathutil.PathError("watch", name, fs.ErrNotExist)
 		}
 		if !node.isDir {
 			fsys.mu.RUnlock()
-			return nil, pathError("watch", name, fs.ErrInvalid)
+			return nil, pathutil.PathError("watch", name, fs.ErrInvalid)
 		}
 	}
 	fsys.mu.RUnlock()
@@ -110,8 +112,8 @@ func (mw *memWatcher) loop(ctx context.Context) {
 
 // matches reports whether path falls under this watcher's watched prefix.
 func (mw *memWatcher) matches(path string) bool {
-	if mw.prefix == cwdPath {
-		return path != cwdPath
+	if mw.prefix == pathutil.CwdPath {
+		return path != pathutil.CwdPath
 	}
 	return path == mw.prefix || strings.HasPrefix(path, mw.prefix+"/")
 }

@@ -26,7 +26,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/cloudfra/ufs/internal/errorutil"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/mholt/archives"
 )
 
@@ -160,7 +162,7 @@ func (fsys *archiveFS) String() string {
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
-	if err := validPath("open", name); err != nil {
+	if err := pathutil.ValidPath("open", name); err != nil {
 		return nil, err
 	}
 	return fsys.openInner(name)
@@ -177,7 +179,7 @@ func (fsys *archiveFS) Close() error {
 }
 
 func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
-	if err := validPath("stat", name); err != nil {
+	if err := pathutil.ValidPath("stat", name); err != nil {
 		return nil, err
 	}
 	// archives.ArchiveFS.Stat resolves implicit directories correctly on its
@@ -189,39 +191,39 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *archiveFS) Create(name string) (File, error) {
-	if err := validPath("create", name); err != nil {
+	if err := pathutil.ValidPath("create", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("create", name, fmt.Errorf("archiveFS mounts are read-only, cannot create file, %q, %w", name, fs.ErrPermission))
+	return nil, pathutil.PathError("create", name, fmt.Errorf("archiveFS mounts are read-only, cannot create file, %q, %w", name, fs.ErrPermission))
 }
 
 func (fsys *archiveFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := validPath("mkdir", name); err != nil {
+	if err := pathutil.ValidPath("mkdir", name); err != nil {
 		return err
 	}
-	return pathError("mkdir", name, fmt.Errorf("archiveFS mounts are read-only, cannot create directory, %q, %w", name, fs.ErrPermission))
+	return pathutil.PathError("mkdir", name, fmt.Errorf("archiveFS mounts are read-only, cannot create directory, %q, %w", name, fs.ErrPermission))
 }
 
 func (fsys *archiveFS) ReadFile(name string) ([]byte, error) {
-	if err := validPath("readfile", name); err != nil {
+	if err := pathutil.ValidPath("readfile", name); err != nil {
 		return nil, err
 	}
 	return fs.ReadFile(fsys.fsys, name)
 }
 
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := validPath("readdir", name); err != nil {
+	if err := pathutil.ValidPath("readdir", name); err != nil {
 		return nil, err
 	}
 	return fs.ReadDir(fsys.fsys, name)
 }
 
 func (fsys *archiveFS) ReadLink(name string) (string, error) {
-	if err := validPath("readlink", name); err != nil {
+	if err := pathutil.ValidPath("readlink", name); err != nil {
 		return "", err
 	}
 	// Archives contain no symlinks; every path is a regular file or directory.
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", pathutil.PathError("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
@@ -230,17 +232,17 @@ func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *archiveFS) Remove(name string) error {
-	if err := validPath("remove", name); err != nil {
+	if err := pathutil.ValidPath("remove", name); err != nil {
 		return err
 	}
-	return pathError("remove", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
+	return pathutil.PathError("remove", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
 func (fsys *archiveFS) RemoveAll(name string) error {
-	if err := validPath("removeall", name); err != nil {
+	if err := pathutil.ValidPath("removeall", name); err != nil {
 		return err
 	}
-	return pathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
+	return pathutil.PathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
@@ -268,7 +270,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 	}
 	fsys, err := archives.FileSystem(ctx, name, file)
 	if err != nil {
-		return nil, joinErrors(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
+		return nil, errorutil.Join(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
 	}
 	return makeArchiveFS(fsys, name, file), nil
 }
@@ -306,19 +308,19 @@ func newTempMountRemoteArchiveFS(ctx context.Context, name string) (FS, error) {
 	tempDir, cleanup, err := osutil.NewTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create temp directory, %w", joinErrors(err, cleanupErr))
+		return nil, fmt.Errorf("cannot create temp directory, %w", errorutil.Join(err, cleanupErr))
 	}
 
 	filename, err := downloadFile(ctx, tempDir, name)
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, joinErrors(err, cleanupErr)
+		return nil, errorutil.Join(err, cleanupErr)
 	}
 
 	fsys, err := newArchiveFSFromLocalFS(ctx, filename)
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create archive FS from local file, %w", joinErrors(err, cleanupErr))
+		return nil, fmt.Errorf("cannot create archive FS from local file, %w", errorutil.Join(err, cleanupErr))
 	}
 	return makeTempMountFS(fsys, name, tempDir, cleanup), nil
 }

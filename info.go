@@ -17,94 +17,9 @@ package ufs
 import (
 	"errors"
 	"io/fs"
-	"time"
 )
 
-var (
-	_ FileInfo = (*fsInfo)(nil)
-
-	_ fs.DirEntry = (*virtualDirEntry)(nil)
-	_ fs.FileInfo = (*virtualDirEntry)(nil)
-
-	_ fs.ReadDirFile = (*readDirFile)(nil)
-
-	unixEpochTime = time.Time{}
-)
-
-type fsInfo struct {
-	name    string
-	size    int64
-	mode    fs.FileMode
-	modTime time.Time
-	isDir   bool
-	sys     any
-}
-
-func (finfo *fsInfo) Name() string {
-	return finfo.name
-}
-
-func (finfo *fsInfo) Size() int64 {
-	return finfo.size
-}
-
-func (finfo *fsInfo) Mode() fs.FileMode {
-	return finfo.mode
-}
-
-func (finfo *fsInfo) ModTime() time.Time {
-	return finfo.modTime
-}
-
-func (finfo *fsInfo) IsDir() bool {
-	return finfo.isDir
-}
-
-func (finfo *fsInfo) Sys() any {
-	return finfo.sys
-}
-
-type virtualDirEntry struct {
-	name string
-}
-
-func (entry *virtualDirEntry) Name() string {
-	return entry.name
-}
-
-func (entry *virtualDirEntry) IsDir() bool {
-	return true
-}
-
-func (entry *virtualDirEntry) Type() fs.FileMode {
-	return fs.ModeDir
-}
-
-func (entry *virtualDirEntry) Mode() fs.FileMode {
-	return entry.Type()
-}
-
-func (entry *virtualDirEntry) Info() (fs.FileInfo, error) {
-	return entry, nil
-}
-
-func (entry *virtualDirEntry) Size() int64 {
-	return emptyDirSize
-}
-
-func (entry *virtualDirEntry) ModTime() time.Time {
-	return unixEpochTime
-}
-
-func (entry *virtualDirEntry) Sys() any {
-	return nil
-}
-
-func makeVirtualDirEntry(name string) *virtualDirEntry {
-	return &virtualDirEntry{
-		name: name,
-	}
-}
+var _ fs.ReadDirFile = (*readDirFile)(nil)
 
 type readDirFile struct {
 	fsys ReadFS

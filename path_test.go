@@ -224,9 +224,14 @@ func TestAbsPath(t *testing.T) {
 		"localFS":        true,
 		"tempMountFS":    true,
 		"nestFS.localFS": true,
+		// gitFS wraps a tempMountFS over a real local clone, so it
+		// genuinely supports AbsPath. nestFS.gitFS does not: nestFS's own
+		// getAbsPath only recognizes a direct *localFS inner, not a
+		// tempMountFS-backed one.
+		"gitFS": true,
 	}
 
-	for _, tc := range getAllExceptAngryTestCaseList() {
+	for _, tc := range getAllTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)

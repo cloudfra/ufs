@@ -22,10 +22,6 @@ import (
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
-const (
-	emptyDirSize = 0
-)
-
 type realAbsPathGet interface {
 	getAbsPath(name string) (string, error)
 }

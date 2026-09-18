@@ -15,7 +15,6 @@
 package ufs
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -240,11 +239,15 @@ func TestParseGCSPathErrors(t *testing.T) {
 	}
 }
 
-func TestGCSFS(t *testing.T) {
-	client := createStorage(t)
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
-		return makeGCSFSWithClient(ctx, client, name)
-	}, "gs://first")
+// createEmptyStorage returns a fake GCS client with an empty "first" bucket
+// and no objects, for tests that need a pristine, writable starting state
+// (unlike createStorage, whose fixed fixture data is tailored to this
+// file's own read-oriented tests).
+func createEmptyStorage(tb testing.TB) *storage.Client {
+	server := fakestorage.NewServer(nil)
+	server.CreateBucketWithOpts(fakestorage.CreateBucketOpts{Name: "first"})
+	tb.Cleanup(server.Stop)
+	return server.Client()
 }
 
 func createStorage(tb testing.TB) *storage.Client {

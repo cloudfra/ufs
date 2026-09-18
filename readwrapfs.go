@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -29,7 +30,7 @@ type readWrapFS struct {
 	fsys fs.FS
 }
 
-func (fsys *readWrapFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *readWrapFS) getDeviceInfo() map[string]deviceinfo.Info {
 	return getDeviceInfoOrDefault(fsys.fsys)
 }
 

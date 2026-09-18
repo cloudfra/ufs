@@ -244,6 +244,14 @@ func TestFSString(t *testing.T) {
 
 func TestFSReadDir(t *testing.T) {
 	for _, fsysTC := range getAllRegularTestCaseList() {
+		if fsysTC.name == "gcsFS" || fsysTC.name == "nestFS.gcsFS" {
+			// GCS has no real directories — MkdirAll is a documented no-op,
+			// since directories only exist implicitly as prefixes of real
+			// objects. This test creates directories with no files in them
+			// at all, which gcsFS cannot represent; it's exercised via real
+			// objects instead by TestFSConformance.
+			continue
+		}
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := fsysTC.createFS(t)

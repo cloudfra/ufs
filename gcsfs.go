@@ -34,6 +34,9 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+
+	"github.com/cloudfra/ufs/internal/deviceinfo"
+	"github.com/cloudfra/ufs/internal/fsinfo"
 )
 
 const (
@@ -86,13 +89,13 @@ func (f *gcsFile) Stat() (fs.FileInfo, error) {
 	if f.isDir {
 		mode = fs.ModeDir | fs.ModePerm
 	}
-	return &fsInfo{
-		name:    path.Base(f.name),
-		size:    f.size,
-		mode:    mode,
-		modTime: f.modTime,
-		isDir:   f.isDir,
-	}, nil
+	return fsinfo.New(fsinfo.Params{
+		Name:    path.Base(f.name),
+		Size:    f.size,
+		Mode:    mode,
+		ModTime: f.modTime,
+		IsDir:   f.isDir,
+	}), nil
 }
 
 func (f *gcsFile) Read(p []byte) (int, error) {
@@ -207,11 +210,11 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        "gs://" + fsys.bucket,
-		deviceType:  "network",
-		threadCount: 1,
+func (fsys *gcsFS) getDeviceInfo() map[string]deviceinfo.Info {
+	return deviceinfo.NewMap(deviceinfo.Info{
+		Name:        "gs://" + fsys.bucket,
+		DeviceType:  "network",
+		ThreadCount: 1,
 	})
 }
 
@@ -233,6 +236,9 @@ func (fsys *gcsFS) String() string {
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
+	if fsys.isClosed() {
+		return nil, pathutil.PathError("open", name, fs.ErrClosed)
+	}
 	if name == pathutil.CwdPath {
 		entries, err := fsys.listDir("")
 		if err != nil {
@@ -296,8 +302,11 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
+	if fsys.isClosed() {
+		return nil, pathutil.PathError("stat", name, fs.ErrClosed)
+	}
 	if name == pathutil.CwdPath {
-		return &fsInfo{name: pathutil.CwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+		return fsinfo.New(fsinfo.Params{Name: pathutil.CwdPath, Mode: fs.ModeDir | fs.ModePerm, IsDir: true}), nil
 	}
 	if err := pathutil.ValidPath("stat", name); err != nil {
 		return nil, err
@@ -306,12 +315,12 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	objPath := path.Join(fsys.baseDir, name)
 	attrs, err := fsys.client.Bucket(fsys.bucket).Object(objPath).Attrs(fsys.ctx)
 	if err == nil {
-		return &fsInfo{
-			name:    path.Base(name),
-			size:    attrs.Size,
-			mode:    fs.ModePerm,
-			modTime: attrs.Updated,
-		}, nil
+		return fsinfo.New(fsinfo.Params{
+			Name:    path.Base(name),
+			Size:    attrs.Size,
+			Mode:    fs.ModePerm,
+			ModTime: attrs.Updated,
+		}), nil
 	}
 	if !errors.Is(err, storage.ErrObjectNotExist) {
 		return nil, pathutil.PathError("stat", name, err)
@@ -325,7 +334,7 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	if len(entries) == 0 {
 		return nil, pathutil.PathError("stat", name, fs.ErrNotExist)
 	}
-	return &fsInfo{name: path.Base(name), mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+	return fsinfo.New(fsinfo.Params{Name: path.Base(name), Mode: fs.ModeDir | fs.ModePerm, IsDir: true}), nil
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
@@ -359,29 +368,32 @@ func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 			if dirName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-				name:  dirName,
-				mode:  fs.ModeDir | fs.ModePerm,
-				isDir: true,
-			}))
+			entries = append(entries, fs.FileInfoToDirEntry(fsinfo.New(fsinfo.Params{
+				Name:  dirName,
+				Mode:  fs.ModeDir | fs.ModePerm,
+				IsDir: true,
+			})))
 		} else {
 			fileName := strings.TrimPrefix(attrs.Name, listPrefix)
 			if fileName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-				name:    fileName,
-				size:    attrs.Size,
-				mode:    fs.ModePerm,
-				modTime: attrs.Updated,
-				isDir:   false,
-			}))
+			entries = append(entries, fs.FileInfoToDirEntry(fsinfo.New(fsinfo.Params{
+				Name:    fileName,
+				Size:    attrs.Size,
+				Mode:    fs.ModePerm,
+				ModTime: attrs.Updated,
+			})))
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
 	})
 	return entries, nil
+}
+
+func (fsys *gcsFS) isClosed() bool {
+	return fsys.ctx == nil
 }
 
 func (fsys *gcsFS) Close() error {
@@ -392,6 +404,9 @@ func (fsys *gcsFS) Close() error {
 }
 
 func (fsys *gcsFS) Create(name string) (File, error) {
+	if fsys.isClosed() {
+		return nil, pathutil.PathError("create", name, fs.ErrClosed)
+	}
 	if err := pathutil.ValidPath("create", name); err != nil {
 		return nil, err
 	}
@@ -409,6 +424,9 @@ func (fsys *gcsFS) Create(name string) (File, error) {
 }
 
 func (fsys *gcsFS) MkdirAll(name string, _ fs.FileMode) error {
+	if fsys.isClosed() {
+		return pathutil.PathError("mkdir", name, fs.ErrClosed)
+	}
 	if err := pathutil.ValidPath("mkdir", name); err != nil {
 		return err
 	}
@@ -417,6 +435,9 @@ func (fsys *gcsFS) MkdirAll(name string, _ fs.FileMode) error {
 }
 
 func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
+	if fsys.isClosed() {
+		return nil, pathutil.PathError("readfile", name, fs.ErrClosed)
+	}
 	if err := pathutil.ValidPath("readfile", name); err != nil {
 		return nil, err
 	}
@@ -437,6 +458,9 @@ func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
 }
 
 func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if fsys.isClosed() {
+		return nil, pathutil.PathError("readdir", name, fs.ErrClosed)
+	}
 	if name != pathutil.CwdPath {
 		if err := pathutil.ValidPath("readdir", name); err != nil {
 			return nil, err
@@ -467,10 +491,16 @@ func (fsys *gcsFS) ReadLink(name string) (string, error) {
 }
 
 func (fsys *gcsFS) Lstat(name string) (fs.FileInfo, error) {
+	if err := pathutil.ValidPath("lstat", name); err != nil {
+		return nil, err
+	}
 	return fsys.Stat(name)
 }
 
 func (fsys *gcsFS) Remove(name string) error {
+	if fsys.isClosed() {
+		return pathutil.PathError("remove", name, fs.ErrClosed)
+	}
 	if err := pathutil.ValidPath("remove", name); err != nil {
 		return err
 	}
@@ -496,6 +526,9 @@ func (fsys *gcsFS) Remove(name string) error {
 }
 
 func (fsys *gcsFS) RemoveAll(name string) error {
+	if fsys.isClosed() {
+		return pathutil.PathError("removeall", name, fs.ErrClosed)
+	}
 	if name != pathutil.CwdPath {
 		if err := pathutil.ValidPath("removeall", name); err != nil {
 			return err

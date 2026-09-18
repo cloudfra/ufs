@@ -35,9 +35,6 @@ func init() {
 		Name:       "git",
 		MatchFunc:  isGitFSUri,
 		CreateFunc: newGitFS,
-		Priority:   1,
-		Standard:   true,
-		ReadWrite:  true,
 	})
 }
 

@@ -42,12 +42,6 @@ type Driver struct {
 	// Priority indicates the priority of the matcher.
 	// This will be used to disambiguate
 	Priority int
-
-	// Standard indicates that the driver should be verified by conformance tests.
-	Standard bool
-
-	// ReadWrite indicates that the driver supports read-write operations.
-	ReadWrite bool
 }
 
 func newRegistrar() *registrar {

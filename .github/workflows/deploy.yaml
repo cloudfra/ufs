@@ -129,7 +129,6 @@ jobs:
         # something to scan; independent of the multi-arch push pipeline
         # further down, which never loads images into the local daemon.
         run: make scan-images
-        continue-on-error: true
 
       - name: Release Package
         run: make build/packages/release.tar.gz

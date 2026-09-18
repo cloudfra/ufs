@@ -45,8 +45,6 @@ func init() {
 		MatchFunc:  isLocalFSUri,
 		CreateFunc: newLocalFS,
 		Priority:   10000,
-		Standard:   true,
-		ReadWrite:  true,
 	})
 }
 

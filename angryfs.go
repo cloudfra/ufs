@@ -48,9 +48,6 @@ func init() {
 		Name:       "angry",
 		MatchFunc:  isAngryFSUri,
 		CreateFunc: newAngryFS,
-		Priority:   1,
-		Standard:   false,
-		ReadWrite:  false,
 	})
 }
 

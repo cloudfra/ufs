@@ -22,12 +22,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-
-	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 func TestIsGitFSUri(t *testing.T) {
@@ -183,7 +181,7 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 	if err != nil {
 		return err
 	}
-	if err := w.AddGlob(pathutil.CwdPath); err != nil {
+	if err := w.AddGlob(cwdPath); err != nil {
 		return err
 	}
 	_, err = w.Commit("init", &git.CommitOptions{

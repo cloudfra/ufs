@@ -25,8 +25,6 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // CreateURI constructs a URI understood by [New] that layers additional file
@@ -173,10 +171,10 @@ func New(ctx context.Context, name string) (FS, error) {
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])
 				if err != nil {
-					return nil, pathutil.JoinErrors(err, nFS.Close())
+					return nil, joinErrors(err, nFS.Close())
 				}
 				if err := nFS.addMount(mountPath, mountFS); err != nil {
-					return nil, pathutil.JoinErrors(err, mountFS.Close(), nFS.Close())
+					return nil, joinErrors(err, mountFS.Close(), nFS.Close())
 				}
 			}
 			return nFS, nil
@@ -249,11 +247,11 @@ func (b *FSBuilder) Build(ctx context.Context) (FS, error) {
 		} else {
 			mountFS, err = openNestFS(ctx, m.uri)
 			if err != nil {
-				return nil, pathutil.JoinErrors(err, nFS.Close())
+				return nil, joinErrors(err, nFS.Close())
 			}
 		}
 		if err := nFS.addMount(m.path, mountFS); err != nil {
-			return nil, pathutil.JoinErrors(err, mountFS.Close(), nFS.Close())
+			return nil, joinErrors(err, mountFS.Close(), nFS.Close())
 		}
 	}
 	return nFS, nil
@@ -279,12 +277,12 @@ func (b *FSBuilder) BuildURI() (string, error) {
 
 func newBaseFS(ctx context.Context, name string) (FS, error) {
 	if strings.HasPrefix(name, embedFSPrefix) {
-		return nil, pathutil.PathError("mount", name, fmt.Errorf("embed:// file systems must be created with NewEmbedFS, not New(): %w", fs.ErrInvalid))
+		return nil, pathError("mount", name, fmt.Errorf("embed:// file systems must be created with NewEmbedFS, not New(): %w", fs.ErrInvalid))
 	}
 	r := getRegistrar()
 	driver, err := r.match(name)
 	if err != nil {
-		return nil, pathutil.PathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s, %w", name, runtime.GOOS, err))
+		return nil, pathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s, %w", name, runtime.GOOS, err))
 	}
 	fsys, err := r.create(ctx, name)
 	if err != nil {
@@ -388,7 +386,7 @@ func hasFstabOption(s, option string) bool {
 func normalizeMountPoint(mp string) string {
 	mp = strings.TrimPrefix(mp, "/")
 	if mp == "" || mp == "none" {
-		return pathutil.CwdPath
+		return cwdPath
 	}
 	return mp
 }
@@ -396,7 +394,7 @@ func normalizeMountPoint(mp string) string {
 // defaultRootSpec is used when no root mount point is provided.
 var defaultRootSpec = MountSpec{
 	Source:     nullFSPrefix,
-	MountPoint: pathutil.CwdPath,
+	MountPoint: cwdPath,
 	Options:    MountSpecOptions{ReadOnly: true},
 }
 
@@ -420,7 +418,7 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 	var root *MountSpec
 	var mounts []MountSpec
 	for i := range specs {
-		if pathutil.IsCwd(specs[i].MountPoint) {
+		if isCwd(specs[i].MountPoint) {
 			root = &specs[i]
 		} else {
 			mounts = append(mounts, specs[i])
@@ -443,7 +441,7 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 	for _, m := range mounts {
 		mountBaseFS, err := newBaseFS(ctx, m.Source)
 		if err != nil {
-			return nil, pathutil.JoinErrors(err, nFS.Close())
+			return nil, joinErrors(err, nFS.Close())
 		}
 		mountFS, err := applyWrappers(mountBaseFS, m.Options)
 		if err != nil {
@@ -451,7 +449,7 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 		}
 		mountNestFS := makeNestFS(ctx, mountFS)
 		if err := nFS.addMount(m.MountPoint, mountNestFS); err != nil {
-			return nil, pathutil.JoinErrors(err, mountNestFS.Close(), nFS.Close())
+			return nil, joinErrors(err, mountNestFS.Close(), nFS.Close())
 		}
 	}
 

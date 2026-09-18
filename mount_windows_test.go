@@ -27,9 +27,8 @@ import (
 	"sort"
 	"testing"
 
-	"golang.org/x/sys/windows"
-
 	"github.com/cloudfra/ufs/internal/osutil"
+	"golang.org/x/sys/windows"
 )
 
 func requireProjFS(t *testing.T) {

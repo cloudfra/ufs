@@ -29,11 +29,9 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/google/go-cmp/cmp"
 	"github.com/xyproto/randomstring"
-
-	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 type fsTestCase struct {
@@ -133,15 +131,15 @@ var (
 	}
 
 	testassetFilenameList = []string{
-		pathutil.CwdPath,
+		cwdPath,
 		"files/index.html",
 		"archives/nested-testassets.zip",
 	}
 
 	testassetDirList = map[string][]string{
-		pathutil.CwdPath: {},
-		"files":          {},
-		"archives":       {},
+		cwdPath:    {},
+		"files":    {},
+		"archives": {},
 	}
 
 	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
@@ -286,7 +284,7 @@ func randomString(size int) string {
 }
 
 func osTempDir() string {
-	return pathutil.CoerceUnix(os.TempDir())
+	return coerceUnix(os.TempDir())
 }
 
 func mustTemp(tb testing.TB) string {

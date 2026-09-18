@@ -25,8 +25,6 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 	"cloud.google.com/go/storage"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 var _ Watcher = (*gcsFS)(nil)
@@ -40,26 +38,26 @@ var _ Watcher = (*gcsFS)(nil)
 // GCS API) to publish object-change events to the Pub/Sub topic that the
 // subscription is attached to.
 func (fsys *gcsFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
-	if err := pathutil.ValidPath("watch", name); err != nil {
+	if err := validPath("watch", name); err != nil {
 		return nil, err
 	}
 	if fsys.subscription == "" {
-		return nil, pathutil.PathError("watch", name, fmt.Errorf("gcsFS has no pubsub subscription configured; pass subscription=projects/PROJECT/subscriptions/NAME as a query parameter: %w", fs.ErrInvalid))
+		return nil, pathError("watch", name, fmt.Errorf("gcsFS has no pubsub subscription configured; pass subscription=projects/PROJECT/subscriptions/NAME as a query parameter: %w", fs.ErrInvalid))
 	}
 
 	parts := strings.SplitN(strings.TrimPrefix(fsys.subscription, "projects/"), "/subscriptions/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return nil, pathutil.PathError("watch", name, fmt.Errorf("invalid subscription %q; expected projects/PROJECT/subscriptions/NAME: %w", fsys.subscription, fs.ErrInvalid))
+		return nil, pathError("watch", name, fmt.Errorf("invalid subscription %q; expected projects/PROJECT/subscriptions/NAME: %w", fsys.subscription, fs.ErrInvalid))
 	}
 	projectID := parts[0]
 
 	psClient, err := pubsub.NewClient(ctx, projectID, fsys.psClientOpts...)
 	if err != nil {
-		return nil, pathutil.PathError("watch", name, err)
+		return nil, pathError("watch", name, err)
 	}
 
 	var watchPrefix string
-	if name == pathutil.CwdPath {
+	if name == cwdPath {
 		watchPrefix = fsys.baseDir
 	} else {
 		watchPrefix = path.Join(fsys.baseDir, name)

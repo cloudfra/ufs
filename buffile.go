@@ -21,9 +21,6 @@ import (
 	"path"
 	"sync"
 	"time"
-
-	"github.com/cloudfra/ufs/internal/fsinfo"
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // bufFile holds the state and read-side behavior shared by every backend's
@@ -62,12 +59,13 @@ func newBufFile(path string, content []byte, mode fs.FileMode, modTime time.Time
 
 func (f *bufFile) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
-	info := fsinfo.New(fsinfo.Params{
-		Name:    path.Base(f.path),
-		Size:    int64(len(f.content)),
-		Mode:    f.mode,
-		ModTime: f.modTime,
-	})
+	info := &fsInfo{
+		name:    path.Base(f.path),
+		size:    int64(len(f.content)),
+		mode:    f.mode,
+		modTime: f.modTime,
+		isDir:   false,
+	}
 	f.mu.Unlock()
 	return info, nil
 }
@@ -88,7 +86,7 @@ func (f *bufFile) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.Lock()
 	if off < 0 {
 		f.mu.Unlock()
-		return 0, pathutil.PathError("readat", f.path, fmt.Errorf("offset %d is negative: %w", off, fs.ErrInvalid))
+		return 0, pathError("readat", f.path, fmt.Errorf("offset %d is negative: %w", off, fs.ErrInvalid))
 	}
 	if off >= int64(len(f.content)) {
 		f.mu.Unlock()
@@ -135,11 +133,11 @@ func (f *bufFile) Seek(offset int64, whence int) (int64, error) {
 		newOffset = int64(len(f.content)) + offset
 	default:
 		f.mu.Unlock()
-		return 0, pathutil.PathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
+		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
 	}
 	if newOffset < 0 {
 		f.mu.Unlock()
-		return 0, pathutil.PathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, newOffset, fs.ErrInvalid))
+		return 0, pathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, newOffset, fs.ErrInvalid))
 	}
 	f.offset = newOffset
 	f.mu.Unlock()

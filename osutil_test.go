@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package download
+package ufs
 
 import (
 	"bytes"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,21 @@ import (
 
 	"github.com/cloudfra/ufs/internal/osutil"
 )
+
+func TestNewRemoteArchive(t *testing.T) {
+	fsys, err := New(t.Context(), "https://github.com/mholt/archives/archive/refs/heads/main.zip")
+	if err != nil {
+		t.Error(err)
+	}
+	defer validateClose(t, fsys)()
+
+	if files, err := fsys.ReadDir(cwdPath); files != nil {
+		t.Logf("files: %v, err: %s", files, err)
+	}
+	if files, err := fsys.ReadDir("archives-main"); files != nil {
+		t.Logf("files: %v, err: %s", files, err)
+	}
+}
 
 func TestIsBlockedIP(t *testing.T) {
 	t.Parallel()
@@ -162,12 +178,17 @@ func TestDialControl(t *testing.T) {
 	}
 }
 
-func testFileServer(t *testing.T) (*httptest.Server, []byte) {
+func testArchiveServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	body := []byte("the quick brown fox jumps over the lazy dog")
+	zipPath := createZipFromDir(t, testAssetsFilesDir)
+	zipData, err := osutil.ReadFile(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/testfile.zip", func(w http.ResponseWriter, _ *http.Request) {
-		if _, err := w.Write(body); err != nil {
+	mux.HandleFunc("/testassets.zip", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		if _, err := w.Write(zipData); err != nil {
 			t.Errorf("failed to write to response: %v", err)
 		}
 	})
@@ -177,8 +198,8 @@ func testFileServer(t *testing.T) (*httptest.Server, []byte) {
 	mux.HandleFunc("/500.zip", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 	})
-	mux.HandleFunc("/redirect-to-file", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/testfile.zip", http.StatusFound)
+	mux.HandleFunc("/redirect-to-archive", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/testassets.zip", http.StatusFound)
 	})
 	mux.HandleFunc("/trailing-slash/", func(w http.ResponseWriter, _ *http.Request) {
 		if _, err := w.Write([]byte("bad")); err != nil {
@@ -195,39 +216,39 @@ func testFileServer(t *testing.T) (*httptest.Server, []byte) {
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	return ts, body
+	return ts
 }
 
-func TestFile(t *testing.T) {
+func TestDownloadFile(t *testing.T) {
 	t.Parallel()
-	ts, body := testFileServer(t)
+	ts := testArchiveServer(t)
 	client := ts.Client()
 
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		path, err := FileWith(t.Context(), client, dir, ts.URL+"/testfile.zip")
+		path, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/testassets.zip")
 		if err != nil {
-			t.Fatalf("FileWith() = %v", err)
+			t.Fatalf("downloadFileWith() = %v", err)
 		}
-		if filepath.Base(path) != "testfile.zip" {
-			t.Errorf("filename = %q, want %q", filepath.Base(path), "testfile.zip")
+		if filepath.Base(path) != "testassets.zip" {
+			t.Errorf("filename = %q, want %q", filepath.Base(path), "testassets.zip")
 		}
-		got, err := osutil.ReadFile(path)
+		data, err := osutil.ReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile() = %v", err)
 		}
-		if !bytes.Equal(got, body) {
-			t.Errorf("downloaded content = %q, want %q", got, body)
+		if len(data) == 0 {
+			t.Error("downloaded file is empty")
 		}
 	})
 
 	t.Run("404 status", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		_, err := FileWith(t.Context(), client, dir, ts.URL+"/404.zip")
+		_, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/404.zip")
 		if err == nil {
-			t.Fatal("FileWith() should fail for 404")
+			t.Fatal("downloadFileWith() should fail for 404")
 		}
 		if !strings.Contains(err.Error(), "404") {
 			t.Errorf("error = %v, want mention of 404", err)
@@ -237,9 +258,9 @@ func TestFile(t *testing.T) {
 	t.Run("500 status", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		_, err := FileWith(t.Context(), client, dir, ts.URL+"/500.zip")
+		_, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/500.zip")
 		if err == nil {
-			t.Fatal("FileWith() should fail for 500")
+			t.Fatal("downloadFileWith() should fail for 500")
 		}
 		if !strings.Contains(err.Error(), "500") {
 			t.Errorf("error = %v, want mention of 500", err)
@@ -249,66 +270,66 @@ func TestFile(t *testing.T) {
 	t.Run("redirect", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		path, err := FileWith(t.Context(), client, dir, ts.URL+"/redirect-to-file")
+		path, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/redirect-to-archive")
 		if err != nil {
-			t.Fatalf("FileWith() = %v", err)
+			t.Fatalf("downloadFileWith() = %v", err)
 		}
-		if filepath.Base(path) != "testfile.zip" {
-			t.Errorf("filename after redirect = %q, want %q", filepath.Base(path), "testfile.zip")
+		if filepath.Base(path) != "testassets.zip" {
+			t.Errorf("filename after redirect = %q, want %q", filepath.Base(path), "testassets.zip")
 		}
 	})
 
 	t.Run("invalid URL", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		_, err := FileWith(t.Context(), client, dir, "://bad-url")
+		_, err := downloadFileWith(t.Context(), client, dir, "://bad-url")
 		if err == nil {
-			t.Fatal("FileWith() should fail for invalid URL")
+			t.Fatal("downloadFileWith() should fail for invalid URL")
 		}
 	})
 
 	t.Run("private IP blocked", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		_, err := File(t.Context(), dir, "http://127.0.0.1:9999/file.zip")
+		_, err := downloadFile(t.Context(), dir, "http://127.0.0.1:9999/file.zip")
 		if err == nil {
-			t.Fatal("File() should reject loopback address")
+			t.Fatal("downloadFile() should reject loopback address")
 		}
 	})
 
 	t.Run("metadata endpoint blocked", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		_, err := File(t.Context(), dir, "http://169.254.169.254/latest/meta-data/")
+		_, err := downloadFile(t.Context(), dir, "http://169.254.169.254/latest/meta-data/")
 		if err == nil {
-			t.Fatal("File() should reject link-local address")
+			t.Fatal("downloadFile() should reject link-local address")
 		}
 	})
 
 	t.Run("ftp scheme blocked", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		_, err := File(t.Context(), dir, "ftp://example.com/file.zip")
+		_, err := downloadFile(t.Context(), dir, "ftp://example.com/file.zip")
 		if err == nil {
-			t.Fatal("File() should reject ftp scheme")
+			t.Fatal("downloadFile() should reject ftp scheme")
 		}
 	})
 
 	t.Run("bad filename from trailing slash", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		_, err := FileWith(t.Context(), client, dir, ts.URL+"/trailing-slash/")
+		_, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/trailing-slash/")
 		if err == nil {
-			t.Fatal("FileWith() should reject empty filename from trailing slash")
+			t.Fatal("downloadFileWith() should reject empty filename from trailing slash")
 		}
 	})
 
 	t.Run("path stays inside download dir", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		path, err := FileWith(t.Context(), client, dir, ts.URL+"/testfile.zip")
+		path, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/testassets.zip")
 		if err != nil {
-			t.Fatalf("FileWith() = %v", err)
+			t.Fatalf("downloadFileWith() = %v", err)
 		}
 		absDir, _ := filepath.Abs(dir)
 		absPath, _ := filepath.Abs(path)
@@ -321,7 +342,7 @@ func TestFile(t *testing.T) {
 	t.Run("redirect to traversal path", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		path, err := FileWith(t.Context(), client, dir, ts.URL+"/redirect-to-traversal")
+		path, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/redirect-to-traversal")
 		if err != nil {
 			return
 		}
@@ -332,9 +353,117 @@ func TestFile(t *testing.T) {
 			t.Errorf("traversal redirect produced path %q outside dir %q", absPath, absDir)
 		}
 	})
+
+	t.Run("file content matches", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path, err := downloadFileWith(t.Context(), client, dir, ts.URL+"/testassets.zip")
+		if err != nil {
+			t.Fatalf("downloadFileWith() = %v", err)
+		}
+		got, err := osutil.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zipPath := createZipFromDir(t, testAssetsFilesDir)
+		want, err := osutil.ReadFile(zipPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("downloaded file size = %d, want %d", len(got), len(want))
+		}
+	})
 }
 
-func TestFilePathContainment(t *testing.T) {
+func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) FS {
+	t.Helper()
+	ctx := t.Context()
+	client := ts.Client()
+	dir := t.TempDir()
+
+	archivePath, err := downloadFileWith(ctx, client, dir, ts.URL+urlPath)
+	if err != nil {
+		t.Fatalf("downloadFileWith(%q) = %v", urlPath, err)
+	}
+	fsys, err := newArchiveFSFromLocalFS(ctx, archivePath)
+	if err != nil {
+		t.Fatalf("newArchiveFSFromLocalFS() = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
+	return fsys
+}
+
+func TestDownloadFileAndMount(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+	wantFiles := loadTestAssets(t)
+
+	fsys := testDownloadAndMount(t, ts, "/testassets.zip")
+	for filePath, wantData := range wantFiles {
+		t.Run(filePath, func(t *testing.T) {
+			t.Parallel()
+			got, err := fs.ReadFile(fsys, filePath)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) = %v", filePath, err)
+			}
+			if !bytes.Equal(got, wantData) {
+				t.Errorf("ReadFile(%q): got %d bytes, want %d bytes", filePath, len(got), len(wantData))
+			}
+		})
+	}
+}
+
+func TestDownloadFileAndMountRedirect(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+
+	fsys := testDownloadAndMount(t, ts, "/redirect-to-archive")
+	entries, err := fsys.ReadDir(cwdPath)
+	if err != nil {
+		t.Fatalf("ReadDir(\".\") = %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("ReadDir(\".\") returned no entries, want at least one")
+	}
+}
+
+func TestDownloadFileAndMountReadDir(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+
+	fsys := testDownloadAndMount(t, ts, "/testassets.zip")
+	entries, err := fsys.ReadDir("assets")
+	if err != nil {
+		t.Fatalf("ReadDir(\"assets\") = %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("ReadDir(\"assets\") returned no entries, want at least one")
+	}
+}
+
+func TestDownloadFileAndMountStat(t *testing.T) {
+	t.Parallel()
+	ts := testArchiveServer(t)
+
+	fsys := testDownloadAndMount(t, ts, "/testassets.zip")
+	info, err := fsys.Stat("index.html")
+	if err != nil {
+		t.Fatalf("Stat(\"index.html\") = %v", err)
+	}
+	if info.IsDir() {
+		t.Error("Stat(\"index.html\").IsDir() = true, want false")
+	}
+	if info.Size() == 0 {
+		t.Error("Stat(\"index.html\").Size() = 0, want > 0")
+	}
+}
+
+func TestDownloadFilePathContainment(t *testing.T) {
 	t.Parallel()
 
 	body := []byte("test content")
@@ -373,7 +502,7 @@ func TestFilePathContainment(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			path, err := FileWith(t.Context(), client, dir, ts.URL+tc.urlPath)
+			path, err := downloadFileWith(t.Context(), client, dir, ts.URL+tc.urlPath)
 			if err != nil {
 				t.Logf("correctly rejected: %v", err)
 				return
@@ -382,6 +511,28 @@ func TestFilePathContainment(t *testing.T) {
 			absPath, _ := filepath.Abs(path)
 			if !strings.HasPrefix(absPath, absDir+string(os.PathSeparator)) {
 				t.Errorf("downloaded path %q is outside target dir %q", absPath, absDir)
+			}
+		})
+	}
+}
+
+func TestNewRemoteArchiveSSRFBlocked(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		uri  string
+	}{
+		{"loopback", "http://127.0.0.1/evil.zip"},
+		{"private 10", "http://10.0.0.1/evil.zip"},
+		{"metadata", "http://169.254.169.254/latest/meta-data/"},
+		{"ipv6 loopback", "http://[::1]/evil.zip"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := New(t.Context(), tc.uri)
+			if err == nil {
+				t.Fatalf("New(%q) should have been blocked", tc.uri)
 			}
 		})
 	}

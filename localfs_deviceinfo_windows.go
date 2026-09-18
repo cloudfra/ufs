@@ -20,47 +20,46 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/cloudfra/ufs/internal/deviceinfo"
 	"golang.org/x/sys/windows"
 )
 
-func (fsys *localFS) getDeviceInfo() map[string]deviceinfo.Info {
+func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
 	rootPath := fsys.osFS.Name()
 	return windowsDeviceMap(rootPath)
 }
 
-func windowsDeviceMap(rootPath string) map[string]deviceinfo.Info {
+func windowsDeviceMap(rootPath string) map[string]deviceInfo {
 	vol := filepath.VolumeName(rootPath)
 	if vol == "" {
-		return deviceinfo.DefaultMap
+		return defaultDeviceMap
 	}
 	volumeRoot := vol + string(filepath.Separator)
 	// NTFS volume mount points (volumes mounted at arbitrary subdirectories) are not
 	// detected here; FindFirstVolumeMountPoint / GetVolumeNameForVolumeMountPoint
 	// could enumerate them in a future implementation.
-	return map[string]deviceinfo.Info{
+	return map[string]deviceInfo{
 		".": windowsDriveInfo(volumeRoot),
 	}
 }
 
-func windowsDriveInfo(volumeRoot string) deviceinfo.Info {
+func windowsDriveInfo(volumeRoot string) deviceInfo {
 	ptr, err := syscall.UTF16PtrFromString(volumeRoot)
 	if err != nil {
-		return deviceinfo.Default
+		return defaultDeviceInfo
 	}
 	dt := windows.GetDriveType(ptr)
 	name := filepath.VolumeName(volumeRoot)
 	switch dt {
 	case windows.DRIVE_REMOVABLE:
-		return deviceinfo.Info{Name: name, DeviceType: "removable", ThreadCount: 1}
+		return deviceInfo{name: name, deviceType: "removable", threadCount: 1}
 	case windows.DRIVE_FIXED:
-		return deviceinfo.Info{Name: name, DeviceType: "fixed", ThreadCount: 1}
+		return deviceInfo{name: name, deviceType: "fixed", threadCount: 1}
 	case windows.DRIVE_REMOTE:
-		return deviceinfo.Info{Name: name, DeviceType: "network", ThreadCount: 1}
+		return deviceInfo{name: name, deviceType: "network", threadCount: 1}
 	case windows.DRIVE_CDROM:
-		return deviceinfo.Info{Name: name, DeviceType: "cdrom", ThreadCount: 1}
+		return deviceInfo{name: name, deviceType: "cdrom", threadCount: 1}
 	case windows.DRIVE_RAMDISK:
-		return deviceinfo.Info{Name: name, DeviceType: "memory", ThreadCount: 4}
+		return deviceInfo{name: name, deviceType: "memory", threadCount: 4}
 	}
-	return deviceinfo.Default
+	return defaultDeviceInfo
 }

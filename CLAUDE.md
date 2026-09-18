@@ -113,9 +113,10 @@ error on other platforms (Windows support planned).
 
 | File                  | Purpose                                                             |
 |:----------------------|:--------------------------------------------------------------------|
-| info.go               | readDirFile — synthesizes a directory fs.File from a ReadFS         |
-| path.go, path_test.go | AbsPath — resolves a virtual path to a real OS path where supported |
+| info.go               | fsInfo — concrete fs.FileInfo implementation                        |
+| path.go, path_test.go | validPath — validates paths against fs.ValidPath                    |
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
+| osutil.go             | OS helpers (file download, etc.)                                    |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |

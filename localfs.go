@@ -27,7 +27,6 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const (
@@ -59,7 +58,7 @@ type localFS struct {
 }
 
 func (fsys *localFS) URI() *url.URL {
-	return &url.URL{Scheme: "file", Path: pathutil.CoerceUnix(fsys.osFS.Name())}
+	return &url.URL{Scheme: "file", Path: coerceUnix(fsys.osFS.Name())}
 }
 
 func (fsys *localFS) String() string {
@@ -183,7 +182,7 @@ func globFS(fsys fs.ReadDirFS, pattern string) ([]string, error) {
 	if _, err := path.Match(pattern, ""); err != nil {
 		return nil, err
 	}
-	return globWalk(fsys, pathutil.CwdPath, pattern)
+	return globWalk(fsys, cwdPath, pattern)
 }
 
 func globWalk(fsys fs.ReadDirFS, dir, pattern string) ([]string, error) {
@@ -205,7 +204,7 @@ func globWalk(fsys fs.ReadDirFS, dir, pattern string) ([]string, error) {
 			continue
 		}
 		entryPath := e.Name()
-		if dir != pathutil.CwdPath {
+		if dir != cwdPath {
 			entryPath = dir + "/" + e.Name()
 		}
 		if rest == "" {

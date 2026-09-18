@@ -40,34 +40,34 @@ func TestLinuxDeviceMapFromReader_RootAtSlash(t *testing.T) {
 
 	if di, ok := got["."]; !ok {
 		t.Error("missing root entry")
-	} else if di.DeviceType != "nvme" {
-		t.Errorf("root deviceType = %q, want %q", di.DeviceType, "nvme")
+	} else if di.deviceType != "nvme" {
+		t.Errorf("root deviceType = %q, want %q", di.deviceType, "nvme")
 	}
 
 	if di, ok := got["mnt/c"]; !ok {
 		t.Error("missing mnt/c entry")
-	} else if di.DeviceType != "hdd" {
-		t.Errorf("mnt/c deviceType = %q, want %q", di.DeviceType, "hdd")
+	} else if di.deviceType != "hdd" {
+		t.Errorf("mnt/c deviceType = %q, want %q", di.deviceType, "hdd")
 	}
 
 	if di, ok := got["mnt/cdrom"]; !ok {
 		t.Error("missing mnt/cdrom entry")
-	} else if di.DeviceType != "cdrom" {
-		t.Errorf("mnt/cdrom deviceType = %q, want %q", di.DeviceType, "cdrom")
+	} else if di.deviceType != "cdrom" {
+		t.Errorf("mnt/cdrom deviceType = %q, want %q", di.deviceType, "cdrom")
 	}
 
 	// /mnt/d is a different NVMe device from /, so it appears despite same type.
 	if di, ok := got["mnt/d"]; !ok {
 		t.Error("missing mnt/d entry")
-	} else if di.DeviceType != "nvme" {
-		t.Errorf("mnt/d deviceType = %q, want %q", di.DeviceType, "nvme")
+	} else if di.deviceType != "nvme" {
+		t.Errorf("mnt/d deviceType = %q, want %q", di.deviceType, "nvme")
 	}
 
 	// /tmp is tmpfs (memory), but same name check: tmpfs is added with name "tmpfs".
 	if di, ok := got["tmp"]; !ok {
 		t.Error("missing tmp entry")
-	} else if di.DeviceType != "memory" {
-		t.Errorf("tmp deviceType = %q, want %q", di.DeviceType, "memory")
+	} else if di.deviceType != "memory" {
+		t.Errorf("tmp deviceType = %q, want %q", di.deviceType, "memory")
 	}
 }
 
@@ -78,8 +78,8 @@ func TestLinuxDeviceMapFromReader_SubRoot(t *testing.T) {
 
 	if di, ok := got["."]; !ok {
 		t.Error("missing root entry")
-	} else if di.DeviceType != "hdd" {
-		t.Errorf("root deviceType = %q, want %q", di.DeviceType, "hdd")
+	} else if di.deviceType != "hdd" {
+		t.Errorf("root deviceType = %q, want %q", di.deviceType, "hdd")
 	}
 
 	// No sub-mounts under /mnt/c in mock data.
@@ -112,23 +112,23 @@ func TestLinuxDeviceMapFromReader_InterleavingMounts(t *testing.T) {
 `
 	got := linuxDeviceMapFromReader("/", strings.NewReader(mounts))
 
-	if di := got["."]; di.Name != "/dev/hda1" {
-		t.Errorf("root name = %q, want /dev/hda1", di.Name)
+	if di := got["."]; di.name != "/dev/hda1" {
+		t.Errorf("root name = %q, want /dev/hda1", di.name)
 	}
 	if di, ok := got["fast"]; !ok {
 		t.Error("missing fast entry")
-	} else if di.Name != "/dev/nvme0n1p1" {
-		t.Errorf("fast name = %q, want /dev/nvme0n1p1", di.Name)
+	} else if di.name != "/dev/nvme0n1p1" {
+		t.Errorf("fast name = %q, want /dev/nvme0n1p1", di.name)
 	}
 	if di, ok := got["fast/slow"]; !ok {
 		t.Error("missing fast/slow entry — interleaving back to root device should still appear")
-	} else if di.Name != "/dev/hda1" {
-		t.Errorf("fast/slow name = %q, want /dev/hda1", di.Name)
+	} else if di.name != "/dev/hda1" {
+		t.Errorf("fast/slow name = %q, want /dev/hda1", di.name)
 	}
 	if di, ok := got["faster"]; !ok {
 		t.Error("missing faster entry — path-similar prefix must not be confused with parent")
-	} else if di.Name != "/dev/sda1" {
-		t.Errorf("faster name = %q, want /dev/sda1", di.Name)
+	} else if di.name != "/dev/sda1" {
+		t.Errorf("faster name = %q, want /dev/sda1", di.name)
 	}
 }
 

@@ -15,12 +15,91 @@
 package ufs
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
+	"runtime"
+	"strings"
 )
+
+const (
+	unixPathSeparator         = "/"
+	windowsPathSeparator      = "\\"
+	cwdPath                   = "."
+	unixAndWindowsSlashCutset = unixPathSeparator + windowsPathSeparator
+	emptyDirSize              = 0
+)
+
+func removePathPrefix(name string, removePath string) (string, bool) {
+	removePath = path.Clean(removePath)
+	name = path.Clean(name)
+	if isCwd(removePath) {
+		return name, true
+	}
+	if removePath == name {
+		return cwdPath, true
+	}
+	return strings.CutPrefix(name, removePath+unixPathSeparator)
+}
+
+func trimSlash(name string) string {
+	return strings.Trim(name, unixAndWindowsSlashCutset)
+}
+
+func splitPath(name string) []string {
+	return strings.Split(trimSlash(name), unixPathSeparator)
+}
+
+func validPath(op string, name string) error {
+	if !fs.ValidPath(name) {
+		return pathError(op, name, fmt.Errorf("%q is not a valid path for %s, %w", name, runtime.GOOS, fs.ErrInvalid))
+	}
+	return nil
+}
+
+func coerceUnix(name string) string {
+	return strings.ReplaceAll(name, windowsPathSeparator, unixPathSeparator)
+}
+
+func isDirName(name string) bool {
+	return isCwd(name) || strings.HasSuffix(name, unixPathSeparator)
+}
+
+func isCwd(name string) bool {
+	return name == "" || name == cwdPath
+}
+
+func pathError(op string, name string, err error) error {
+	return &fs.PathError{
+		Op:   op,
+		Path: name,
+		Err:  err,
+	}
+}
+
+// joinErrors returns nil if all errs are nil, returns the single non-nil error
+// directly (without wrapping) if exactly one is non-nil, or errors.Join when
+// multiple are non-nil. This avoids the join wrapper overhead and the change in
+// error identity that errors.Join introduces for the single-error case.
+func joinErrors(errs ...error) error {
+	var nonNil []error
+	for _, err := range errs {
+		if err != nil {
+			nonNil = append(nonNil, err)
+		}
+	}
+	switch len(nonNil) {
+	case 0:
+		return nil
+	case 1:
+		return nonNil[0]
+	default:
+		return errors.Join(nonNil...)
+	}
+}
 
 type realAbsPathGet interface {
 	getAbsPath(name string) (string, error)
@@ -41,5 +120,5 @@ func AbsPath(fsys any, name string) (string, error) {
 }
 
 func realAbsPathNotSupported(fsys any, name string) error {
-	return pathutil.PathError("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
+	return pathError("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
 }

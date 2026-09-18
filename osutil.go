@@ -12,13 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package download provides an SSRF-hardened HTTP file download used to fetch
-// remote archives before mounting them. It rejects non-http(s) schemes and
-// blocks connections to private, loopback, and link-local addresses both
-// before the request is sent and at dial time (defeating DNS rebinding),
-// derives a safe destination filename from the response URL, and guarantees
-// the downloaded file is written inside the requested directory.
-package download
+package ufs
 
 import (
 	"context"
@@ -35,9 +29,7 @@ import (
 	"time"
 )
 
-// MaxFileSize is the largest response body File/FileWith will write to disk;
-// larger responses are truncated at this size.
-const MaxFileSize = 4 << 30 // 4 GiB
+const maxDownloadSize = 4 << 30 // 4 GiB
 
 func newHTTPClient() *http.Client {
 	return &http.Client{
@@ -126,19 +118,15 @@ func sanitizeFilename(rawURL *url.URL) (string, error) {
 	return filename, nil
 }
 
-// File downloads the file at uri into dir, using an SSRF-hardened client
-// that rejects non-http(s) schemes and private/loopback/link-local
-// addresses, and returns the path it was written to.
-func File(ctx context.Context, dir string, uri string) (string, error) {
-	return FileWith(ctx, nil, dir, uri)
+func downloadFile(ctx context.Context, dir string, uri string) (string, error) {
+	return downloadFileWith(ctx, nil, dir, uri)
 }
 
-// FileWith downloads the file at uri into dir. If client is nil, a new
-// SSRF-hardened client is created and the URL is pre-validated against
+// downloadFileWith downloads the file at uri into dir. If client is nil, a
+// new SSRF-hardened client is created and the URL is pre-validated against
 // private/loopback addresses. When a non-nil client is supplied (tests), the
-// pre-flight validation is skipped because the caller owns transport
-// security.
-func FileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
+// pre-flight validation is skipped because the caller owns transport security.
+func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
 	parsed, err := url.Parse(uri)
 	if err != nil {
 		return "", fmt.Errorf("invalid download URL: %w", err)
@@ -194,7 +182,7 @@ func FileWith(ctx context.Context, client *http.Client, dir string, uri string) 
 		}
 	}()
 
-	if _, err := io.Copy(f, io.LimitReader(resp.Body, MaxFileSize)); err != nil {
+	if _, err := io.Copy(f, io.LimitReader(resp.Body, maxDownloadSize)); err != nil {
 		return "", err
 	}
 

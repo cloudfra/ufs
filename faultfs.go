@@ -24,9 +24,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/cloudfra/ufs/internal/deviceinfo"
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 var _ WriteFS = (*faultFS)(nil)
@@ -114,7 +111,7 @@ func newFaultFS(inner FS, cfg FaultConfig) (FS, error) {
 	}, nil
 }
 
-func (fsys *faultFS) getDeviceInfo() map[string]deviceinfo.Info {
+func (fsys *faultFS) getDeviceInfo() map[string]deviceInfo {
 	return fsys.inner.getDeviceInfo()
 }
 
@@ -127,7 +124,7 @@ func (fsys *faultFS) String() string {
 }
 
 func (fsys *faultFS) maybeInjectFault(op, name string) error {
-	if err := pathutil.ValidPath(op, name); err != nil {
+	if err := validPath(op, name); err != nil {
 		return err
 	}
 
@@ -153,7 +150,7 @@ func (fsys *faultFS) maybeInjectFault(op, name string) error {
 		if fsys.cfg.Log {
 			slog.Info("fault injected", "op", op, "path", name, "error", faultErr)
 		}
-		return pathutil.PathError(op, name, faultErr)
+		return pathError(op, name, faultErr)
 	}
 	return nil
 }

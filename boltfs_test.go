@@ -22,8 +22,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"testing"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // testBoltFSURI returns a bolt: URI backed by a fresh temp file, unique per
@@ -81,7 +79,7 @@ func TestIsBoltFSUri(t *testing.T) {
 		{name: "bolt:/tmp/x.db", want: true},
 		{name: "memory:", want: false},
 		{name: "bolts:/tmp/x.db", want: false},
-		{name: pathutil.CwdPath, want: false},
+		{name: cwdPath, want: false},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -669,7 +667,7 @@ func TestBoltFSLstat(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		info, err := lfs.Lstat(pathutil.CwdPath)
+		info, err := lfs.Lstat(cwdPath)
 		if err != nil {
 			t.Fatalf("Lstat(.) = %v, want nil", err)
 		}
@@ -716,7 +714,7 @@ func TestBoltFSReadDir(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		entries, err := dfs.ReadDir(pathutil.CwdPath)
+		entries, err := dfs.ReadDir(cwdPath)
 		if err != nil {
 			t.Fatalf("ReadDir(.) = %v, want nil", err)
 		}
@@ -1002,7 +1000,7 @@ func TestBoltFSRemove(t *testing.T) {
 	})
 
 	t.Run("root_denied", func(t *testing.T) {
-		if err := fsys.Remove(pathutil.CwdPath); !errors.Is(err, fs.ErrPermission) {
+		if err := fsys.Remove(cwdPath); !errors.Is(err, fs.ErrPermission) {
 			t.Errorf("Remove('.') = %v, want ErrPermission", err)
 		}
 	})
@@ -1078,10 +1076,10 @@ func TestBoltFSRemoveAll(t *testing.T) {
 			t.Errorf("failed to close file: %v", err)
 		}
 
-		if err := fsys2.RemoveAll(pathutil.CwdPath); err != nil {
+		if err := fsys2.RemoveAll(cwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)
 		}
-		entries, err := fsys2.ReadDir(pathutil.CwdPath)
+		entries, err := fsys2.ReadDir(cwdPath)
 		if err != nil {
 			t.Errorf("failed to read directory: %v", err)
 		}

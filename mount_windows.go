@@ -27,11 +27,9 @@ import (
 	"sync"
 	"unsafe"
 
-	"golang.org/x/sys/windows"
-
 	"github.com/cloudfra/ufs/internal/mathutil"
 	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
+	"golang.org/x/sys/windows"
 )
 
 // utf16Str is a pointer to a null-terminated UTF-16 string (Windows LPCWSTR).
@@ -101,9 +99,9 @@ func notificationName(n uint32) string {
 // fs.ValidPath. ProjFS passes nil for the root directory.
 func projfsPath(name utf16Str) string {
 	if name == nil {
-		return pathutil.CwdPath
+		return cwdPath
 	}
-	return pathutil.CoerceUnix(windows.UTF16PtrToString(name))
+	return coerceUnix(windows.UTF16PtrToString(name))
 }
 
 func cbDataAttrs(callbackData *prjCallbackData) []any {

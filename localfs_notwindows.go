@@ -20,8 +20,6 @@ import (
 	"io/fs"
 	"os"
 	"strings"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // localFSNormalizePath strips the "file://" or "file:" URI prefix, leaving a plain path.
@@ -33,7 +31,7 @@ func localFSNormalizePath(name string) string {
 }
 
 func validLocalPath(op, name string) error {
-	return pathutil.ValidPath(op, name)
+	return validPath(op, name)
 }
 
 func localFSWrapFile(f *os.File) fs.File {

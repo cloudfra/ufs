@@ -23,8 +23,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 func TestNewBaseFSInvalid(t *testing.T) {
@@ -63,7 +61,7 @@ func TestNew(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			uri:      pathutil.CwdPath,
+			uri:      cwdPath,
 			wantType: reflect.TypeFor[*localFS]().Name(),
 			wantErr:  false,
 		},

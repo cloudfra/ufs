@@ -20,9 +20,6 @@ import (
 	"io/fs"
 	"net/url"
 	"strings"
-
-	"github.com/cloudfra/ufs/internal/deviceinfo"
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const (
@@ -35,12 +32,12 @@ var (
 
 	errAngry = fs.ErrInvalid
 
-	angryDeviceInfo = deviceinfo.Info{
-		Name:        "angry",
-		DeviceType:  "angry",
-		ThreadCount: 1,
+	angryDeviceInfo = deviceInfo{
+		name:        "angry",
+		deviceType:  "angry",
+		threadCount: 1,
 	}
-	angryDeviceInfoMap = deviceinfo.NewMap(angryDeviceInfo)
+	angryDeviceInfoMap = newDeviceInfoMap(angryDeviceInfo)
 )
 
 func init() {
@@ -55,7 +52,7 @@ type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) getDeviceInfo() map[string]deviceinfo.Info {
+func (fsys *angryFS) getDeviceInfo() map[string]deviceInfo {
 	return angryDeviceInfoMap
 }
 
@@ -72,10 +69,10 @@ func (fsys *angryFS) String() string {
 }
 
 func (fsys *angryFS) Open(name string) (fs.File, error) {
-	if err := pathutil.ValidPath("open", name); err != nil {
+	if err := validPath("open", name); err != nil {
 		return nil, err
 	}
-	return nil, pathutil.PathError("open", name, errAngry)
+	return nil, pathError("open", name, errAngry)
 }
 
 func (fsys *angryFS) Close() error {
@@ -83,52 +80,52 @@ func (fsys *angryFS) Close() error {
 }
 
 func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.ValidPath("stat", name); err != nil {
+	if err := validPath("stat", name); err != nil {
 		return nil, err
 	}
-	return nil, pathutil.PathError("stat", name, errAngry)
+	return nil, pathError("stat", name, errAngry)
 }
 
 func (fsys *angryFS) Create(name string) (File, error) {
-	if err := pathutil.ValidPath("create", name); err != nil {
+	if err := validPath("create", name); err != nil {
 		return nil, err
 	}
-	return nil, pathutil.PathError("create", name, errAngry)
+	return nil, pathError("create", name, errAngry)
 }
 
 func (fsys *angryFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.ValidPath("mkdir", name); err != nil {
+	if err := validPath("mkdir", name); err != nil {
 		return err
 	}
-	return pathutil.PathError("mkdir", name, errAngry)
+	return pathError("mkdir", name, errAngry)
 }
 
 func (fsys *angryFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.ValidPath("readfile", name); err != nil {
+	if err := validPath("readfile", name); err != nil {
 		return nil, err
 	}
-	return nil, pathutil.PathError("readfile", name, errAngry)
+	return nil, pathError("readfile", name, errAngry)
 }
 
 func (fsys *angryFS) ReadLink(name string) (string, error) {
-	if err := pathutil.ValidPath("readlink", name); err != nil {
+	if err := validPath("readlink", name); err != nil {
 		return "", err
 	}
-	return "", pathutil.PathError("readlink", name, errAngry)
+	return "", pathError("readlink", name, errAngry)
 }
 
 func (fsys *angryFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := pathutil.ValidPath("lstat", name); err != nil {
+	if err := validPath("lstat", name); err != nil {
 		return nil, err
 	}
-	return nil, pathutil.PathError("lstat", name, errAngry)
+	return nil, pathError("lstat", name, errAngry)
 }
 
 func (fsys *angryFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.ValidPath("readdir", name); err != nil {
+	if err := validPath("readdir", name); err != nil {
 		return nil, err
 	}
-	return nil, pathutil.PathError("readdir", name, errAngry)
+	return nil, pathError("readdir", name, errAngry)
 }
 
 func (fsys *angryFS) Glob(_ string) ([]string, error) {
@@ -136,17 +133,17 @@ func (fsys *angryFS) Glob(_ string) ([]string, error) {
 }
 
 func (fsys *angryFS) Remove(name string) error {
-	if err := pathutil.ValidPath("remove", name); err != nil {
+	if err := validPath("remove", name); err != nil {
 		return err
 	}
-	return pathutil.PathError("remove", name, errAngry)
+	return pathError("remove", name, errAngry)
 }
 
 func (fsys *angryFS) RemoveAll(name string) error {
-	if err := pathutil.ValidPath("removeall", name); err != nil {
+	if err := validPath("removeall", name); err != nil {
 		return err
 	}
-	return pathutil.PathError("removeall", name, errAngry)
+	return pathError("removeall", name, errAngry)
 }
 
 func newAngryFS(_ context.Context, name string) (FS, error) {

@@ -20,8 +20,6 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 func TestNullFSString(t *testing.T) {
@@ -49,7 +47,7 @@ func TestIsNullFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: pathutil.CwdPath,
+			name: cwdPath,
 			want: false,
 		},
 		{
@@ -141,30 +139,30 @@ func TestNullFSLstat(t *testing.T) {
 	})
 
 	t.Run("cwd", func(t *testing.T) {
-		// pathutil.CwdPath (".") satisfies isDirName, so mode and size should reflect a directory.
-		info, err := nfs.Lstat(pathutil.CwdPath)
+		// cwdPath (".") satisfies isDirName, so mode and size should reflect a directory.
+		info, err := nfs.Lstat(cwdPath)
 		if err != nil {
-			t.Fatalf("Lstat(%q) = %v, want nil", pathutil.CwdPath, err)
+			t.Fatalf("Lstat(%q) = %v, want nil", cwdPath, err)
 		}
 		if !info.IsDir() {
-			t.Errorf("Lstat(%q).IsDir() = false, want true", pathutil.CwdPath)
+			t.Errorf("Lstat(%q).IsDir() = false, want true", cwdPath)
 		}
 		if info.Mode()&fs.ModeDir == 0 {
-			t.Errorf("Lstat(%q).Mode() missing ModeDir: %v", pathutil.CwdPath, info.Mode())
+			t.Errorf("Lstat(%q).Mode() missing ModeDir: %v", cwdPath, info.Mode())
 		}
 	})
 }
 
 func TestNullFSReadDir(t *testing.T) {
 	nfs := mustNullFS(t)
-	entries, err := nfs.ReadDir(pathutil.CwdPath)
+	entries, err := nfs.ReadDir(cwdPath)
 	if err != nil {
 		t.Fatalf("ReadDir() = %v, want nil", err)
 	}
 	if len(entries) != 0 {
 		t.Errorf("ReadDir() = %d entries, want 0", len(entries))
 	}
-	f, err := nfs.Open(pathutil.CwdPath)
+	f, err := nfs.Open(cwdPath)
 	if err != nil {
 		t.Errorf("Open('.') returned error, %s", err)
 	}
@@ -203,7 +201,7 @@ func TestNullFSGlob(t *testing.T) {
 }
 
 func TestNullFileStatDir(t *testing.T) {
-	f := newNullFile("subdir" + pathutil.UnixSeparator)
+	f := newNullFile("subdir" + unixPathSeparator)
 	info, err := f.Stat()
 	if err != nil {
 		t.Fatal(err)
@@ -330,9 +328,9 @@ func TestNullFileOperations(t *testing.T) {
 func TestNullFSStat(t *testing.T) {
 	nfs := mustNullFS(t)
 
-	info, err := nfs.Stat(pathutil.CwdPath)
+	info, err := nfs.Stat(cwdPath)
 	if err != nil {
-		t.Fatalf("Stat(%q) = %v, want nil", pathutil.CwdPath, err)
+		t.Fatalf("Stat(%q) = %v, want nil", cwdPath, err)
 	}
 	if !info.IsDir() {
 		t.Error("Stat('.').IsDir() = false, want true")

@@ -23,10 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
-
 	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/fsnotify/fsnotify"
 )
 
 var _ Watcher = (*localFS)(nil)
@@ -120,8 +118,8 @@ func (lw *localWatcher) addRecursive(dir string) error {
 // forward-slash path suitable for the NotifyHook. Returns "", false if the
 // path falls outside the FS root.
 func (lw *localWatcher) toRelPath(absPath string) (string, bool) {
-	absPath = pathutil.CoerceUnix(absPath)
-	root := pathutil.CoerceUnix(lw.absRoot)
+	absPath = coerceUnix(absPath)
+	root := coerceUnix(lw.absRoot)
 	if !strings.HasSuffix(root, "/") {
 		root += "/"
 	}
@@ -129,12 +127,12 @@ func (lw *localWatcher) toRelPath(absPath string) (string, bool) {
 	rel, ok := strings.CutPrefix(absPath, root)
 	if !ok {
 		if absPath == strings.TrimSuffix(root, "/") {
-			return pathutil.CwdPath, true
+			return cwdPath, true
 		}
 		return "", false
 	}
 	if rel == "" {
-		return pathutil.CwdPath, true
+		return cwdPath, true
 	}
 	if !fs.ValidPath(rel) {
 		return "", false
@@ -164,7 +162,7 @@ func (lw *localWatcher) loop(ctx context.Context) {
 
 func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	rel, ok := lw.toRelPath(ev.Name)
-	if !ok || rel == pathutil.CwdPath {
+	if !ok || rel == cwdPath {
 		return
 	}
 

@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/cloudfra/ufs/internal/device"
 	"github.com/cloudfra/ufs/internal/errorutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -42,12 +43,8 @@ var (
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
-	archiveDeviceInfo = deviceInfo{
-		name:        "archive",
-		deviceType:  "archive",
-		threadCount: 1,
-	}
-	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
+	archiveDeviceInfo    = device.New("archive", "archive", 1, false)
+	archiveDeviceInfoMap = device.NewMap(archiveDeviceInfo)
 )
 
 func init() {
@@ -100,7 +97,7 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 }
 
-func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *archiveFS) getDeviceInfo() device.Map {
 	return archiveDeviceInfoMap
 }
 

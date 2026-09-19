@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/device"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -194,12 +195,8 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-func (fsys *memFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        fsys.name,
-		deviceType:  "memory",
-		threadCount: 2,
-	})
+func (fsys *memFS) getDeviceInfo() device.Map {
+	return device.NewMap(device.New(fsys.name, "memory", 2, false))
 }
 
 func (fsys *memFS) URI() *url.URL {

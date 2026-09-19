@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/cloudfra/ufs/internal/device"
 	"github.com/cloudfra/ufs/internal/errorutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"google.golang.org/api/googleapi"
@@ -207,12 +208,8 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        "gs://" + fsys.bucket,
-		deviceType:  "network",
-		threadCount: 1,
-	})
+func (fsys *gcsFS) getDeviceInfo() device.Map {
+	return device.NewMap(device.New("gs://"+fsys.bucket, "network", 1, true))
 }
 
 func (fsys *gcsFS) URI() *url.URL {

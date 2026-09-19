@@ -23,19 +23,20 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/device"
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const procMountsPath = "/proc/self/mounts"
 
-func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *localFS) getDeviceInfo() device.Map {
 	rootPath := fsys.osFS.Name()
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath
 	}
 	f, err := osutil.Open(procMountsPath)
 	if err != nil {
-		return defaultDeviceMap
+		return device.DefaultMap
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -51,7 +52,7 @@ type linuxMountEntry struct {
 	fsType     string
 }
 
-func linuxDeviceMapFromReader(rootPath string, r io.Reader) map[string]deviceInfo {
+func linuxDeviceMapFromReader(rootPath string, r io.Reader) device.Map {
 	entries := parseLinuxMounts(r)
 	return buildLinuxDeviceMap(rootPath, entries)
 }
@@ -80,15 +81,15 @@ func parseLinuxMounts(r io.Reader) []linuxMountEntry {
 	return entries
 }
 
-func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]deviceInfo {
-	result := map[string]deviceInfo{".": defaultDeviceInfo}
+func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) device.Map {
+	result := device.NewMap(device.Default)
 
 	// Find the mount that best covers rootPath (longest prefix match).
 	bestMatchLen := -1
 	for _, m := range entries {
 		if isPathCoveredBy(rootPath, m.mountPoint) && len(m.mountPoint) > bestMatchLen {
 			bestMatchLen = len(m.mountPoint)
-			result["."] = linuxMakeDeviceInfo(m)
+			result = result.WithEntry(".", linuxMakeDeviceInfo(m))
 		}
 	}
 
@@ -102,53 +103,53 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]
 			continue
 		}
 		di := linuxMakeDeviceInfo(m)
-		if di.name != getParentDeviceInfo(result, rel).name {
-			result[rel] = di
+		if di.Name() != result.GetParent(rel).Name() {
+			result = result.WithEntry(rel, di)
 		}
 	}
 
 	return result
 }
 
-func linuxMakeDeviceInfo(m linuxMountEntry) deviceInfo {
-	dt, tc := linuxDeviceTypeAndThreads(m)
+func linuxMakeDeviceInfo(m linuxMountEntry) device.Info {
+	dt, tc, remote := linuxDeviceTypeAndThreads(m)
 	name := m.device
 	if name == "none" || name == "" {
 		name = m.fsType
 	}
-	return deviceInfo{name: name, deviceType: dt, threadCount: tc}
+	return device.New(name, dt, tc, remote)
 }
 
-func linuxDeviceTypeAndThreads(m linuxMountEntry) (string, int) {
+func linuxDeviceTypeAndThreads(m linuxMountEntry) (deviceType string, threadCount int, remote bool) {
 	switch m.fsType {
 	case "tmpfs", "ramfs", "devtmpfs":
-		return "memory", 4
+		return "memory", 4, false
 	case "nfs", "nfs4", "cifs", "smbfs", "sshfs", "fuse.sshfs", "fuse.s3fs", "fuse.gcsfuse":
-		return "network", 1
+		return "network", 1, true
 	case "iso9660", "udf":
-		return "cdrom", 1
+		return "cdrom", 1, false
 	}
 
 	dev := linuxBaseDevice(m.device)
 	switch {
 	case strings.HasPrefix(dev, "nvme"):
-		return "nvme", 2
+		return "nvme", 2, false
 	case strings.HasPrefix(dev, "sr") || strings.HasPrefix(dev, "scd"):
-		return "cdrom", 1
+		return "cdrom", 1, false
 	case strings.HasPrefix(dev, "mmcblk"):
-		return "sdcard", 1
+		return "sdcard", 1, false
 	case strings.HasPrefix(dev, "loop"):
-		return "loop", 1
+		return "loop", 1, false
 	case strings.HasPrefix(dev, "dm-"):
-		return "dm", 1
+		return "dm", 1, false
 	case strings.HasPrefix(dev, "sd") || strings.HasPrefix(dev, "hd") || strings.HasPrefix(dev, "vd"):
 		if linuxRotational(dev) == 0 {
-			return "ssd", 2
+			return "ssd", 2, false
 		}
-		return "hdd", 1
+		return "hdd", 1, false
 	}
 
-	return "unknown", 1
+	return "unknown", 1, false
 }
 
 // linuxBaseDevice strips partition suffixes from /dev/ device paths.

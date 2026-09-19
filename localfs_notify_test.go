@@ -424,14 +424,14 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for w := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for f := range filesPerWriter {
 				name := fmt.Sprintf("w%d_f%d.txt", w, f)
-				_ = osWriteFile(filepath.Join(dir, name), []byte("data"))
+				if err := osWriteFile(filepath.Join(dir, name), []byte("data")); err != nil {
+					t.Errorf("osWriteFile() returned an error, %s", err)
+				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -550,6 +550,7 @@ func TestWatchRaceCloseAndCancel(t *testing.T) {
 
 	// Fire cancel and Close simultaneously from separate goroutines.
 	var wg sync.WaitGroup
+	closeErr := make(chan error, 1)
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -557,9 +558,12 @@ func TestWatchRaceCloseAndCancel(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		_ = closer.Close()
+		closeErr <- closer.Close()
 	}()
 	wg.Wait()
+	if err := <-closeErr; err != nil {
+		t.Fatalf("Close() returned an error, %s", err)
+	}
 }
 
 func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
@@ -591,7 +595,9 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 
 	// Remove all watched directories at once.
 	for i := range 5 {
-		_ = osRemoveAll(filepath.Clean(filepath.Join(dir, fmt.Sprintf("rmdir%d", i))))
+		if err := osRemoveAll(filepath.Clean(filepath.Join(dir, fmt.Sprintf("rmdir%d", i)))); err != nil {
+			t.Errorf("osRemoveAll() returned an error, %s", err)
+		}
 	}
 
 	// Watcher must still be alive — confirm by creating a new file.

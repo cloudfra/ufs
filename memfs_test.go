@@ -418,7 +418,10 @@ func TestMemFSReadLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, _ := fsys.Create("file.txt")
+	f, err := fsys.Create("file.txt")
+	if err != nil {
+		t.Errorf("Create() returned an error, %s", err)
+	}
 	if err := f.Close(); err != nil {
 		t.Fatalf("failed to close file: %v", err)
 	}
@@ -947,7 +950,10 @@ func TestMemFSRemoveAll(t *testing.T) {
 		if err := fsys2.MkdirAll("dir", fs.ModePerm); err != nil {
 			t.Fatalf("failed to create directory: %v", err)
 		}
-		h, _ := fsys2.Create("file.txt")
+		h, err := fsys2.Create("file.txt")
+		if err != nil {
+			t.Errorf("Create() returned an error, %s", err)
+		}
 		if err := h.Close(); err != nil {
 			t.Errorf("failed to close file: %v", err)
 		}

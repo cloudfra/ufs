@@ -446,8 +446,14 @@ func TestDownloadFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("downloadFileWith() = %v", err)
 		}
-		absDir, _ := filepath.Abs(dir)
-		absPath, _ := filepath.Abs(path)
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			t.Errorf("filepath.Abs(%q) returned an error, %s", dir, err)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			t.Errorf("filepath.Abs(%q) returned an error, %s", path, err)
+		}
 		rel, err := filepath.Rel(absDir, absPath)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			t.Errorf("downloaded file %q escapes download dir %q (rel=%q)", absPath, absDir, rel)
@@ -461,9 +467,18 @@ func TestDownloadFile(t *testing.T) {
 		if err != nil {
 			return
 		}
-		absDir, _ := filepath.Abs(dir)
-		absPath, _ := filepath.Abs(path)
-		rel, _ := filepath.Rel(absDir, absPath)
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			t.Errorf("filepath.Abs(%q) returned an error, %s", dir, err)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			t.Errorf("filepath.Abs(%q) returned an error, %s", path, err)
+		}
+		rel, err := filepath.Rel(absDir, absPath)
+		if err != nil {
+			t.Errorf("filepath.Rel returned an error, %s", err)
+		}
 		if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			t.Errorf("traversal redirect produced path %q outside dir %q", absPath, absDir)
 		}

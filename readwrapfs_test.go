@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"testing"
 	"testing/fstest"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 var testMapFS = fstest.MapFS{
@@ -245,10 +247,10 @@ func TestFromFSInvalidPaths(t *testing.T) {
 
 func TestFromFSEmbedFS(t *testing.T) {
 	t.Parallel()
-	fsys := FromFS(embedTestFiles)
+	fsys := FromFS(ufsTesting.TestAssetsFS())
 	defer validateClose(t, fsys)()
 
-	data, err := fsys.ReadFile("testing/testassets/files/index.html")
+	data, err := fsys.ReadFile("testassets/files/index.html")
 	if err != nil {
 		t.Fatalf("ReadFile() = %v, want nil", err)
 	}

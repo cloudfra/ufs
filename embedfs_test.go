@@ -15,21 +15,19 @@
 package ufs
 
 import (
-	"embed"
 	"errors"
 	"io"
 	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
-)
 
-//go:embed testing/testassets/files
-var embedTestFiles embed.FS
+	ufsTesting "github.com/cloudfra/ufs/testing"
+)
 
 func makeTestEmbedFS(t *testing.T, name string) FS {
 	t.Helper()
-	fsys := NewEmbedFS(name, embedTestFiles)
+	fsys := NewEmbedFS(name, ufsTesting.TestAssetsFS())
 	t.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
 			t.Errorf("Close() = %v", err)
@@ -48,7 +46,7 @@ func TestNewEmbedFSURI(t *testing.T) {
 		{"assets", "embed:///assets?ro=true"},
 		{"data/files", "embed:///data/files?ro=true"},
 	} {
-		fsys := NewEmbedFS(tc.name, embedTestFiles)
+		fsys := NewEmbedFS(tc.name, ufsTesting.TestAssetsFS())
 		if got := fsys.URI().String(); got != tc.wantURI {
 			t.Errorf("NewEmbedFS(%q).URI() = %q, want %q", tc.name, got, tc.wantURI)
 		}
@@ -65,7 +63,7 @@ func TestEmbedFSOpen(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	f, err := fsys.Open("testing/testassets/files/index.html")
+	f, err := fsys.Open("testassets/files/index.html")
 	if err != nil {
 		t.Fatalf("Open() = %v, want nil", err)
 	}
@@ -88,7 +86,7 @@ func TestEmbedFSOpenDir(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	f, err := fsys.Open("testing/testassets/files")
+	f, err := fsys.Open("testassets/files")
 	if err != nil {
 		t.Fatalf("Open(dir) = %v, want nil", err)
 	}
@@ -109,7 +107,7 @@ func TestEmbedFSOpenDir(t *testing.T) {
 
 func TestEmbedFSClose(t *testing.T) {
 	t.Parallel()
-	fsys := NewEmbedFS("", embedTestFiles)
+	fsys := NewEmbedFS("", ufsTesting.TestAssetsFS())
 	if err := fsys.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil", err)
 	}
@@ -119,7 +117,7 @@ func TestEmbedFSReadFile(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	data, err := fsys.ReadFile("testing/testassets/files/index.html")
+	data, err := fsys.ReadFile("testassets/files/index.html")
 	if err != nil {
 		t.Fatalf("ReadFile() = %v, want nil", err)
 	}
@@ -132,7 +130,7 @@ func TestEmbedFSReadDir(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	entries, err := fsys.ReadDir("testing/testassets/files")
+	entries, err := fsys.ReadDir("testassets/files")
 	if err != nil {
 		t.Fatalf("ReadDir() = %v, want nil", err)
 	}
@@ -145,7 +143,7 @@ func TestEmbedFSStat(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	info, err := fsys.Stat("testing/testassets/files/index.html")
+	info, err := fsys.Stat("testassets/files/index.html")
 	if err != nil {
 		t.Fatalf("Stat() = %v, want nil", err)
 	}
@@ -161,7 +159,7 @@ func TestEmbedFSLstat(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	info, err := fsys.Lstat("testing/testassets/files/index.html")
+	info, err := fsys.Lstat("testassets/files/index.html")
 	if err != nil {
 		t.Fatalf("Lstat() = %v, want nil", err)
 	}
@@ -174,7 +172,7 @@ func TestEmbedFSReadLink(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	_, err := fsys.ReadLink("testing/testassets/files/index.html")
+	_, err := fsys.ReadLink("testassets/files/index.html")
 	if !errors.Is(err, fs.ErrInvalid) {
 		t.Errorf("ReadLink() = %v, want fs.ErrInvalid", err)
 	}
@@ -204,7 +202,7 @@ func TestEmbedFSRemove(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	err := fsys.Remove("testing/testassets/files/index.html")
+	err := fsys.Remove("testassets/files/index.html")
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("Remove() = %v, want fs.ErrPermission", err)
 	}
@@ -214,7 +212,7 @@ func TestEmbedFSRemoveAll(t *testing.T) {
 	t.Parallel()
 	fsys := makeTestEmbedFS(t, "")
 
-	err := fsys.RemoveAll("testing/testassets/files")
+	err := fsys.RemoveAll("testassets/files")
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("RemoveAll() = %v, want fs.ErrPermission", err)
 	}
@@ -226,8 +224,8 @@ func TestEmbedFSTestFS(t *testing.T) {
 
 	if err := fstest.TestFS(
 		fsys,
-		"testing/testassets/files/index.html",
-		"testing/testassets/files/site.js",
+		"testassets/files/index.html",
+		"testassets/files/site.js",
 	); err != nil {
 		t.Errorf("fstest.TestFS: %v", err)
 	}

@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestNewBaseFSInvalid(t *testing.T) {
@@ -319,7 +321,7 @@ func TestFSBuilderBuildURIEmpty(t *testing.T) {
 
 func TestFSBuilderBuildURIWithFSMountErrors(t *testing.T) {
 	t.Parallel()
-	b := NewFSBuilder("memory://").MountFS("assets", NewEmbedFS("assets", embedTestFiles))
+	b := NewFSBuilder("memory://").MountFS("assets", NewEmbedFS("assets", ufsTesting.TestAssetsFS()))
 	_, err := b.BuildURI()
 	if err == nil {
 		t.Fatal("BuildURI() with MountFS = nil, want error")
@@ -329,14 +331,14 @@ func TestFSBuilderBuildURIWithFSMountErrors(t *testing.T) {
 func TestFSBuilderMountFS(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	embedFSys := NewEmbedFS("assets", embedTestFiles)
+	embedFSys := NewEmbedFS("assets", ufsTesting.TestAssetsFS())
 	fsys, err := NewFSBuilder("memory://").MountFS("assets", embedFSys).Build(ctx)
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)
 	}
 	defer validateClose(t, fsys)()
 
-	entries, err := fsys.ReadDir("assets/testing/testassets/files")
+	entries, err := fsys.ReadDir("assets/testassets/files")
 	if err != nil {
 		t.Fatalf("ReadDir(assets/...) = %v, want nil", err)
 	}
@@ -348,7 +350,7 @@ func TestFSBuilderMountFS(t *testing.T) {
 func TestFSBuilderMountFSWriteBlocked(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	embedFSys := NewEmbedFS("assets", embedTestFiles)
+	embedFSys := NewEmbedFS("assets", ufsTesting.TestAssetsFS())
 	fsys, err := NewFSBuilder("memory://").MountFS("assets", embedFSys).Build(ctx)
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)

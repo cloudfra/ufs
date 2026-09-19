@@ -203,11 +203,8 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 }
 
 func (fsys *gcsFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        "gs://" + fsys.bucket,
-		deviceType:  "network",
-		threadCount: 1,
-	})
+	info := newDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
+	return newDeviceInfoMap(info)
 }
 
 func (fsys *gcsFS) URI() *url.URL {

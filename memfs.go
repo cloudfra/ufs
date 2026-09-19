@@ -173,11 +173,8 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        fsys.name,
-		deviceType:  "memory",
-		threadCount: 2,
-	})
+	info := newDeviceInfo(fsys.name, "memory", 2, false)
+	return newDeviceInfoMap(info)
 }
 
 func (fsys *memFS) URI() *url.URL {

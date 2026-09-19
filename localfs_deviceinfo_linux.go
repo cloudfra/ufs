@@ -114,7 +114,7 @@ func linuxMakeDeviceInfo(m linuxMountEntry) deviceInfo {
 	if name == "none" || name == "" {
 		name = m.fsType
 	}
-	return deviceInfo{name: name, deviceType: dt, threadCount: tc}
+	return newDeviceInfo(name, dt, tc, false)
 }
 
 func linuxDeviceTypeAndThreads(m linuxMountEntry) (string, int) {

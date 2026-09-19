@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/device"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -34,12 +35,8 @@ var (
 
 	errAngry = fs.ErrInvalid
 
-	angryDeviceInfo = deviceInfo{
-		name:        "angry",
-		deviceType:  "angry",
-		threadCount: 1,
-	}
-	angryDeviceInfoMap = newDeviceInfoMap(angryDeviceInfo)
+	angryDeviceInfo    = device.New("angry", "angry", 1, false)
+	angryDeviceInfoMap = device.NewMap(angryDeviceInfo)
 )
 
 func init() {
@@ -57,7 +54,7 @@ type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *angryFS) getDeviceInfo() device.Map {
 	return angryDeviceInfoMap
 }
 

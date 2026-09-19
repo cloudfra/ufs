@@ -38,6 +38,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/cloudfra/ufs/internal/device"
 	"github.com/cloudfra/ufs/internal/errorutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	pb "github.com/cloudfra/ufs/proto"
@@ -340,12 +341,8 @@ func dirBucket(tx *bolt.Tx, name string) (*bolt.Bucket, error) {
 	return bkt, nil
 }
 
-func (fsys *boltFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        fsys.name,
-		deviceType:  "bolt",
-		threadCount: 1,
-	})
+func (fsys *boltFS) getDeviceInfo() device.Map {
+	return device.NewMap(device.New(fsys.name, "bolt", 1, false))
 }
 
 func (fsys *boltFS) URI() *url.URL {

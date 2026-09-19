@@ -21,45 +21,45 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/cloudfra/ufs/internal/device"
 )
 
-func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *localFS) getDeviceInfo() device.Map {
 	rootPath := fsys.osFS.Name()
 	return windowsDeviceMap(rootPath)
 }
 
-func windowsDeviceMap(rootPath string) map[string]deviceInfo {
+func windowsDeviceMap(rootPath string) device.Map {
 	vol := filepath.VolumeName(rootPath)
 	if vol == "" {
-		return defaultDeviceMap
+		return device.DefaultMap
 	}
 	volumeRoot := vol + string(filepath.Separator)
 	// NTFS volume mount points (volumes mounted at arbitrary subdirectories) are not
 	// detected here; FindFirstVolumeMountPoint / GetVolumeNameForVolumeMountPoint
 	// could enumerate them in a future implementation.
-	return map[string]deviceInfo{
-		".": windowsDriveInfo(volumeRoot),
-	}
+	return device.NewMap(windowsDriveInfo(volumeRoot))
 }
 
-func windowsDriveInfo(volumeRoot string) deviceInfo {
+func windowsDriveInfo(volumeRoot string) device.Info {
 	ptr, err := syscall.UTF16PtrFromString(volumeRoot)
 	if err != nil {
-		return defaultDeviceInfo
+		return device.Default
 	}
 	dt := windows.GetDriveType(ptr)
 	name := filepath.VolumeName(volumeRoot)
 	switch dt {
 	case windows.DRIVE_REMOVABLE:
-		return deviceInfo{name: name, deviceType: "removable", threadCount: 1}
+		return device.New(name, "removable", 1, false)
 	case windows.DRIVE_FIXED:
-		return deviceInfo{name: name, deviceType: "fixed", threadCount: 1}
+		return device.New(name, "fixed", 1, false)
 	case windows.DRIVE_REMOTE:
-		return deviceInfo{name: name, deviceType: "network", threadCount: 1}
+		return device.New(name, "network", 1, true)
 	case windows.DRIVE_CDROM:
-		return deviceInfo{name: name, deviceType: "cdrom", threadCount: 1}
+		return device.New(name, "cdrom", 1, false)
 	case windows.DRIVE_RAMDISK:
-		return deviceInfo{name: name, deviceType: "memory", threadCount: 4}
+		return device.New(name, "memory", 4, false)
 	}
-	return defaultDeviceInfo
+	return device.Default
 }

@@ -113,7 +113,7 @@ error on other platforms (Windows support planned).
 
 | File                  | Purpose                                                             |
 |:----------------------|:--------------------------------------------------------------------|
-| info.go               | fsInfo — concrete fs.FileInfo implementation                        |
+| info.go               | readDirFile — synthesizes a directory fs.File from a ReadFS         |
 | path.go, path_test.go | AbsPath — resolves a virtual path to a real OS path where supported |
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
 | osutil.go             | OS helpers (file download, etc.)                                    |

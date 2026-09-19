@@ -23,8 +23,10 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/device"
+	"github.com/cloudfra/ufs/internal/file"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -32,20 +34,24 @@ const (
 	nullFSPrefix = "null:"
 )
 
+// unixEpochTime is the zero-cost stand-in ModTime for nullFS entries, which
+// have no real modification time to report.
+var unixEpochTime = time.Time{}
+
 var (
 	_ File           = (*nullFile)(nil)
 	_ WriteFS        = (*nullFS)(nil)
 	_ fs.GlobFS      = (*nullFS)(nil)
 	_ fs.ReadDirFile = (*nullReadDirFile)(nil)
 
-	nullDirStat = &fsInfo{
-		name:    ".",
-		size:    emptyDirSize,
-		mode:    fs.ModeDir | fs.ModePerm,
-		modTime: unixEpochTime,
-		isDir:   true,
-		sys:     nil,
-	}
+	nullDirStat = file.New(file.Params{
+		Name:    ".",
+		Size:    emptyDirSize,
+		Mode:    fs.ModeDir | fs.ModePerm,
+		ModTime: unixEpochTime,
+		IsDir:   true,
+		Sys:     nil,
+	})
 
 	nullDeviceInfo    = device.New("null", "null", 1, false)
 	nullDeviceInfoMap = device.NewMap(nullDeviceInfo)
@@ -74,14 +80,14 @@ func (n *nullFile) Stat() (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = emptyDirSize
 	}
-	return &fsInfo{
-		name:    path.Base(n.name),
-		size:    size,
-		mode:    mode,
-		modTime: unixEpochTime,
-		isDir:   isDir,
-		sys:     nil,
-	}, nil
+	return file.New(file.Params{
+		Name:    path.Base(n.name),
+		Size:    size,
+		Mode:    mode,
+		ModTime: unixEpochTime,
+		IsDir:   isDir,
+		Sys:     nil,
+	}), nil
 }
 
 func (n *nullFile) Read(_ []byte) (int, error) {
@@ -213,14 +219,14 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = emptyDirSize
 	}
-	return &fsInfo{
-		name:    name,
-		size:    size,
-		mode:    mode,
-		modTime: unixEpochTime,
-		isDir:   isDir,
-		sys:     nil,
-	}, nil
+	return file.New(file.Params{
+		Name:    name,
+		Size:    size,
+		Mode:    mode,
+		ModTime: unixEpochTime,
+		IsDir:   isDir,
+		Sys:     nil,
+	}), nil
 }
 
 func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {

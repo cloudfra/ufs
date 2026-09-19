@@ -40,6 +40,7 @@ import (
 
 	"github.com/cloudfra/ufs/internal/device"
 	"github.com/cloudfra/ufs/internal/errorutil"
+	"github.com/cloudfra/ufs/internal/file"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	pb "github.com/cloudfra/ufs/proto"
 )
@@ -178,13 +179,13 @@ type boltDirFile struct {
 }
 
 func (d *boltDirFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{
-		name:    path.Base(d.path),
-		size:    emptyDirSize,
-		mode:    d.mode,
-		modTime: d.modTime,
-		isDir:   true,
-	}, nil
+	return file.New(file.Params{
+		Name:    path.Base(d.path),
+		Size:    emptyDirSize,
+		Mode:    d.mode,
+		ModTime: d.modTime,
+		IsDir:   true,
+	}), nil
 }
 
 func (d *boltDirFile) Read([]byte) (int, error) {
@@ -469,18 +470,18 @@ func (fsys *boltFS) listDir(dir string) ([]fs.DirEntry, error) {
 					if derr != nil {
 						return derr
 					}
-					entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-						name: name, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true,
-					}))
+					entries = append(entries, fs.FileInfoToDirEntry(file.New(file.Params{
+						Name: name, Size: emptyDirSize, Mode: mode, ModTime: modTime, IsDir: true,
+					})))
 					return nil
 				}
 				mode, modTime, content, derr := decodeBoltRecord(v)
 				if derr != nil {
 					return derr
 				}
-				entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-					name: name, size: int64(len(content)), mode: mode, modTime: modTime, isDir: false,
-				}))
+				entries = append(entries, fs.FileInfoToDirEntry(file.New(file.Params{
+					Name: name, Size: int64(len(content)), Mode: mode, ModTime: modTime, IsDir: false,
+				})))
 				return nil
 			})
 		})
@@ -716,7 +717,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 				if derr != nil {
 					return derr
 				}
-				info = &fsInfo{name: pathutil.CwdPath, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true}
+				info = file.New(file.Params{Name: pathutil.CwdPath, Size: emptyDirSize, Mode: mode, ModTime: modTime, IsDir: true})
 				return nil
 			}
 			bkt, key, err := getOrCreateBucket(tx, name)
@@ -729,7 +730,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 				if derr != nil {
 					return derr
 				}
-				info = &fsInfo{name: key, size: emptyDirSize, mode: mode, modTime: modTime, isDir: true}
+				info = file.New(file.Params{Name: key, Size: emptyDirSize, Mode: mode, ModTime: modTime, IsDir: true})
 				return nil
 			}
 			data := bkt.Get(keyBytes)
@@ -740,7 +741,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 			if derr != nil {
 				return derr
 			}
-			info = &fsInfo{name: key, size: int64(len(content)), mode: mode, modTime: modTime, isDir: false}
+			info = file.New(file.Params{Name: key, Size: int64(len(content)), Mode: mode, ModTime: modTime, IsDir: false})
 			return nil
 		})
 	})

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/file"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
@@ -114,13 +115,13 @@ func TestFuseErrno(t *testing.T) {
 func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	fi := &fsInfo{
-		name:    "hello.txt",
-		size:    1234,
-		mode:    osutil.FilePermissions,
-		modTime: modTime,
-		isDir:   false,
-	}
+	fi := file.New(file.Params{
+		Name:    "hello.txt",
+		Size:    1234,
+		Mode:    osutil.FilePermissions,
+		ModTime: modTime,
+		IsDir:   false,
+	})
 	var attr fuse.Attr
 	fuseAttrFromFileInfo(fi, &attr)
 
@@ -146,13 +147,13 @@ func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 func TestFuseAttrFromFileInfoDirectory(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	fi := &fsInfo{
-		name:    "subdir",
-		size:    0,
-		mode:    fs.ModeDir | osutil.DirectoryPermissions,
-		modTime: modTime,
-		isDir:   true,
-	}
+	fi := file.New(file.Params{
+		Name:    "subdir",
+		Size:    0,
+		Mode:    fs.ModeDir | osutil.DirectoryPermissions,
+		ModTime: modTime,
+		IsDir:   true,
+	})
 	var attr fuse.Attr
 	fuseAttrFromFileInfo(fi, &attr)
 

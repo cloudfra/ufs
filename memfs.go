@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs/internal/device"
+	"github.com/cloudfra/ufs/internal/file"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -73,13 +74,13 @@ func (n *memNode) size() int64 {
 }
 
 func (n *memNode) info() fs.FileInfo {
-	return &fsInfo{
-		name:    n.name,
-		size:    n.size(),
-		mode:    n.mode,
-		modTime: n.modTime,
-		isDir:   n.isDir,
-	}
+	return file.New(file.Params{
+		Name:    n.name,
+		Size:    n.size(),
+		Mode:    n.mode,
+		ModTime: n.modTime,
+		IsDir:   n.isDir,
+	})
 }
 
 // memFS is an in-memory file system. All nodes are stored in a flat map keyed
@@ -160,13 +161,13 @@ type memDirFile struct {
 }
 
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{
-		name:    path.Base(d.path),
-		size:    emptyDirSize,
-		mode:    d.mode,
-		modTime: d.modTime,
-		isDir:   true,
-	}, nil
+	return file.New(file.Params{
+		Name:    path.Base(d.path),
+		Size:    emptyDirSize,
+		Mode:    d.mode,
+		ModTime: d.modTime,
+		IsDir:   true,
+	}), nil
 }
 
 func (d *memDirFile) Read([]byte) (int, error) {

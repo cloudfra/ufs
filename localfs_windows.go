@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/file"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -79,12 +80,12 @@ func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
 	if !fi.IsDir() || fi.Size() == 0 {
 		return fi
 	}
-	return &fsInfo{
-		name:    fi.Name(),
-		size:    0,
-		mode:    fi.Mode(),
-		modTime: fi.ModTime(),
-		isDir:   true,
-		sys:     fi.Sys(),
-	}
+	return file.New(file.Params{
+		Name:    fi.Name(),
+		Size:    0,
+		Mode:    fi.Mode(),
+		ModTime: fi.ModTime(),
+		IsDir:   true,
+		Sys:     fi.Sys(),
+	})
 }

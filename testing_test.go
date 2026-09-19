@@ -283,7 +283,7 @@ func randomString(size int) string {
 }
 
 func osTempDir() string {
-	return coerceUnix(os.TempDir())
+	return coerceUnixPath(os.TempDir())
 }
 
 func mustTemp(tb testing.TB) string {

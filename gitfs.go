@@ -29,11 +29,7 @@ import (
 )
 
 func init() {
-	Register(Driver{
-		Name:       "git",
-		MatchFunc:  isGitFSUri,
-		CreateFunc: newGitFS,
-	})
+	Register(newDriver("git", newGitFS, isGitFSUri, 1, true, true))
 }
 
 func prepareGitDirectory(name string, gitURL string) error {

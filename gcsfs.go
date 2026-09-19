@@ -45,11 +45,7 @@ var (
 )
 
 func init() {
-	Register(Driver{
-		Name:       "gcs",
-		MatchFunc:  isGCSFSUri,
-		CreateFunc: newGCSFS,
-	})
+	Register(newDriver("gcs", newGCSFS, isGCSFSUri, 1, true, true))
 }
 
 type gcsFS struct {
@@ -584,7 +580,7 @@ func gcsJoin(parts ...string) string {
 		prefix = "gs://"
 		path = after
 	}
-	path = coerceUnix(filepath.Clean(path))
+	path = coerceUnixPath(filepath.Clean(path))
 	if path == cwdPath {
 		return prefix
 	}

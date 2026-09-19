@@ -45,19 +45,10 @@ var (
 )
 
 func init() {
-	Register(Driver{
-		Name:      "archive",
-		MatchFunc: isArchiveFSUri,
-		CreateFunc: func(ctx context.Context, name string) (FS, error) {
-			return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
-		},
-	})
-	Register(Driver{
-		Name:       "http-archive",
-		MatchFunc:  isTempMountRemoteArchiveURI,
-		CreateFunc: newTempMountRemoteArchiveFS,
-		Priority:   10000,
-	})
+	Register(newDriver("archive", func(ctx context.Context, name string) (FS, error) {
+		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
+	}, isArchiveFSUri, 1, true, false))
+	Register(newDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 
 func isArchiveFSUri(name string) bool {

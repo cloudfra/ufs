@@ -117,8 +117,8 @@ func (lw *localWatcher) addRecursive(dir string) error {
 // forward-slash path suitable for the NotifyHook. Returns "", false if the
 // path falls outside the FS root.
 func (lw *localWatcher) toRelPath(absPath string) (string, bool) {
-	absPath = coerceUnix(absPath)
-	root := coerceUnix(lw.absRoot)
+	absPath = coerceUnixPath(absPath)
+	root := coerceUnixPath(lw.absRoot)
 	if !strings.HasSuffix(root, "/") {
 		root += "/"
 	}

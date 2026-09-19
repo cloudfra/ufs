@@ -49,11 +49,7 @@ var (
 )
 
 func init() {
-	Register(Driver{
-		Name:       "null",
-		MatchFunc:  isNullFSUri,
-		CreateFunc: newNullFS,
-	})
+	Register(newDriver("null", newNullFS, isNullFSUri, 1, false, true))
 }
 
 type nullFile struct {

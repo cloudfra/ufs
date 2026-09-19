@@ -433,7 +433,7 @@ func TestHostMountContextCancel(t *testing.T) {
 		fuseSkipOrFatal(t, fmt.Sprintf("HostMount: %v", err))
 		return
 	}
-	defer func() { _ = server.Close() }()
+	defer validateClose(t, server)()
 
 	if _, err := osStat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before cancel: %v", err)

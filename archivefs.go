@@ -40,11 +40,7 @@ var (
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
-	archiveDeviceInfo = deviceInfo{
-		name:        "archive",
-		deviceType:  "archive",
-		threadCount: 1,
-	}
+	archiveDeviceInfo    = newDeviceInfo("archive", "archive", 1, false)
 	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
 )
 

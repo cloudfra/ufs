@@ -32,11 +32,7 @@ var (
 
 	errAngry = fs.ErrInvalid
 
-	angryDeviceInfo = deviceInfo{
-		name:        "angry",
-		deviceType:  "angry",
-		threadCount: 1,
-	}
+	angryDeviceInfo    = newDeviceInfo("angry", "angry", 1, false)
 	angryDeviceInfoMap = newDeviceInfoMap(angryDeviceInfo)
 )
 

@@ -44,11 +44,7 @@ var (
 		sys:     nil,
 	}
 
-	nullDeviceInfo = deviceInfo{
-		name:        "null",
-		deviceType:  "null",
-		threadCount: 1,
-	}
+	nullDeviceInfo    = newDeviceInfo("null", "null", 1, false)
 	nullDeviceInfoMap = newDeviceInfoMap(nullDeviceInfo)
 )
 

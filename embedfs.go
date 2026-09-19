@@ -31,11 +31,7 @@ type embedFS struct {
 }
 
 func (fsys *embedFS) getDeviceInfo() map[string]deviceInfo {
-	return newDeviceInfoMap(deviceInfo{
-		name:        "/dev/embed/" + fsys.name,
-		deviceType:  "memory",
-		threadCount: 1,
-	})
+	return newDeviceInfoMap(newDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
 }
 
 func (fsys *embedFS) URI() *url.URL {

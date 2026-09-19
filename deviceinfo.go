@@ -46,11 +46,22 @@ type deviceInfo struct {
 	deviceType string
 	// threadCount is the recommended number of threads to access the device.
 	threadCount int
+	// remote indicates that the device is located on a remote machine and frequent IO calls may be slow.
+	remote bool
+}
+
+func newDeviceInfo(name string, deviceType string, threadCount int, remote bool) deviceInfo {
+	return deviceInfo{
+		name:        name,
+		deviceType:  deviceType,
+		threadCount: threadCount,
+		remote:      remote,
+	}
 }
 
 // String representation of deviceInfo.
 func (info deviceInfo) String() string {
-	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d}", info.name, info.deviceType, info.threadCount)
+	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d, remote: %t}", info.name, info.deviceType, info.threadCount, info.remote)
 }
 
 // deviceInfoGet provides an interface to obtain the device backend information of a FS.
@@ -60,6 +71,8 @@ type deviceInfoGet interface {
 	// The root of the FS has the key ".".
 	getDeviceInfo() map[string]deviceInfo
 }
+
+// TODO: Create a deviceMap that encapsulates the map[string]deviceInfo
 
 func newDeviceInfoMap(rootDeviceInfo deviceInfo) map[string]deviceInfo {
 	return map[string]deviceInfo{

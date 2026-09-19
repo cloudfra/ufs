@@ -44,7 +44,7 @@ func TestIsLocalFSUri(t *testing.T) {
 		{name: "file:", want: true},
 		{name: "file://", want: true},
 		{name: "filefs://", want: false},
-		{name: cwdPath, want: true},
+		{name: CwdPath, want: true},
 		{name: "/root/user", want: true},
 		{name: "/tmp", want: true},
 		{name: "mem://", want: false},
@@ -220,12 +220,12 @@ func TestLocalFSRemoveAll(t *testing.T) {
 }
 
 func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
-	fsys, err := osOpenRoot(cwdPath)
+	fsys, err := osOpenRoot(CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer validateClose(t, fsys)()
-	f, err := fsys.Open(cwdPath)
+	f, err := fsys.Open(CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if entry.Name() == cwdPath {
+		if entry.Name() == CwdPath {
 			t.Errorf("entry list contains '.', %v", entries)
 		}
 	}

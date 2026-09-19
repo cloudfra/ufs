@@ -122,7 +122,7 @@ func TestReadDirFile(t *testing.T) {
 	must(t, fsys.MkdirAll("d/e/f", fs.ModePerm))
 	must(t, fsys.MkdirAll("g/h/i", fs.ModePerm))
 
-	dirFile := makeReadDirFile(fsys, cwdPath)
+	dirFile := makeReadDirFile(fsys, CwdPath)
 
 	if bytesRead, err := dirFile.Read(nil); bytesRead != 0 || err == nil || !strings.Contains(err.Error(), "is a directory") {
 		t.Errorf("Read() should return (0, 'is a directory') got (%d, %s)", bytesRead, err)
@@ -148,7 +148,7 @@ func TestReadDirFile(t *testing.T) {
 		t.Errorf("Stat() returned error, %s", err)
 	}
 
-	if stat.Name() != cwdPath {
+	if stat.Name() != CwdPath {
 		t.Errorf("Stat().Name() got %s, want '.'", stat.Name())
 	}
 

@@ -386,7 +386,7 @@ func hasFstabOption(s, option string) bool {
 func normalizeMountPoint(mp string) string {
 	mp = strings.TrimPrefix(mp, "/")
 	if mp == "" || mp == "none" {
-		return cwdPath
+		return CwdPath
 	}
 	return mp
 }
@@ -394,7 +394,7 @@ func normalizeMountPoint(mp string) string {
 // defaultRootSpec is used when no root mount point is provided.
 var defaultRootSpec = MountSpec{
 	Source:     nullFSPrefix,
-	MountPoint: cwdPath,
+	MountPoint: CwdPath,
 	Options:    MountSpecOptions{ReadOnly: true},
 }
 

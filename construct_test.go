@@ -63,7 +63,7 @@ func TestNew(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			uri:      cwdPath,
+			uri:      CwdPath,
 			wantType: reflect.TypeFor[*localFS]().Name(),
 			wantErr:  false,
 		},

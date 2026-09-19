@@ -14,7 +14,7 @@
 
 //go:build windows
 
-package ufs
+package host
 
 import (
 	"context"
@@ -23,11 +23,16 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/cloudfra/ufs"
 )
 
 // utf16Str is a pointer to a null-terminated UTF-16 string (Windows LPCWSTR).
@@ -97,9 +102,9 @@ func notificationName(n uint32) string {
 // fs.ValidPath. ProjFS passes nil for the root directory.
 func projfsPath(name utf16Str) string {
 	if name == nil {
-		return cwdPath
+		return ufs.CwdPath
 	}
-	return coerceUnixPath(windows.UTF16PtrToString(name))
+	return strings.ReplaceAll(windows.UTF16PtrToString(name), `\`, "/")
 }
 
 func cbDataAttrs(callbackData *prjCallbackData) []any {
@@ -154,7 +159,7 @@ type projfsEnumSession struct {
 
 // projfsMountServer implements MountServer using ProjFS.
 type projfsMountServer struct {
-	fsys         ReadFS
+	fsys         ufs.ReadFS
 	nsCtx        uintptr // PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT
 	enumSessions sync.Map
 	done         chan struct{}
@@ -502,14 +507,14 @@ func cancelCommandCB(callbackData *prjCallbackData) uintptr {
 	return 0
 }
 
-func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer, error) {
-	slog.Info("projfs: hostMount starting",
+func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error) {
+	slog.Info("projfs: mount starting",
 		"mountPath", mountPath,
 		"fsysType", fmt.Sprintf("%T", fsys),
 	)
 
 	// Log mount path state before we touch it — critical for diagnosing "directory inaccessible".
-	if fi, err := osStat(mountPath); err != nil {
+	if fi, err := os.Stat(filepath.Clean(mountPath)); err != nil {
 		slog.Warn("projfs: mount path Stat failed", "mountPath", mountPath, "error", err)
 	} else {
 		slog.Info("projfs: mount path exists",
@@ -519,7 +524,7 @@ func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer,
 			"modTime", fi.ModTime(),
 		)
 	}
-	if entries, err := osReadDir(mountPath); err != nil {
+	if entries, err := os.ReadDir(filepath.Clean(mountPath)); err != nil {
 		slog.Warn("projfs: mount path ReadDir failed", "mountPath", mountPath, "error", err)
 	} else {
 		names := make([]string, len(entries))

@@ -12,19 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux
+//go:build !testinroot
 
-package ufs
+package host
 
 import "testing"
 
-func init() {
-	mountBackends = append(mountBackends, mountBackend{
-		name: "fuse",
-		mount: func(t *testing.T, fsys ReadFS) mountSetup {
-			t.Helper()
-			return mountSetup{mountDir: testHostMount(t, fsys)}
-		},
-		skip: requireFUSE,
-	})
+func fuseSkipOrFatal(t *testing.T, msg string) {
+	t.Helper()
+	t.Skipf("%s", msg)
 }

@@ -48,7 +48,7 @@ func TestIsGCSFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: cwdPath,
+			name: CwdPath,
 			want: false,
 		},
 		{
@@ -385,10 +385,10 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		}
 		defer validateClose(t, fsys)()
 
-		if err := fsys.RemoveAll(cwdPath); err != nil {
+		if err := fsys.RemoveAll(CwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)
 		}
-		entries, err := fsys.ReadDir(cwdPath)
+		entries, err := fsys.ReadDir(CwdPath)
 		if err != nil {
 			t.Fatalf("ReadDir after RemoveAll('.') = %v, want nil", err)
 		}

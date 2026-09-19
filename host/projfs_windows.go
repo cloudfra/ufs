@@ -14,7 +14,7 @@
 
 //go:build windows
 
-package ufs
+package host
 
 import (
 	"fmt"

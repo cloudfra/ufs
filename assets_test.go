@@ -99,7 +99,7 @@ func loadTestAssets(tb testing.TB) map[string][]byte {
 	tb.Helper()
 	src := osDirFS(testAssetsFilesDir)
 	result := make(map[string][]byte)
-	err := fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(src, CwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -118,8 +118,8 @@ func loadTestAssets(tb testing.TB) map[string][]byte {
 
 // copyFSToFS copies all files and directories from src into dst.
 func copyFSToFS(src fs.FS, dst FS) error {
-	return fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || p == cwdPath {
+	return fs.WalkDir(src, CwdPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || p == CwdPath {
 			return err
 		}
 		if d.IsDir() {
@@ -147,8 +147,8 @@ func createZipFromDir(tb testing.TB, dir string) string {
 	})
 
 	zw := zip.NewWriter(tmp)
-	err = fs.WalkDir(src, cwdPath, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || p == cwdPath {
+	err = fs.WalkDir(src, CwdPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || p == CwdPath {
 			return err
 		}
 		w, err := zw.Create(p)

@@ -193,8 +193,8 @@ func (fsys *memFS) Open(name string) (fs.File, error) {
 	if fsys.isClosed() {
 		return nil, pathError("open", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
-		return fsys.openDir(cwdPath)
+	if name == CwdPath {
+		return fsys.openDir(CwdPath)
 	}
 	if err := validPath("open", name); err != nil {
 		return nil, err
@@ -243,14 +243,14 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 	defer fsys.mu.RUnlock()
 
 	prefix := dir + "/"
-	if dir == cwdPath {
+	if dir == CwdPath {
 		prefix = ""
 	}
 
 	var entries []fs.DirEntry
 	seen := make(map[string]struct{})
 	for key, node := range fsys.nodes {
-		if key == cwdPath {
+		if key == CwdPath {
 			continue
 		}
 		rest, ok := strings.CutPrefix(key, prefix)
@@ -357,7 +357,7 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 // path. Must be called with fsys.mu held for writing.
 func (fsys *memFS) ensureParentsLocked(name string, now time.Time) {
 	dir := path.Dir(name)
-	if dir == cwdPath {
+	if dir == CwdPath {
 		return
 	}
 	parts := splitPath(dir)
@@ -417,9 +417,9 @@ func (fsys *memFS) Stat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
 		return nil, pathError("stat", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
+	if name == CwdPath {
 		fsys.mu.RLock()
-		node := fsys.nodes[cwdPath]
+		node := fsys.nodes[CwdPath]
 		fsys.mu.RUnlock()
 		return node.info(), nil
 	}
@@ -439,9 +439,9 @@ func (fsys *memFS) Lstat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
 		return nil, pathError("lstat", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
+	if name == CwdPath {
 		fsys.mu.RLock()
-		node := fsys.nodes[cwdPath]
+		node := fsys.nodes[CwdPath]
 		fsys.mu.RUnlock()
 		return node.info(), nil
 	}
@@ -461,8 +461,8 @@ func (fsys *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if fsys.isClosed() {
 		return nil, pathError("readdir", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
-		return fsys.listDir(cwdPath)
+	if name == CwdPath {
+		return fsys.listDir(CwdPath)
 	}
 	if err := validPath("readdir", name); err != nil {
 		return nil, err
@@ -488,7 +488,7 @@ func (fsys *memFS) Glob(pattern string) ([]string, error) {
 
 	var matches []string
 	for key := range fsys.nodes {
-		if key == cwdPath {
+		if key == CwdPath {
 			continue
 		}
 		matched, err := path.Match(pattern, key)
@@ -510,7 +510,7 @@ func (fsys *memFS) Remove(name string) error {
 	if err := validPath("remove", name); err != nil {
 		return err
 	}
-	if name == cwdPath {
+	if name == CwdPath {
 		return pathError("remove", name, fs.ErrPermission)
 	}
 	fsys.mu.Lock()
@@ -536,11 +536,11 @@ func (fsys *memFS) RemoveAll(name string) error {
 	if fsys.isClosed() {
 		return pathError("removeall", name, fs.ErrClosed)
 	}
-	if name == cwdPath {
+	if name == CwdPath {
 		fsys.mu.Lock()
 		var removed []string
 		for key := range fsys.nodes {
-			if key != cwdPath {
+			if key != CwdPath {
 				removed = append(removed, key)
 				delete(fsys.nodes, key)
 			}
@@ -579,8 +579,8 @@ func makeMemFS(name string) *memFS {
 	return &memFS{
 		name: name,
 		nodes: map[string]*memNode{
-			cwdPath: {
-				name:    cwdPath,
+			CwdPath: {
+				name:    CwdPath,
 				mode:    fs.ModeDir | fs.ModePerm,
 				modTime: now,
 				isDir:   true,

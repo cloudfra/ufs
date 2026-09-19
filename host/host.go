@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package host mounts a [ufs.ReadFS] on the host operating system so it
+// can be accessed as a regular directory tree. It uses FUSE on Linux and ProjFS
+// on Windows.
+package host
 
 import (
 	"context"
 	"io"
+
+	"github.com/cloudfra/ufs"
 )
 
 // MountServer represents a file system that is mounted and served to the host
@@ -30,7 +35,7 @@ type MountServer interface {
 	Wait()
 }
 
-// HostMount mounts fsys at mountPath so the host operating system can access it
+// Mount mounts fsys at mountPath so the host operating system can access it
 // as a regular directory tree. The returned [MountServer] must be closed when
 // done; closing unmounts the file system.
 //
@@ -39,7 +44,7 @@ type MountServer interface {
 //
 // When ctx is canceled the file system is automatically unmounted.
 //
-// On platforms without a supported mount mechanism HostMount returns an error.
-func HostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer, error) {
-	return hostMount(ctx, fsys, mountPath)
+// On platforms without a supported mount mechanism Mount returns an error.
+func Mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error) {
+	return mount(ctx, fsys, mountPath)
 }

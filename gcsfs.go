@@ -221,13 +221,13 @@ func (fsys *gcsFS) String() string {
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
-	if name == cwdPath {
+	if name == CwdPath {
 		entries, err := fsys.listDir("")
 		if err != nil {
-			return nil, pathError("open", cwdPath, err)
+			return nil, pathError("open", CwdPath, err)
 		}
 		return &gcsFile{
-			name:       cwdPath,
+			name:       CwdPath,
 			isDir:      true,
 			dirEntries: entries,
 			fsys:       fsys,
@@ -284,8 +284,8 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
-	if name == cwdPath {
-		return &fsInfo{name: cwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+	if name == CwdPath {
+		return &fsInfo{name: CwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
 	}
 	if err := validPath("stat", name); err != nil {
 		return nil, err
@@ -317,10 +317,10 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
-// name is the FS-relative path; pass "" or cwdPath for the root.
+// name is the FS-relative path; pass "" or CwdPath for the root.
 func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 	var listPrefix string
-	if name == "" || name == cwdPath {
+	if name == "" || name == CwdPath {
 		if fsys.baseDir != "" {
 			listPrefix = fsys.baseDir + "/"
 		}
@@ -425,7 +425,7 @@ func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
 }
 
 func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if name != cwdPath {
+	if name != CwdPath {
 		if err := validPath("readdir", name); err != nil {
 			return nil, err
 		}
@@ -484,7 +484,7 @@ func (fsys *gcsFS) Remove(name string) error {
 }
 
 func (fsys *gcsFS) RemoveAll(name string) error {
-	if name != cwdPath {
+	if name != CwdPath {
 		if err := validPath("removeall", name); err != nil {
 			return err
 		}
@@ -492,7 +492,7 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 	bkt := fsys.client.Bucket(fsys.bucket)
 
 	var listPrefix string
-	if name == cwdPath {
+	if name == CwdPath {
 		listPrefix = fsys.baseDir
 		if listPrefix != "" {
 			listPrefix += "/"
@@ -581,7 +581,7 @@ func gcsJoin(parts ...string) string {
 		path = after
 	}
 	path = coerceUnixPath(filepath.Clean(path))
-	if path == cwdPath {
+	if path == CwdPath {
 		return prefix
 	}
 	return prefix + path

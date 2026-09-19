@@ -267,10 +267,6 @@ func osWriteFile(name string, data []byte) error {
 	return os.WriteFile(filepath.Clean(name), data, defaultFilePermissions)
 }
 
-func osReadDir(name string) ([]os.DirEntry, error) {
-	return os.ReadDir(filepath.Clean(name))
-}
-
 func osDirFS(name string) fs.FS {
 	return os.DirFS(filepath.Clean(name))
 }

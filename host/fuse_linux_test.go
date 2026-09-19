@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package host
 
 import (
 	"context"
@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
+
+	"github.com/cloudfra/ufs"
 )
 
 func requireFUSE(t *testing.T) {
@@ -34,21 +36,21 @@ func requireFUSE(t *testing.T) {
 	}
 }
 
-// fuseReadOnlyFS wraps a ReadFS so the result does not satisfy the FS
+// fuseReadOnlyFS wraps a ufs.ReadFS so the result does not satisfy the FS
 // interface, forcing the FUSE adapter to treat the mount as read-only.
 type fuseReadOnlyFS struct {
-	ReadFS
+	ufs.ReadFS
 }
 
-func testHostMount(t *testing.T, fsys ReadFS) string {
+func testMount(t *testing.T, fsys ufs.ReadFS) string {
 	t.Helper()
 	requireFUSE(t)
 	mountDir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
-	server, err := HostMount(ctx, fsys, mountDir)
+	server, err := Mount(ctx, fsys, mountDir)
 	if err != nil {
 		cancel()
-		fuseSkipOrFatal(t, fmt.Sprintf("HostMount: %v", err))
+		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
 		return ""
 	}
 	t.Cleanup(func() {
@@ -113,10 +115,10 @@ func TestFuseErrno(t *testing.T) {
 func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	fi := &fsInfo{
+	fi := &fakeInfo{
 		name:    "hello.txt",
 		size:    1234,
-		mode:    defaultFilePermissions,
+		mode:    testFilePermissions,
 		modTime: modTime,
 		isDir:   false,
 	}
@@ -145,10 +147,10 @@ func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 func TestFuseAttrFromFileInfoDirectory(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	fi := &fsInfo{
+	fi := &fakeInfo{
 		name:    "subdir",
 		size:    0,
-		mode:    fs.ModeDir | defaultDirectoryPermissions,
+		mode:    fs.ModeDir | testDirectoryPermissions,
 		modTime: modTime,
 		isDir:   true,
 	}
@@ -166,15 +168,15 @@ func TestFuseAttrFromFileInfoDirectory(t *testing.T) {
 
 // --- Integration tests (require FUSE mount) ---
 
-func TestHostMountCreateWriteRead(t *testing.T) {
+func TestMountCreateWriteRead(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
-	mountDir := testHostMount(t, fsys)
+	mountDir := testMount(t, fsys)
 
 	content := []byte("hello from fuse")
 	if err := osWriteFile(filepath.Join(mountDir, "new.txt"), content); err != nil {
@@ -190,7 +192,7 @@ func TestHostMountCreateWriteRead(t *testing.T) {
 	}
 }
 
-func TestHostMountOpenWriteOnlyNoTrunc(t *testing.T) {
+func TestMountOpenWriteOnlyNoTrunc(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
 	filePath := filepath.Join(srcDir, "existing.txt")
@@ -198,13 +200,13 @@ func TestHostMountOpenWriteOnlyNoTrunc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
-	mountDir := testHostMount(t, fsys)
+	mountDir := testMount(t, fsys)
 
 	mountedFile := filepath.Join(mountDir, "existing.txt")
 
@@ -236,15 +238,15 @@ func TestHostMountOpenWriteOnlyNoTrunc(t *testing.T) {
 	}
 }
 
-func TestHostMountWriteAtOffset(t *testing.T) {
+func TestMountWriteAtOffset(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
-	mountDir := testHostMount(t, fsys)
+	mountDir := testMount(t, fsys)
 
 	filePath := filepath.Join(mountDir, "offset.txt")
 	content := []byte("hello world")
@@ -262,15 +264,15 @@ func TestHostMountWriteAtOffset(t *testing.T) {
 	}
 }
 
-func TestHostMountMkdir(t *testing.T) {
+func TestMountMkdir(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
-	mountDir := testHostMount(t, fsys)
+	mountDir := testMount(t, fsys)
 
 	dirPath := filepath.Join(mountDir, "newdir")
 	if err := osMkdir(dirPath); err != nil {
@@ -286,15 +288,15 @@ func TestHostMountMkdir(t *testing.T) {
 	}
 }
 
-func TestHostMountMkdirExisting(t *testing.T) {
+func TestMountMkdirExisting(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
-	mountDir := testHostMount(t, fsys)
+	mountDir := testMount(t, fsys)
 
 	dirPath := filepath.Join(mountDir, "existdir")
 	if err := osMkdir(dirPath); err != nil {
@@ -309,15 +311,15 @@ func TestHostMountMkdirExisting(t *testing.T) {
 	}
 }
 
-func TestHostMountRemoveFile(t *testing.T) {
+func TestMountRemoveFile(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
-	mountDir := testHostMount(t, fsys)
+	mountDir := testMount(t, fsys)
 
 	filePath := filepath.Join(mountDir, "doomed.txt")
 	if err := osWriteFile(filePath, []byte("bye")); err != nil {
@@ -331,15 +333,15 @@ func TestHostMountRemoveFile(t *testing.T) {
 	}
 }
 
-func TestHostMountRemoveDir(t *testing.T) {
+func TestMountRemoveDir(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
-	mountDir := testHostMount(t, fsys)
+	mountDir := testMount(t, fsys)
 
 	dirPath := filepath.Join(mountDir, "tmpdir")
 	if err := osMkdir(dirPath); err != nil {
@@ -353,18 +355,18 @@ func TestHostMountRemoveDir(t *testing.T) {
 	}
 }
 
-func TestHostMountReadOnly(t *testing.T) {
+func TestMountReadOnly(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &fuseReadOnlyFS{fsys}
-	mountDir := testHostMount(t, roFS)
+	mountDir := testMount(t, roFS)
 
 	err = osWriteFile(filepath.Join(mountDir, "nope.txt"), []byte("data"))
 	if err == nil {
@@ -372,7 +374,7 @@ func TestHostMountReadOnly(t *testing.T) {
 	}
 }
 
-func TestHostMountClose(t *testing.T) {
+func TestMountClose(t *testing.T) {
 	t.Parallel()
 	requireFUSE(t)
 
@@ -381,16 +383,16 @@ func TestHostMountClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := t.TempDir()
-	server, err := HostMount(t.Context(), fsys, mountDir)
+	server, err := Mount(t.Context(), fsys, mountDir)
 	if err != nil {
-		fuseSkipOrFatal(t, fmt.Sprintf("HostMount: %v", err))
+		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
 		return
 	}
 
@@ -411,7 +413,7 @@ func TestHostMountClose(t *testing.T) {
 	}
 }
 
-func TestHostMountContextCancel(t *testing.T) {
+func TestMountContextCancel(t *testing.T) {
 	t.Parallel()
 	requireFUSE(t)
 
@@ -420,7 +422,7 @@ func TestHostMountContextCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,9 +430,9 @@ func TestHostMountContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	mountDir := t.TempDir()
-	server, err := HostMount(ctx, fsys, mountDir)
+	server, err := Mount(ctx, fsys, mountDir)
 	if err != nil {
-		fuseSkipOrFatal(t, fmt.Sprintf("HostMount: %v", err))
+		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
 		return
 	}
 	defer validateClose(t, server)()
@@ -451,16 +453,16 @@ func TestHostMountContextCancel(t *testing.T) {
 	}
 }
 
-func TestHostMountReadOnlyMkdir(t *testing.T) {
+func TestMountReadOnlyMkdir(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &fuseReadOnlyFS{fsys}
-	mountDir := testHostMount(t, roFS)
+	mountDir := testMount(t, roFS)
 
 	err = osMkdir(filepath.Join(mountDir, "nope"))
 	if err == nil {
@@ -468,21 +470,21 @@ func TestHostMountReadOnlyMkdir(t *testing.T) {
 	}
 }
 
-func TestHostMountReadOnlyRemove(t *testing.T) {
+func TestMountReadOnlyRemove(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
 	if err := osWriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
 	roFS := &fuseReadOnlyFS{fsys}
-	mountDir := testHostMount(t, roFS)
+	mountDir := testMount(t, roFS)
 
 	err = osRemove(filepath.Join(mountDir, "keep.txt"))
 	if err == nil {

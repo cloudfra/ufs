@@ -14,7 +14,7 @@
 
 //go:build linux
 
-package ufs
+package host
 
 import (
 	"context"
@@ -27,6 +27,8 @@ import (
 
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+
+	"github.com/cloudfra/ufs"
 )
 
 // Not implemented FUSE operations (ufs has no support for these):
@@ -74,10 +76,10 @@ var (
 	_ fuseFileHandler = (*fuseFileHandle)(nil)
 )
 
-func hostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer, error) {
+func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error) {
 	root := &fuseNode{
 		fsys: fsys,
-		path: cwdPath,
+		path: ufs.CwdPath,
 	}
 
 	// TODO: Accept mount options (e.g. forwarding the URI query parameter
@@ -122,7 +124,7 @@ func (s *fuseHostServer) Wait() {
 // fuseNode adapts a ufs.ReadFS path to go-fuse's InodeEmbedder.
 type fuseNode struct {
 	fusefs.Inode
-	fsys ReadFS
+	fsys ufs.ReadFS
 	path string
 }
 
@@ -179,7 +181,7 @@ func (n *fuseNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) 
 
 func (n *fuseNode) Open(_ context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if flags&(syscall.O_WRONLY|syscall.O_RDWR|syscall.O_TRUNC) != 0 {
-		wfs, ok := n.fsys.(FS)
+		wfs, ok := n.fsys.(ufs.FS)
 		if !ok {
 			return nil, 0, syscall.EROFS
 		}
@@ -210,7 +212,7 @@ func (n *fuseNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, out *fuse.EntryOut) (*fusefs.Inode, fusefs.FileHandle, uint32, syscall.Errno) {
-	wfs, ok := n.fsys.(FS)
+	wfs, ok := n.fsys.(ufs.FS)
 	if !ok {
 		return nil, nil, 0, syscall.EROFS
 	}
@@ -230,7 +232,7 @@ func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, 
 }
 
 func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
-	wfs, ok := n.fsys.(FS)
+	wfs, ok := n.fsys.(ufs.FS)
 	if !ok {
 		return nil, syscall.EROFS
 	}
@@ -253,7 +255,7 @@ func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fus
 }
 
 func (n *fuseNode) Unlink(_ context.Context, name string) syscall.Errno {
-	wfs, ok := n.fsys.(FS)
+	wfs, ok := n.fsys.(ufs.FS)
 	if !ok {
 		return syscall.EROFS
 	}
@@ -261,7 +263,7 @@ func (n *fuseNode) Unlink(_ context.Context, name string) syscall.Errno {
 }
 
 func (n *fuseNode) Rmdir(_ context.Context, name string) syscall.Errno {
-	wfs, ok := n.fsys.(FS)
+	wfs, ok := n.fsys.(ufs.FS)
 	if !ok {
 		return syscall.EROFS
 	}

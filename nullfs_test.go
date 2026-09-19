@@ -47,7 +47,7 @@ func TestIsNullFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: cwdPath,
+			name: CwdPath,
 			want: false,
 		},
 		{
@@ -139,30 +139,30 @@ func TestNullFSLstat(t *testing.T) {
 	})
 
 	t.Run("cwd", func(t *testing.T) {
-		// cwdPath (".") satisfies isDirName, so mode and size should reflect a directory.
-		info, err := nfs.Lstat(cwdPath)
+		// CwdPath (".") satisfies isDirName, so mode and size should reflect a directory.
+		info, err := nfs.Lstat(CwdPath)
 		if err != nil {
-			t.Fatalf("Lstat(%q) = %v, want nil", cwdPath, err)
+			t.Fatalf("Lstat(%q) = %v, want nil", CwdPath, err)
 		}
 		if !info.IsDir() {
-			t.Errorf("Lstat(%q).IsDir() = false, want true", cwdPath)
+			t.Errorf("Lstat(%q).IsDir() = false, want true", CwdPath)
 		}
 		if info.Mode()&fs.ModeDir == 0 {
-			t.Errorf("Lstat(%q).Mode() missing ModeDir: %v", cwdPath, info.Mode())
+			t.Errorf("Lstat(%q).Mode() missing ModeDir: %v", CwdPath, info.Mode())
 		}
 	})
 }
 
 func TestNullFSReadDir(t *testing.T) {
 	nfs := mustNullFS(t)
-	entries, err := nfs.ReadDir(cwdPath)
+	entries, err := nfs.ReadDir(CwdPath)
 	if err != nil {
 		t.Fatalf("ReadDir() = %v, want nil", err)
 	}
 	if len(entries) != 0 {
 		t.Errorf("ReadDir() = %d entries, want 0", len(entries))
 	}
-	f, err := nfs.Open(cwdPath)
+	f, err := nfs.Open(CwdPath)
 	if err != nil {
 		t.Errorf("Open('.') returned error, %s", err)
 	}
@@ -328,9 +328,9 @@ func TestNullFileOperations(t *testing.T) {
 func TestNullFSStat(t *testing.T) {
 	nfs := mustNullFS(t)
 
-	info, err := nfs.Stat(cwdPath)
+	info, err := nfs.Stat(CwdPath)
 	if err != nil {
-		t.Fatalf("Stat(%q) = %v, want nil", cwdPath, err)
+		t.Fatalf("Stat(%q) = %v, want nil", CwdPath, err)
 	}
 	if !info.IsDir() {
 		t.Error("Stat('.').IsDir() = false, want true")

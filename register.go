@@ -35,13 +35,33 @@ type registrar struct {
 type Driver struct {
 	// Name of the file system driver.
 	Name string
+
 	// CreateFunc is invoked when creating an instance of the file system driver.
 	CreateFunc func(context.Context, string) (FS, error)
+
 	// MatchFunc returns true if the URI in the string matches a pattern that the driver can handle.
 	MatchFunc func(string) bool
+
 	// Priority indicates the priority of the matcher.
 	// This will be used to disambiguate
 	Priority int
+
+	// Standard indicates that the driver should be verified by conformance tests.
+	Standard bool
+
+	// ReadWrite indicates that the driver supports read-write operations.
+	ReadWrite bool
+}
+
+func newDriver(name string, createFunc func(context.Context, string) (FS, error), matchFunc func(string) bool, priority int, standard bool, readWrite bool) Driver {
+	return Driver{
+		Name:       name,
+		CreateFunc: createFunc,
+		MatchFunc:  matchFunc,
+		Priority:   priority,
+		Standard:   standard,
+		ReadWrite:  readWrite,
+	}
 }
 
 func newRegistrar() *registrar {

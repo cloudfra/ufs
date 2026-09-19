@@ -15,7 +15,6 @@
 package ufs
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -26,11 +25,11 @@ import (
 )
 
 const (
+	cwdPath                   = "."
+	emptyDirSize              = 0
+	unixAndWindowsSlashCutset = unixPathSeparator + windowsPathSeparator
 	unixPathSeparator         = "/"
 	windowsPathSeparator      = "\\"
-	cwdPath                   = "."
-	unixAndWindowsSlashCutset = unixPathSeparator + windowsPathSeparator
-	emptyDirSize              = 0
 )
 
 func removePathPrefix(name string, removePath string) (string, bool) {
@@ -60,7 +59,7 @@ func validPath(op string, name string) error {
 	return nil
 }
 
-func coerceUnix(name string) string {
+func coerceUnixPath(name string) string {
 	return strings.ReplaceAll(name, windowsPathSeparator, unixPathSeparator)
 }
 
@@ -77,27 +76,6 @@ func pathError(op string, name string, err error) error {
 		Op:   op,
 		Path: name,
 		Err:  err,
-	}
-}
-
-// joinErrors returns nil if all errs are nil, returns the single non-nil error
-// directly (without wrapping) if exactly one is non-nil, or errors.Join when
-// multiple are non-nil. This avoids the join wrapper overhead and the change in
-// error identity that errors.Join introduces for the single-error case.
-func joinErrors(errs ...error) error {
-	var nonNil []error
-	for _, err := range errs {
-		if err != nil {
-			nonNil = append(nonNil, err)
-		}
-	}
-	switch len(nonNil) {
-	case 0:
-		return nil
-	case 1:
-		return nonNil[0]
-	default:
-		return errors.Join(nonNil...)
 	}
 }
 

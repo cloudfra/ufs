@@ -20,7 +20,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,7 +30,11 @@ import (
 	"time"
 )
 
-const maxDownloadSize = 4 << 30 // 4 GiB
+const (
+	defaultFilePermissions      = 0o600
+	defaultDirectoryPermissions = 0o750
+	maxDownloadSize             = 4 << 30 // 4 GiB
+)
 
 func newHTTPClient() *http.Client {
 	return &http.Client{
@@ -231,40 +234,6 @@ func tryOSDeleteFile(path string) {
 		slog.Warn("failed to delete file", "path", path, "error", err)
 	}
 }
-
-// clampToUint32 converts n to uint32, clamping negative values to 0 and
-// values above math.MaxUint32 to math.MaxUint32.
-func clampToUint32(n int) uint32 {
-	if n < 0 {
-		return 0
-	}
-	if uint64(n) > math.MaxUint32 {
-		return math.MaxUint32
-	}
-	return uint32(n)
-}
-
-// clampToUint64 converts n to uint64, clamping negative values to 0.
-func clampToUint64(n int64) uint64 {
-	if n < 0 {
-		return 0
-	}
-	return uint64(n)
-}
-
-// clampToInt64 converts a non-negative uint64 to int64, clamping any value
-// above math.MaxInt64 to math.MaxInt64 so the conversion cannot overflow.
-func clampToInt64(n uint64) int64 {
-	if n > math.MaxInt64 {
-		return math.MaxInt64
-	}
-	return int64(n)
-}
-
-const (
-	defaultFilePermissions      = 0o600
-	defaultDirectoryPermissions = 0o750
-)
 
 func osMkdir(name string) error {
 	return os.Mkdir(filepath.Clean(name), defaultDirectoryPermissions)

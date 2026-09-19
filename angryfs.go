@@ -37,11 +37,7 @@ var (
 )
 
 func init() {
-	Register(Driver{
-		Name:       "angry",
-		MatchFunc:  isAngryFSUri,
-		CreateFunc: newAngryFS,
-	})
+	Register(newDriver("angry", newAngryFS, isAngryFSUri, 1, false, false))
 }
 
 type angryFS struct {

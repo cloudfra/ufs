@@ -99,7 +99,7 @@ func projfsPath(name utf16Str) string {
 	if name == nil {
 		return cwdPath
 	}
-	return coerceUnix(windows.UTF16PtrToString(name))
+	return coerceUnixPath(windows.UTF16PtrToString(name))
 }
 
 func cbDataAttrs(callbackData *prjCallbackData) []any {

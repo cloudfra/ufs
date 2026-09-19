@@ -37,12 +37,7 @@ var (
 )
 
 func init() {
-	Register(Driver{
-		Name:       "local",
-		MatchFunc:  isLocalFSUri,
-		CreateFunc: newLocalFS,
-		Priority:   10000,
-	})
+	Register(newDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
 }
 
 type localFSInterface interface {
@@ -56,7 +51,7 @@ type localFS struct {
 }
 
 func (fsys *localFS) URI() *url.URL {
-	return &url.URL{Scheme: "file", Path: coerceUnix(fsys.osFS.Name())}
+	return &url.URL{Scheme: "file", Path: coerceUnixPath(fsys.osFS.Name())}
 }
 
 func (fsys *localFS) String() string {

@@ -41,11 +41,7 @@ var (
 )
 
 func init() {
-	Register(Driver{
-		Name:       "memory",
-		MatchFunc:  isMemFSUri,
-		CreateFunc: newMemFS,
-	})
+	Register(newDriver("memory", newMemFS, isMemFSUri, 1, true, true))
 }
 
 var errDirNotEmpty = errors.New("directory not empty")

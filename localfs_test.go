@@ -61,11 +61,6 @@ func TestIsLocalFSUri(t *testing.T) {
 	}
 }
 
-func TestLocalFS(t *testing.T) {
-	dir := mustTemp(t)
-	testFileSystem(t, newLocalFS, dir)
-}
-
 func TestLocalFSLstat(t *testing.T) {
 	dir := mustTemp(t)
 	fsys := mustFS(t, newLocalFS, dir)

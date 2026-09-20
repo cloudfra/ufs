@@ -15,7 +15,6 @@
 package ufs
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"path/filepath"
@@ -35,12 +34,6 @@ func TestNewTempMountFS(t *testing.T) {
 	if err := fsys.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil", err)
 	}
-}
-
-func TestTempMountFSFileSystem(t *testing.T) {
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
-		return newTempMountFS(ctx, name, func(string) error { return nil })
-	}, "temp://")
 }
 
 func TestTempMountFSCleanup(t *testing.T) {

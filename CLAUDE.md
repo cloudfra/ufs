@@ -125,7 +125,9 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 | osutil.go             | OS helpers (file download, etc.)                                    |
 | internal/osutil/       | Path-cleaning wrappers around package os, shared by ufs and host    |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
-| testing_test.go       | Shared test harness used by each backend                            |
+| conformance_test.go   | Conformance tests that run against every FS in the hard coded list  |
+| conformance_helper_test.go | The hard coded FS list, testFileSystem harness, and conformance helpers |
+| testing_test.go       | General test helpers (temp dirs, close checks, assertions)          |
 | assets_test.go        | Test asset loading helpers                                          |
 
 ### Conventions
@@ -133,4 +135,4 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 * Keep structs private; expose construction via the public New() factory.
 * Factory name arg follows a URI scheme: null://, file:///..., memory:, gs://..., git://..., archive://...
 * All path operations call validPath first — returns fs.PathError for invalid paths.
-* Each backend has its own file, its own tests, and runs the shared fstest.TestFS harness via testFileSystem.
+* Each backend has its own file, its own tests, and is registered in the conformance tests (conformance_test.go) via the shared testFileSystem harness.

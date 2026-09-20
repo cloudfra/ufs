@@ -75,10 +75,6 @@ func TestNewMemFS(t *testing.T) {
 	}
 }
 
-func TestMemFS(t *testing.T) {
-	testFileSystem(t, newMemFS, "memory://test")
-}
-
 func TestMemFSCreate(t *testing.T) {
 	fsys, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {

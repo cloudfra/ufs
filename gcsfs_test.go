@@ -15,7 +15,6 @@
 package ufs
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -237,13 +236,6 @@ func TestParseGCSPathErrors(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestGCSFS(t *testing.T) {
-	client := createStorage(t)
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
-		return makeGCSFSWithClient(ctx, client, name)
-	}, "gs://first")
 }
 
 func createStorage(tb testing.TB) *storage.Client {

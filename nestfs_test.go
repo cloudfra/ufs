@@ -444,10 +444,6 @@ func TestNestFSStat(t *testing.T) {
 	}
 }
 
-func TestNestFS(t *testing.T) {
-	testFileSystem(t, newNestFS, "memory://")
-}
-
 func TestNestReadDirFileRead(t *testing.T) {
 	fsys, err := newNestFS(t.Context(), "memory://")
 	if err != nil {

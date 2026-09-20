@@ -15,12 +15,12 @@
 package ufs
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"path"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -28,6 +28,57 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 )
+
+// Conformance tests run against the hard coded list of file systems in
+// conformance_helper_test.go. Tests here should hold for any FS implementation.
+
+// TestFileSystem runs the shared CRUD and fstest.TestFS harness against each
+// backend that needs its own constructor and fixture.
+func TestFileSystem(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"localFS", func(t *testing.T) {
+			testFileSystem(t, newLocalFS, mustTemp(t))
+		}},
+		{"memFS", func(t *testing.T) {
+			testFileSystem(t, newMemFS, "memory://test")
+		}},
+		{"nestFS", func(t *testing.T) {
+			testFileSystem(t, newNestFS, "memory://")
+		}},
+		{"tempMountFS", func(t *testing.T) {
+			testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
+				return newTempMountFS(ctx, name, func(string) error { return nil })
+			}, "temp://")
+		}},
+		{"gcsFS", func(t *testing.T) {
+			client := createStorage(t)
+			testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
+				return makeGCSFSWithClient(ctx, client, name)
+			}, "gs://first")
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, tc.run)
+	}
+}
+
+// TestFSImplementsReadFS verifies that every file system in the hard coded
+// list (read-write, read-only, and permission-denied) is a ReadFS.
+func TestFSImplementsReadFS(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range append(append(readWriteFSTestCaseList, readOnlyFSTestCaseList...), permDeniedFSTestCaseList...) {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer validateClose(t, fsys)()
+			verifyReadOnlyFS(t, fsys)
+		})
+	}
+}
 
 func TestInvalidPath(t *testing.T) {
 	invalidPaths := []string{
@@ -112,24 +163,6 @@ func TestInvalidPath(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func assertInvalidPathError(t *testing.T, path string, err error, wantOp string) {
-	t.Helper()
-	if err == nil {
-		t.Errorf("%s(%q) succeeded, want error", wantOp, path)
-		return
-	}
-	if perr, ok := err.(*fs.PathError); ok {
-		if wantOp != perr.Op {
-			t.Errorf("fs.PathError.Op mismatch, got: %q, want: %q", perr.Op, wantOp)
-		}
-		if path != perr.Path {
-			t.Errorf("fs.PathError.Path mismatch, got: %q, want: %q", perr.Path, path)
-		}
-	} else {
-		t.Errorf("%q is not a *fs.PathError, got: %q", err, reflect.TypeOf(err).Name())
 	}
 }
 
@@ -397,6 +430,54 @@ func TestFSCreate(t *testing.T) {
 						}
 					})
 				})
+			}
+		})
+	}
+}
+
+func TestFSMkdirAll(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getAllExceptAngryTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer validateClose(t, fsys)()
+			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
+				t.Errorf("MkdirAll() = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestFSReadFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getReadWriteTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			wantData := randomString(100)
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer validateClose(t, fsys)()
+			f, err := fsys.Create("readfile_test.txt")
+			if err != nil {
+				t.Fatalf("Create failed: %v", err)
+			}
+			if _, err := io.WriteString(f, wantData); err != nil {
+				t.Fatalf("WriteString failed: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatalf("Close failed: %v", err)
+			}
+
+			rfs, ok := fsys.(fs.ReadFileFS)
+			if !ok {
+				t.Skip("does not implement fs.ReadFileFS")
+			}
+			got, err := rfs.ReadFile("readfile_test.txt")
+			if err != nil {
+				t.Fatalf("ReadFile failed: %v", err)
+			}
+			if diff := cmp.Diff(wantData, string(got)); diff != "" {
+				t.Errorf("ReadFile mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

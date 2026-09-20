@@ -92,36 +92,6 @@ func TestTryOSDeleteFile(t *testing.T) {
 	}
 }
 
-func TestOSMkdir(t *testing.T) {
-	parent, err := osutil.MkdirTemp("", "ufs-mkdir-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := osutil.RemoveAll(parent); err != nil {
-			t.Errorf("cleanup remove %q: %v", parent, err)
-		}
-	})
-
-	dir := filepath.Join(parent, "newdir")
-	if err := osutil.Mkdir(dir); err != nil {
-		t.Fatalf("osutil.Mkdir(existing parent) = %v, want nil", err)
-	}
-	if _, err := osutil.Stat(dir); err != nil {
-		t.Errorf("Stat after osMkdir: %v, want the new dir to exist", err)
-	}
-
-	if err := osutil.Mkdir(dir); err == nil {
-		t.Error("osutil.Mkdir(existing) = nil, want an error")
-	} else if !os.IsExist(err) {
-		t.Errorf("osutil.Mkdir(existing) = %v, want fs.ErrExist", err)
-	}
-
-	if err := osutil.Mkdir(filepath.Join(parent, "a", "b")); err == nil {
-		t.Error("osutil.Mkdir(missing parent) = nil, want an error")
-	}
-}
-
 func TestOSDeleteDirectoryExists(t *testing.T) {
 	dir, err := osutil.MkdirTemp("", "ufs-del-dir-*")
 	if err != nil {

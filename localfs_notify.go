@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 var _ Watcher = (*localFS)(nil)
@@ -43,7 +45,7 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 		return nil, &fs.PathError{Op: "watch", Path: name, Err: err}
 	}
 
-	fi, err := osStat(watchRoot)
+	fi, err := osutil.Stat(watchRoot)
 	if err != nil {
 		return nil, &fs.PathError{Op: "watch", Path: name, Err: err}
 	}
@@ -171,7 +173,7 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	}
 
 	if ev.Has(fsnotify.Create) {
-		if fi, err := osStat(ev.Name); err == nil && fi.IsDir() {
+		if fi, err := osutil.Stat(ev.Name); err == nil && fi.IsDir() {
 			// New directory: register watches for it and any children that
 			// appeared before the watch was installed.
 			_ = lw.addRecursive(ev.Name)

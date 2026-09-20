@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const (
@@ -77,7 +79,7 @@ func TestLocalFSLstat(t *testing.T) {
 		t.Fatalf("Close failed: %v", err)
 	}
 
-	if err := osSymlink("lstat_file.txt", filepath.Join(dir, "lstat_link.txt")); err != nil {
+	if err := osutil.Symlink("lstat_file.txt", filepath.Join(dir, "lstat_link.txt")); err != nil {
 		t.Skipf("skipping: symlink creation requires elevated privileges or Developer Mode on Windows: %v", err)
 	}
 
@@ -123,7 +125,7 @@ func TestLocalFSReadLink(t *testing.T) {
 		t.Fatalf("Close failed: %v", err)
 	}
 
-	if err := osSymlink("target.txt", filepath.Join(dir, "link.txt")); err != nil {
+	if err := osutil.Symlink("target.txt", filepath.Join(dir, "link.txt")); err != nil {
 		t.Skipf("skipping: symlink creation requires elevated privileges or Developer Mode on Windows: %v", err)
 	}
 
@@ -150,13 +152,13 @@ func TestLocalFSRemove(t *testing.T) {
 	defer validateClose(t, fsys)()
 
 	// Create a file and a subdirectory with a child.
-	if err := osWriteFile(filepath.Join(dir, "hello.txt"), []byte("hi")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi")); err != nil {
 		t.Fatal(err)
 	}
-	if err := osMkdirAll(filepath.Join(dir, "sub")); err != nil {
+	if err := osutil.MkdirAll(filepath.Join(dir, "sub")); err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(filepath.Join(dir, "sub", "child.txt"), []byte("child")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "sub", "child.txt"), []byte("child")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -190,13 +192,13 @@ func TestLocalFSRemoveAll(t *testing.T) {
 	}
 	defer validateClose(t, fsys)()
 
-	if err := osMkdirAll(filepath.Join(dir, "tree", "deep")); err != nil {
+	if err := osutil.MkdirAll(filepath.Join(dir, "tree", "deep")); err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(filepath.Join(dir, "tree", "deep", "leaf.txt"), []byte("x")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "tree", "deep", "leaf.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(filepath.Join(dir, "keep.txt"), []byte("keep")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "keep.txt"), []byte("keep")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,7 +222,7 @@ func TestLocalFSRemoveAll(t *testing.T) {
 }
 
 func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
-	fsys, err := osOpenRoot(CwdPath)
+	fsys, err := osutil.OpenRoot(CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,50 +17,12 @@ package host
 import (
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/internal/osutil"
 )
-
-const (
-	testFilePermissions      = 0o600
-	testDirectoryPermissions = 0o750
-)
-
-func osMkdir(name string) error {
-	return os.Mkdir(filepath.Clean(name), testDirectoryPermissions)
-}
-
-func osMkdirAll(name string) error {
-	return os.MkdirAll(filepath.Clean(name), testDirectoryPermissions)
-}
-
-func osRemove(name string) error {
-	return os.Remove(filepath.Clean(name))
-}
-
-func osReadFile(name string) ([]byte, error) {
-	return os.ReadFile(filepath.Clean(name))
-}
-
-func osStat(name string) (os.FileInfo, error) {
-	return os.Stat(filepath.Clean(name))
-}
-
-func osWriteFile(name string, data []byte) error {
-	return os.WriteFile(filepath.Clean(name), data, testFilePermissions)
-}
-
-func osReadDir(name string) ([]os.DirEntry, error) {
-	return os.ReadDir(filepath.Clean(name))
-}
-
-func osDirFS(name string) fs.FS {
-	return os.DirFS(filepath.Clean(name))
-}
 
 func validateClose(tb testing.TB, closer io.Closer) func() {
 	return func() {
@@ -73,22 +35,6 @@ func validateClose(tb testing.TB, closer io.Closer) func() {
 	}
 }
 
-// fakeInfo is a minimal fs.FileInfo for unit tests.
-type fakeInfo struct {
-	name    string
-	size    int64
-	mode    fs.FileMode
-	modTime time.Time
-	isDir   bool
-}
-
-func (fi *fakeInfo) Name() string       { return fi.name }
-func (fi *fakeInfo) Size() int64        { return fi.size }
-func (fi *fakeInfo) Mode() fs.FileMode  { return fi.mode }
-func (fi *fakeInfo) ModTime() time.Time { return fi.modTime }
-func (fi *fakeInfo) IsDir() bool        { return fi.isDir }
-func (fi *fakeInfo) Sys() any           { return nil }
-
 // testAssetsFilesDir is the directory of files that were archived into
 // testassets.tar.gz by the test asset generation step.
 var testAssetsFilesDir = filepath.Join("..", "testing", "testassets", "files")
@@ -96,7 +42,7 @@ var testAssetsFilesDir = filepath.Join("..", "testing", "testassets", "files")
 // loadTestAssets walks testAssetsFilesDir and returns a path→content map for every file.
 func loadTestAssets(tb testing.TB) map[string][]byte {
 	tb.Helper()
-	src := osDirFS(testAssetsFilesDir)
+	src := osutil.DirFS(testAssetsFilesDir)
 	result := make(map[string][]byte)
 	err := fs.WalkDir(src, ufs.CwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {

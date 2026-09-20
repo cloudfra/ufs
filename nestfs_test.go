@@ -25,6 +25,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestNewNestFS(t *testing.T) {
@@ -742,11 +744,11 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	zipPath := createZipFromDir(t, testAssetsFilesDir)
 
 	destZip := tmpDir + "/testassets.zip"
-	data, err := osReadFile(zipPath)
+	data, err := osutil.ReadFile(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(destZip, data); err != nil {
+	if err := osutil.WriteFile(destZip, data); err != nil {
 		t.Fatal(err)
 	}
 
@@ -775,7 +777,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	// OS refuses to delete a file that's actively mounted; the caller must
 	// close the mount first. Unix allows unlinking a file with open handles,
 	// so the rest of this test (stale-mount pruning) only applies there.
-	if err := osRemove(destZip); err != nil {
+	if err := osutil.Remove(destZip); err != nil {
 		if runtime.GOOS == "windows" {
 			return
 		}
@@ -1378,7 +1380,7 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 			if nf.tmpFile != nil {
 				t.Error("expected nil tmpFile after close")
 			}
-			if _, err := osStat(tmpName); !errors.Is(err, fs.ErrNotExist) {
+			if _, err := osutil.Stat(tmpName); !errors.Is(err, fs.ErrNotExist) {
 				t.Errorf("temp file %q still exists after close", tmpName)
 			}
 		})

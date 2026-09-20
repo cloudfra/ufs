@@ -18,6 +18,8 @@ package ufs
 
 import (
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 // TestNameToURIWindowsDriveLetters verifies that nameToURI handles both
@@ -90,7 +92,7 @@ func TestNewWindowsDriveLetters(t *testing.T) {
 		letter := letter
 		t.Run(letter+":", func(t *testing.T) {
 			root := letter + `:\`
-			if _, err := osStat(root); err != nil {
+			if _, err := osutil.Stat(root); err != nil {
 				t.Skipf("drive %s: not available: %v", letter, err)
 			}
 			for _, name := range []string{

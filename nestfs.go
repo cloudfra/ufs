@@ -29,6 +29,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 type bufferMode int
@@ -703,7 +705,7 @@ func (f *nestFile) Close() error {
 		if err := f.tmpFile.Close(); err != nil {
 			return err
 		}
-		if err := osRemove(name); err != nil {
+		if err := osutil.Remove(name); err != nil {
 			return err
 		}
 		f.tmpFile = nil
@@ -762,20 +764,20 @@ func polyfillSeekReadAtMemory(nf *nestFile, f fs.File) error {
 }
 
 func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
-	tmp, err := osCreateTemp("", "ufs-polyfill-*.tmp")
+	tmp, err := osutil.CreateTemp("", "ufs-polyfill-*.tmp")
 	if err != nil {
 		fCloseErr := f.Close()
 		return joinErrors(err, fCloseErr)
 	}
 	if _, err := io.Copy(tmp, f); err != nil {
 		closeErr := tmp.Close()
-		removeErr := osRemove(tmp.Name())
+		removeErr := osutil.Remove(tmp.Name())
 		fCloseErr := f.Close()
 		return joinErrors(err, closeErr, removeErr, fCloseErr)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		closeErr := tmp.Close()
-		removeErr := osRemove(tmp.Name())
+		removeErr := osutil.Remove(tmp.Name())
 		fCloseErr := f.Close()
 		return joinErrors(err, closeErr, removeErr, fCloseErr)
 	}

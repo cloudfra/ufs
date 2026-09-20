@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestCreateOSTempDirectory(t *testing.T) {
@@ -56,7 +58,7 @@ func TestOSDeleteFile(t *testing.T) {
 	})
 
 	t.Run("existing", func(t *testing.T) {
-		f, err := osCreateTemp("", "ufs-osutil-test-*.txt")
+		f, err := osutil.CreateTemp("", "ufs-osutil-test-*.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,7 +77,7 @@ func TestOSDeleteFile(t *testing.T) {
 }
 
 func TestTryOSDeleteFile(t *testing.T) {
-	f, err := osCreateTemp("", "ufs-try-delete-*.txt")
+	f, err := osutil.CreateTemp("", "ufs-try-delete-*.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,37 +93,37 @@ func TestTryOSDeleteFile(t *testing.T) {
 }
 
 func TestOSMkdir(t *testing.T) {
-	parent, err := osMkdirTemp("", "ufs-mkdir-*")
+	parent, err := osutil.MkdirTemp("", "ufs-mkdir-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := osRemoveAll(parent); err != nil {
+		if err := osutil.RemoveAll(parent); err != nil {
 			t.Errorf("cleanup remove %q: %v", parent, err)
 		}
 	})
 
 	dir := filepath.Join(parent, "newdir")
-	if err := osMkdir(dir); err != nil {
-		t.Fatalf("osMkdir(existing parent) = %v, want nil", err)
+	if err := osutil.Mkdir(dir); err != nil {
+		t.Fatalf("osutil.Mkdir(existing parent) = %v, want nil", err)
 	}
-	if _, err := osStat(dir); err != nil {
+	if _, err := osutil.Stat(dir); err != nil {
 		t.Errorf("Stat after osMkdir: %v, want the new dir to exist", err)
 	}
 
-	if err := osMkdir(dir); err == nil {
-		t.Error("osMkdir(existing) = nil, want an error")
+	if err := osutil.Mkdir(dir); err == nil {
+		t.Error("osutil.Mkdir(existing) = nil, want an error")
 	} else if !os.IsExist(err) {
-		t.Errorf("osMkdir(existing) = %v, want fs.ErrExist", err)
+		t.Errorf("osutil.Mkdir(existing) = %v, want fs.ErrExist", err)
 	}
 
-	if err := osMkdir(filepath.Join(parent, "a", "b")); err == nil {
-		t.Error("osMkdir(missing parent) = nil, want an error")
+	if err := osutil.Mkdir(filepath.Join(parent, "a", "b")); err == nil {
+		t.Error("osutil.Mkdir(missing parent) = nil, want an error")
 	}
 }
 
 func TestOSDeleteDirectoryExists(t *testing.T) {
-	dir, err := osMkdirTemp("", "ufs-del-dir-*")
+	dir, err := osutil.MkdirTemp("", "ufs-del-dir-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +136,7 @@ func TestOSDeleteDirectoryExists(t *testing.T) {
 }
 
 func TestTryOSDeleteDirectory(t *testing.T) {
-	dir, err := osMkdirTemp("", "ufs-try-del-dir-*")
+	dir, err := osutil.MkdirTemp("", "ufs-try-del-dir-*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +298,7 @@ func TestDialControl(t *testing.T) {
 func testArchiveServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	zipPath := createZipFromDir(t, testAssetsFilesDir)
-	zipData, err := osReadFile(zipPath)
+	zipData, err := osutil.ReadFile(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +351,7 @@ func TestDownloadFile(t *testing.T) {
 		if filepath.Base(path) != "testassets.zip" {
 			t.Errorf("filename = %q, want %q", filepath.Base(path), "testassets.zip")
 		}
-		data, err := osReadFile(path)
+		data, err := osutil.ReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile() = %v", err)
 		}
@@ -491,12 +493,12 @@ func TestDownloadFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("downloadFileWith() = %v", err)
 		}
-		got, err := osReadFile(path)
+		got, err := osutil.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		zipPath := createZipFromDir(t, testAssetsFilesDir)
-		want, err := osReadFile(zipPath)
+		want, err := osutil.ReadFile(zipPath)
 		if err != nil {
 			t.Fatal(err)
 		}

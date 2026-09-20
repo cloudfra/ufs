@@ -123,6 +123,7 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 | path.go, path_test.go | validPath — validates paths against fs.ValidPath                    |
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
 | osutil.go             | OS helpers (file download, etc.)                                    |
+| internal/osutil/       | Path-cleaning wrappers around package os, shared by ufs and host    |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |

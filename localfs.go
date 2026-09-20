@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const (
@@ -220,7 +222,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	if err != nil {
 		return nil, err
 	}
-	osFS, err := osOpenRoot(absPath)
+	osFS, err := osutil.OpenRoot(absPath)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +242,7 @@ func isLocalFSUri(name string) bool {
 	if strings.HasPrefix(name, localFSPrefix) || !strings.Contains(name, "://") {
 		return true
 	}
-	stat, err := osStat(name)
+	stat, err := osutil.Stat(name)
 	if err == nil && stat != nil {
 		return true
 	}

@@ -31,6 +31,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/xyproto/randomstring"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 type fsTestCase struct {
@@ -287,13 +289,13 @@ func osTempDir() string {
 }
 
 func mustTemp(tb testing.TB) string {
-	tempDir, err := osMkdirTemp("", "")
+	tempDir, err := osutil.MkdirTemp("", "")
 	if err != nil {
 		tb.Fatal(err)
 	}
 
 	tb.Cleanup(func() {
-		if err := osRemoveAll(tempDir); err != nil {
+		if err := osutil.RemoveAll(tempDir); err != nil {
 			tb.Error(err)
 		}
 	})

@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestRsync(t *testing.T) {
@@ -477,12 +479,12 @@ func setupNestFSWithArchive(t *testing.T) FS {
 	t.Helper()
 	dir := t.TempDir()
 
-	if err := osWriteFile(filepath.Join(dir, "readme.txt"), []byte("hello")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
 
 	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := osCreate(zipPath)
+	zf, err := osutil.Create(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,7 +644,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create data.zip (virtual .d should be detected).
-	zf, err := osCreate(filepath.Join(dir, "data.zip"))
+	zf, err := osutil.Create(filepath.Join(dir, "data.zip"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +656,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Create conf.d as a real directory (base name "conf" is not an archive).
-	if err := osMkdirAll(filepath.Join(dir, "conf.d")); err != nil {
+	if err := osutil.MkdirAll(filepath.Join(dir, "conf.d")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -690,15 +692,15 @@ func TestIsMountedArchiveDir(t *testing.T) {
 func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := osMkdirAll(filepath.Join(dir, "subdir")); err != nil {
+	if err := osutil.MkdirAll(filepath.Join(dir, "subdir")); err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested")); err != nil {
 		t.Fatal(err)
 	}
 
 	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := osCreate(zipPath)
+	zf, err := osutil.Create(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}

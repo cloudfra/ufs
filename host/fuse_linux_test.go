@@ -27,11 +27,13 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/cloudfra/ufs"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func requireFUSE(t *testing.T) {
 	t.Helper()
-	if _, err := osStat("/dev/fuse"); err != nil {
+	if _, err := osutil.Stat("/dev/fuse"); err != nil {
 		fuseSkipOrFatal(t, fmt.Sprintf("/dev/fuse not available: %v", err))
 	}
 }
@@ -115,13 +117,7 @@ func TestFuseErrno(t *testing.T) {
 func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	fi := &fakeInfo{
-		name:    "hello.txt",
-		size:    1234,
-		mode:    testFilePermissions,
-		modTime: modTime,
-		isDir:   false,
-	}
+	fi := ufs.NewFileInfo("hello.txt", 1234, osutil.DefaultFilePermissions, modTime)
 	var attr fuse.Attr
 	fuseAttrFromFileInfo(fi, &attr)
 
@@ -147,13 +143,7 @@ func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 func TestFuseAttrFromFileInfoDirectory(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	fi := &fakeInfo{
-		name:    "subdir",
-		size:    0,
-		mode:    fs.ModeDir | testDirectoryPermissions,
-		modTime: modTime,
-		isDir:   true,
-	}
+	fi := ufs.NewFileInfo("subdir", 0, fs.ModeDir|osutil.DefaultDirectoryPermissions, modTime)
 	var attr fuse.Attr
 	fuseAttrFromFileInfo(fi, &attr)
 
@@ -179,11 +169,11 @@ func TestMountCreateWriteRead(t *testing.T) {
 	mountDir := testMount(t, fsys)
 
 	content := []byte("hello from fuse")
-	if err := osWriteFile(filepath.Join(mountDir, "new.txt"), content); err != nil {
+	if err := osutil.WriteFile(filepath.Join(mountDir, "new.txt"), content); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := osReadFile(filepath.Join(mountDir, "new.txt"))
+	data, err := osutil.ReadFile(filepath.Join(mountDir, "new.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +186,7 @@ func TestMountOpenWriteOnlyNoTrunc(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
 	filePath := filepath.Join(srcDir, "existing.txt")
-	if err := osWriteFile(filePath, []byte("original")); err != nil {
+	if err := osutil.WriteFile(filePath, []byte("original")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -229,7 +219,7 @@ func TestMountOpenWriteOnlyNoTrunc(t *testing.T) {
 	}
 
 	// Verify the file content is unchanged.
-	data, err := osReadFile(mountedFile)
+	data, err := osutil.ReadFile(mountedFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,12 +240,12 @@ func TestMountWriteAtOffset(t *testing.T) {
 
 	filePath := filepath.Join(mountDir, "offset.txt")
 	content := []byte("hello world")
-	if err := osWriteFile(filePath, content); err != nil {
+	if err := osutil.WriteFile(filePath, content); err != nil {
 		t.Fatal(err)
 	}
 
 	// Re-read via the mount to verify the full write path.
-	data, err := osReadFile(filepath.Clean(filePath))
+	data, err := osutil.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,11 +265,11 @@ func TestMountMkdir(t *testing.T) {
 	mountDir := testMount(t, fsys)
 
 	dirPath := filepath.Join(mountDir, "newdir")
-	if err := osMkdir(dirPath); err != nil {
+	if err := osutil.Mkdir(dirPath); err != nil {
 		t.Fatal(err)
 	}
 
-	fi, err := osStat(dirPath)
+	fi, err := osutil.Stat(dirPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,10 +289,10 @@ func TestMountMkdirExisting(t *testing.T) {
 	mountDir := testMount(t, fsys)
 
 	dirPath := filepath.Join(mountDir, "existdir")
-	if err := osMkdir(dirPath); err != nil {
+	if err := osutil.Mkdir(dirPath); err != nil {
 		t.Fatal(err)
 	}
-	err = osMkdir(dirPath)
+	err = osutil.Mkdir(dirPath)
 	if err == nil {
 		t.Fatal("mkdir on existing directory succeeded, want EEXIST")
 	}
@@ -322,13 +312,13 @@ func TestMountRemoveFile(t *testing.T) {
 	mountDir := testMount(t, fsys)
 
 	filePath := filepath.Join(mountDir, "doomed.txt")
-	if err := osWriteFile(filePath, []byte("bye")); err != nil {
+	if err := osutil.WriteFile(filePath, []byte("bye")); err != nil {
 		t.Fatal(err)
 	}
-	if err := osRemove(filePath); err != nil {
+	if err := osutil.Remove(filePath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := osStat(filePath); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := osutil.Stat(filePath); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat after remove: got %v, want ErrNotExist", err)
 	}
 }
@@ -344,13 +334,13 @@ func TestMountRemoveDir(t *testing.T) {
 	mountDir := testMount(t, fsys)
 
 	dirPath := filepath.Join(mountDir, "tmpdir")
-	if err := osMkdir(dirPath); err != nil {
+	if err := osutil.Mkdir(dirPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := osRemove(dirPath); err != nil {
+	if err := osutil.Remove(dirPath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := osStat(dirPath); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := osutil.Stat(dirPath); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat after remove: got %v, want ErrNotExist", err)
 	}
 }
@@ -368,7 +358,7 @@ func TestMountReadOnly(t *testing.T) {
 	roFS := &fuseReadOnlyFS{fsys}
 	mountDir := testMount(t, roFS)
 
-	err = osWriteFile(filepath.Join(mountDir, "nope.txt"), []byte("data"))
+	err = osutil.WriteFile(filepath.Join(mountDir, "nope.txt"), []byte("data"))
 	if err == nil {
 		t.Fatal("write to read-only mount succeeded, want error")
 	}
@@ -379,7 +369,7 @@ func TestMountClose(t *testing.T) {
 	requireFUSE(t)
 
 	srcDir := t.TempDir()
-	if err := osWriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -396,7 +386,7 @@ func TestMountClose(t *testing.T) {
 		return
 	}
 
-	if _, err := osStat(filepath.Join(mountDir, "f.txt")); err != nil {
+	if _, err := osutil.Stat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before close: %v", err)
 	}
 
@@ -404,7 +394,7 @@ func TestMountClose(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	entries, err := osReadDir(mountDir)
+	entries, err := osutil.ReadDir(mountDir)
 	if err != nil {
 		return
 	}
@@ -418,7 +408,7 @@ func TestMountContextCancel(t *testing.T) {
 	requireFUSE(t)
 
 	srcDir := t.TempDir()
-	if err := osWriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -437,14 +427,14 @@ func TestMountContextCancel(t *testing.T) {
 	}
 	defer validateClose(t, server)()
 
-	if _, err := osStat(filepath.Join(mountDir, "f.txt")); err != nil {
+	if _, err := osutil.Stat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before cancel: %v", err)
 	}
 
 	cancel()
 	time.Sleep(200 * time.Millisecond)
 
-	entries, err := osReadDir(mountDir)
+	entries, err := osutil.ReadDir(mountDir)
 	if err != nil {
 		return
 	}
@@ -464,7 +454,7 @@ func TestMountReadOnlyMkdir(t *testing.T) {
 	roFS := &fuseReadOnlyFS{fsys}
 	mountDir := testMount(t, roFS)
 
-	err = osMkdir(filepath.Join(mountDir, "nope"))
+	err = osutil.Mkdir(filepath.Join(mountDir, "nope"))
 	if err == nil {
 		t.Fatal("mkdir on read-only mount succeeded, want EROFS")
 	}
@@ -473,7 +463,7 @@ func TestMountReadOnlyMkdir(t *testing.T) {
 func TestMountReadOnlyRemove(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
-	if err := osWriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -486,13 +476,13 @@ func TestMountReadOnlyRemove(t *testing.T) {
 	roFS := &fuseReadOnlyFS{fsys}
 	mountDir := testMount(t, roFS)
 
-	err = osRemove(filepath.Join(mountDir, "keep.txt"))
+	err = osutil.Remove(filepath.Join(mountDir, "keep.txt"))
 	if err == nil {
 		t.Fatal("remove on read-only mount succeeded, want EROFS")
 	}
 
 	// File should still be accessible.
-	data, err := osReadFile(filepath.Join(mountDir, "keep.txt"))
+	data, err := osutil.ReadFile(filepath.Join(mountDir, "keep.txt"))
 	if err != nil {
 		t.Fatalf("ReadFile after failed remove: %v", err)
 	}

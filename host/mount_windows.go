@@ -23,8 +23,6 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -33,6 +31,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 // utf16Str is a pointer to a null-terminated UTF-16 string (Windows LPCWSTR).
@@ -514,7 +513,7 @@ func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer,
 	)
 
 	// Log mount path state before we touch it — critical for diagnosing "directory inaccessible".
-	if fi, err := os.Stat(filepath.Clean(mountPath)); err != nil {
+	if fi, err := osutil.Stat(mountPath); err != nil {
 		slog.Warn("projfs: mount path Stat failed", "mountPath", mountPath, "error", err)
 	} else {
 		slog.Info("projfs: mount path exists",
@@ -524,7 +523,7 @@ func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer,
 			"modTime", fi.ModTime(),
 		)
 	}
-	if entries, err := os.ReadDir(filepath.Clean(mountPath)); err != nil {
+	if entries, err := osutil.ReadDir(mountPath); err != nil {
 		slog.Warn("projfs: mount path ReadDir failed", "mountPath", mountPath, "error", err)
 	} else {
 		names := make([]string, len(entries))

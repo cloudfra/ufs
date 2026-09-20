@@ -210,10 +210,11 @@ func makeMountMap(baseName string) *mountMap {
 // nestFS is a wrapper for a base FS that supports automatic mounting of archives.
 // This means that any archive can opened and read automatically. Archives are revealed via $filename.d name pattern.
 type nestFS struct {
-	fsys   FS
-	ctx    context.Context
-	mounts *mountMap
-	args   FSArgs
+	fsys       FS
+	ctx        context.Context
+	mounts     *mountMap
+	args       FSArgs
+	notArchive sync.Map // paths known to not be mountable archives
 }
 
 func (fsys *nestFS) getAbsPath(name string) (string, error) {
@@ -380,6 +381,9 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	archiveDirNames := getPotentialArchives(targetName)
 	for _, archiveDirName := range archiveDirNames {
 		archiveName := strings.TrimSuffix(archiveDirName, archiveDirExt)
+		if _, skip := targetFS.notArchive.Load(archiveName); skip {
+			continue
+		}
 		info, err := targetFS.Stat(archiveName)
 		if info != nil && err == nil {
 			subPath, ok := removePathPrefix(targetName, archiveDirName)
@@ -395,6 +399,8 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 				return nil, "", pathError("mount", name, fmt.Errorf("cannot mount archive %s, %w", archiveName, err))
 			}
 			return targetFS, targetName, nil
+		} else {
+			targetFS.notArchive.Store(archiveName, struct{}{})
 		}
 	}
 
@@ -442,6 +448,10 @@ func (fsys *nestFS) Close() error {
 func (fsys *nestFS) Create(name string) (File, error) {
 	if err := fsys.validPath("create", name); err != nil {
 		return nil, err
+	}
+
+	if isMountableArchivePath(name) {
+		fsys.notArchive.Delete(name)
 	}
 
 	mountFS, subName, err := fsys.getFSAndSubpath(name)
@@ -581,6 +591,9 @@ func (fsys *nestFS) Remove(name string) error {
 	if err := fsys.validPath("remove", name); err != nil {
 		return err
 	}
+	if isMountableArchivePath(name) {
+		fsys.notArchive.Delete(name)
+	}
 	mountFS, subName, err := fsys.getFSAndSubpath(name)
 	if err != nil {
 		return err
@@ -591,6 +604,9 @@ func (fsys *nestFS) Remove(name string) error {
 func (fsys *nestFS) RemoveAll(name string) error {
 	if err := fsys.validPath("removeall", name); err != nil {
 		return err
+	}
+	if isMountableArchivePath(name) {
+		fsys.notArchive.Delete(name)
 	}
 	mountFS, subName, err := fsys.getFSAndSubpath(name)
 	if err != nil {

@@ -25,6 +25,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestNewNestFS(t *testing.T) {
@@ -82,7 +84,7 @@ func TestMountMap(t *testing.T) {
 			wantMountSubPath:        "",
 		},
 		{
-			input:                   cwdPath,
+			input:                   CwdPath,
 			wantDirectoryList:       []string{"angry", "mem", "mounts", "null"},
 			wantGetMatchesBySubPath: []string{"angry", "mem", "mounts/angry", "mounts/level2/a/mem", "mounts/level2/a/null", "mounts/level2/angry", "mounts/mem", "mounts/null", "null"},
 			wantMountPath:           "",
@@ -121,7 +123,7 @@ func TestMountMap(t *testing.T) {
 			wantDirectoryList:       []string{},
 			wantGetMatchesBySubPath: []string{""},
 			wantMountPath:           "mounts/level2/a/null",
-			wantMountSubPath:        cwdPath,
+			wantMountSubPath:        CwdPath,
 		},
 		{
 			input:                   "mounts/level2/a/null/more",
@@ -135,7 +137,7 @@ func TestMountMap(t *testing.T) {
 			wantDirectoryList:       []string{},
 			wantGetMatchesBySubPath: []string{""},
 			wantMountPath:           "mounts/level2/a/null",
-			wantMountSubPath:        cwdPath,
+			wantMountSubPath:        CwdPath,
 		},
 		{
 			input:                   "./mounts/level2/a/mem/./more/stuff",
@@ -149,7 +151,7 @@ func TestMountMap(t *testing.T) {
 			wantDirectoryList:       []string{},
 			wantGetMatchesBySubPath: []string{""},
 			wantMountPath:           "mounts/level2/a/null",
-			wantMountSubPath:        cwdPath,
+			wantMountSubPath:        CwdPath,
 		},
 		{
 			input:                   "mounts/level3",
@@ -211,7 +213,7 @@ func TestMountMap(t *testing.T) {
 }
 
 func TestNestFSFull(t *testing.T) {
-	fsys, err := newNestFS(t.Context(), cwdPath)
+	fsys, err := newNestFS(t.Context(), CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +292,7 @@ func TestNestedFS(t *testing.T) {
 		wantEntries []string
 	}{
 		{
-			dir:         cwdPath,
+			dir:         CwdPath,
 			wantEntries: []string{"a", "mounted"},
 		},
 		{
@@ -381,7 +383,7 @@ func TestGetPotentialArchives(t *testing.T) {
 			want:  []string{},
 		},
 		{
-			input: cwdPath,
+			input: CwdPath,
 			want:  []string{},
 		},
 		{
@@ -711,7 +713,7 @@ func TestNestFSValidPathClosed(t *testing.T) {
 	}
 
 	nfs := fsys.(*nestFS)
-	if _, err := nfs.ReadDir(cwdPath); !errors.Is(err, fs.ErrClosed) {
+	if _, err := nfs.ReadDir(CwdPath); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("ReadDir on closed nestFS = %v, want fs.ErrClosed", err)
 	}
 	if _, err := nfs.Stat("foo.txt"); !errors.Is(err, fs.ErrClosed) {
@@ -742,11 +744,11 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	zipPath := createZipFromDir(t, testAssetsFilesDir)
 
 	destZip := tmpDir + "/testassets.zip"
-	data, err := osReadFile(zipPath)
+	data, err := osutil.ReadFile(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(destZip, data); err != nil {
+	if err := osutil.WriteFile(destZip, data); err != nil {
 		t.Fatal(err)
 	}
 
@@ -756,7 +758,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	}
 	defer validateClose(t, fsys)()
 
-	entries, err := fs.ReadDir(fsys, cwdPath)
+	entries, err := fs.ReadDir(fsys, CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -775,7 +777,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	// OS refuses to delete a file that's actively mounted; the caller must
 	// close the mount first. Unix allows unlinking a file with open handles,
 	// so the rest of this test (stale-mount pruning) only applies there.
-	if err := osRemove(destZip); err != nil {
+	if err := osutil.Remove(destZip); err != nil {
 		if runtime.GOOS == "windows" {
 			return
 		}
@@ -783,7 +785,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	}
 
 	// The next directory listing should no longer show the .d entry.
-	entries, err = fs.ReadDir(fsys, cwdPath)
+	entries, err = fs.ReadDir(fsys, CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1378,7 +1380,7 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 			if nf.tmpFile != nil {
 				t.Error("expected nil tmpFile after close")
 			}
-			if _, err := osStat(tmpName); !errors.Is(err, fs.ErrNotExist) {
+			if _, err := osutil.Stat(tmpName); !errors.Is(err, fs.ErrNotExist) {
 				t.Errorf("temp file %q still exists after close", tmpName)
 			}
 		})

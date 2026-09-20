@@ -28,6 +28,8 @@ import (
 	"sync/atomic"
 
 	"github.com/mholt/archives"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const (
@@ -231,7 +233,7 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
-	info, err := osStat(name)
+	info, err := osutil.Stat(name)
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}
@@ -249,7 +251,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 	// is a directory within the archive (its dirFile.Close is a no-op that never
 	// references the opened file). Passing a Stream makes ArchiveFS reuse this
 	// single file instead, so the only handle to close is the one we own here.
-	file, err := osOpen(filepath.Clean(name))
+	file, err := osutil.Open(filepath.Clean(name))
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}

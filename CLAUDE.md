@@ -93,21 +93,27 @@ ReadOnly → FaultInjector → (future wrappers).
 | ReadOnly       | readonlyfs.go  | ReadOnly(inner)   | bool          | Returns fs.ErrPermission for all write ops        |
 | FaultInjector  | faultfs.go     | FaultInjector()   | FaultConfig   | Injects configurable latency and random errors    |
 
-### Host mount
+### Host mount (`host` subpackage)
 
 ```go
-func HostMount(ctx context.Context, fsys ReadFS, mountPath string) (MountServer, error)
+package host // github.com/cloudfra/ufs/host
+
+func Mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error)
 ```
 
 Mounts a virtual FS at a host directory so the OS can access it like a regular
-file system. On Linux this uses FUSE via go-fuse/v2. Returns an unimplemented
-error on other platforms (Windows support planned).
+file system. On Linux this uses FUSE via go-fuse/v2; on Windows it uses ProjFS.
+Returns an unimplemented error on other platforms. The subpackage imports `ufs`
+(never the reverse) and only uses its exported API (e.g. `ufs.CwdPath`).
 
-| File           | Purpose                                                          |
-|:---------------|:-----------------------------------------------------------------|
-| host.go        | Platform-agnostic MountServer interface and HostMount function   |
-| host_other.go  | Stub returning "not implemented" on non-Linux platforms          |
-| fuse_linux.go  | FUSE adapter — bridges ufs.ReadFS/FS to go-fuse InodeEmbedder    |
+| File (in host/)        | Purpose                                                          |
+|:-----------------------|:-----------------------------------------------------------------|
+| host.go                | Platform-agnostic MountServer interface and Mount function       |
+| host_other.go          | Stub returning "not implemented" on non-Linux/Windows platforms  |
+| fuse_linux.go          | FUSE adapter — bridges ufs.ReadFS/FS to go-fuse InodeEmbedder    |
+| mount_windows.go       | ProjFS mount server                                              |
+| projfs_windows.go      | ProjFS syscall bindings                                          |
+| math.go                | Integer clamping helpers for FUSE/ProjFS conversions             |
 
 ### Supporting files
 
@@ -117,6 +123,7 @@ error on other platforms (Windows support planned).
 | path.go, path_test.go | validPath — validates paths against fs.ValidPath                    |
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
 | osutil.go             | OS helpers (file download, etc.)                                    |
+| internal/osutil/       | Path-cleaning wrappers around package os, shared by ufs and host    |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |

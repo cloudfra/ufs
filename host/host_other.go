@@ -14,14 +14,16 @@
 
 //go:build !linux && !windows
 
-package ufs
+package host
 
 import (
 	"context"
 	"fmt"
 	"runtime"
+
+	"github.com/cloudfra/ufs"
 )
 
-func hostMount(_ context.Context, _ ReadFS, _ string) (MountServer, error) {
+func mount(_ context.Context, _ ufs.ReadFS, _ string) (MountServer, error) {
 	return nil, fmt.Errorf("host mount is not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
 }

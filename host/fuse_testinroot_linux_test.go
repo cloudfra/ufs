@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !testinroot
+//go:build testinroot
 
-package ufs
+package host
 
 import "testing"
 
 func fuseSkipOrFatal(t *testing.T, msg string) {
 	t.Helper()
-	t.Skipf("%s", msg)
+	t.Fatalf("FUSE test requires root (testinroot tag is set): %s", msg)
 }

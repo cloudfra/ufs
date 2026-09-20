@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	cwdPath                   = "."
+	// CwdPath is the [fs.ValidPath] name of a file system's root directory.
+	CwdPath                   = "."
 	emptyDirSize              = 0
 	unixAndWindowsSlashCutset = unixPathSeparator + windowsPathSeparator
 	unixPathSeparator         = "/"
@@ -39,7 +40,7 @@ func removePathPrefix(name string, removePath string) (string, bool) {
 		return name, true
 	}
 	if removePath == name {
-		return cwdPath, true
+		return CwdPath, true
 	}
 	return strings.CutPrefix(name, removePath+unixPathSeparator)
 }
@@ -68,7 +69,7 @@ func isDirName(name string) bool {
 }
 
 func isCwd(name string) bool {
-	return name == "" || name == cwdPath
+	return name == "" || name == CwdPath
 }
 
 func pathError(op string, name string, err error) error {

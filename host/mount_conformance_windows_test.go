@@ -14,14 +14,18 @@
 
 //go:build windows
 
-package ufs
+package host
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cloudfra/ufs"
+)
 
 func init() {
 	mountBackends = append(mountBackends, mountBackend{
 		name: "projfs",
-		mount: func(t *testing.T, fsys ReadFS) mountSetup {
+		mount: func(t *testing.T, fsys ufs.ReadFS) mountSetup {
 			t.Helper()
 			return mountSetup{mountDir: testProjFSMount(t, fsys)}
 		},

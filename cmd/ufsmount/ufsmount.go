@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/host"
 )
 
 var (
@@ -65,7 +66,7 @@ func run(uri, mountPath string) error {
 	}()
 
 	slog.Info("mounting file system", "uri", uri, "mountPath", mountPath)
-	server, err := ufs.HostMount(ctx, fsys, mountPath)
+	server, err := host.Mount(ctx, fsys, mountPath)
 	if err != nil {
 		return fmt.Errorf("cannot mount %q at %q: %w", uri, mountPath, err)
 	}

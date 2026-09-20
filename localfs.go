@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const (
@@ -175,7 +177,7 @@ func globFS(fsys fs.ReadDirFS, pattern string) ([]string, error) {
 	if _, err := path.Match(pattern, ""); err != nil {
 		return nil, err
 	}
-	return globWalk(fsys, cwdPath, pattern)
+	return globWalk(fsys, CwdPath, pattern)
 }
 
 func globWalk(fsys fs.ReadDirFS, dir, pattern string) ([]string, error) {
@@ -197,7 +199,7 @@ func globWalk(fsys fs.ReadDirFS, dir, pattern string) ([]string, error) {
 			continue
 		}
 		entryPath := e.Name()
-		if dir != cwdPath {
+		if dir != CwdPath {
 			entryPath = dir + "/" + e.Name()
 		}
 		if rest == "" {
@@ -220,7 +222,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	if err != nil {
 		return nil, err
 	}
-	osFS, err := osOpenRoot(absPath)
+	osFS, err := osutil.OpenRoot(absPath)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +242,7 @@ func isLocalFSUri(name string) bool {
 	if strings.HasPrefix(name, localFSPrefix) || !strings.Contains(name, "://") {
 		return true
 	}
-	stat, err := osStat(name)
+	stat, err := osutil.Stat(name)
 	if err == nil && stat != nil {
 		return true
 	}

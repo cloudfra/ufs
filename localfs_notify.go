@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 var _ Watcher = (*localFS)(nil)
@@ -43,7 +45,7 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 		return nil, &fs.PathError{Op: "watch", Path: name, Err: err}
 	}
 
-	fi, err := osStat(watchRoot)
+	fi, err := osutil.Stat(watchRoot)
 	if err != nil {
 		return nil, &fs.PathError{Op: "watch", Path: name, Err: err}
 	}
@@ -126,12 +128,12 @@ func (lw *localWatcher) toRelPath(absPath string) (string, bool) {
 	rel, ok := strings.CutPrefix(absPath, root)
 	if !ok {
 		if absPath == strings.TrimSuffix(root, "/") {
-			return cwdPath, true
+			return CwdPath, true
 		}
 		return "", false
 	}
 	if rel == "" {
-		return cwdPath, true
+		return CwdPath, true
 	}
 	if !fs.ValidPath(rel) {
 		return "", false
@@ -161,7 +163,7 @@ func (lw *localWatcher) loop(ctx context.Context) {
 
 func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	rel, ok := lw.toRelPath(ev.Name)
-	if !ok || rel == cwdPath {
+	if !ok || rel == CwdPath {
 		return
 	}
 
@@ -171,7 +173,7 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	}
 
 	if ev.Has(fsnotify.Create) {
-		if fi, err := osStat(ev.Name); err == nil && fi.IsDir() {
+		if fi, err := osutil.Stat(ev.Name); err == nil && fi.IsDir() {
 			// New directory: register watches for it and any children that
 			// appeared before the watch was installed.
 			_ = lw.addRecursive(ev.Name)

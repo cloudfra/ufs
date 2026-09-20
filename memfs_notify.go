@@ -36,7 +36,7 @@ func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 	}
 
 	fsys.mu.RLock()
-	if name != cwdPath {
+	if name != CwdPath {
 		node, ok := fsys.nodes[name]
 		if !ok {
 			fsys.mu.RUnlock()
@@ -110,8 +110,8 @@ func (mw *memWatcher) loop(ctx context.Context) {
 
 // matches reports whether path falls under this watcher's watched prefix.
 func (mw *memWatcher) matches(path string) bool {
-	if mw.prefix == cwdPath {
-		return path != cwdPath
+	if mw.prefix == CwdPath {
+		return path != CwdPath
 	}
 	return path == mw.prefix || strings.HasPrefix(path, mw.prefix+"/")
 }

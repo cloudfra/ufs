@@ -31,6 +31,18 @@ var (
 	unixEpochTime = time.Time{}
 )
 
+// NewFileInfo returns a [FileInfo] for the given attributes. The result reports
+// IsDir according to mode.IsDir() and a nil Sys value.
+func NewFileInfo(name string, size int64, mode fs.FileMode, modTime time.Time) FileInfo {
+	return &fsInfo{
+		name:    name,
+		size:    size,
+		mode:    mode,
+		modTime: modTime,
+		isDir:   mode.IsDir(),
+	}
+}
+
 type fsInfo struct {
 	name    string
 	size    int64

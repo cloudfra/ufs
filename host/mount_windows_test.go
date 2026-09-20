@@ -14,7 +14,7 @@
 
 //go:build windows
 
-package ufs
+package host
 
 import (
 	"bytes"
@@ -28,6 +28,10 @@ import (
 	"testing"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/cloudfra/ufs"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func requireProjFS(t *testing.T) {
@@ -37,19 +41,19 @@ func requireProjFS(t *testing.T) {
 	}
 }
 
-// projfsReadOnlyFS wraps a ReadFS so the result does not satisfy the FS
+// projfsReadOnlyFS wraps a ufs.ReadFS so the result does not satisfy the FS
 // interface, forcing the mount to be treated as read-only.
 type projfsReadOnlyFS struct {
-	ReadFS
+	ufs.ReadFS
 }
 
-func testProjFSMount(t *testing.T, fsys ReadFS) string {
+func testProjFSMount(t *testing.T, fsys ufs.ReadFS) string {
 	t.Helper()
 	requireProjFS(t)
 	mountDir := t.TempDir()
-	server, err := HostMount(t.Context(), fsys, mountDir)
+	server, err := Mount(t.Context(), fsys, mountDir)
 	if err != nil {
-		t.Fatalf("HostMount: %v", err)
+		t.Fatalf("Mount: %v", err)
 		return ""
 	}
 	t.Cleanup(func() {
@@ -120,28 +124,28 @@ func TestProjfsHRESULT(t *testing.T) {
 
 // --- Integration tests — lifecycle ---
 
-func TestHostMountClose(t *testing.T) {
+func TestMountClose(t *testing.T) {
 	t.Parallel()
 	requireProjFS(t)
 
 	srcDir := t.TempDir()
-	if err := osWriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := t.TempDir()
-	server, err := HostMount(t.Context(), fsys, mountDir)
+	server, err := Mount(t.Context(), fsys, mountDir)
 	if err != nil {
-		t.Fatalf("HostMount: %v", err)
+		t.Fatalf("Mount: %v", err)
 	}
 
-	if _, err := osStat(filepath.Join(mountDir, "f.txt")); err != nil {
+	if _, err := osutil.Stat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before close: %v", err)
 	}
 
@@ -150,16 +154,16 @@ func TestHostMountClose(t *testing.T) {
 	}
 }
 
-func TestHostMountContextCancel(t *testing.T) {
+func TestMountContextCancel(t *testing.T) {
 	t.Parallel()
 	requireProjFS(t)
 
 	srcDir := t.TempDir()
-	if err := osWriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,13 +171,13 @@ func TestHostMountContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	mountDir := t.TempDir()
-	server, err := HostMount(ctx, fsys, mountDir)
+	server, err := Mount(ctx, fsys, mountDir)
 	if err != nil {
-		t.Fatalf("HostMount: %v", err)
+		t.Fatalf("Mount: %v", err)
 	}
 	defer func() { _ = server.Close() }()
 
-	if _, err := osStat(filepath.Join(mountDir, "f.txt")); err != nil {
+	if _, err := osutil.Stat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before cancel: %v", err)
 	}
 
@@ -182,11 +186,11 @@ func TestHostMountContextCancel(t *testing.T) {
 
 // --- Integration tests — read-only enforcement and special backends ---
 
-func TestHostMountReadOnly(t *testing.T) {
+func TestMountReadOnly(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,9 +201,9 @@ func TestHostMountReadOnly(t *testing.T) {
 	t.Skip("ProjFS cannot intercept new file creation or mkdir — writes materialize to local NTFS")
 }
 
-func TestHostMountReadOnlyMkdir(t *testing.T) {
+func TestMountReadOnlyMkdir(t *testing.T) {
 	t.Parallel()
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,14 +214,14 @@ func TestHostMountReadOnlyMkdir(t *testing.T) {
 	t.Skip("ProjFS cannot intercept new file creation or mkdir — writes materialize to local NTFS")
 }
 
-func TestHostMountReadOnlyRemove(t *testing.T) {
+func TestMountReadOnlyRemove(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
-	if err := osWriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 
-	fsys, err := New(t.Context(), srcDir)
+	fsys, err := ufs.New(t.Context(), srcDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,12 +229,12 @@ func TestHostMountReadOnlyRemove(t *testing.T) {
 
 	mountDir := testProjFSMount(t, fsys)
 
-	err = osRemove(filepath.Join(mountDir, "keep.txt"))
+	err = osutil.Remove(filepath.Join(mountDir, "keep.txt"))
 	if err == nil {
 		t.Fatal("remove on mount succeeded, want access denied")
 	}
 
-	data, err := osReadFile(filepath.Join(mountDir, "keep.txt"))
+	data, err := osutil.ReadFile(filepath.Join(mountDir, "keep.txt"))
 	if err != nil {
 		t.Fatalf("ReadFile after failed remove: %v", err)
 	}
@@ -267,7 +271,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	}
 
 	// Populate a memFS with the test files.
-	fsys, err := New(t.Context(), "memory:")
+	fsys, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +299,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	// Read every file back through the OS mount and verify content.
 	for _, f := range files {
 		osPath := filepath.Join(mountDir, filepath.FromSlash(f.path))
-		got, err := osReadFile(osPath)
+		got, err := osutil.ReadFile(osPath)
 		if err != nil {
 			t.Errorf("ReadFile(%q): %v", f.path, err)
 			continue
@@ -312,7 +316,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	// Verify Stat on each file reports correct size and type.
 	for _, f := range files {
 		osPath := filepath.Join(mountDir, filepath.FromSlash(f.path))
-		fi, err := osStat(osPath)
+		fi, err := osutil.Stat(osPath)
 		if err != nil {
 			t.Errorf("Stat(%q): %v", f.path, err)
 			continue
@@ -326,7 +330,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	}
 
 	// Verify directory listings at the root.
-	rootEntries, err := osReadDir(mountDir)
+	rootEntries, err := osutil.ReadDir(mountDir)
 	if err != nil {
 		t.Fatalf("ReadDir(root): %v", err)
 	}
@@ -341,7 +345,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	}
 
 	// Verify subdirectory listing.
-	subEntries, err := osReadDir(filepath.Join(mountDir, "subdir"))
+	subEntries, err := osutil.ReadDir(filepath.Join(mountDir, "subdir"))
 	if err != nil {
 		t.Fatalf("ReadDir(subdir): %v", err)
 	}
@@ -356,7 +360,7 @@ func TestProjFSMountReadBack(t *testing.T) {
 	}
 
 	// Verify non-existent file returns appropriate error.
-	_, err = osStat(filepath.Join(mountDir, "does-not-exist.txt"))
+	_, err = osutil.Stat(filepath.Join(mountDir, "does-not-exist.txt"))
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(nonexistent) error = %v, want ErrNotExist", err)
 	}

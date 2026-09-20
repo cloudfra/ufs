@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestRsync(t *testing.T) {
@@ -36,11 +38,11 @@ func TestRsync(t *testing.T) {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := fsysTC.createFS(t)
-			if err := Rsync(srcFS, fsys, cwdPath); err != nil {
+			if err := Rsync(srcFS, fsys, CwdPath); err != nil {
 				t.Errorf("rsync failed with error, %s", err)
 			}
 
-			err := ForEachFilename(srcFS, cwdPath, func(name string) error {
+			err := ForEachFilename(srcFS, CwdPath, func(name string) error {
 				srcData, err := fs.ReadFile(srcFS, name)
 				if err != nil {
 					return fmt.Errorf("cannot read srcFS(%q), %w", name, err)
@@ -73,7 +75,7 @@ func TestRsyncAngry(t *testing.T) {
 	destFS := makeAngryFS(angryFSPrefix)
 	defer wantCloseError(t, destFS)()
 
-	if err := Rsync(srcFS, destFS, cwdPath); err == nil {
+	if err := Rsync(srcFS, destFS, CwdPath); err == nil {
 		t.Error("rsync expected to fail got nil error")
 	}
 }
@@ -88,11 +90,11 @@ func TestRsyncNull(t *testing.T) {
 	destFS := mustNullFS(t)
 	defer validateClose(t, destFS)()
 
-	if err := Rsync(srcFS, destFS, cwdPath); err != nil {
+	if err := Rsync(srcFS, destFS, CwdPath); err != nil {
 		t.Errorf("rsync expected to succeed, failed with error: %s", err)
 	}
 
-	entries, err := destFS.ReadDir(cwdPath)
+	entries, err := destFS.ReadDir(CwdPath)
 	if err != nil {
 		t.Error(err)
 	}
@@ -245,7 +247,7 @@ func TestCopyCreateError(t *testing.T) {
 func TestList(t *testing.T) {
 	fsys := setupListFS(t)
 
-	got, err := List(fsys, cwdPath)
+	got, err := List(fsys, CwdPath)
 	if err != nil {
 		t.Fatalf("List() = %v, want nil", err)
 	}
@@ -273,7 +275,7 @@ func TestListSubdir(t *testing.T) {
 func TestListFiles(t *testing.T) {
 	fsys := setupListFS(t)
 
-	got, err := ListFiles(fsys, cwdPath)
+	got, err := ListFiles(fsys, CwdPath)
 	if err != nil {
 		t.Fatalf("ListFiles() = %v, want nil", err)
 	}
@@ -307,7 +309,7 @@ func TestListFilesInterface(t *testing.T) {
 	want := []string{"fast.txt", "path.txt"}
 	fsys := &listFilenamesFS{FS: inner, files: want}
 
-	got, err := ListFiles(fsys, cwdPath)
+	got, err := ListFiles(fsys, CwdPath)
 	if err != nil {
 		t.Fatalf("ListFiles() via interface = %v, want nil", err)
 	}
@@ -322,7 +324,7 @@ func TestForEachFilename(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := ForEachFilename(fsys, cwdPath, func(name string) error {
+	err := ForEachFilename(fsys, CwdPath, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -362,7 +364,7 @@ func TestForEachFilenameInterface(t *testing.T) {
 	fsys := &forEachFilenameFS{FS: inner, files: want}
 
 	var got []string
-	err := ForEachFilename(fsys, cwdPath, func(name string) error {
+	err := ForEachFilename(fsys, CwdPath, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -379,7 +381,7 @@ func TestForEachFilenameCallbackError(t *testing.T) {
 	sentinel := errors.New("stop")
 
 	count := 0
-	err := ForEachFilename(fsys, cwdPath, func(_ string) error {
+	err := ForEachFilename(fsys, CwdPath, func(_ string) error {
 		count++
 		return sentinel
 	})
@@ -397,7 +399,7 @@ func TestForEachFileInfo(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var gotNames []string
-	err := ForEachFileInfo(fsys, cwdPath, func(info fs.FileInfo) error {
+	err := ForEachFileInfo(fsys, CwdPath, func(info fs.FileInfo) error {
 		gotNames = append(gotNames, info.Name())
 		return nil
 	})
@@ -441,7 +443,7 @@ func TestForEachFileInfoInterface(t *testing.T) {
 	fsys := &forEachFileInfoFS{FS: inner, infos: wantInfos}
 
 	var gotNames []string
-	err := ForEachFileInfo(fsys, cwdPath, func(info fs.FileInfo) error {
+	err := ForEachFileInfo(fsys, CwdPath, func(info fs.FileInfo) error {
 		gotNames = append(gotNames, info.Name())
 		return nil
 	})
@@ -459,7 +461,7 @@ func TestForEachFileInfoCallbackError(t *testing.T) {
 	sentinel := errors.New("stop")
 
 	count := 0
-	err := ForEachFileInfo(fsys, cwdPath, func(_ fs.FileInfo) error {
+	err := ForEachFileInfo(fsys, CwdPath, func(_ fs.FileInfo) error {
 		count++
 		return sentinel
 	})
@@ -477,12 +479,12 @@ func setupNestFSWithArchive(t *testing.T) FS {
 	t.Helper()
 	dir := t.TempDir()
 
-	if err := osWriteFile(filepath.Join(dir, "readme.txt"), []byte("hello")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
 
 	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := osCreate(zipPath)
+	zf, err := osutil.Create(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -520,7 +522,7 @@ func TestWalk(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, cwdPath, WalkArgs{}, func(name string) error {
+	err := Walk(fsys, CwdPath, WalkArgs{}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -537,7 +539,7 @@ func TestWalkExcludeDirectoryNil(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, cwdPath, WalkArgs{ExcludeDirectory: nil}, func(name string) error {
+	err := Walk(fsys, CwdPath, WalkArgs{ExcludeDirectory: nil}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -554,7 +556,7 @@ func TestWalkExcludeDirectoryExact(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, cwdPath, WalkArgs{ExcludeDirectory: []string{"dir"}}, func(name string) error {
+	err := Walk(fsys, CwdPath, WalkArgs{ExcludeDirectory: []string{"dir"}}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -571,7 +573,7 @@ func TestWalkExcludeDirectoryGlob(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, cwdPath, WalkArgs{ExcludeDirectory: []string{"d*"}}, func(name string) error {
+	err := Walk(fsys, CwdPath, WalkArgs{ExcludeDirectory: []string{"d*"}}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -588,7 +590,7 @@ func TestWalkIncludeMountedArchiveDefault(t *testing.T) {
 	nfs := setupNestFSWithArchive(t)
 
 	var got []string
-	err := Walk(nfs, cwdPath, WalkArgs{}, func(name string) error {
+	err := Walk(nfs, CwdPath, WalkArgs{}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -606,7 +608,7 @@ func TestWalkIncludeMountedArchive(t *testing.T) {
 	nfs := setupNestFSWithArchive(t)
 
 	var got []string
-	err := Walk(nfs, cwdPath, WalkArgs{IncludeMountedArchive: true}, func(name string) error {
+	err := Walk(nfs, CwdPath, WalkArgs{IncludeMountedArchive: true}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -625,7 +627,7 @@ func TestWalkCallbackError(t *testing.T) {
 	sentinel := errors.New("stop")
 
 	count := 0
-	err := Walk(fsys, cwdPath, WalkArgs{}, func(_ string) error {
+	err := Walk(fsys, CwdPath, WalkArgs{}, func(_ string) error {
 		count++
 		return sentinel
 	})
@@ -642,7 +644,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create data.zip (virtual .d should be detected).
-	zf, err := osCreate(filepath.Join(dir, "data.zip"))
+	zf, err := osutil.Create(filepath.Join(dir, "data.zip"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +656,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Create conf.d as a real directory (base name "conf" is not an archive).
-	if err := osMkdirAll(filepath.Join(dir, "conf.d")); err != nil {
+	if err := osutil.MkdirAll(filepath.Join(dir, "conf.d")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -690,15 +692,15 @@ func TestIsMountedArchiveDir(t *testing.T) {
 func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := osMkdirAll(filepath.Join(dir, "subdir")); err != nil {
+	if err := osutil.MkdirAll(filepath.Join(dir, "subdir")); err != nil {
 		t.Fatal(err)
 	}
-	if err := osWriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested")); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested")); err != nil {
 		t.Fatal(err)
 	}
 
 	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := osCreate(zipPath)
+	zf, err := osutil.Create(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +731,7 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 	})
 
 	var got []string
-	err = Walk(nfs, cwdPath, WalkArgs{}, func(name string) error {
+	err = Walk(nfs, CwdPath, WalkArgs{}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -840,7 +842,7 @@ func TestRemoveAll(t *testing.T) {
 	if err := RemoveAll(fsys, "dir"); err != nil {
 		t.Fatalf("RemoveAll('dir') = %v, want nil", err)
 	}
-	files, err := ListFiles(fsys, cwdPath)
+	files, err := ListFiles(fsys, CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -862,10 +864,10 @@ func TestRemoveAllNotExist(t *testing.T) {
 func TestRemoveAllRoot(t *testing.T) {
 	fsys := setupRemoveFS(t)
 
-	if err := RemoveAll(fsys, cwdPath); err != nil {
+	if err := RemoveAll(fsys, CwdPath); err != nil {
 		t.Fatalf("RemoveAll('.') = %v, want nil", err)
 	}
-	files, err := ListFiles(fsys, cwdPath)
+	files, err := ListFiles(fsys, CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}

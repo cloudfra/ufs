@@ -53,7 +53,7 @@ func CreateURI(baseName string, nested map[string]string) (string, error)
 
 ## Host Mount
 
-`ufs.HostMount` exposes any virtual file system as a regular directory on
+`host.Mount` (package `github.com/cloudfra/ufs/host`) exposes any virtual file system as a regular directory on
 the host OS. On Linux it uses FUSE (read-write); on Windows it uses
 [ProjFS](https://learn.microsoft.com/en-us/windows/win32/projfs/projected-file-system)
 (read-only). See [docs/ufsmount.md](docs/ufsmount.md) for the `ufsmount`

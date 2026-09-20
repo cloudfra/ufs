@@ -143,11 +143,11 @@ func TestFSConventions(t *testing.T) {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := fsysTC.createFS(t)
-			if err := Rsync(srcFS, fsys, cwdPath); err != nil {
+			if err := Rsync(srcFS, fsys, CwdPath); err != nil {
 				t.Errorf("rsync failed with error, %s", err)
 			}
 
-			allFilenames, err := List(srcFS, cwdPath)
+			allFilenames, err := List(srcFS, CwdPath)
 			if err != nil {
 				t.Fatal(err)
 			}

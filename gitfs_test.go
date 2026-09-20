@@ -25,6 +25,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestIsGitFSUri(t *testing.T) {
@@ -97,13 +99,13 @@ func TestNewGitFSInvalid(t *testing.T) {
 }
 
 func TestNewGitFSLocalRepo(t *testing.T) {
-	srcDir, err := osMkdirTemp("", "gitfssrc*.git")
+	srcDir, err := osutil.MkdirTemp("", "gitfssrc*.git")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := osRemoveAll(srcDir); err != nil {
-			t.Errorf("osRemoveAll(%q) = %v", srcDir, err)
+		if err := osutil.RemoveAll(srcDir); err != nil {
+			t.Errorf("osutil.RemoveAll(%q) = %v", srcDir, err)
 		}
 	}()
 
@@ -136,13 +138,13 @@ func TestNewGitFSLocalRepo(t *testing.T) {
 }
 
 func TestNewGitFSNoGitDir(t *testing.T) {
-	srcDir, err := osMkdirTemp("", "gitfssrc*.git")
+	srcDir, err := osutil.MkdirTemp("", "gitfssrc*.git")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := osRemoveAll(srcDir); err != nil {
-			t.Errorf("osRemoveAll(%q) = %v", srcDir, err)
+		if err := osutil.RemoveAll(srcDir); err != nil {
+			t.Errorf("osutil.RemoveAll(%q) = %v", srcDir, err)
 		}
 	}()
 
@@ -172,7 +174,7 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 		return err
 	}
 	for name, content := range files {
-		if err := osWriteFile(filepath.Join(dir, name), []byte(content)); err != nil {
+		if err := osutil.WriteFile(filepath.Join(dir, name), []byte(content)); err != nil {
 			return err
 		}
 	}
@@ -180,7 +182,7 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 	if err != nil {
 		return err
 	}
-	if err := w.AddGlob(cwdPath); err != nil {
+	if err := w.AddGlob(CwdPath); err != nil {
 		return err
 	}
 	_, err = w.Commit("init", &git.CommitOptions{

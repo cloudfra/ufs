@@ -57,7 +57,7 @@ func (fsys *gcsFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 	}
 
 	var watchPrefix string
-	if name == cwdPath {
+	if name == CwdPath {
 		watchPrefix = fsys.baseDir
 	} else {
 		watchPrefix = path.Join(fsys.baseDir, name)

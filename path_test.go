@@ -42,12 +42,12 @@ var pathTestCases = []struct {
 		wantIsMountableArchivePath: false,
 	},
 	{
-		input:                      cwdPath,
-		wantTrimSlash:              cwdPath,
-		wantSplitPath:              []string{cwdPath},
+		input:                      CwdPath,
+		wantTrimSlash:              CwdPath,
+		wantSplitPath:              []string{CwdPath},
 		wantIsCwd:                  true,
 		wantIsDirName:              true,
-		wantCoerceUnix:             cwdPath,
+		wantCoerceUnix:             CwdPath,
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -225,25 +225,25 @@ func TestRemovePathPrefix(t *testing.T) {
 		{
 			path:       "",
 			removePath: "",
-			want:       cwdPath,
+			want:       CwdPath,
 			wantOk:     true,
 		},
 		{
-			path:       cwdPath,
+			path:       CwdPath,
 			removePath: "",
-			want:       cwdPath,
+			want:       CwdPath,
 			wantOk:     true,
 		},
 		{
 			path:       "",
-			removePath: cwdPath,
-			want:       cwdPath,
+			removePath: CwdPath,
+			want:       CwdPath,
 			wantOk:     true,
 		},
 		{
-			path:       cwdPath,
+			path:       CwdPath,
 			removePath: "abc/def",
-			want:       cwdPath,
+			want:       CwdPath,
 			wantOk:     false,
 		},
 		{
@@ -267,7 +267,7 @@ func TestRemovePathPrefix(t *testing.T) {
 		{
 			path:       "abc/def",
 			removePath: "abc/def",
-			want:       cwdPath,
+			want:       CwdPath,
 			wantOk:     true,
 		},
 		{
@@ -371,7 +371,7 @@ func TestValidPath(t *testing.T) {
 		input   string
 		wantErr bool
 	}{
-		{input: cwdPath, wantErr: false},
+		{input: CwdPath, wantErr: false},
 		{input: "./.", wantErr: true},
 		{input: "a\\b\\.\\..\\c", wantErr: false},
 		{input: "a/b/./../c", wantErr: true},

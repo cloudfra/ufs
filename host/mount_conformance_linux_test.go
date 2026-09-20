@@ -12,13 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build testinroot
+//go:build linux
 
-package ufs
+package host
 
-import "testing"
+import (
+	"testing"
 
-func fuseSkipOrFatal(t *testing.T, msg string) {
-	t.Helper()
-	t.Fatalf("FUSE test requires root (testinroot tag is set): %s", msg)
+	"github.com/cloudfra/ufs"
+)
+
+func init() {
+	mountBackends = append(mountBackends, mountBackend{
+		name: "fuse",
+		mount: func(t *testing.T, fsys ufs.ReadFS) mountSetup {
+			t.Helper()
+			return mountSetup{mountDir: testMount(t, fsys)}
+		},
+		skip: requireFUSE,
+	})
 }

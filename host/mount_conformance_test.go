@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package host
 
 import (
 	"bytes"
@@ -21,6 +21,10 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
+
+	"github.com/cloudfra/ufs"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 // mountSetup holds the result of mounting a file system for testing.
@@ -31,7 +35,7 @@ type mountSetup struct {
 // mountBackend describes a host-mount backend for conformance testing.
 type mountBackend struct {
 	name  string
-	mount func(t *testing.T, fsys ReadFS) mountSetup
+	mount func(t *testing.T, fsys ufs.ReadFS) mountSetup
 	skip  func(t *testing.T)
 }
 
@@ -58,11 +62,11 @@ func TestMountConformanceReadFile(t *testing.T) {
 	t.Parallel()
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
-		if err := osWriteFile(filepath.Join(srcDir, "hello.txt"), []byte("world")); err != nil {
+		if err := osutil.WriteFile(filepath.Join(srcDir, "hello.txt"), []byte("world")); err != nil {
 			t.Fatal(err)
 		}
 
-		fsys, err := New(t.Context(), srcDir)
+		fsys, err := ufs.New(t.Context(), srcDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +74,7 @@ func TestMountConformanceReadFile(t *testing.T) {
 
 		m := backend.mount(t, fsys)
 
-		data, err := osReadFile(filepath.Join(m.mountDir, "hello.txt"))
+		data, err := osutil.ReadFile(filepath.Join(m.mountDir, "hello.txt"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -85,14 +89,14 @@ func TestMountConformanceStat(t *testing.T) {
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
 		content := []byte("test content")
-		if err := osWriteFile(filepath.Join(srcDir, "file.txt"), content); err != nil {
+		if err := osutil.WriteFile(filepath.Join(srcDir, "file.txt"), content); err != nil {
 			t.Fatal(err)
 		}
-		if err := osMkdirAll(filepath.Join(srcDir, "subdir")); err != nil {
+		if err := osutil.MkdirAll(filepath.Join(srcDir, "subdir")); err != nil {
 			t.Fatal(err)
 		}
 
-		fsys, err := New(t.Context(), srcDir)
+		fsys, err := ufs.New(t.Context(), srcDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +104,7 @@ func TestMountConformanceStat(t *testing.T) {
 
 		m := backend.mount(t, fsys)
 
-		fi, err := osStat(filepath.Join(m.mountDir, "file.txt"))
+		fi, err := osutil.Stat(filepath.Join(m.mountDir, "file.txt"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,7 +115,7 @@ func TestMountConformanceStat(t *testing.T) {
 			t.Errorf("Size = %d, want %d", fi.Size(), len(content))
 		}
 
-		di, err := osStat(filepath.Join(m.mountDir, "subdir"))
+		di, err := osutil.Stat(filepath.Join(m.mountDir, "subdir"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -126,15 +130,15 @@ func TestMountConformanceReadDir(t *testing.T) {
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
 		for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
-			if err := osWriteFile(filepath.Join(srcDir, name), []byte("data")); err != nil {
+			if err := osutil.WriteFile(filepath.Join(srcDir, name), []byte("data")); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if err := osMkdirAll(filepath.Join(srcDir, "sub")); err != nil {
+		if err := osutil.MkdirAll(filepath.Join(srcDir, "sub")); err != nil {
 			t.Fatal(err)
 		}
 
-		fsys, err := New(t.Context(), srcDir)
+		fsys, err := ufs.New(t.Context(), srcDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +146,7 @@ func TestMountConformanceReadDir(t *testing.T) {
 
 		m := backend.mount(t, fsys)
 
-		entries, err := osReadDir(m.mountDir)
+		entries, err := osutil.ReadDir(m.mountDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +172,7 @@ func TestMountConformanceStatNotExist(t *testing.T) {
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
 
-		fsys, err := New(t.Context(), srcDir)
+		fsys, err := ufs.New(t.Context(), srcDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +180,7 @@ func TestMountConformanceStatNotExist(t *testing.T) {
 
 		m := backend.mount(t, fsys)
 
-		_, err = osStat(filepath.Join(m.mountDir, "nonexistent.txt"))
+		_, err = osutil.Stat(filepath.Join(m.mountDir, "nonexistent.txt"))
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("Stat(nonexistent) = %v, want ErrNotExist", err)
 		}
@@ -188,14 +192,14 @@ func TestMountConformanceNestedRead(t *testing.T) {
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
 		srcDir := t.TempDir()
 		nested := filepath.Join(srcDir, "a", "b")
-		if err := osMkdirAll(nested); err != nil {
+		if err := osutil.MkdirAll(nested); err != nil {
 			t.Fatal(err)
 		}
-		if err := osWriteFile(filepath.Join(nested, "deep.txt"), []byte("deep")); err != nil {
+		if err := osutil.WriteFile(filepath.Join(nested, "deep.txt"), []byte("deep")); err != nil {
 			t.Fatal(err)
 		}
 
-		fsys, err := New(t.Context(), srcDir)
+		fsys, err := ufs.New(t.Context(), srcDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +207,7 @@ func TestMountConformanceNestedRead(t *testing.T) {
 
 		m := backend.mount(t, fsys)
 
-		data, err := osReadFile(filepath.Join(m.mountDir, "a", "b", "deep.txt"))
+		data, err := osutil.ReadFile(filepath.Join(m.mountDir, "a", "b", "deep.txt"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,11 +226,11 @@ func TestMountConformanceLargeFile(t *testing.T) {
 		for i := range content {
 			content[i] = byte(i % 251)
 		}
-		if err := osWriteFile(filepath.Join(srcDir, "large.bin"), content); err != nil {
+		if err := osutil.WriteFile(filepath.Join(srcDir, "large.bin"), content); err != nil {
 			t.Fatal(err)
 		}
 
-		fsys, err := New(t.Context(), srcDir)
+		fsys, err := ufs.New(t.Context(), srcDir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -234,7 +238,7 @@ func TestMountConformanceLargeFile(t *testing.T) {
 
 		m := backend.mount(t, fsys)
 
-		data, err := osReadFile(filepath.Join(m.mountDir, "large.bin"))
+		data, err := osutil.ReadFile(filepath.Join(m.mountDir, "large.bin"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,7 +256,7 @@ func TestMountConformanceLargeFile(t *testing.T) {
 func TestMountConformanceNullFS(t *testing.T) {
 	t.Parallel()
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
-		fsys, err := New(t.Context(), "null:")
+		fsys, err := ufs.New(t.Context(), "null:")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -260,7 +264,7 @@ func TestMountConformanceNullFS(t *testing.T) {
 
 		m := backend.mount(t, fsys)
 
-		entries, err := osReadDir(m.mountDir)
+		entries, err := osutil.ReadDir(m.mountDir)
 		if err != nil {
 			t.Fatalf("ReadDir: %v", err)
 		}
@@ -273,13 +277,13 @@ func TestMountConformanceNullFS(t *testing.T) {
 func TestMountConformanceNestedOverlay(t *testing.T) {
 	t.Parallel()
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
-		uri, err := CreateURI("memory://", map[string]string{
+		uri, err := ufs.CreateURI("memory://", map[string]string{
 			"cache": "null:",
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		fsys, err := New(t.Context(), uri)
+		fsys, err := ufs.New(t.Context(), uri)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -288,7 +292,7 @@ func TestMountConformanceNestedOverlay(t *testing.T) {
 		m := backend.mount(t, fsys)
 
 		cacheDir := filepath.Join(m.mountDir, "cache")
-		fi, err := osStat(cacheDir)
+		fi, err := osutil.Stat(cacheDir)
 		if err != nil {
 			t.Fatalf("Stat cache: %v", err)
 		}
@@ -301,8 +305,8 @@ func TestMountConformanceNestedOverlay(t *testing.T) {
 func TestMountConformanceRsyncArchive(t *testing.T) {
 	t.Parallel()
 	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
-		archivePath := filepath.Join("testing", "testassets", "archives", "testassets.tar.gz")
-		archiveFS, err := New(t.Context(), "archive://"+archivePath)
+		archivePath := filepath.Join("..", "testing", "testassets", "archives", "testassets.tar.gz")
+		archiveFS, err := ufs.New(t.Context(), "archive://"+archivePath)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -310,13 +314,13 @@ func TestMountConformanceRsyncArchive(t *testing.T) {
 
 		m := backend.mount(t, archiveFS)
 
-		memFS, err := New(t.Context(), "memory:")
+		memFS, err := ufs.New(t.Context(), "memory:")
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer validateClose(t, memFS)()
 
-		if err := Rsync(osDirFS(m.mountDir), memFS, "."); err != nil {
+		if err := ufs.Rsync(osutil.DirFS(m.mountDir), memFS, "."); err != nil {
 			t.Fatalf("Rsync: %v", err)
 		}
 

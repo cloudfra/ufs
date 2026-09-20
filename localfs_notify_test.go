@@ -171,41 +171,89 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	})
 }
 
+// TestWatchNewDirRecursion verifies that directories created after the watch
+// starts are themselves watched. The hook fires only after the watcher has
+// installed the watch on the reported directory, so each step below waits for
+// the event that guarantees the next write cannot race the watch installation.
 func TestWatchNewDirRecursion(t *testing.T) {
 	skipIfUnsupported(t)
-	dir := t.TempDir()
 
-	fsys, err := makeLocalFS(dir)
-	if err != nil {
-		t.Fatal(err)
+	// startWatch watches a fresh directory and returns it with its collector.
+	startWatch := func(t *testing.T) (string, *eventCollector) {
+		t.Helper()
+		dir := t.TempDir()
+		fsys, err := makeLocalFS(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(validateClose(t, fsys))
+
+		ec := newEventCollector()
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+
+		closer, err := fsys.Watch(ctx, ".", ec.hook)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(validateClose(t, closer))
+		return dir, ec
 	}
-	defer validateClose(t, fsys)()
 
-	ec := newEventCollector()
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+	// Create each level separately and wait for its event before descending.
+	// Creating both levels at once (MkdirAll) lets the watcher walk "new"
+	// before "new/sub" exists; a file written into "new/sub" as soon as "new"
+	// is reported can then land before the watch on "new/sub" is installed and
+	// is never reported.
+	t.Run("created incrementally", func(t *testing.T) {
+		dir, ec := startWatch(t)
 
-	closer, err := fsys.Watch(ctx, ".", ec.hook)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer validateClose(t, closer)()
+		if err := osutil.Mkdir(filepath.Join(dir, "new")); err != nil {
+			t.Fatal(err)
+		}
+		ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
+			return ev.op == NotifyCreate && ev.path == "new"
+		})
 
-	if err := osutil.MkdirAll(filepath.Join(dir, "new", "sub")); err != nil {
-		t.Fatal(err)
-	}
+		if err := osutil.Mkdir(filepath.Join(dir, "new", "sub")); err != nil {
+			t.Fatal(err)
+		}
+		ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
+			return ev.op == NotifyCreate && ev.path == "new/sub"
+		})
 
-	// Wait for the directory create event before writing a file inside it.
-	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
-		return ev.op == NotifyCreate && ev.path == "new"
+		if err := osutil.WriteFile(filepath.Join(dir, "new", "sub", "file.txt"), []byte("x")); err != nil {
+			t.Fatal(err)
+		}
+		ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
+			return ev.op == NotifyCreate && ev.path == "new/sub/file.txt"
+		})
 	})
 
-	if err := osutil.WriteFile(filepath.Join(dir, "new", "sub", "file.txt"), []byte("x")); err != nil {
-		t.Fatal(err)
-	}
+	// A tree that already exists when it appears in the watched directory must
+	// be walked so its nested directories are watched too. Building it outside
+	// the watched directory and moving it in makes the walk deterministic: the
+	// whole tree exists before the watcher sees the "new" event.
+	t.Run("moved in with existing children", func(t *testing.T) {
+		dir, ec := startWatch(t)
 
-	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
-		return ev.op == NotifyCreate && ev.path == "new/sub/file.txt"
+		staging := t.TempDir()
+		if err := osutil.MkdirAll(filepath.Join(staging, "new", "sub")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(filepath.Join(staging, "new"), filepath.Join(dir, "new")); err != nil {
+			t.Fatal(err)
+		}
+		ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
+			return ev.op == NotifyCreate && ev.path == "new"
+		})
+
+		if err := osutil.WriteFile(filepath.Join(dir, "new", "sub", "file.txt"), []byte("x")); err != nil {
+			t.Fatal(err)
+		}
+		ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
+			return ev.op == NotifyCreate && ev.path == "new/sub/file.txt"
+		})
 	})
 }
 

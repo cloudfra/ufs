@@ -88,7 +88,7 @@ func BenchmarkJoin(b *testing.B) {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for range b.N {
-				_ = joinErrors(bc.errs...)
+				joinErrors(bc.errs...) //nolint:errcheck,gosec // The response is not important; this benchmark tracks allocations.
 			}
 		})
 	}

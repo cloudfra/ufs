@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -163,8 +164,10 @@ func Walk(fsys fs.FS, dir string, args WalkArgs, f func(string) error) error {
 				return fs.SkipDir
 			}
 			for _, pattern := range args.ExcludeDirectory {
-				if matched, _ := path.Match(pattern, d.Name()); matched {
+				if matched, err := path.Match(pattern, d.Name()); matched {
 					return fs.SkipDir
+				} else if err != nil {
+					return fmt.Errorf("error compiling the regex %q for matching, %w", pattern, err)
 				}
 			}
 			return nil

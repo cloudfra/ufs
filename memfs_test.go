@@ -531,7 +531,10 @@ func TestMemFSReadDir(t *testing.T) {
 		t.Fatalf("failed to create directory: %v", err)
 	}
 	for _, name := range []string{"a.txt", "b.txt"} {
-		f, _ := fsys.Create("docs/" + name)
+		f, err := fsys.Create("docs/" + name)
+		if err != nil {
+			t.Errorf("fsys.Create(docs/%s) returned an error, %s", name, err)
+		}
 		if err := f.Close(); err != nil {
 			t.Fatalf("failed to close file: %v", err)
 		}
@@ -972,7 +975,10 @@ func TestMemFSRemoveAll(t *testing.T) {
 }
 
 func TestMemFSRemoveClosedFS(t *testing.T) {
-	fsys, _ := newMemFS(t.Context(), "memory://test")
+	fsys, err := newMemFS(t.Context(), "memory://test")
+	if err != nil {
+		t.Fatalf("newMemFS returned an error, %s", err)
+	}
 	if err := fsys.Close(); err != nil {
 		t.Fatal(err)
 	}

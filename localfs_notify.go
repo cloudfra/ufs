@@ -18,6 +18,7 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -69,7 +70,10 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 	}
 
 	if err := lw.addRecursive(watchRoot); err != nil {
-		_ = w.Close()
+		slog.WarnContext(ctx, "got error while recursively adding files to local watcher", "error", err, "root", watchRoot)
+		if err := w.Close(); err != nil {
+			slog.WarnContext(ctx, "error while closing fsnotify watcher in response to recursive add failure", "error", err, "root", watchRoot)
+		}
 		cancel()
 		return nil, err
 	}
@@ -176,7 +180,9 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 		if fi, err := osutil.Stat(ev.Name); err == nil && fi.IsDir() {
 			// New directory: register watches for it and any children that
 			// appeared before the watch was installed.
-			_ = lw.addRecursive(ev.Name)
+			if err := lw.addRecursive(ev.Name); err != nil {
+				slog.Warn("got error while recursively adding files to local watcher", "error", err, "event.name", ev.Name, "event.op", ev.Op)
+			}
 		}
 	}
 
@@ -187,7 +193,9 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 		// the event loop. Use a goroutine with short timeout as a safety net.
 		done := make(chan struct{})
 		go func() {
-			_ = lw.watcher.Remove(ev.Name)
+			if err := lw.watcher.Remove(ev.Name); err != nil {
+				slog.Warn("error while removing file from fsnotify watcher", "error", err, "event.name", ev.Name, "event.op", ev.Op)
+			}
 			close(done)
 		}()
 		select {

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"path"
 	"strings"
 	"sync"
@@ -109,10 +110,13 @@ func (gw *gcsWatcher) Close() error {
 func (gw *gcsWatcher) loop(ctx context.Context, sub *pubsub.Subscriber) {
 	defer gw.wg.Done()
 	// Receive blocks until ctx is canceled.
-	_ = sub.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
+	err := sub.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
 		defer msg.Ack()
 		gw.handleMessage(msg)
 	})
+	if err != nil {
+		slog.DebugContext(ctx, "pubsub returned an error while monitoring changes, expected if closing the watcher", "error", err, "id", sub.ID())
+	}
 }
 
 func (gw *gcsWatcher) handleMessage(msg *pubsub.Message) {

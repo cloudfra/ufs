@@ -360,7 +360,7 @@ func TestBufFileSeek(t *testing.T) {
 // TestBufFileConcurrentAccess exercises Read, ReadAt, Seek and Stat from many
 // goroutines at once. It exists to be run with the race detector (make test
 // runs go test -race): bufFile's mu must serialize all of these.
-func TestBufFileConcurrentAccess(_ *testing.T) {
+func TestBufFileConcurrentAccess(t *testing.T) {
 	f := newTestBufFile("concurrent.txt", "the quick brown fox jumps over the lazy dog")
 
 	var wg sync.WaitGroup
@@ -369,20 +369,35 @@ func TestBufFileConcurrentAccess(_ *testing.T) {
 		go func() {
 			defer wg.Done()
 			buf := make([]byte, 4)
-			_, _ = f.Read(buf)
+			if _, err := f.Read(buf); err != nil && !errors.Is(err, io.EOF) {
+				t.Errorf("got error on file read, %s", err)
+			}
 		}()
 		go func() {
 			defer wg.Done()
 			buf := make([]byte, 4)
-			_, _ = f.ReadAt(buf, 2)
+			if bytesRead, err := f.ReadAt(buf, 2); err != nil {
+				t.Errorf("got error on file read, %s", err)
+			} else if bytesRead != len(buf) {
+				t.Errorf("read %d bytes, want %d", bytesRead, len(buf))
+			}
 		}()
 		go func() {
 			defer wg.Done()
-			_, _ = f.Seek(1, io.SeekCurrent)
+			if newOffset, err := f.Seek(1, io.SeekCurrent); err != nil {
+				t.Errorf("got error on file read, %s", err)
+			} else if newOffset <= 0 {
+				t.Errorf("offset mismatch, got %d, want > 0", newOffset)
+			}
 		}()
 		go func() {
 			defer wg.Done()
-			_, _ = f.Stat()
+
+			if stat, err := f.Stat(); err != nil {
+				t.Errorf("got error on file read, %s", err)
+			} else if stat == nil {
+				t.Error("stat is nil")
+			}
 		}()
 	}
 	wg.Wait()

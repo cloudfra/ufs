@@ -173,13 +173,12 @@ func (fsys *memFS) getDeviceInfo() map[string]deviceInfo {
 	return newDeviceInfoMap(info)
 }
 
-func (fsys *memFS) URI() *url.URL {
-	u, _ := url.Parse(fsys.name)
-	return u
+func (fsys *memFS) URI() (*url.URL, error) {
+	return url.Parse(fsys.name)
 }
 
 func (fsys *memFS) String() string {
-	return fmt.Sprintf("memFS(%s)", fsys.URI())
+	return fmt.Sprintf("memFS(%s)", uriOrDefault(fsys, fsys.name))
 }
 
 func (fsys *memFS) isClosed() bool {

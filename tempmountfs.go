@@ -34,13 +34,12 @@ func (fsys *tempMountFS) getDeviceInfo() map[string]deviceInfo {
 	return fsys.lfs.getDeviceInfo()
 }
 
-func (fsys *tempMountFS) URI() *url.URL {
-	u, _ := url.Parse(fsys.uri)
-	return u
+func (fsys *tempMountFS) URI() (*url.URL, error) {
+	return url.Parse(fsys.uri)
 }
 
 func (fsys *tempMountFS) String() string {
-	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", fsys.URI(), coerceUnixPath(fsys.name))
+	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", uriOrDefault(fsys, fsys.name), coerceUnixPath(fsys.name))
 }
 
 func (fsys *tempMountFS) getAbsPath(name string) (string, error) {

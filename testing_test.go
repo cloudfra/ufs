@@ -406,6 +406,29 @@ func TestFS(t *testing.T) {
 	}
 }
 
+func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range append(readOnlyFSTestCaseList, permDeniedFSTestCaseList...) {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer validateClose(t, fsys)()
+
+			u, err := fsys.URI()
+			if err != nil {
+				t.Fatalf("URI() returned error: %v", err)
+			}
+			if u == nil {
+				t.Fatal("URI() = nil, want a URL")
+			}
+			if got := u.Query().Get("ro"); got != "true" {
+				t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
+			}
+		})
+	}
+}
+
 func must(tb testing.TB, err error) {
 	tb.Helper()
 	if err != nil {

@@ -130,16 +130,19 @@ func (fsys *nullFS) getDeviceInfo() map[string]deviceInfo {
 	return nullDeviceInfoMap
 }
 
-func (fsys *nullFS) URI() *url.URL {
-	u, _ := url.Parse(fsys.name)
+func (fsys *nullFS) URI() (*url.URL, error) {
+	u, err := url.Parse(fsys.name)
+	if err != nil {
+		return nil, fmt.Errorf("URI %q is not valid, %w", fsys.name, err)
+	}
 	v := u.Query()
 	v.Set("ro", "true")
 	u.RawQuery = v.Encode()
-	return u
+	return u, nil
 }
 
 func (fsys *nullFS) String() string {
-	return fmt.Sprintf("nullFS(%s)", fsys.URI())
+	return fmt.Sprintf("nullFS(%s)", uriOrDefault(fsys, fsys.name))
 }
 
 func (fsys *nullFS) Open(name string) (fs.File, error) {

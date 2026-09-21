@@ -47,7 +47,9 @@ func TestNewEmbedFSURI(t *testing.T) {
 		{"data/files", "embed:///data/files?ro=true"},
 	} {
 		fsys := NewEmbedFS(tc.name, ufsTesting.TestAssetsFS())
-		if got := fsys.URI().String(); got != tc.wantURI {
+		if u, err := fsys.URI(); err != nil {
+			t.Errorf("NewEmbedFS(%q).URI() returned error, %s", tc.name, err)
+		} else if got := u.String(); got != tc.wantURI {
 			t.Errorf("NewEmbedFS(%q).URI() = %q, want %q", tc.name, got, tc.wantURI)
 		}
 		if got := fsys.String(); !strings.Contains(got, "embedFS(") {

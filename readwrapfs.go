@@ -31,8 +31,11 @@ func (fsys *readWrapFS) getDeviceInfo() map[string]deviceInfo {
 	return getDeviceInfoOrDefault(fsys.fsys)
 }
 
-func (fsys *readWrapFS) URI() *url.URL {
-	return nil
+func (fsys *readWrapFS) URI() (*url.URL, error) {
+	if ug, ok := fsys.fsys.(URIGet); ok {
+		return ug.URI()
+	}
+	return nil, nil
 }
 
 func (fsys *readWrapFS) String() string {

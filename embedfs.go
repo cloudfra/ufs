@@ -34,12 +34,12 @@ func (fsys *embedFS) getDeviceInfo() map[string]deviceInfo {
 	return newDeviceInfoMap(newDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
 }
 
-func (fsys *embedFS) URI() *url.URL {
-	return &url.URL{Scheme: "embed", Path: "/" + fsys.name, RawQuery: "ro=true"}
+func (fsys *embedFS) URI() (*url.URL, error) {
+	return &url.URL{Scheme: "embed", Path: "/" + fsys.name, RawQuery: "ro=true"}, nil
 }
 
 func (fsys *embedFS) String() string {
-	return fmt.Sprintf("embedFS(%s)", fsys.URI())
+	return fmt.Sprintf("embedFS(%s)", uriOrDefault(fsys, fsys.name))
 }
 
 func (fsys *embedFS) Open(name string) (fs.File, error) {

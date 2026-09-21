@@ -119,6 +119,46 @@ type RenameFileFS interface {
 	Rename(oldPath, newPath string) error
 }
 
+// URIGet describes file systems that can report the canonical identifier used
+// to reconstruct them. The returned [*url.URL] is typically passed to [New] or
+// stored as a durable configuration value. It must be safe to round-trip:
+// calling [New] with u.String() should recreate an equivalent file system when
+// the backend supports a stable URI representation.
+//
+// Implementations may return nil if the file system is synthetic or has no
+// meaningful external identity (for example, [FromFS]). Callers should treat a
+// nil URL or a non-nil error as "no URI" and fall back to a default value when
+// needed. Wrappers such as nestFS embed mount information in the query string so
+// the full composition is preserved.
+//
+// Read-only backends commonly include the query parameter ro=true to indicate
+// the underlying scheme is read-only.
+type URIGet interface {
+	// URI returns the canonical identifier for this file system as a [*url.URL].
+	//
+	// The result is intended to be stable and round-trippable: if the backend has
+	// a meaningful external identity, calling [New] with u.String() should
+	// reconstruct an equivalent file system with the same semantics and mount
+	// composition. This allows a file system to be serialized, logged, cached, or
+	// re-opened without losing configuration details.
+	//
+	// A nil value indicates the backend has no meaningful URI. This is common for
+	// synthetic adapters or wrappers that exist only in memory and cannot be
+	// reconstructed from a single URL (for example, [FromFS]). In that case,
+	// callers should treat the result as absent and fall back to a default value or
+	// another source of configuration.
+	//
+	// A non-nil error means the backend could not construct a URI at this time.
+	// Errors are distinct from a nil URL: a nil URL is an intentional "no
+	// identifier" state, while an error indicates that the implementation failed to
+	// determine or format the identifier.
+	//
+	// Wrappers such as nestFS include mount information in the query string so the
+	// full virtual composition is preserved. Read-only backends commonly include a
+	// ro=true query parameter to indicate that writes are not supported.
+	URI() (*url.URL, error)
+}
+
 // ReadFS is a read-only file system. In addition to the standard [fs.FS]
 // interface it requires [io.Closer] for lifecycle management, the four
 // extended read interfaces from the standard library, and [fmt.Stringer] so
@@ -138,16 +178,7 @@ type ReadFS interface {
 
 	// TODO: Implement ExternalPathGet
 
-	// URI returns the [*url.URL] that identifies this file system. The
-	// returned URL can be passed (via its String method) to [New] to
-	// reconstruct an equivalent file system. Wrappers such as nestFS merge
-	// mount information into the query string so the full composition is
-	// captured.
-	//
-	// Read-only backends include the query parameter ro=true.
-	//
-	// Implementations that have no meaningful URI (e.g. [FromFS]) return nil.
-	URI() *url.URL
+	URIGet
 
 	// String returns a human-readable description of the file system that
 	// shows how it is composed — wrapper layers, mount points, and the

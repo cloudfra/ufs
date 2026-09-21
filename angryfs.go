@@ -48,16 +48,19 @@ func (fsys *angryFS) getDeviceInfo() map[string]deviceInfo {
 	return angryDeviceInfoMap
 }
 
-func (fsys *angryFS) URI() *url.URL {
-	u, _ := url.Parse(fsys.name)
+func (fsys *angryFS) URI() (*url.URL, error) {
+	u, err := url.Parse(fsys.name)
+	if err != nil {
+		return nil, fmt.Errorf("URI %q is not valid, %w", fsys.name, err)
+	}
 	v := u.Query()
 	v.Set("ro", "true")
 	u.RawQuery = v.Encode()
-	return u
+	return u, nil
 }
 
 func (fsys *angryFS) String() string {
-	return fmt.Sprintf("angryFS(%s)", fsys.URI())
+	return fmt.Sprintf("angryFS(%s)", uriOrDefault(fsys, fsys.name))
 }
 
 func (fsys *angryFS) Open(name string) (fs.File, error) {

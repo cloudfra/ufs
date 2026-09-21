@@ -609,8 +609,14 @@ func TestDownloadFilePathContainment(t *testing.T) {
 				t.Logf("correctly rejected: %v", err)
 				return
 			}
-			absDir, _ := filepath.Abs(dir)
-			absPath, _ := filepath.Abs(path)
+			absDir, err := filepath.Abs(dir)
+			if err != nil {
+				t.Errorf("filepath.Abs(%q) returned an error, %s", dir, err)
+			}
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				t.Errorf("filepath.Abs(%q) returned an error, %s", path, err)
+			}
 			if !strings.HasPrefix(absPath, absDir+string(os.PathSeparator)) {
 				t.Errorf("downloaded path %q is outside target dir %q", absPath, absDir)
 			}

@@ -404,10 +404,9 @@ func TestWatchRaceConcurrentClose(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
+	validateClose(t, closer)
 	for range 10 {
-		wg.Go(func() {
-			_ = closer.Close()
-		})
+		wg.Go(validateClose(t, closer))
 	}
 	wg.Wait()
 }
@@ -433,13 +432,13 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := range 50 {
-			_ = osutil.WriteFile(filepath.Join(dir, fmt.Sprintf("churn_%d.txt", i)), []byte("x"))
+			if err := osutil.WriteFile(filepath.Join(dir, fmt.Sprintf("churn_%d.txt", i)), []byte("x")); err != nil {
+				t.Errorf("osutil.WriteFile(churn_%d.txt) returned an error, %s", i, err)
+			}
 		}
-	}()
+	})
 
 	// Let some events start flowing, then close mid-stream.
 	time.Sleep(5 * time.Millisecond)

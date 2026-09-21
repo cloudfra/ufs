@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"log/slog"
 	"path"
 	"syscall"
 	"time"
@@ -103,7 +104,9 @@ func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer,
 
 	go func() {
 		<-ctx.Done()
-		_ = server.Unmount()
+		if err := server.Unmount(); err != nil {
+			slog.DebugContext(ctx, "fuse mount server is unmounting volume", "error", err)
+		}
 	}()
 
 	return &fuseHostServer{server: server}, nil
@@ -223,7 +226,9 @@ func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, 
 	}
 	fi, statErr := n.fsys.Stat(childPath)
 	if statErr != nil {
-		_ = f.Close()
+		if err := f.Close(); err != nil {
+			slog.WarnContext(ctx, "error closing file", "error", err, "stat.error", statErr, "name", childPath)
+		}
 		return nil, nil, 0, fuseErrno(statErr)
 	}
 	child := n.newChild(ctx, childPath, fi)

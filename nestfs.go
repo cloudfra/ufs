@@ -228,10 +228,10 @@ func (fsys *nestFS) getDeviceInfo() map[string]deviceInfo {
 	return combineDeviceInfo(base, "", fsys.mounts.getDeviceInfo())
 }
 
-func (fsys *nestFS) URI() *url.URL {
-	base := fsys.fsys.URI()
-	if base == nil {
-		return nil
+func (fsys *nestFS) URI() (*url.URL, error) {
+	base, err := fsys.fsys.URI()
+	if base == nil || err != nil {
+		return nil, nil
 	}
 	u := *base
 	vals := u.Query()
@@ -241,12 +241,12 @@ func (fsys *nestFS) URI() *url.URL {
 		if strings.HasSuffix(p, archiveDirExt) {
 			continue
 		}
-		if mu := mfs.URI(); mu != nil {
+		if mu, err := mfs.URI(); mu != nil && err != nil {
 			vals.Set(p, mu.String())
 		}
 	}
 	u.RawQuery = vals.Encode()
-	return &u
+	return &u, nil
 }
 
 func (fsys *nestFS) String() string {

@@ -136,16 +136,16 @@ func (fsys *archiveFS) openInner(name string) (fs.File, error) {
 	return fsys.fsys.Open(name)
 }
 
-func (fsys *archiveFS) URI() *url.URL {
+func (fsys *archiveFS) URI() (*url.URL, error) {
 	p := fsys.name
 	if len(p) > 0 && p[0] != '/' {
 		p = "/" + p
 	}
-	return &url.URL{Scheme: "archive", Path: p, RawQuery: "ro=true"}
+	return &url.URL{Scheme: "archive", Path: p, RawQuery: "ro=true"}, nil
 }
 
 func (fsys *archiveFS) String() string {
-	return fmt.Sprintf("archiveFS(%s)", fsys.URI())
+	return fmt.Sprintf("archiveFS(%s)", uriOrDefault(fsys, fsys.name))
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {

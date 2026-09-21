@@ -52,12 +52,12 @@ type localFS struct {
 	osFS *os.Root
 }
 
-func (fsys *localFS) URI() *url.URL {
-	return &url.URL{Scheme: "file", Path: coerceUnixPath(fsys.osFS.Name())}
+func (fsys *localFS) URI() (*url.URL, error) {
+	return &url.URL{Scheme: "file", Path: coerceUnixPath(fsys.osFS.Name())}, nil
 }
 
 func (fsys *localFS) String() string {
-	return fmt.Sprintf("localFS(%s)", fsys.URI())
+	return fmt.Sprintf("localFS(%s)", uriOrDefault(fsys, fsys.osFS.Name()))
 }
 
 func (fsys *localFS) getAbsPath(name string) (string, error) {

@@ -175,7 +175,7 @@ func TestMountContextCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
-	defer func() { _ = server.Close() }()
+	defer validateClose(t, server)()
 
 	if _, err := osutil.Stat(filepath.Join(mountDir, "f.txt")); err != nil {
 		t.Fatalf("Stat before cancel: %v", err)

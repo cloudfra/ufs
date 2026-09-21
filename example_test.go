@@ -371,7 +371,12 @@ func ExampleCreateURI() {
 			return
 		}
 	}()
-	fmt.Println(fsys.URI())
+	u, err := fsys.URI()
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(u)
+	}
 	// Output:
 	// memory:
 	// memory:

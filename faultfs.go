@@ -115,7 +115,7 @@ func (fsys *faultFS) getDeviceInfo() map[string]deviceInfo {
 	return fsys.inner.getDeviceInfo()
 }
 
-func (fsys *faultFS) URI() *url.URL {
+func (fsys *faultFS) URI() (*url.URL, error) {
 	return fsys.inner.URI()
 }
 

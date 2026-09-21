@@ -224,7 +224,10 @@ func TestGCSSubscriptionFromURI(t *testing.T) {
 		subscription: "projects/my-proj/subscriptions/my-sub",
 	}
 
-	u := fsys.URI()
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatalf("error getting FS.URI(), %s", err)
+	}
 	if got := u.Query().Get("subscription"); got != "projects/my-proj/subscriptions/my-sub" {
 		t.Fatalf("URI subscription = %q, want %q", got, "projects/my-proj/subscriptions/my-sub")
 	}

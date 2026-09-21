@@ -203,7 +203,7 @@ func (fsys *gcsFS) getDeviceInfo() map[string]deviceInfo {
 	return newDeviceInfoMap(info)
 }
 
-func (fsys *gcsFS) URI() *url.URL {
+func (fsys *gcsFS) URI() (*url.URL, error) {
 	vals := url.Values{"ro": {"true"}}
 	if fsys.subscription != "" {
 		vals.Set("subscription", fsys.subscription)
@@ -213,11 +213,11 @@ func (fsys *gcsFS) URI() *url.URL {
 		Host:     fsys.bucket,
 		Path:     "/" + fsys.baseDir,
 		RawQuery: vals.Encode(),
-	}
+	}, nil
 }
 
 func (fsys *gcsFS) String() string {
-	return fmt.Sprintf("gcsFS(%s)", fsys.URI())
+	return fmt.Sprintf("gcsFS(%s)", uriOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {

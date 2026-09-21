@@ -19,6 +19,8 @@ import (
 	"io/fs"
 	"sync/atomic"
 	"testing"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // closeCounter tracks how many times Close was called on a FS.
@@ -227,7 +229,7 @@ func TestArchiveFSCloseIdempotent(t *testing.T) {
 	}))
 
 	for range 3 {
-		validateClose(t, afs)()
+		ufsTesting.ValidateClose(t, afs)()
 	}
 	if closeCalled.Load() != 1 {
 		t.Errorf("closer called %d times, want exactly 1", closeCalled.Load())

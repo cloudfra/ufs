@@ -22,17 +22,14 @@ import (
 	"os"
 	"path"
 	"reflect"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
-
-	"github.com/google/go-cmp/cmp"
-	"github.com/xyproto/randomstring"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
+	"github.com/google/go-cmp/cmp"
 )
 
 type fsTestCase struct {
@@ -189,7 +186,7 @@ func testFileSystem(t *testing.T, newFSFunc func(ctx context.Context, name strin
 
 	for _, name := range wantFiles {
 		t.Run(fmt.Sprintf("crud_%s", name), func(t *testing.T) {
-			wantData := randomString(1000)
+			wantData := ufsTesting.RandomString(1000)
 			if wf, err := fsys.Create(name); err != nil {
 				t.Errorf("cannot create file %q, %s", name, err)
 			} else {
@@ -280,10 +277,6 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 	return fsys
 }
 
-func randomString(size int) string {
-	return randomstring.HumanFriendlyString(size)
-}
-
 func osTempDir() string {
 	return coerceUnixPath(os.TempDir())
 }
@@ -302,21 +295,13 @@ func mustTemp(tb testing.TB) string {
 	return tempDir
 }
 
-func mustTime(s string) time.Time {
-	val, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		panic(err)
-	}
-	return val
-}
-
 func TestFSMkdirAll(t *testing.T) {
 	t.Parallel()
 	for _, tc := range getAllExceptAngryTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
 				t.Errorf("MkdirAll() = %v, want nil", err)
 			}
@@ -328,10 +313,10 @@ func TestFSReadFile(t *testing.T) {
 	t.Parallel()
 	for _, tc := range getReadWriteTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
-			wantData := randomString(100)
+			wantData := ufsTesting.RandomString(100)
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 			f, err := fsys.Create("readfile_test.txt")
 			if err != nil {
 				t.Fatalf("Create failed: %v", err)
@@ -379,12 +364,12 @@ func TestReadOnlyFS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 			if fsys == nil {
 				t.Fatalf("file system is nil")
 			}
 			verifyReadOnlyFS(t, fsys)
-			validateClose(t, fsys)()
+			ufsTesting.ValidateClose(t, fsys)()
 		})
 	}
 }
@@ -396,12 +381,12 @@ func TestFS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 			if fsys == nil {
 				t.Fatalf("file system is nil")
 			}
 			verifyFS(t, fsys)
-			validateClose(t, fsys)()
+			ufsTesting.ValidateClose(t, fsys)()
 		})
 	}
 }
@@ -413,7 +398,7 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 
 			u, err := fsys.URI()
 			if err != nil {
@@ -447,14 +432,6 @@ func toMapKeys[T any](m map[string]T) []string {
 	return keys
 }
 
-func dirEntryListToNames(entries []fs.DirEntry) []string {
-	names := make([]string, len(entries))
-	for i, entry := range entries {
-		names[i] = entry.Name()
-	}
-	return names
-}
-
 func assertContains(t *testing.T, fsys FS, name string, substr string) {
 	t.Helper()
 	data, err := fs.ReadFile(fsys, name)
@@ -472,7 +449,7 @@ func assertDir(t *testing.T, fsys FS, name string, want []string) {
 	if gotEntries, err := fsys.ReadDir(name); err != nil {
 		t.Errorf("cannot ReadDir(%q), %s", name, err)
 	} else {
-		gotEntryNames := dirEntryListToNames(gotEntries)
+		gotEntryNames := ufsTesting.DirEntryListToNames(gotEntries)
 		if d := cmp.Diff(want, gotEntryNames); d != "" {
 			t.Errorf("fs.ReadDir(%q) mismatch, got %s, want %s diff(-want,+got):\n %v", name, gotEntryNames, want, d)
 		}
@@ -481,47 +458,19 @@ func assertDir(t *testing.T, fsys FS, name string, want []string) {
 	if f, err := fsys.Open(name); err != nil {
 		t.Errorf("cannot open %q, %s", name, err)
 	} else {
-		defer validateClose(t, f)()
+		defer ufsTesting.ValidateClose(t, f)()
 		rdf, ok := f.(fs.ReadDirFile)
 		if ok {
 			if gotEntries, err := rdf.ReadDir(-1); err != nil {
 				t.Errorf("cannot ReadDir(%q), %s", name, err)
 			} else {
-				gotEntryNames := dirEntryListToNames(gotEntries)
+				gotEntryNames := ufsTesting.DirEntryListToNames(gotEntries)
 				if d := cmp.Diff(want, gotEntryNames); d != "" {
 					t.Errorf("ReadDir(-1) mismatch, got %s, want %s diff(-want,+got):\n %v", gotEntryNames, want, d)
 				}
 			}
 		} else {
 			t.Errorf("%q does not open a ReadDirFile, %s", name, reflect.TypeOf(f).Name())
-		}
-	}
-}
-
-func skipTestOnWindows(tb testing.TB) {
-	if runtime.GOOS == "windows" {
-		tb.Skip("test is not compatible with windows, skipping")
-	}
-}
-
-func validateClose(tb testing.TB, closer io.Closer) func() {
-	return func() {
-		tb.Helper()
-		if closer != nil {
-			if err := closer.Close(); err != nil {
-				tb.Errorf("failed to close %s, %s", closer, err)
-			}
-		}
-	}
-}
-
-func wantCloseError(tb testing.TB, closer io.Closer) func() {
-	return func() {
-		tb.Helper()
-		if closer != nil {
-			if err := closer.Close(); err == nil {
-				tb.Errorf("want %s.Close() error, got nil", closer)
-			}
 		}
 	}
 }

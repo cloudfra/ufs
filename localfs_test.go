@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 const (
@@ -69,7 +70,7 @@ func TestLocalFS(t *testing.T) {
 func TestLocalFSLstat(t *testing.T) {
 	dir := mustTemp(t)
 	fsys := mustFS(t, newLocalFS, dir)
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("lstat_file.txt")
 	if err != nil {
@@ -115,7 +116,7 @@ func TestLocalFSLstat(t *testing.T) {
 func TestLocalFSReadLink(t *testing.T) {
 	dir := mustTemp(t)
 	fsys := mustFS(t, newLocalFS, dir)
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("target.txt")
 	if err != nil {
@@ -149,7 +150,7 @@ func TestLocalFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	// Create a file and a subdirectory with a child.
 	if err := osutil.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi")); err != nil {
@@ -190,7 +191,7 @@ func TestLocalFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	if err := osutil.MkdirAll(filepath.Join(dir, "tree", "deep")); err != nil {
 		t.Fatal(err)
@@ -226,12 +227,12 @@ func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 	f, err := fsys.Open(CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 	entries, err := f.ReadDir(-1)
 	if err != nil {
 		t.Fatal(err)

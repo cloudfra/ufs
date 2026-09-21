@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -410,7 +411,7 @@ func TestAbsPath(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 
 			got, err := AbsPath(fsys, "file.txt")
 			if supportedFS[tc.name] {

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 type notifyEvent struct {
@@ -101,7 +102,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -111,7 +112,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	if err := osutil.WriteFile(filepath.Join(dir, "hello.txt"), []byte("hi")); err != nil {
 		t.Fatal(err)
@@ -150,7 +151,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -160,7 +161,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	if err := osutil.WriteFile(filepath.Join(dir, "a", "b", "deep.txt"), []byte("data")); err != nil {
 		t.Fatal(err)
@@ -186,7 +187,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(validateClose(t, fsys))
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
 		ec := newEventCollector()
 		ctx, cancel := context.WithCancel(t.Context())
@@ -196,7 +197,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(validateClose(t, closer))
+		t.Cleanup(ufsTesting.ValidateClose(t, closer))
 		return dir, ec
 	}
 
@@ -265,7 +266,7 @@ func TestWatchCloseStopsDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -305,7 +306,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -314,7 +315,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	cancel()
 
@@ -346,7 +347,7 @@ func TestWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -356,7 +357,7 @@ func TestWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	if err := osutil.WriteFile(filepath.Join(dir, "watched", "inside.txt"), []byte("y")); err != nil {
 		t.Fatal(err)
@@ -375,7 +376,7 @@ func TestWatchInvalidPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ctx := t.Context()
 
@@ -396,7 +397,7 @@ func TestWatchRaceConcurrentClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	closer, err := fsys.Watch(t.Context(), ".", func(NotifyOp, string) {})
 	if err != nil {
@@ -404,9 +405,9 @@ func TestWatchRaceConcurrentClose(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	validateClose(t, closer)
+	ufsTesting.ValidateClose(t, closer)
 	for range 10 {
-		wg.Go(validateClose(t, closer))
+		wg.Go(ufsTesting.ValidateClose(t, closer))
 	}
 	wg.Wait()
 }
@@ -419,7 +420,7 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	var hookCalls atomic.Int64
 	hook := func(NotifyOp, string) {
@@ -456,7 +457,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -466,7 +467,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	const writers = 5
 	const filesPerWriter = 10
@@ -503,7 +504,7 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -513,7 +514,7 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	for i := range 30 {
 		p := filepath.Join(dir, fmt.Sprintf("ephemeral_%d.txt", i))
@@ -542,7 +543,7 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -552,7 +553,7 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	// Rapidly create nested directory trees to race addRecursive with new
 	// events arriving for the child directories.
@@ -589,7 +590,7 @@ func TestWatchRaceCloseAndCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	closer, err := fsys.Watch(ctx, ".", func(NotifyOp, string) {})
@@ -630,7 +631,7 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	ec := newEventCollector()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -640,7 +641,7 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	// Remove all watched directories at once.
 	for i := range 5 {

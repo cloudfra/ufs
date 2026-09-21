@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestNewCryptoRand(t *testing.T) {
@@ -69,7 +71,7 @@ func TestFaultInjectorDelegatesWhenNoFaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	if _, err := fsys.Open("."); err != nil {
 		t.Errorf("Open(.) = %v, want nil", err)
@@ -107,7 +109,7 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	tests := []struct {
 		name string
@@ -145,7 +147,7 @@ func TestFaultInjectorReturnsRealisticErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	seen := map[syscall.Errno]bool{}
 	for range 200 {
@@ -175,7 +177,7 @@ func TestFaultInjectorErrorRate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	var errors, successes int
 	for range 1000 {
@@ -208,7 +210,7 @@ func TestFaultInjectorErrorRateClamping(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer validateClose(t, fsys)()
+		defer ufsTesting.ValidateClose(t, fsys)()
 		for range 10 {
 			if _, err := fsys.Stat("."); err == nil {
 				t.Fatal("Stat(.) returned nil, want error with clamped rate 1.0")
@@ -224,7 +226,7 @@ func TestFaultInjectorErrorRateClamping(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer validateClose(t, fsys)()
+		defer ufsTesting.ValidateClose(t, fsys)()
 		for range 10 {
 			if _, err := fsys.Stat("."); err != nil {
 				t.Fatalf("Stat(.) = %v, want nil with clamped rate 0.0", err)
@@ -244,7 +246,7 @@ func TestFaultInjectorLatency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	start := time.Now()
 	if _, err := fsys.Stat("."); err != nil {
@@ -270,7 +272,7 @@ func TestFaultInjectorLatencyJitter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	start := time.Now()
 	if _, err := fsys.Stat("."); err != nil {
@@ -307,7 +309,7 @@ func TestFaultInjectorInvalidPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
 		t.Run(badPath, func(t *testing.T) {

@@ -103,9 +103,9 @@ func TestNew(t *testing.T) {
 			if got != nil {
 				defer func() {
 					if tt.ignoreCloseErrors {
-						wantCloseError(t, got)()
+						ufsTesting.WantCloseError(t, got)()
 					} else {
-						validateClose(t, got)()
+						ufsTesting.ValidateClose(t, got)()
 					}
 				}()
 			}
@@ -130,9 +130,9 @@ func TestNew(t *testing.T) {
 			if got != nil {
 				defer func() {
 					if tt.ignoreCloseErrors {
-						wantCloseError(t, got)()
+						ufsTesting.WantCloseError(t, got)()
 					} else {
-						validateClose(t, got)()
+						ufsTesting.ValidateClose(t, got)()
 					}
 				}()
 			}
@@ -221,7 +221,7 @@ func TestCreateURI(t *testing.T) {
 			}
 			defer func() {
 				if tc.ignoreCloseErrors {
-					wantCloseError(t, fsys)()
+					ufsTesting.WantCloseError(t, fsys)()
 				}
 			}()
 
@@ -253,7 +253,7 @@ func TestFSBuilderBuildEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 	if _, ok := fsys.(*nestFS); !ok {
 		t.Errorf("Build() = %T, want *nestFS", fsys)
 	}
@@ -301,7 +301,7 @@ func TestFSBuilderBuildURI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q) = %v, want nil", got, err)
 			}
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 		})
 	}
 }
@@ -316,7 +316,7 @@ func TestFSBuilderBuildURIEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(%q) = %v, want nil", uri, err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 }
 
 func TestFSBuilderBuildURIWithFSMountErrors(t *testing.T) {
@@ -336,7 +336,7 @@ func TestFSBuilderMountFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	entries, err := fsys.ReadDir("assets/testassets/files")
 	if err != nil {
@@ -355,7 +355,7 @@ func TestFSBuilderMountFSWriteBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() = %v, want nil", err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	_, err = fsys.Create("assets/newfile.txt")
 	if !errors.Is(err, fs.ErrPermission) {
@@ -442,7 +442,7 @@ func TestCreateURIWithSiblingMounts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q) = %v, want nil", uri, err)
 			}
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 
 			if _, ok := fsys.(*nestFS); !ok {
 				t.Errorf("New() = %T, want *nestFS", fsys)
@@ -454,7 +454,7 @@ func TestCreateURIWithSiblingMounts(t *testing.T) {
 			}
 			for _, wantDir := range tt.wantMountDirs {
 				if !containsEntry(entries, wantDir) {
-					t.Errorf("ReadDir('.') missing mount point %q, got: %v", wantDir, dirEntryListToNames(entries))
+					t.Errorf("ReadDir('.') missing mount point %q, got: %v", wantDir, ufsTesting.DirEntryListToNames(entries))
 				}
 			}
 		})
@@ -546,7 +546,7 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%q) = %v", uri, err)
 			}
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 
 			rootEntries, err := fsys.ReadDir(".")
 			if err != nil {
@@ -554,7 +554,7 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 			}
 			for _, want := range tt.wantRootContains {
 				if !containsEntry(rootEntries, want) {
-					t.Errorf("ReadDir('.') missing %q, got: %v", want, dirEntryListToNames(rootEntries))
+					t.Errorf("ReadDir('.') missing %q, got: %v", want, ufsTesting.DirEntryListToNames(rootEntries))
 				}
 			}
 
@@ -569,7 +569,7 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 				}
 				for _, want := range wantChildren {
 					if !containsEntry(entries, want) {
-						t.Errorf("ReadDir(%q) missing %q, got: %v", dir, want, dirEntryListToNames(entries))
+						t.Errorf("ReadDir(%q) missing %q, got: %v", dir, want, ufsTesting.DirEntryListToNames(entries))
 					}
 				}
 			}

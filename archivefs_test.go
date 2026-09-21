@@ -23,6 +23,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 const testArchive = "testing/testassets/archives/testassets.tar.gz"
@@ -90,7 +92,7 @@ func TestArchiveFSOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(\"index.html\") = %v, want nil", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -259,7 +261,7 @@ func TestArchiveFSOpenImplicitDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(\"onetwothree\") = %v, want nil", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	info, err := f.Stat()
 	if err != nil {
@@ -349,7 +351,7 @@ func TestArchiveFSImplicitDirRootAndNested(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open(%q) = %v, want nil", name, err)
 		}
-		validateClose(t, f)()
+		ufsTesting.ValidateClose(t, f)()
 	}
 
 	for _, name := range []string{"onetwothree", "sixseven"} {
@@ -454,7 +456,7 @@ func TestArchiveFSImplicitDirMultipleLayers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Open(%q) = %v, want nil", p, err)
 		}
-		defer validateClose(t, f)()
+		defer ufsTesting.ValidateClose(t, f)()
 		info, err := f.Stat()
 		if err != nil {
 			t.Fatalf("Open(%q).Stat() = %v, want nil", p, err)
@@ -509,7 +511,7 @@ func TestArchiveFSImplicitDirMixedExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(\"onetwothree/sixseven\") = %v, want nil", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 	openInfo, err := f.Stat()
 	if err != nil {
 		t.Fatalf("Open(\"onetwothree/sixseven\").Stat() = %v, want nil", err)

@@ -21,12 +21,13 @@ import (
 	"testing"
 	"time"
 
+	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestNewFileInfo(t *testing.T) {
 	t.Parallel()
-	tNow := mustTime("2026-01-01T00:00:00Z")
+	tNow := ufsTesting.MustTime(t, "2026-01-01T00:00:00Z")
 	tests := []struct {
 		name    string
 		mode    fs.FileMode
@@ -62,7 +63,7 @@ func TestNewFileInfo(t *testing.T) {
 }
 
 func TestInfoDir(t *testing.T) {
-	tNow := mustTime("2026-01-01T00:00:00Z")
+	tNow := ufsTesting.MustTime(t, "2026-01-01T00:00:00Z")
 	sysVal := struct{ x int }{x: 42}
 	info := &fsInfo{
 		name:    "mydir",
@@ -175,7 +176,7 @@ func TestReadDirFile(t *testing.T) {
 		t.Errorf("ReadDir(-1) returned error, %s", err)
 	}
 	wantNames := []string{"a", "d", "g"}
-	gotNames := dirEntryListToNames(entries)
+	gotNames := ufsTesting.DirEntryListToNames(entries)
 	if diff := cmp.Diff(wantNames, gotNames); diff != "" {
 		t.Errorf("got %s, want %s diff(-want,+got):\n %v", gotNames, wantNames, diff)
 	}

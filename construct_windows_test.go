@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // TestNameToURIWindowsDriveLetters verifies that nameToURI handles both
@@ -105,7 +106,7 @@ func TestNewWindowsDriveLetters(t *testing.T) {
 					t.Errorf("New(%q) = %v, want nil", name, err)
 					continue
 				}
-				validateClose(t, fsys)
+				ufsTesting.ValidateClose(t, fsys)
 			}
 		})
 	}

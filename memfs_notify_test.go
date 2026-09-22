@@ -22,6 +22,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestMemWatchCreateWriteRemove(t *testing.T) {
@@ -35,7 +37,7 @@ func TestMemWatchCreateWriteRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	f, err := fsys.Create("hello.txt")
 	if err != nil {
@@ -78,7 +80,7 @@ func TestMemWatchNestedDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	if err := fsys.MkdirAll("a/b", fs.ModePerm); err != nil {
 		t.Fatal(err)
@@ -117,7 +119,7 @@ func TestMemWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	if _, err := fsys.Create("watched/inside.txt"); err != nil {
 		t.Fatal(err)
@@ -184,7 +186,7 @@ func TestMemWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	cancel()
 
@@ -224,7 +226,7 @@ func TestMemWatchRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	if err := fsys.RemoveAll("dir"); err != nil {
 		t.Fatal(err)
@@ -405,7 +407,7 @@ func TestMemWatchRaceCloseAndCancel(t *testing.T) {
 	}()
 	go func() {
 		defer wg.Done()
-		validateClose(t, closer)
+		ufsTesting.ValidateClose(t, closer)
 	}()
 	wg.Wait()
 }

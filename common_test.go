@@ -20,12 +20,12 @@ import (
 	"io"
 	"io/fs"
 	"path"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
 
+	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -43,28 +43,28 @@ func TestInvalidPath(t *testing.T) {
 				t.Parallel()
 				fsys := fsysTC.createFS(t)
 				_, err := fsys.Open(path)
-				assertInvalidPathError(t, path, err, "open")
+				ufsTesting.AssertInvalidPathError(t, path, err, "open")
 			})
 
 			t.Run(fmt.Sprintf("ReadDir/%s/%s", fsysTC.name, path), func(t *testing.T) {
 				t.Parallel()
 				fsys := fsysTC.createFS(t)
 				_, err := fsys.ReadDir(path)
-				assertInvalidPathError(t, path, err, "readdir")
+				ufsTesting.AssertInvalidPathError(t, path, err, "readdir")
 			})
 
 			t.Run(fmt.Sprintf("Create/%s/%s", fsysTC.name, path), func(t *testing.T) {
 				t.Parallel()
 				fsys := fsysTC.createFS(t)
 				_, err := fsys.Create(path)
-				assertInvalidPathError(t, path, err, "create")
+				ufsTesting.AssertInvalidPathError(t, path, err, "create")
 			})
 
 			t.Run(fmt.Sprintf("MkdirAll/%s/%s", fsysTC.name, path), func(t *testing.T) {
 				t.Parallel()
 				fsys := fsysTC.createFS(t)
 				err := fsys.MkdirAll(path, fs.ModeDir)
-				assertInvalidPathError(t, path, err, "mkdir")
+				ufsTesting.AssertInvalidPathError(t, path, err, "mkdir")
 			})
 
 			t.Run(fmt.Sprintf("ReadFileFS/%s/%s", fsysTC.name, path), func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestInvalidPath(t *testing.T) {
 				fsys := fsysTC.createFS(t)
 				if rf, ok := fsys.(fs.ReadFileFS); ok {
 					_, err := rf.ReadFile(path)
-					assertInvalidPathError(t, path, err, "readfile")
+					ufsTesting.AssertInvalidPathError(t, path, err, "readfile")
 				}
 			})
 
@@ -81,7 +81,7 @@ func TestInvalidPath(t *testing.T) {
 				fsys := fsysTC.createFS(t)
 				if rf, ok := fsys.(fs.ReadLinkFS); ok {
 					_, err := rf.ReadLink(path)
-					assertInvalidPathError(t, path, err, "readlink")
+					ufsTesting.AssertInvalidPathError(t, path, err, "readlink")
 				}
 			})
 
@@ -90,7 +90,7 @@ func TestInvalidPath(t *testing.T) {
 				fsys := fsysTC.createFS(t)
 				if rf, ok := fsys.(fs.ReadLinkFS); ok {
 					_, err := rf.Lstat(path)
-					assertInvalidPathError(t, path, err, "lstat")
+					ufsTesting.AssertInvalidPathError(t, path, err, "lstat")
 				}
 			})
 
@@ -99,7 +99,7 @@ func TestInvalidPath(t *testing.T) {
 				fsys := fsysTC.createFS(t)
 				if r, ok := fsys.(RemoveFileFS); ok {
 					err := r.Remove(path)
-					assertInvalidPathError(t, path, err, "remove")
+					ufsTesting.AssertInvalidPathError(t, path, err, "remove")
 				}
 			})
 
@@ -108,28 +108,10 @@ func TestInvalidPath(t *testing.T) {
 				fsys := fsysTC.createFS(t)
 				if r, ok := fsys.(RemoveFileFS); ok {
 					err := r.RemoveAll(path)
-					assertInvalidPathError(t, path, err, "removeall")
+					ufsTesting.AssertInvalidPathError(t, path, err, "removeall")
 				}
 			})
 		}
-	}
-}
-
-func assertInvalidPathError(t *testing.T, path string, err error, wantOp string) {
-	t.Helper()
-	if err == nil {
-		t.Errorf("%s(%q) succeeded, want error", wantOp, path)
-		return
-	}
-	if perr, ok := err.(*fs.PathError); ok {
-		if wantOp != perr.Op {
-			t.Errorf("fs.PathError.Op mismatch, got: %q, want: %q", perr.Op, wantOp)
-		}
-		if path != perr.Path {
-			t.Errorf("fs.PathError.Path mismatch, got: %q, want: %q", perr.Path, path)
-		}
-	} else {
-		t.Errorf("%q is not a *fs.PathError, got: %q", err, reflect.TypeOf(err).Name())
 	}
 }
 
@@ -138,7 +120,7 @@ func TestFSConventions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
-	t.Cleanup(validateClose(t, srcFS))
+	t.Cleanup(ufsTesting.ValidateClose(t, srcFS))
 	for _, fsysTC := range getReadWriteTestCaseList() {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
@@ -284,7 +266,7 @@ func TestFSReadDir(t *testing.T) {
 					if err != nil {
 						t.Errorf("cannot ReadDir(%q), got error: %s", input, err)
 					}
-					gotNames := dirEntryListToNames(gotEntries)
+					gotNames := ufsTesting.DirEntryListToNames(gotEntries)
 					if diff := cmp.Diff(want, gotNames); diff != "" {
 						t.Errorf("got %s, want %s diff(-want,+got):\n %v", gotNames, want, diff)
 					}
@@ -295,13 +277,13 @@ func TestFSReadDir(t *testing.T) {
 					if err != nil {
 						t.Fatalf("cannot ReadDir(%q), got error: %s", input, err)
 					}
-					defer validateClose(t, f)()
+					defer ufsTesting.ValidateClose(t, f)()
 					if rdf, ok := f.(fs.ReadDirFile); ok {
 						entries, err := rdf.ReadDir(-1)
 						if err != nil {
 							t.Errorf("ReadDir(-1) failed with error, %s", err)
 						}
-						gotNames := dirEntryListToNames(entries)
+						gotNames := ufsTesting.DirEntryListToNames(entries)
 						sort.Strings(gotNames)
 						sort.Strings(want)
 						if diff := cmp.Diff(want, gotNames); diff != "" {

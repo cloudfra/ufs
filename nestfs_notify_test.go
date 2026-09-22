@@ -19,6 +19,8 @@ import (
 	"io/fs"
 	"testing"
 	"time"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
@@ -38,7 +40,7 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	f, err := inner.Create("test.txt")
 	if err != nil {
@@ -73,7 +75,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	// File inside the watched subdirectory should be delivered.
 	f, err := inner.Create("sub/inside.txt")

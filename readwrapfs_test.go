@@ -44,7 +44,7 @@ func makeTestStdFS(t *testing.T) ReadFS {
 func TestFromFSString(t *testing.T) {
 	t.Parallel()
 	fsys := FromFS(testMapFS)
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	want := "readWrapFS(fstest.MapFS)"
 	if got := fsys.(interface{ String() string }).String(); got != want {
@@ -60,7 +60,7 @@ func TestFromFSOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open() = %v, want nil", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -79,7 +79,7 @@ func TestFromFSOpenDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open(dir) = %v, want nil", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	info, err := f.Stat()
 	if err != nil {
@@ -248,7 +248,7 @@ func TestFromFSInvalidPaths(t *testing.T) {
 func TestFromFSEmbedFS(t *testing.T) {
 	t.Parallel()
 	fsys := FromFS(ufsTesting.TestAssetsFS())
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	data, err := fsys.ReadFile("testassets/files/index.html")
 	if err != nil {

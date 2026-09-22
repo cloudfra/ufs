@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 const testAssetsFilesDir = "testing/testassets/files"
@@ -79,7 +80,7 @@ func TestAssets(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create FS: %v", err)
 			}
-			defer validateClose(t, fsys)()
+			defer ufsTesting.ValidateClose(t, fsys)()
 
 			for filePath, wantData := range wantFiles {
 				t.Run(filePath, func(t *testing.T) {
@@ -161,7 +162,7 @@ func createZipFromDir(tb testing.TB, dir string) string {
 		if err != nil {
 			return err
 		}
-		defer validateClose(tb, f)()
+		defer ufsTesting.ValidateClose(tb, f)()
 		_, err = io.Copy(w, f)
 		return err
 	})

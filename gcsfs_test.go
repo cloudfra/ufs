@@ -23,12 +23,11 @@ import (
 	"testing"
 
 	"cloud.google.com/go/storage"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/googleapi"
 )
-
-var fakeUpdatedTime = mustTime("2006-01-02T15:04:05Z")
 
 func TestIsGCSFSUri(t *testing.T) {
 	testCases := []struct {
@@ -247,6 +246,7 @@ func TestGCSFS(t *testing.T) {
 }
 
 func createStorage(tb testing.TB) *storage.Client {
+	fakeUpdatedTime := ufsTesting.MustTime(tb, "2006-01-02T15:04:05Z")
 	server := fakestorage.NewServer([]fakestorage.Object{
 		{
 			ObjectAttrs: fakestorage.ObjectAttrs{
@@ -318,7 +318,7 @@ func TestGCSFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	t.Run("file_exists", func(t *testing.T) {
 		if err := fsys.Remove("a"); err != nil {
@@ -351,7 +351,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer validateClose(t, fsys)()
+		defer ufsTesting.ValidateClose(t, fsys)()
 
 		if err := fsys.RemoveAll("dir"); err != nil {
 			t.Fatalf("RemoveAll('dir') = %v, want nil", err)
@@ -370,7 +370,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer validateClose(t, fsys)()
+		defer ufsTesting.ValidateClose(t, fsys)()
 
 		if err := fsys.RemoveAll("nonexistent"); err != nil {
 			t.Errorf("RemoveAll(nonexistent) = %v, want nil", err)
@@ -383,7 +383,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer validateClose(t, fsys)()
+		defer ufsTesting.ValidateClose(t, fsys)()
 
 		if err := fsys.RemoveAll(CwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)

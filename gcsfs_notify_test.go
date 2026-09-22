@@ -22,6 +22,7 @@ import (
 	pb "cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"cloud.google.com/go/pubsub/v2/pstest"
 	"cloud.google.com/go/storage"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -318,7 +319,7 @@ func TestGCSWatchPubSub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	srv.Publish(testTopic, nil, map[string]string{
 		"eventType": storage.ObjectFinalizeEvent,
@@ -342,7 +343,7 @@ func TestGCSWatchPubSubDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	srv.Publish(testTopic, nil, map[string]string{
 		"eventType": storage.ObjectDeleteEvent,
@@ -366,7 +367,7 @@ func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	// Wrong bucket — should be filtered out.
 	srv.Publish(testTopic, nil, map[string]string{
@@ -431,7 +432,7 @@ func TestGCSWatchPubSubNestedPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, closer)()
+	defer ufsTesting.ValidateClose(t, closer)()
 
 	srv.Publish(testTopic, nil, map[string]string{
 		"eventType": storage.ObjectFinalizeEvent,

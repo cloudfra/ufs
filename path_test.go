@@ -30,7 +30,6 @@ var pathTestCases = []struct {
 	wantSplitPath              []string
 	wantIsCwd                  bool
 	wantIsDirName              bool
-	wantCoerceUnix             string
 	wantIsMountableArchivePath bool
 }{
 	{
@@ -39,7 +38,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{""},
 		wantIsCwd:                  true,
 		wantIsDirName:              true,
-		wantCoerceUnix:             "",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -48,7 +46,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{CwdPath},
 		wantIsCwd:                  true,
 		wantIsDirName:              true,
-		wantCoerceUnix:             CwdPath,
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -57,7 +54,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{""},
 		wantIsCwd:                  false,
 		wantIsDirName:              true,
-		wantCoerceUnix:             "/",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -66,7 +62,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"abc"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "abc",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -75,7 +70,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"abc", "d"},
 		wantIsCwd:                  false,
 		wantIsDirName:              true,
-		wantCoerceUnix:             "/abc/d/",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -84,7 +78,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"abc", "d"},
 		wantIsCwd:                  false,
 		wantIsDirName:              true,
-		wantCoerceUnix:             "abc/d/",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -93,7 +86,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"abc", "d"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "/abc/d",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -102,7 +94,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"abc\\d"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "abc/d",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -111,7 +102,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"abc"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "/abc/",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -120,7 +110,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -129,7 +118,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar.gz"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar.gz",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -138,7 +126,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar.bz2"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar.bz2",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -147,7 +134,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar.xz"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar.xz",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -156,7 +142,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar.lz4"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar.lz4",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -165,7 +150,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar.br"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar.br",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -174,7 +158,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar.zst"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar.zst",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -183,7 +166,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.zip"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.zip",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -192,7 +174,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.tar.lzma"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.tar.lzma",
 		wantIsMountableArchivePath: false,
 	},
 	{
@@ -201,7 +182,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.7z"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.7z",
 		wantIsMountableArchivePath: true,
 	},
 	{
@@ -210,7 +190,6 @@ var pathTestCases = []struct {
 		wantSplitPath:              []string{"ok.7Z"},
 		wantIsCwd:                  false,
 		wantIsDirName:              false,
-		wantCoerceUnix:             "ok.7Z",
 		wantIsMountableArchivePath: true,
 	},
 }
@@ -446,19 +425,6 @@ func TestAbsPath(t *testing.T) {
 				if !strings.Contains(err.Error(), "not accessible outside") {
 					t.Errorf("error = %q, want it to mention 'not accessible outside'", err)
 				}
-			}
-		})
-	}
-}
-
-func TestCoerceUnixPath(t *testing.T) {
-	t.Parallel()
-	for _, tc := range pathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			got := coerceUnixPath(tc.input)
-			if got != tc.wantCoerceUnix {
-				t.Errorf("coerceUnix(%q) got: %q, want: %q", tc.input, got, tc.wantCoerceUnix)
 			}
 		})
 	}

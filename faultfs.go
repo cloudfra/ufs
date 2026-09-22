@@ -24,6 +24,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/cloudfra/ufs/internal/ufspath"
 )
 
 var _ WriteFS = (*faultFS)(nil)
@@ -150,7 +152,7 @@ func (fsys *faultFS) maybeInjectFault(op, name string) error {
 		if fsys.cfg.Log {
 			slog.Info("fault injected", "op", op, "path", name, "error", faultErr)
 		}
-		return pathError(op, name, faultErr)
+		return ufspath.Error(op, name, faultErr)
 	}
 	return nil
 }

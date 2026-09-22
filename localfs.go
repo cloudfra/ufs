@@ -27,6 +27,8 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufspath"
+	"github.com/cloudfra/ufs/internal/ufsurl"
 )
 
 const (
@@ -53,11 +55,11 @@ type localFS struct {
 }
 
 func (fsys *localFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "file", Path: coerceUnixPath(fsys.osFS.Name())}, nil
+	return &url.URL{Scheme: "file", Path: ufspath.CoerceUnix(fsys.osFS.Name())}, nil
 }
 
 func (fsys *localFS) String() string {
-	return fmt.Sprintf("localFS(%s)", uriOrDefault(fsys, fsys.osFS.Name()))
+	return fmt.Sprintf("localFS(%s)", ufsurl.URIOrDefault(fsys, fsys.osFS.Name()))
 }
 
 func (fsys *localFS) getAbsPath(name string) (string, error) {
@@ -217,7 +219,7 @@ func globWalk(fsys fs.ReadDirFS, dir, pattern string) ([]string, error) {
 }
 
 func makeLocalFS(name string) (*localFS, error) {
-	name = localFSNormalizePath(name)
+	name = ufspath.NormalizeFileURI(name)
 	absPath, err := filepath.Abs(name)
 	if err != nil {
 		return nil, err

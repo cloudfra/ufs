@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufsurl"
 )
 
 const (
@@ -67,7 +68,7 @@ func dialControl(_ string, address string, _ syscall.RawConn) error {
 	if ip == nil {
 		return fmt.Errorf("invalid IP in dial address %q", address)
 	}
-	if isBlockedIP(ip) {
+	if ufsurl.IsBlockedIP(ip) {
 		return fmt.Errorf("connection to private/loopback address %s is not allowed", ip)
 	}
 	return nil
@@ -82,7 +83,7 @@ func validateDownloadURL(ctx context.Context, u *url.URL) error {
 		return fmt.Errorf("empty hostname in URL %q", u.Redacted())
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedIP(ip) {
+		if ufsurl.IsBlockedIP(ip) {
 			return fmt.Errorf("download from private/loopback address %s is not allowed", ip)
 		}
 		return nil
@@ -92,34 +93,11 @@ func validateDownloadURL(ctx context.Context, u *url.URL) error {
 		return fmt.Errorf("cannot resolve host %q: %w", host, err)
 	}
 	for _, addr := range ips {
-		if isBlockedIP(addr.IP) {
+		if ufsurl.IsBlockedIP(addr.IP) {
 			return fmt.Errorf("host %q resolves to private/loopback address %s", host, addr.IP)
 		}
 	}
 	return nil
-}
-
-func isBlockedIP(ip net.IP) bool {
-	return ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified()
-}
-
-func sanitizeFilename(rawURL *url.URL) (string, error) {
-	p := rawURL.Path
-	parts := strings.Split(p, "/")
-	filename := parts[len(parts)-1]
-	filename = strings.TrimSpace(filename)
-	if filename == "" || filename == "." || filename == ".." {
-		return "", fmt.Errorf("invalid filename %q derived from URL %q", filename, rawURL.Redacted())
-	}
-	filename = filepath.Base(filename)
-	if filename == "" || filename == "." || filename == ".." || strings.ContainsAny(filename, `/\`) {
-		return "", fmt.Errorf("invalid filename %q derived from URL %q", filename, rawURL.Redacted())
-	}
-	return filename, nil
 }
 
 func downloadFile(ctx context.Context, dir string, uri string) (string, error) {
@@ -159,7 +137,7 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 		return "", fmt.Errorf("download %q failed with status %d", uri, resp.StatusCode)
 	}
 
-	filename, err := sanitizeFilename(resp.Request.URL)
+	filename, err := ufsurl.SanitizeFilename(resp.Request.URL)
 	if err != nil {
 		return "", err
 	}

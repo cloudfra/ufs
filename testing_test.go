@@ -28,6 +28,7 @@ import (
 	"testing/fstest"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufspath"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -278,7 +279,7 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 }
 
 func osTempDir() string {
-	return coerceUnixPath(os.TempDir())
+	return ufspath.CoerceUnix(os.TempDir())
 }
 
 func mustTemp(tb testing.TB) string {

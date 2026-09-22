@@ -14,7 +14,11 @@
 
 package ufs
 
-import "io/fs"
+import (
+	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/ufspath"
+)
 
 var _ WriteFS = (*readOnlyFS)(nil)
 
@@ -37,26 +41,26 @@ func (fsys *readOnlyFS) Create(name string) (File, error) {
 	if err := validPath("create", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("create", name, fs.ErrPermission)
+	return nil, ufspath.Error("create", name, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}
-	return pathError("mkdir", name, fs.ErrPermission)
+	return ufspath.Error("mkdir", name, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) Remove(name string) error {
 	if err := validPath("remove", name); err != nil {
 		return err
 	}
-	return pathError("remove", name, fs.ErrPermission)
+	return ufspath.Error("remove", name, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) RemoveAll(name string) error {
 	if err := validPath("removeall", name); err != nil {
 		return err
 	}
-	return pathError("removeall", name, fs.ErrPermission)
+	return ufspath.Error("removeall", name, fs.ErrPermission)
 }

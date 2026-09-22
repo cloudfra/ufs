@@ -31,6 +31,8 @@ import (
 	"sync"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/internal/ufspath"
 )
 
 type bufferMode int
@@ -84,10 +86,10 @@ func (m *mountMap) put(name string, fsys *nestFS) error {
 	defer m.mu.Unlock()
 	for mountPoint := range m.m {
 		if _, ok := removePathPrefix(mountPoint, name); ok {
-			return pathError("mount", name, fmt.Errorf("mount %q conflicts with %q. You must change the order so that mounting is properly nested. mounts: %s, %+v", name, mountPoint, m.baseName, m.m))
+			return ufspath.Error("mount", name, fmt.Errorf("mount %q conflicts with %q. You must change the order so that mounting is properly nested. mounts: %s, %+v", name, mountPoint, m.baseName, m.m))
 		}
 		if subName, ok := removePathPrefix(name, mountPoint); ok {
-			return pathError("mount", name, fmt.Errorf("mount %q is nested within %q. To correct, mount %q as %q within %q. mounts: %s, %+v", name, mountPoint, name, subName, mountPoint, m.baseName, m.m))
+			return ufspath.Error("mount", name, fmt.Errorf("mount %q is nested within %q. To correct, mount %q as %q within %q. mounts: %s, %+v", name, mountPoint, name, subName, mountPoint, m.baseName, m.m))
 		}
 	}
 	m.m[path.Clean(name)] = fsys
@@ -197,7 +199,7 @@ func (m *mountMap) Close() error {
 		}
 		m.m = nil
 	}
-	return joinErrors(errs...)
+	return ufserrors.Join(errs...)
 }
 
 func makeMountMap(baseName string) *mountMap {
@@ -346,20 +348,20 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	if ok {
 		absName, err := lfs.getAbsPath(name)
 		if err != nil {
-			return nil, pathError("mount", name, err)
+			return nil, ufspath.Error("mount", name, err)
 		}
 		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
 		if err != nil {
-			return nil, pathError("mount", name, err)
+			return nil, ufspath.Error("mount", name, err)
 		}
 	} else {
 		f, err := fsys.Open(name)
 		if err != nil {
-			return nil, pathError("mount", name, err)
+			return nil, ufspath.Error("mount", name, err)
 		}
 		newFS, err = newArchiveFSFromFile(ctx, f)
 		if err != nil {
-			return nil, joinErrors(pathError("mount", name, err), f.Close())
+			return nil, ufserrors.Join(ufspath.Error("mount", name, err), f.Close())
 		}
 	}
 
@@ -388,11 +390,11 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 			}
 			subFS, err := targetFS.mountArchive(archiveName)
 			if err != nil {
-				return nil, "", pathError("mount", name, fmt.Errorf("cannot mount archive %s, %w", archiveName, err))
+				return nil, "", ufspath.Error("mount", name, fmt.Errorf("cannot mount archive %s, %w", archiveName, err))
 			}
 			targetFS, targetName, err := subFS.getFSAndSubpath(subPath)
 			if err != nil {
-				return nil, "", pathError("mount", name, fmt.Errorf("cannot mount archive %s, %w", archiveName, err))
+				return nil, "", ufspath.Error("mount", name, fmt.Errorf("cannot mount archive %s, %w", archiveName, err))
 			}
 			return targetFS, targetName, nil
 		}
@@ -436,7 +438,7 @@ func (fsys *nestFS) Close() error {
 		}
 		fsys.fsys = nil
 	}
-	return joinErrors(mountErr, baseErr)
+	return ufserrors.Join(mountErr, baseErr)
 }
 
 func (fsys *nestFS) Create(name string) (File, error) {
@@ -496,7 +498,7 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 
 	readDirFile, ok := f.(fs.ReadDirFile)
 	if !ok {
-		return nil, pathError("readdir", name, fmt.Errorf("%s is not a directory", name))
+		return nil, ufspath.Error("readdir", name, fmt.Errorf("%s is not a directory", name))
 	}
 
 	dirs, err := readDirFile.ReadDir(-1)
@@ -558,7 +560,7 @@ func (fsys *nestFS) ReadLink(name string) (string, error) {
 		return cFsys.ReadLink(subName)
 	}
 
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufspath.Error("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
@@ -611,7 +613,7 @@ func (fsys *nestFS) validPath(op string, name string) error {
 		return err
 	}
 	if fsys.fsys == nil {
-		return pathError(op, name, fs.ErrClosed)
+		return ufspath.Error(op, name, fs.ErrClosed)
 	}
 	return nil
 }
@@ -767,19 +769,19 @@ func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 	tmp, err := osutil.CreateTemp("", "ufs-polyfill-*.tmp")
 	if err != nil {
 		fCloseErr := f.Close()
-		return joinErrors(err, fCloseErr)
+		return ufserrors.Join(err, fCloseErr)
 	}
 	if _, err := io.Copy(tmp, f); err != nil {
 		closeErr := tmp.Close()
 		removeErr := osutil.Remove(tmp.Name())
 		fCloseErr := f.Close()
-		return joinErrors(err, closeErr, removeErr, fCloseErr)
+		return ufserrors.Join(err, closeErr, removeErr, fCloseErr)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		closeErr := tmp.Close()
 		removeErr := osutil.Remove(tmp.Name())
 		fCloseErr := f.Close()
-		return joinErrors(err, closeErr, removeErr, fCloseErr)
+		return ufserrors.Join(err, closeErr, removeErr, fCloseErr)
 	}
 	nf.tmpFile = tmp
 	nf.seekFunc = tmp.Seek

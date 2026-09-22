@@ -19,6 +19,9 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+
+	"github.com/cloudfra/ufs/internal/ufspath"
+	"github.com/cloudfra/ufs/internal/ufsurl"
 )
 
 const embedFSPrefix = "embed://"
@@ -39,7 +42,7 @@ func (fsys *embedFS) URI() (*url.URL, error) {
 }
 
 func (fsys *embedFS) String() string {
-	return fmt.Sprintf("embedFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("embedFS(%s)", ufsurl.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *embedFS) Open(name string) (fs.File, error) {
@@ -84,35 +87,35 @@ func (fsys *embedFS) ReadLink(name string) (string, error) {
 		return "", err
 	}
 	// embed.FS contains no symlinks.
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufspath.Error("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *embedFS) Create(name string) (File, error) {
 	if err := validPath("create", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("create", name, fmt.Errorf("embedFS is read-only, cannot create file %q: %w", name, fs.ErrPermission))
+	return nil, ufspath.Error("create", name, fmt.Errorf("embedFS is read-only, cannot create file %q: %w", name, fs.ErrPermission))
 }
 
 func (fsys *embedFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}
-	return pathError("mkdir", name, fmt.Errorf("embedFS is read-only, cannot create directory %q: %w", name, fs.ErrPermission))
+	return ufspath.Error("mkdir", name, fmt.Errorf("embedFS is read-only, cannot create directory %q: %w", name, fs.ErrPermission))
 }
 
 func (fsys *embedFS) Remove(name string) error {
 	if err := validPath("remove", name); err != nil {
 		return err
 	}
-	return pathError("remove", name, fmt.Errorf("embedFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
+	return ufspath.Error("remove", name, fmt.Errorf("embedFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
 }
 
 func (fsys *embedFS) RemoveAll(name string) error {
 	if err := validPath("removeall", name); err != nil {
 		return err
 	}
-	return pathError("removeall", name, fmt.Errorf("embedFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
+	return ufspath.Error("removeall", name, fmt.Errorf("embedFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
 }
 
 // NewEmbedFS wraps a Go [embed.FS] as a read-only [FS]. name is used as the

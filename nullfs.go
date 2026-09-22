@@ -23,6 +23,9 @@ import (
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/cloudfra/ufs/internal/ufspath"
+	"github.com/cloudfra/ufs/internal/ufsurl"
 )
 
 const (
@@ -142,7 +145,7 @@ func (fsys *nullFS) URI() (*url.URL, error) {
 }
 
 func (fsys *nullFS) String() string {
-	return fmt.Sprintf("nullFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("nullFS(%s)", ufsurl.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *nullFS) Open(name string) (fs.File, error) {
@@ -185,7 +188,7 @@ func (fsys *nullFS) ReadLink(name string) (string, error) {
 	if err := validPath("readlink", name); err != nil {
 		return "", err
 	}
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufspath.Error("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *nullFS) Stat(name string) (fs.FileInfo, error) {

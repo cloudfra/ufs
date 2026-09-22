@@ -17,7 +17,6 @@ package ufs
 import (
 	"bytes"
 	"io/fs"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -132,49 +131,6 @@ func TestNewRemoteArchive(t *testing.T) {
 	}
 }
 
-func TestIsBlockedIP(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		ip   string
-		want bool
-	}{
-		{"127.0.0.1", true},
-		{"127.0.0.2", true},
-		{"10.0.0.1", true},
-		{"10.255.255.255", true},
-		{"172.16.0.1", true},
-		{"172.31.255.255", true},
-		{"192.168.0.1", true},
-		{"192.168.1.100", true},
-		{"169.254.169.254", true},
-		{"0.0.0.0", true},
-		{"::1", true},
-		{"fe80::1", true},
-		{"fc00::1", true},
-		{"fd00::1", true},
-
-		{"8.8.8.8", false},
-		{"1.1.1.1", false},
-		{"172.15.0.1", false},
-		{"172.32.0.1", false},
-		{"192.169.0.1", false},
-		{"11.0.0.1", false},
-		{"2001:db8::1", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.ip, func(t *testing.T) {
-			t.Parallel()
-			ip := net.ParseIP(tc.ip)
-			if ip == nil {
-				t.Fatalf("net.ParseIP(%q) = nil", tc.ip)
-			}
-			if got := isBlockedIP(ip); got != tc.want {
-				t.Errorf("isBlockedIP(%s) = %v, want %v", tc.ip, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestValidateDownloadURL(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -205,38 +161,6 @@ func TestValidateDownloadURL(t *testing.T) {
 			err = validateDownloadURL(t.Context(), u)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("validateDownloadURL(%q) error = %v, wantErr = %v", tc.rawURL, err, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestSanitizeFilename(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		path    string
-		want    string
-		wantErr bool
-	}{
-		{"simple", "/archive/file.zip", "file.zip", false},
-		{"nested", "/a/b/c/data.tar.gz", "data.tar.gz", false},
-		{"single component", "/file.zip", "file.zip", false},
-		{"empty last component", "/path/to/", "", true},
-		{"dot", "/path/.", "", true},
-		{"dotdot", "/path/..", "", true},
-		{"root only", "/", "", true},
-		{"empty path", "", "", true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			u := &url.URL{Scheme: "https", Host: "example.com", Path: tc.path}
-			got, err := sanitizeFilename(u)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("sanitizeFilename(%q) error = %v, wantErr = %v", tc.path, err, tc.wantErr)
-			}
-			if got != tc.want {
-				t.Errorf("sanitizeFilename(%q) = %q, want %q", tc.path, got, tc.want)
 			}
 		})
 	}

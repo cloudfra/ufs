@@ -19,16 +19,7 @@ package ufs
 import (
 	"io/fs"
 	"os"
-	"strings"
 )
-
-// localFSNormalizePath strips the "file://" or "file:" URI prefix, leaving a plain path.
-func localFSNormalizePath(name string) string {
-	if after, ok := strings.CutPrefix(name, "file://"); ok {
-		return after
-	}
-	return strings.TrimPrefix(name, "file:")
-}
 
 func validLocalPath(op, name string) error {
 	return validPath(op, name)

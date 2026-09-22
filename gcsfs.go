@@ -29,6 +29,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/internal/ufspath"
+	"github.com/cloudfra/ufs/internal/ufsurl"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -88,7 +91,7 @@ func (f *gcsFile) Stat() (fs.FileInfo, error) {
 
 func (f *gcsFile) Read(p []byte) (int, error) {
 	if f.isDir {
-		return 0, pathError("read", f.name, fs.ErrInvalid)
+		return 0, ufspath.Error("read", f.name, fs.ErrInvalid)
 	}
 	if len(f.content) == 0 {
 		return 0, io.EOF
@@ -103,7 +106,7 @@ func (f *gcsFile) Read(p []byte) (int, error) {
 
 func (f *gcsFile) ReadAt(p []byte, off int64) (int, error) {
 	if f.isDir {
-		return 0, pathError("readat", f.name, fs.ErrInvalid)
+		return 0, ufspath.Error("readat", f.name, fs.ErrInvalid)
 	}
 	if off >= int64(len(f.content)) {
 		return 0, io.EOF
@@ -121,14 +124,14 @@ func (f *gcsFile) Write(p []byte) (int, error) {
 
 func (f *gcsFile) WriteString(s string) (int, error) {
 	if f.writer == nil {
-		return 0, pathError("write", f.name, fs.ErrInvalid)
+		return 0, ufspath.Error("write", f.name, fs.ErrInvalid)
 	}
 	return f.writer.Write([]byte(s))
 }
 
 func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 	if f.isDir {
-		return 0, pathError("seek", f.name, fs.ErrInvalid)
+		return 0, ufspath.Error("seek", f.name, fs.ErrInvalid)
 	}
 	switch whence {
 	case io.SeekStart:
@@ -138,12 +141,12 @@ func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		f.offset = int64(len(f.content)) + offset
 	default:
-		return 0, pathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
+		return 0, ufspath.Error("seek", f.name, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
 	}
 	if f.offset < 0 {
 		computed := f.offset
 		f.offset = 0
-		return 0, pathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, computed, fs.ErrInvalid))
+		return 0, ufspath.Error("seek", f.name, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, computed, fs.ErrInvalid))
 	}
 	return f.offset, nil
 }
@@ -159,7 +162,7 @@ func (f *gcsFile) Close() error {
 
 func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	if !f.isDir {
-		return nil, pathError("readdirent", f.name, fs.ErrInvalid)
+		return nil, ufspath.Error("readdirent", f.name, fs.ErrInvalid)
 	}
 	all := f.dirEntries
 	if f.dirOffset >= len(all) {
@@ -181,7 +184,7 @@ func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 
 func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	if !f.isDir {
-		return nil, pathError("readdir", f.name, fs.ErrInvalid)
+		return nil, ufspath.Error("readdir", f.name, fs.ErrInvalid)
 	}
 	entries, err := f.ReadDir(n)
 	if err != nil {
@@ -217,14 +220,14 @@ func (fsys *gcsFS) URI() (*url.URL, error) {
 }
 
 func (fsys *gcsFS) String() string {
-	return fmt.Sprintf("gcsFS(%s)", uriOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
+	return fmt.Sprintf("gcsFS(%s)", ufsurl.URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
 	if name == CwdPath {
 		entries, err := fsys.listDir("")
 		if err != nil {
-			return nil, pathError("open", CwdPath, err)
+			return nil, ufspath.Error("open", CwdPath, err)
 		}
 		return &gcsFile{
 			name:       CwdPath,
@@ -246,12 +249,12 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 	if err == nil {
 		rc, err := bkt.Object(objPath).NewReader(fsys.ctx)
 		if err != nil {
-			return nil, pathError("open", name, err)
+			return nil, ufspath.Error("open", name, err)
 		}
 		content, err := io.ReadAll(rc)
 		closeErr := rc.Close()
 		if err != nil || closeErr != nil {
-			return nil, joinErrors(pathError("open", name, err), closeErr)
+			return nil, ufserrors.Join(ufspath.Error("open", name, err), closeErr)
 		}
 		return &gcsFile{
 			name:    name,
@@ -263,16 +266,16 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 		}, nil
 	}
 	if !errors.Is(err, storage.ErrObjectNotExist) {
-		return nil, pathError("open", name, err)
+		return nil, ufspath.Error("open", name, err)
 	}
 
 	// Not a file — check if it's a virtual directory (has objects under it).
 	entries, err := fsys.listDir(name)
 	if err != nil {
-		return nil, pathError("open", name, err)
+		return nil, ufspath.Error("open", name, err)
 	}
 	if len(entries) == 0 {
-		return nil, pathError("open", name, fs.ErrNotExist)
+		return nil, ufspath.Error("open", name, fs.ErrNotExist)
 	}
 	return &gcsFile{
 		name:       name,
@@ -302,16 +305,16 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 		}, nil
 	}
 	if !errors.Is(err, storage.ErrObjectNotExist) {
-		return nil, pathError("stat", name, err)
+		return nil, ufspath.Error("stat", name, err)
 	}
 
 	// Not a file — check if it's a virtual directory (has objects under it).
 	entries, listErr := fsys.listDir(name)
 	if listErr != nil {
-		return nil, pathError("stat", name, listErr)
+		return nil, ufspath.Error("stat", name, listErr)
 	}
 	if len(entries) == 0 {
-		return nil, pathError("stat", name, fs.ErrNotExist)
+		return nil, ufspath.Error("stat", name, fs.ErrNotExist)
 	}
 	return &fsInfo{name: path.Base(name), mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
 }
@@ -419,7 +422,7 @@ func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
 	}()
 	gf := f.(*gcsFile)
 	if gf.isDir {
-		return nil, pathError("readfile", name, fs.ErrInvalid)
+		return nil, ufspath.Error("readfile", name, fs.ErrInvalid)
 	}
 	return gf.content, nil
 }
@@ -441,7 +444,7 @@ func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}()
 	gf := f.(*gcsFile)
 	if !gf.isDir {
-		return nil, pathError("readdir", name, fs.ErrInvalid)
+		return nil, ufspath.Error("readdir", name, fs.ErrInvalid)
 	}
 	return gf.ReadDir(-1)
 }
@@ -451,7 +454,7 @@ func (fsys *gcsFS) ReadLink(name string) (string, error) {
 		return "", err
 	}
 	// GCS has no symlinks.
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufspath.Error("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *gcsFS) Lstat(name string) (fs.FileInfo, error) {
@@ -468,17 +471,17 @@ func (fsys *gcsFS) Remove(name string) error {
 	// If there are virtual-directory children, refuse (non-empty directory).
 	entries, err := fsys.listDir(name)
 	if err != nil {
-		return pathError("remove", name, err)
+		return ufspath.Error("remove", name, err)
 	}
 	if len(entries) > 0 {
-		return pathError("remove", name, errDirNotEmpty)
+		return ufspath.Error("remove", name, errDirNotEmpty)
 	}
 
 	if err := bkt.Object(objPath).Delete(fsys.ctx); err != nil {
 		if errors.Is(err, storage.ErrObjectNotExist) {
-			return pathError("remove", name, fs.ErrNotExist)
+			return ufspath.Error("remove", name, fs.ErrNotExist)
 		}
-		return pathError("remove", name, err)
+		return ufspath.Error("remove", name, err)
 	}
 	return nil
 }
@@ -501,7 +504,7 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 		objPath := path.Join(fsys.baseDir, name)
 		// Best-effort delete of the exact object; ignore not-found.
 		if delErr := bkt.Object(objPath).Delete(fsys.ctx); delErr != nil && !errors.Is(delErr, storage.ErrObjectNotExist) {
-			return pathError("removeall", name, delErr)
+			return ufspath.Error("removeall", name, delErr)
 		}
 		listPrefix = objPath + "/"
 	}
@@ -513,10 +516,10 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 			break
 		}
 		if err != nil {
-			return pathError("removeall", name, err)
+			return ufspath.Error("removeall", name, err)
 		}
 		if delErr := bkt.Object(attrs.Name).Delete(fsys.ctx); delErr != nil && !errors.Is(delErr, storage.ErrObjectNotExist) {
-			return pathError("removeall", name, delErr)
+			return ufspath.Error("removeall", name, delErr)
 		}
 	}
 	return nil
@@ -580,7 +583,7 @@ func gcsJoin(parts ...string) string {
 		prefix = "gs://"
 		path = after
 	}
-	path = coerceUnixPath(filepath.Clean(path))
+	path = ufspath.CoerceUnix(filepath.Clean(path))
 	if path == CwdPath {
 		return prefix
 	}
@@ -595,11 +598,11 @@ func parseGCSPath(p string, op string) (string, string, error) {
 	}
 	after, ok := strings.CutPrefix(p, "gs://")
 	if !ok {
-		return "", "", pathError(op, raw, fmt.Errorf("'%s' does not contain the gs:// prefix", raw))
+		return "", "", ufspath.Error(op, raw, fmt.Errorf("'%s' does not contain the gs:// prefix", raw))
 	}
 	parts := strings.SplitN(after, "/", 2)
 	if len(parts) == 0 || parts[0] == "" {
-		return "", "", pathError(op, raw, fmt.Errorf("'%s' does not have a bucket name", raw))
+		return "", "", ufspath.Error(op, raw, fmt.Errorf("'%s' does not have a bucket name", raw))
 	}
 	if len(parts) == 2 {
 		return parts[0], parts[1], nil

@@ -30,6 +30,9 @@ import (
 	"github.com/mholt/archives"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/internal/ufspath"
+	"github.com/cloudfra/ufs/internal/ufsurl"
 )
 
 const (
@@ -145,7 +148,7 @@ func (fsys *archiveFS) URI() (*url.URL, error) {
 }
 
 func (fsys *archiveFS) String() string {
-	return fmt.Sprintf("archiveFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("archiveFS(%s)", ufsurl.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
@@ -181,14 +184,14 @@ func (fsys *archiveFS) Create(name string) (File, error) {
 	if err := validPath("create", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("create", name, fmt.Errorf("archiveFS mounts are read-only, cannot create file, %q, %w", name, fs.ErrPermission))
+	return nil, ufspath.Error("create", name, fmt.Errorf("archiveFS mounts are read-only, cannot create file, %q, %w", name, fs.ErrPermission))
 }
 
 func (fsys *archiveFS) MkdirAll(name string, _ fs.FileMode) error {
 	if err := validPath("mkdir", name); err != nil {
 		return err
 	}
-	return pathError("mkdir", name, fmt.Errorf("archiveFS mounts are read-only, cannot create directory, %q, %w", name, fs.ErrPermission))
+	return ufspath.Error("mkdir", name, fmt.Errorf("archiveFS mounts are read-only, cannot create directory, %q, %w", name, fs.ErrPermission))
 }
 
 func (fsys *archiveFS) ReadFile(name string) ([]byte, error) {
@@ -210,7 +213,7 @@ func (fsys *archiveFS) ReadLink(name string) (string, error) {
 		return "", err
 	}
 	// Archives contain no symlinks; every path is a regular file or directory.
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufspath.Error("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
@@ -222,14 +225,14 @@ func (fsys *archiveFS) Remove(name string) error {
 	if err := validPath("remove", name); err != nil {
 		return err
 	}
-	return pathError("remove", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
+	return ufspath.Error("remove", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
 func (fsys *archiveFS) RemoveAll(name string) error {
 	if err := validPath("removeall", name); err != nil {
 		return err
 	}
-	return pathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
+	return ufspath.Error("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
@@ -257,7 +260,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 	}
 	fsys, err := archives.FileSystem(ctx, name, file)
 	if err != nil {
-		return nil, joinErrors(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
+		return nil, ufserrors.Join(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
 	}
 	return makeArchiveFS(fsys, name, file), nil
 }
@@ -295,19 +298,19 @@ func newTempMountRemoteArchiveFS(ctx context.Context, name string) (FS, error) {
 	tempDir, cleanup, err := createOSTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create temp directory, %w", joinErrors(err, cleanupErr))
+		return nil, fmt.Errorf("cannot create temp directory, %w", ufserrors.Join(err, cleanupErr))
 	}
 
 	filename, err := downloadFile(ctx, tempDir, name)
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, joinErrors(err, cleanupErr)
+		return nil, ufserrors.Join(err, cleanupErr)
 	}
 
 	fsys, err := newArchiveFSFromLocalFS(ctx, filename)
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create archive FS from local file, %w", joinErrors(err, cleanupErr))
+		return nil, fmt.Errorf("cannot create archive FS from local file, %w", ufserrors.Join(err, cleanupErr))
 	}
 	return makeTempMountFS(fsys, name, tempDir, cleanup), nil
 }

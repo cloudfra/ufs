@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/cloudfra/ufs/internal/ufspath"
 )
 
 const (
@@ -55,13 +57,9 @@ func splitPath(name string) []string {
 
 func validPath(op string, name string) error {
 	if !fs.ValidPath(name) {
-		return pathError(op, name, fmt.Errorf("%q is not a valid path for %s, %w", name, runtime.GOOS, fs.ErrInvalid))
+		return ufspath.Error(op, name, fmt.Errorf("%q is not a valid path for %s, %w", name, runtime.GOOS, fs.ErrInvalid))
 	}
 	return nil
-}
-
-func coerceUnixPath(name string) string {
-	return strings.ReplaceAll(name, windowsPathSeparator, unixPathSeparator)
 }
 
 func isDirName(name string) bool {
@@ -70,14 +68,6 @@ func isDirName(name string) bool {
 
 func isCwd(name string) bool {
 	return name == "" || name == CwdPath
-}
-
-func pathError(op string, name string, err error) error {
-	return &fs.PathError{
-		Op:   op,
-		Path: name,
-		Err:  err,
-	}
 }
 
 type realAbsPathGet interface {
@@ -99,5 +89,5 @@ func AbsPath(fsys any, name string) (string, error) {
 }
 
 func realAbsPathNotSupported(fsys any, name string) error {
-	return pathError("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
+	return ufspath.Error("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
 }

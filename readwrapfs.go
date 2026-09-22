@@ -19,6 +19,8 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+
+	"github.com/cloudfra/ufs/internal/ufspath"
 )
 
 var _ ReadFS = (*readWrapFS)(nil)
@@ -103,7 +105,7 @@ func (fsys *readWrapFS) ReadLink(name string) (string, error) {
 	if rlfs, ok := fsys.fsys.(fs.ReadLinkFS); ok {
 		return rlfs.ReadLink(name)
 	}
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufspath.Error("readlink", name, fs.ErrInvalid)
 }
 
 // FromFS wraps a standard library [fs.FS] as a read-only [ReadFS].

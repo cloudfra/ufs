@@ -12,12 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+//go:build !windows
 
-func uriOrDefault(fsys URIGet, value string) string {
-	u, err := fsys.URI()
-	if err != nil || u == nil {
-		return value
+package ufspath
+
+import "strings"
+
+// NormalizeFileURI strips a "file://" or "file:" URI prefix from name,
+// leaving a plain filesystem path. On non-Windows platforms the remainder is
+// already in the expected "/path/to/dir" format.
+func NormalizeFileURI(name string) string {
+	if after, ok := strings.CutPrefix(name, "file://"); ok {
+		return after
 	}
-	return u.String()
+	return strings.TrimPrefix(name, "file:")
 }

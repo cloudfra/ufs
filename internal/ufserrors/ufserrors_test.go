@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package ufserrors
 
 import (
 	"errors"
 	"testing"
 )
 
-func TestJoinErrors(t *testing.T) {
+func TestJoin(t *testing.T) {
 	t.Parallel()
 
 	errA := errors.New("error A")
@@ -29,7 +29,7 @@ func TestJoinErrors(t *testing.T) {
 		name       string
 		errs       []error
 		wantNil    bool
-		wantSameAs error // non-nil: result must be this exact value (no wrapper)
+		wantSameAs error
 		wantIsA    bool
 		wantIsB    bool
 	}{
@@ -46,24 +46,24 @@ func TestJoinErrors(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := joinErrors(tc.errs...)
+			got := Join(tc.errs...)
 			if tc.wantNil {
 				if got != nil {
-					t.Errorf("joinErrors() = %v, want nil", got)
+					t.Errorf("Join() = %v, want nil", got)
 				}
 				return
 			}
 			if got == nil {
-				t.Fatalf("joinErrors() = nil, want non-nil")
+				t.Fatalf("Join() = nil, want non-nil")
 			}
 			if tc.wantSameAs != nil && got != tc.wantSameAs {
-				t.Errorf("joinErrors() returned a wrapped error; want the identical error value, got %v", got)
+				t.Errorf("Join() returned a wrapped error; want the identical error value, got %v", got)
 			}
 			if tc.wantIsA && !errors.Is(got, errA) {
-				t.Errorf("joinErrors(): errors.Is(result, errA) = false, want true")
+				t.Errorf("Join(): errors.Is(result, errA) = false, want true")
 			}
 			if tc.wantIsB && !errors.Is(got, errB) {
-				t.Errorf("joinErrors(): errors.Is(result, errB) = false, want true")
+				t.Errorf("Join(): errors.Is(result, errB) = false, want true")
 			}
 		})
 	}
@@ -88,7 +88,7 @@ func BenchmarkJoin(b *testing.B) {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for range b.N {
-				joinErrors(bc.errs...) //nolint:errcheck,gosec // The response is not important; this benchmark tracks allocations.
+				Join(bc.errs...) //nolint:errcheck,gosec
 			}
 		})
 	}

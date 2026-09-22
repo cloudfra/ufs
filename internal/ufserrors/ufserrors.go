@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package ufserrors provides helper functions for combining and wrapping
+// errors that are not tied to a specific file-system implementation.
+package ufserrors
 
 import "errors"
 
-// joinErrors returns nil if all errs are nil, returns the single non-nil error
-// directly (without wrapping) if exactly one is non-nil, or [errors.Join]
-// when multiple are non-nil. This avoids the join wrapper overhead and the
-// change in error identity that errors.Join introduces for the
-// single-error case.
-func joinErrors(errs ...error) error {
+// Join returns nil if all errs are nil, returns the single non-nil
+// error directly (without wrapping) if exactly one is non-nil, or [errors.Join]
+// when multiple are non-nil. Avoids the wrapper overhead and identity change
+// that errors.Join introduces for the single-error case.
+func Join(errs ...error) error {
 	var first error
 	multiple := false
 	for _, err := range errs {

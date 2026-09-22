@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
+
+	"github.com/cloudfra/ufs/internal/ufspath"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -221,7 +223,7 @@ func list(fsys fs.FS, dir string, includeDirs bool) ([]string, error) {
 func Remove(fsys fs.FS, name string) error {
 	r, ok := fsys.(RemoveFileFS)
 	if !ok {
-		return pathError("remove", name, fs.ErrPermission)
+		return ufspath.Error("remove", name, fs.ErrPermission)
 	}
 	return r.Remove(name)
 }
@@ -232,7 +234,7 @@ func Remove(fsys fs.FS, name string) error {
 func RemoveAll(fsys fs.FS, name string) error {
 	r, ok := fsys.(RemoveFileFS)
 	if !ok {
-		return pathError("removeall", name, fs.ErrPermission)
+		return ufspath.Error("removeall", name, fs.ErrPermission)
 	}
 	return r.RemoveAll(name)
 }

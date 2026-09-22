@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestNullFSString(t *testing.T) {
@@ -78,7 +80,7 @@ func TestNewNullFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	nf, ok := f.(io.Writer)
 	if !ok {
@@ -259,7 +261,7 @@ func TestNullFSCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(\"created.txt\") failed: %v", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	if f == nil {
 		t.Fatal("Created file is nil")
@@ -289,7 +291,7 @@ func TestNullFileOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	// Read
 	b := make([]byte, 10)

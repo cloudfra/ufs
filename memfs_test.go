@@ -19,6 +19,8 @@ import (
 	"io"
 	"io/fs"
 	"testing"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestIsMemFSUri(t *testing.T) {
@@ -90,7 +92,7 @@ func TestMemFSCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(\"created.txt\") failed: %v", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	if f == nil {
 		t.Fatal("Created file is nil")
@@ -325,7 +327,7 @@ func TestMemFSDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	if _, ok := f.(fs.ReadDirFile); ok {
 		t.Error("regular file implements fs.ReadDirFile, want it not to")
@@ -739,7 +741,7 @@ func TestMemFileReadDirOnFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	// Regular files must not expose ReadDir; ReadDirFS.ReadDir should error.
 	if _, ok := f.(fs.ReadDirFile); ok {
@@ -759,7 +761,7 @@ func TestMemFileSeekNegative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	if _, err := f.Seek(-1, io.SeekStart); err == nil {
 		t.Error("Seek(-1, SeekStart) succeeded, want error")
@@ -794,7 +796,7 @@ func TestMemFileDirRead(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Open(%q) = %v", dirPath, err)
 			}
-			defer validateClose(t, f)()
+			defer ufsTesting.ValidateClose(t, f)()
 
 			n, err := f.Read(make([]byte, 1))
 			if err == nil || err == io.EOF {
@@ -909,7 +911,7 @@ func TestMemFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	if err := fsys.MkdirAll("a/b", fs.ModePerm); err != nil {
 		t.Fatal(err)

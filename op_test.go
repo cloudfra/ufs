@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestRsync(t *testing.T) {
@@ -33,7 +33,7 @@ func TestRsync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
-	t.Cleanup(validateClose(t, srcFS))
+	t.Cleanup(ufsTesting.ValidateClose(t, srcFS))
 	for _, fsysTC := range getAllRegularTestCaseList() {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
@@ -70,10 +70,10 @@ func TestRsyncAngry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
-	defer validateClose(t, srcFS)()
+	defer ufsTesting.ValidateClose(t, srcFS)()
 
 	destFS := makeAngryFS(angryFSPrefix)
-	defer wantCloseError(t, destFS)()
+	defer ufsTesting.WantCloseError(t, destFS)()
 
 	if err := Rsync(srcFS, destFS, CwdPath); err == nil {
 		t.Error("rsync expected to fail got nil error")
@@ -85,10 +85,10 @@ func TestRsyncNull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
 	}
-	defer validateClose(t, srcFS)()
+	defer ufsTesting.ValidateClose(t, srcFS)()
 
 	destFS := mustNullFS(t)
-	defer validateClose(t, destFS)()
+	defer ufsTesting.ValidateClose(t, destFS)()
 
 	if err := Rsync(srcFS, destFS, CwdPath); err != nil {
 		t.Errorf("rsync expected to succeed, failed with error: %s", err)

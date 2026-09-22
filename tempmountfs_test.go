@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestNewTempMountFS(t *testing.T) {
@@ -93,7 +94,7 @@ func TestTempMountFSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("remove_me.txt")
 	if err != nil {
@@ -124,7 +125,7 @@ func TestTempMountFSRemoveAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	if err := fsys.MkdirAll("sub/dir", fs.ModePerm); err != nil {
 		t.Fatal(err)
@@ -164,7 +165,7 @@ func TestTempMountFSRemoveAll(t *testing.T) {
 }
 
 func TestTempMountFSReadLink(t *testing.T) {
-	skipTestOnWindows(t)
+	ufsTesting.SkipTestOnWindows(t)
 	var tempDir string
 	fsys, err := newTempMountFS(t.Context(), "test://", func(dir string) error {
 		tempDir = dir
@@ -173,7 +174,7 @@ func TestTempMountFSReadLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("target.txt")
 	if err != nil {
@@ -201,7 +202,7 @@ func TestTempMountFSReadLink(t *testing.T) {
 }
 
 func TestTempMountFSLstat(t *testing.T) {
-	skipTestOnWindows(t)
+	ufsTesting.SkipTestOnWindows(t)
 	var tempDir string
 	fsys, err := newTempMountFS(t.Context(), "test://", func(dir string) error {
 		tempDir = dir
@@ -210,7 +211,7 @@ func TestTempMountFSLstat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("lstat_file.txt")
 	if err != nil {

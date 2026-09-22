@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestCreateOSTempDirectory(t *testing.T) {
@@ -121,7 +122,7 @@ func TestNewRemoteArchive(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	if files, err := fsys.ReadDir(CwdPath); files != nil {
 		t.Logf("files: %v, err: %s", files, err)

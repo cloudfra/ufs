@@ -22,11 +22,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-
-	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestIsGitFSUri(t *testing.T) {
@@ -120,13 +120,13 @@ func TestNewGitFSLocalRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Open("hello.txt")
 	if err != nil {
 		t.Fatalf("Open(%q) = %v, want nil", "hello.txt", err)
 	}
-	defer validateClose(t, f)()
+	defer ufsTesting.ValidateClose(t, f)()
 
 	data, err := io.ReadAll(f)
 	if err != nil {
@@ -158,7 +158,7 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
 	}
-	defer validateClose(t, fsys)()
+	defer ufsTesting.ValidateClose(t, fsys)()
 
 	// .git and .gitignore should be stripped from the cloned result
 	if _, err := fsys.Open(".git"); err == nil {

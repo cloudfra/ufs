@@ -53,15 +53,15 @@ func TestMountMap(t *testing.T) {
 	afs := makeAngryFS(angryFSPrefix)
 	nfs := mustNullFS(t)
 
-	must(t, mm.put("mounts/null", makeNestFS(t.Context(), nfs)))
-	must(t, mm.put("mounts/mem", makeNestFS(t.Context(), mfs)))
-	must(t, mm.put("mounts/angry", makeNestFS(t.Context(), afs)))
-	must(t, mm.put("null", makeNestFS(t.Context(), nfs)))
-	must(t, mm.put("mem", makeNestFS(t.Context(), mfs)))
-	must(t, mm.put("angry", makeNestFS(t.Context(), afs)))
-	must(t, mm.put("mounts/level2/a/null", makeNestFS(t.Context(), nfs)))
-	must(t, mm.put("mounts/level2/a/mem", makeNestFS(t.Context(), mfs)))
-	must(t, mm.put("mounts/level2/angry", makeNestFS(t.Context(), afs)))
+	ufsTesting.Must(t, mm.put("mounts/null", makeNestFS(t.Context(), nfs)))
+	ufsTesting.Must(t, mm.put("mounts/mem", makeNestFS(t.Context(), mfs)))
+	ufsTesting.Must(t, mm.put("mounts/angry", makeNestFS(t.Context(), afs)))
+	ufsTesting.Must(t, mm.put("null", makeNestFS(t.Context(), nfs)))
+	ufsTesting.Must(t, mm.put("mem", makeNestFS(t.Context(), mfs)))
+	ufsTesting.Must(t, mm.put("angry", makeNestFS(t.Context(), afs)))
+	ufsTesting.Must(t, mm.put("mounts/level2/a/null", makeNestFS(t.Context(), nfs)))
+	ufsTesting.Must(t, mm.put("mounts/level2/a/mem", makeNestFS(t.Context(), mfs)))
+	ufsTesting.Must(t, mm.put("mounts/level2/angry", makeNestFS(t.Context(), afs)))
 	if err := mm.put("mounts/level2/angry/angry", makeNestFS(t.Context(), afs)); err == nil {
 		t.Fatal("'mounts/level2/angry/angry' should not be mountable because of 'mounts/level2/angry'")
 	}
@@ -188,7 +188,7 @@ func TestMountMap(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("getMatchesBySubPath/%s", tc.input), func(t *testing.T) {
 			matches := mm.getMatchesBySubPath(tc.input)
-			got := toMapKeys(matches)
+			got := ufsTesting.ToMapKeys(matches)
 			if diff := cmp.Diff(got, tc.wantGetMatchesBySubPath); diff != "" {
 				t.Errorf("got: %q, want: %q, diff: %q", got, tc.wantGetMatchesBySubPath, diff)
 			}
@@ -218,11 +218,11 @@ func TestNestFSFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
-	assertContains(t, fsys, "testing/testassets/files/index.html", "testing/testassets/files/index.html")
-	assertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/site.js", "testing/testassets/files/site.js")
-	assertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/single-testassets.zip.d/index.html", "testing/testassets/files/index.html")
-	assertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/testassets.7z.d/assets/four/4.txt", "testing/testassets/files/assets/four/4.txt")
-	assertDir(t, fsys, "testing/testassets/archives/nested-testassets.zip.d", []string{
+	ufsTesting.AssertContains(t, fsys, "testing/testassets/files/index.html", "testing/testassets/files/index.html")
+	ufsTesting.AssertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/site.js", "testing/testassets/files/site.js")
+	ufsTesting.AssertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/single-testassets.zip.d/index.html", "testing/testassets/files/index.html")
+	ufsTesting.AssertContains(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/testassets.7z.d/assets/four/4.txt", "testing/testassets/files/assets/four/4.txt")
+	ufsTesting.AssertDir(t, fsys, "testing/testassets/archives/nested-testassets.zip.d", []string{
 		"assets",
 		"index.html",
 		"single-testassets.zip",
@@ -234,7 +234,7 @@ func TestNestFSFull(t *testing.T) {
 		"weird #1.txt",
 		"weird$.txt",
 	})
-	assertDir(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/testassets.7z.d", []string{
+	ufsTesting.AssertDir(t, fsys, "testing/testassets/archives/nested-testassets.zip.d/testassets.7z.d", []string{
 		"assets",
 		"index.html",
 		"site.js",
@@ -242,7 +242,7 @@ func TestNestFSFull(t *testing.T) {
 		"weird #1.txt",
 		"weird$.txt",
 	})
-	assertDir(t, fsys, "testing/testassets/archives", []string{
+	ufsTesting.AssertDir(t, fsys, "testing/testassets/archives", []string{
 		"nested-testassets.zip",
 		"nested-testassets.zip.d",
 		"nodir-deep-testassets.zip",
@@ -264,18 +264,18 @@ func TestNestFSFull(t *testing.T) {
 		"testassets.tar.xz",
 		"testassets.tar.xz.d",
 	})
-	assertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d", []string{
+	ufsTesting.AssertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d", []string{
 		"1.txt",
 		"2.txt",
 		"onetwothree",
 		"sixseven",
 	})
-	assertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d/onetwothree", []string{
+	ufsTesting.AssertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d/onetwothree", []string{
 		"1.txt",
 		"2.txt",
 		"3.txt",
 	})
-	assertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d/sixseven", []string{
+	ufsTesting.AssertDir(t, fsys, "testing/testassets/archives/nodir-testassets.zip.d/sixseven", []string{
 		"6.txt",
 		"7.txt",
 	})

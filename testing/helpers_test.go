@@ -18,7 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"runtime"
+	"slices"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	utesting "github.com/cloudfra/ufs/testing"
@@ -49,11 +52,60 @@ func (m *captureTB) Errorf(format string, args ...any) {
 	m.errors = append(m.errors, fmt.Sprintf(format, args...))
 }
 
+func (m *captureTB) Error(args ...any) {
+	m.errors = append(m.errors, fmt.Sprint(args...))
+}
+
 // Fatalf records the fatal message instead of calling the embedded
 // (*testing.T).Fatalf, which would stop the goroutine and mark the enclosing
 // test as failed.
 func (m *captureTB) Fatalf(format string, args ...any) {
 	m.fatals = append(m.fatals, fmt.Sprintf(format, args...))
+}
+
+// runFatal runs fn with a captureTB whose Fatalf stops the goroutine, matching
+// the real testing.TB contract, so helpers that rely on Fatalf not returning
+// can be tested. It returns the captured TB after fn exits.
+func runFatal(t *testing.T, fn func(tb testing.TB)) *captureTB {
+	t.Helper()
+	m := &captureTB{T: t}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn(&goexitTB{captureTB: m})
+	}()
+	<-done
+	return m
+}
+
+// goexitTB is a captureTB whose Fatalf records the message and then calls
+// runtime.Goexit, like (*testing.T).Fatalf.
+type goexitTB struct {
+	*captureTB
+}
+
+func (g *goexitTB) Fatalf(format string, args ...any) {
+	g.captureTB.Fatalf(format, args...)
+	runtime.Goexit()
+}
+
+// openOnlyFS implements fs.FS but not fs.ReadDirFS.
+type openOnlyFS struct {
+	fs.FS
+}
+
+// noReadDirFileFS implements fs.ReadDirFS, but Open returns files that do not
+// implement fs.ReadDirFile.
+type noReadDirFileFS struct {
+	fstest.MapFS
+}
+
+func (n noReadDirFileFS) Open(name string) (fs.File, error) {
+	f, err := n.MapFS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return struct{ fs.File }{f}, nil
 }
 
 // fakeDirEntry implements fs.DirEntry and fs.FileInfo.
@@ -273,5 +325,172 @@ func TestAssertInvalidPathError(t *testing.T) {
 		t.Parallel()
 		perr := &fs.PathError{Op: "open", Path: "", Err: fs.ErrNotExist}
 		utesting.AssertInvalidPathError(t, "", perr, "open")
+	})
+}
+
+// ---------- Must ----------
+
+func TestMust(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil_error_passes", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.Must(m, nil)
+		if len(m.errors) != 0 {
+			t.Errorf("expected no captured errors, got %v", m.errors)
+		}
+	})
+
+	t.Run("non_nil_error_reported", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.Must(m, errors.New("boom"))
+		if want := []string{"boom"}; !slices.Equal(m.errors, want) {
+			t.Errorf("captured errors = %v, want %v", m.errors, want)
+		}
+	})
+}
+
+// ---------- ToMapKeys ----------
+
+func TestToMapKeys(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		got := utesting.ToMapKeys[int](nil)
+		if got == nil || len(got) != 0 {
+			t.Errorf("ToMapKeys(nil) = %#v, want empty non-nil slice", got)
+		}
+	})
+
+	t.Run("sorted", func(t *testing.T) {
+		t.Parallel()
+		got := utesting.ToMapKeys(map[string]bool{"gamma": true, "alpha": false, "beta": true})
+		if want := []string{"alpha", "beta", "gamma"}; !slices.Equal(got, want) {
+			t.Errorf("ToMapKeys = %v, want %v", got, want)
+		}
+	})
+}
+
+// ---------- AssertContains ----------
+
+func TestAssertContains(t *testing.T) {
+	t.Parallel()
+
+	fsys := fstest.MapFS{
+		"a.txt":     {Data: []byte("hello world")},
+		"empty.txt": {Data: nil},
+	}
+
+	for _, tc := range []struct {
+		name       string
+		file       string
+		substr     string
+		wantErrors int
+	}{
+		{name: "contains", file: "a.txt", substr: "lo wo", wantErrors: 0},
+		{name: "empty_substr", file: "empty.txt", substr: "", wantErrors: 0},
+		{name: "missing_substr", file: "a.txt", substr: "goodbye", wantErrors: 1},
+		{name: "missing_file", file: "nope.txt", substr: "x", wantErrors: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := &captureTB{T: t}
+			utesting.AssertContains(m, fsys, tc.file, tc.substr)
+			if len(m.errors) != tc.wantErrors {
+				t.Errorf("captured %d errors, want %d: %v", len(m.errors), tc.wantErrors, m.errors)
+			}
+		})
+	}
+}
+
+// ---------- AssertDir ----------
+
+func TestAssertDir(t *testing.T) {
+	t.Parallel()
+
+	mapFS := fstest.MapFS{
+		"dir/b.txt":     {},
+		"dir/a.txt":     {},
+		"dir/sub/c.txt": {},
+		"emptydir":      {Mode: fs.ModeDir},
+	}
+
+	t.Run("match", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, mapFS, "dir", []string{"a.txt", "b.txt", "sub"})
+		if len(m.errors) != 0 || len(m.fatals) != 0 {
+			t.Errorf("unexpected failures: errors=%v fatals=%v", m.errors, m.fatals)
+		}
+	})
+
+	t.Run("match_root", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, mapFS, ".", []string{"dir", "emptydir"})
+		if len(m.errors) != 0 || len(m.fatals) != 0 {
+			t.Errorf("unexpected failures: errors=%v fatals=%v", m.errors, m.fatals)
+		}
+	})
+
+	t.Run("match_empty_dir", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, mapFS, "emptydir", []string{})
+		if len(m.errors) != 0 || len(m.fatals) != 0 {
+			t.Errorf("unexpected failures: errors=%v fatals=%v", m.errors, m.fatals)
+		}
+	})
+
+	t.Run("mismatch_reports_both_paths", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, mapFS, "dir", []string{"a.txt", "sub"})
+		if len(m.errors) != 2 {
+			t.Errorf("captured %d errors, want 2: %v", len(m.errors), m.errors)
+		}
+	})
+
+	t.Run("order_matters", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, mapFS, "dir", []string{"b.txt", "a.txt", "sub"})
+		if len(m.errors) != 2 {
+			t.Errorf("captured %d errors, want 2: %v", len(m.errors), m.errors)
+		}
+	})
+
+	t.Run("missing_dir", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, mapFS, "nope", nil)
+		if len(m.errors) != 2 {
+			t.Errorf("captured %d errors, want 2: %v", len(m.errors), m.errors)
+		}
+	})
+
+	t.Run("open_not_readdirfile", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, noReadDirFileFS{mapFS}, "dir", []string{"a.txt", "b.txt", "sub"})
+		if len(m.errors) != 1 {
+			t.Errorf("captured %d errors, want 1: %v", len(m.errors), m.errors)
+		}
+	})
+
+	t.Run("not_readdirfs_is_fatal", func(t *testing.T) {
+		t.Parallel()
+		m := runFatal(t, func(tb testing.TB) {
+			utesting.AssertDir(tb, openOnlyFS{mapFS}, "dir", nil)
+		})
+		if len(m.fatals) != 1 {
+			t.Errorf("captured %d fatals, want 1: %v", len(m.fatals), m.fatals)
+		}
+		if len(m.errors) != 0 {
+			t.Errorf("unexpected errors after fatal: %v", m.errors)
+		}
 	})
 }

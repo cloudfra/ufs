@@ -22,9 +22,12 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 //go:embed testassets/files
@@ -127,5 +130,82 @@ func AssertInvalidPathError(tb testing.TB, path string, err error, wantOp string
 		}
 	} else {
 		tb.Errorf("%q is not a *fs.PathError, got: %q", err, reflect.TypeOf(err).Name())
+	}
+}
+
+// Must reports err via tb.Error if it is non-nil. Unlike a typical Must
+// helper it does not stop the test, so subsequent assertions still run.
+func Must(tb testing.TB, err error) {
+	tb.Helper()
+	if err != nil {
+		tb.Error(err)
+	}
+}
+
+// ToMapKeys returns the keys of m in ascending sorted order. It returns an
+// empty, non-nil slice when m is empty or nil.
+func ToMapKeys[T any](m map[string]T) []string {
+	keys := make([]string, len(m))
+	idx := 0
+	for k := range m {
+		keys[idx] = k
+		idx++
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// AssertContains reads the file name from fsys and reports an error via
+// tb.Errorf if its contents do not contain substr. A read failure is also
+// reported via tb.Error.
+func AssertContains(tb testing.TB, fsys fs.FS, name string, substr string) {
+	tb.Helper()
+	data, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		tb.Error(err)
+	}
+	if !strings.Contains(string(data), substr) {
+		tb.Errorf("%q does not contain %q, (len: %d) %q", name, substr, len(data), string(data))
+	}
+}
+
+// AssertDir asserts that the directory name in fsys contains exactly the
+// entries in want, in order. It checks both fs.ReadDirFS.ReadDir(name) and
+// fs.ReadDirFile.ReadDir(-1) on the file returned by fsys.Open(name), so both
+// code paths of an implementation are exercised. It calls tb.Fatalf if fsys
+// does not implement fs.ReadDirFS.
+func AssertDir(tb testing.TB, fsys fs.FS, name string, want []string) {
+	tb.Helper()
+
+	rdfsys, ok := fsys.(fs.ReadDirFS)
+	if !ok || rdfsys == nil {
+		tb.Fatalf("%+v is not an fs.ReadDirFS", fsys)
+	}
+	if gotEntries, err := rdfsys.ReadDir(name); err != nil {
+		tb.Errorf("cannot ReadDir(%q), %s", name, err)
+	} else {
+		gotEntryNames := DirEntryListToNames(gotEntries)
+		if d := cmp.Diff(want, gotEntryNames); d != "" {
+			tb.Errorf("fs.ReadDir(%q) mismatch, got %s, want %s diff(-want,+got):\n %v", name, gotEntryNames, want, d)
+		}
+	}
+
+	if f, err := fsys.Open(name); err != nil {
+		tb.Errorf("cannot open %q, %s", name, err)
+	} else {
+		defer ValidateClose(tb, f)()
+		rdf, ok := f.(fs.ReadDirFile)
+		if ok {
+			if gotEntries, err := rdf.ReadDir(-1); err != nil {
+				tb.Errorf("cannot ReadDir(%q), %s", name, err)
+			} else {
+				gotEntryNames := DirEntryListToNames(gotEntries)
+				if d := cmp.Diff(want, gotEntryNames); d != "" {
+					tb.Errorf("ReadDir(-1) mismatch, got %s, want %s diff(-want,+got):\n %v", gotEntryNames, want, d)
+				}
+			}
+		} else {
+			tb.Errorf("%q does not open a ReadDirFile, %s", name, reflect.TypeOf(f).Name())
+		}
 	}
 }

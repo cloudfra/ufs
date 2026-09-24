@@ -99,9 +99,9 @@ func TestMountMapCloseClosesAllMountsOnError(t *testing.T) {
 	bad := &failCloser{FS: makeMemFS("memory://bad")}
 	good2 := &closeCounter{FS: makeMemFS("memory://2")}
 
-	must(t, mm.put("a", makeNestFS(ctx, good1)))
-	must(t, mm.put("b", makeNestFS(ctx, bad)))
-	must(t, mm.put("c", makeNestFS(ctx, good2)))
+	ufsTesting.Must(t, mm.put("a", makeNestFS(ctx, good1)))
+	ufsTesting.Must(t, mm.put("b", makeNestFS(ctx, bad)))
+	ufsTesting.Must(t, mm.put("c", makeNestFS(ctx, good2)))
 
 	err := mm.Close()
 	if err == nil {
@@ -127,7 +127,7 @@ func TestNestFSCloseClosesBaseWhenMountsFail(t *testing.T) {
 	bad := &failCloser{FS: makeMemFS("memory://bad")}
 
 	nfs := makeNestFS(ctx, base)
-	must(t, nfs.addMount("failing", makeNestFS(ctx, bad)))
+	ufsTesting.Must(t, nfs.addMount("failing", makeNestFS(ctx, bad)))
 
 	err := nfs.Close()
 	if err == nil {

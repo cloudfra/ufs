@@ -336,7 +336,7 @@ func TestArchiveFSReadDirImplicitDir(t *testing.T) {
 func TestArchiveFSImplicitDirRootAndNested(t *testing.T) {
 	fsys := mustNoDirArchiveFS(t)
 
-	assertDir(t, fsys, ".", []string{"1.txt", "2.txt", "onetwothree", "sixseven"})
+	ufsTesting.AssertDir(t, fsys, ".", []string{"1.txt", "2.txt", "onetwothree", "sixseven"})
 
 	for _, name := range []string{"1.txt", "2.txt"} {
 		info, err := fsys.Stat(name)
@@ -467,10 +467,10 @@ func TestArchiveFSImplicitDirMultipleLayers(t *testing.T) {
 	}
 
 	// Directory listing at multiple levels.
-	assertDir(t, fsys, "deep", []string{"5.txt", "x", "z"})
-	assertDir(t, fsys, "deep/x", []string{"3.txt", "y"})
-	assertDir(t, fsys, "deep/x/y", []string{"1.txt", "2.txt"})
-	assertDir(t, fsys, "deep/z", []string{"4.txt"})
+	ufsTesting.AssertDir(t, fsys, "deep", []string{"5.txt", "x", "z"})
+	ufsTesting.AssertDir(t, fsys, "deep/x", []string{"3.txt", "y"})
+	ufsTesting.AssertDir(t, fsys, "deep/x/y", []string{"1.txt", "2.txt"})
+	ufsTesting.AssertDir(t, fsys, "deep/z", []string{"4.txt"})
 
 	// Files nested under implicit directories must still be readable.
 	data, err := fs.ReadFile(fsys, "deep/x/y/1.txt")
@@ -522,8 +522,8 @@ func TestArchiveFSImplicitDirMixedExplicit(t *testing.T) {
 
 	// Directory listing at the mixed level: the implicit "sixseven" appears
 	// alongside the explicit files under the explicit parent directory.
-	assertDir(t, fsys, "onetwothree", []string{"1.txt", "2.txt", "sixseven"})
-	assertDir(t, fsys, "onetwothree/sixseven", []string{"6.txt", "7.txt"})
+	ufsTesting.AssertDir(t, fsys, "onetwothree", []string{"1.txt", "2.txt", "sixseven"})
+	ufsTesting.AssertDir(t, fsys, "onetwothree/sixseven", []string{"6.txt", "7.txt"})
 }
 
 // TestArchiveFSInvalidPaths verifies that every FS operation on archiveFS

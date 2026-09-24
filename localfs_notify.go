@@ -133,12 +133,12 @@ func (lw *localWatcher) toRelPath(absPath string) (string, bool) {
 	rel, ok := strings.CutPrefix(absPath, root)
 	if !ok {
 		if absPath == strings.TrimSuffix(root, "/") {
-			return CwdPath, true
+			return pathutil.CwdPath, true
 		}
 		return "", false
 	}
 	if rel == "" {
-		return CwdPath, true
+		return pathutil.CwdPath, true
 	}
 	if !fs.ValidPath(rel) {
 		return "", false
@@ -168,7 +168,7 @@ func (lw *localWatcher) loop(ctx context.Context) {
 
 func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	rel, ok := lw.toRelPath(ev.Name)
-	if !ok || rel == CwdPath {
+	if !ok || rel == pathutil.CwdPath {
 		return
 	}
 

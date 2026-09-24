@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -34,7 +35,7 @@ var mountableArchivePathTestCases = []struct {
 	want  bool
 }{
 	{input: "", want: false},
-	{input: CwdPath, want: false},
+	{input: pathutil.CwdPath, want: false},
 	{input: "/", want: false},
 	{input: "abc", want: false},
 	{input: "/abc/d/", want: false},
@@ -178,7 +179,7 @@ func TestArchiveFSReadDir(t *testing.T) {
 		t.Fatal("archiveFS does not implement fs.ReadDirFS")
 	}
 
-	entries, err := rfs.ReadDir(CwdPath)
+	entries, err := rfs.ReadDir(pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ReadDir(\".\") = %v, want nil", err)
 	}

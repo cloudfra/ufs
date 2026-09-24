@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -33,7 +34,7 @@ func TestNewRemoteArchive(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	if files, err := fsys.ReadDir(CwdPath); files != nil {
+	if files, err := fsys.ReadDir(pathutil.CwdPath); files != nil {
 		t.Logf("files: %v, err: %s", files, err)
 	}
 	if files, err := fsys.ReadDir("archives-main"); files != nil {
@@ -129,7 +130,7 @@ func TestDownloadFileAndMountRedirect(t *testing.T) {
 	ts := testArchiveServer(t)
 
 	fsys := testDownloadAndMount(t, ts, "/redirect-to-archive")
-	entries, err := fsys.ReadDir(CwdPath)
+	entries, err := fsys.ReadDir(pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ReadDir(\".\") = %v", err)
 	}

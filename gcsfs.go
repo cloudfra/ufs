@@ -223,13 +223,13 @@ func (fsys *gcsFS) String() string {
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
-	if name == CwdPath {
+	if name == pathutil.CwdPath {
 		entries, err := fsys.listDir("")
 		if err != nil {
-			return nil, ufserrors.NewPathError("open", CwdPath, err)
+			return nil, ufserrors.NewPathError("open", pathutil.CwdPath, err)
 		}
 		return &gcsFile{
-			name:       CwdPath,
+			name:       pathutil.CwdPath,
 			isDir:      true,
 			dirEntries: entries,
 			fsys:       fsys,
@@ -286,8 +286,8 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
-	if name == CwdPath {
-		return &fsInfo{name: CwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+	if name == pathutil.CwdPath {
+		return &fsInfo{name: pathutil.CwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
 	}
 	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 // name is the FS-relative path; pass "" or CwdPath for the root.
 func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 	var listPrefix string
-	if name == "" || name == CwdPath {
+	if name == "" || name == pathutil.CwdPath {
 		if fsys.baseDir != "" {
 			listPrefix = fsys.baseDir + "/"
 		}
@@ -427,7 +427,7 @@ func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
 }
 
 func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if name != CwdPath {
+	if name != pathutil.CwdPath {
 		if err := pathutil.Validate("readdir", name); err != nil {
 			return nil, err
 		}
@@ -486,7 +486,7 @@ func (fsys *gcsFS) Remove(name string) error {
 }
 
 func (fsys *gcsFS) RemoveAll(name string) error {
-	if name != CwdPath {
+	if name != pathutil.CwdPath {
 		if err := pathutil.Validate("removeall", name); err != nil {
 			return err
 		}
@@ -494,7 +494,7 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 	bkt := fsys.client.Bucket(fsys.bucket)
 
 	var listPrefix string
-	if name == CwdPath {
+	if name == pathutil.CwdPath {
 		listPrefix = fsys.baseDir
 		if listPrefix != "" {
 			listPrefix += "/"
@@ -583,7 +583,7 @@ func gcsJoin(parts ...string) string {
 		path = after
 	}
 	path = pathutil.CoerceUnix(filepath.Clean(path))
-	if path == CwdPath {
+	if path == pathutil.CwdPath {
 		return prefix
 	}
 	return prefix + path

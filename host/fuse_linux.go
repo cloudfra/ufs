@@ -30,6 +30,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // Not implemented FUSE operations (ufs has no support for these):
@@ -80,7 +81,7 @@ var (
 func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error) {
 	root := &fuseNode{
 		fsys: fsys,
-		path: ufs.CwdPath,
+		path: pathutil.CwdPath,
 	}
 
 	// TODO: Accept mount options (e.g. forwarding the URI query parameter

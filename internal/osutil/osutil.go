@@ -29,6 +29,8 @@ const (
 	DefaultFilePermissions = 0o600
 	// DefaultDirectoryPermissions is the permission used by [Mkdir] and [MkdirAll].
 	DefaultDirectoryPermissions = 0o750
+	// EmptyDirSize is a platform value for the size of an empty directory.
+	EmptyDirSize = 0
 )
 
 // Mkdir creates the directory name with [DefaultDirectoryPermissions].

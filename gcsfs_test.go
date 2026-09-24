@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/storage"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/fsouza/fake-gcs-server/fakestorage"
@@ -48,7 +49,7 @@ func TestIsGCSFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: CwdPath,
+			name: pathutil.CwdPath,
 			want: false,
 		},
 		{
@@ -386,10 +387,10 @@ func TestGCSFSRemoveAll(t *testing.T) {
 		}
 		defer ufsTesting.ValidateClose(t, fsys)()
 
-		if err := fsys.RemoveAll(CwdPath); err != nil {
+		if err := fsys.RemoveAll(pathutil.CwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)
 		}
-		entries, err := fsys.ReadDir(CwdPath)
+		entries, err := fsys.ReadDir(pathutil.CwdPath)
 		if err != nil {
 			t.Fatalf("ReadDir after RemoveAll('.') = %v, want nil", err)
 		}

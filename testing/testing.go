@@ -16,6 +16,7 @@
 package testing
 
 import (
+	"bytes"
 	"embed"
 	"io"
 	"io/fs"
@@ -208,4 +209,13 @@ func AssertDir(tb testing.TB, fsys fs.FS, name string, want []string) {
 			tb.Errorf("%q does not open a ReadDirFile, %s", name, reflect.TypeOf(f).Name())
 		}
 	}
+}
+
+// SeedData returns exactly n bytes of deterministic data based on seed.
+func SeedData(seed byte, n int) []byte {
+	rep := bytes.Repeat([]byte{seed}, 1<<20) // 1 MB max block
+	if len(rep) < n {
+		return append(rep, bytes.Repeat([]byte{seed ^ 1}, n-len(rep))...)
+	}
+	return rep[:n]
 }

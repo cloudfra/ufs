@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -160,7 +161,7 @@ func TestReadDirFile(t *testing.T) {
 	ufsTesting.Must(t, fsys.MkdirAll("d/e/f", fs.ModePerm))
 	ufsTesting.Must(t, fsys.MkdirAll("g/h/i", fs.ModePerm))
 
-	dirFile := makeReadDirFile(fsys, CwdPath)
+	dirFile := makeReadDirFile(fsys, pathutil.CwdPath)
 
 	if bytesRead, err := dirFile.Read(nil); bytesRead != 0 || err == nil || !strings.Contains(err.Error(), "is a directory") {
 		t.Errorf("Read() should return (0, 'is a directory') got (%d, %s)", bytesRead, err)
@@ -186,7 +187,7 @@ func TestReadDirFile(t *testing.T) {
 		t.Errorf("Stat() returned error, %s", err)
 	}
 
-	if stat.Name() != CwdPath {
+	if stat.Name() != pathutil.CwdPath {
 		t.Errorf("Stat().Name() got %s, want '.'", stat.Name())
 	}
 

@@ -24,6 +24,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -40,7 +41,7 @@ var (
 
 	nullDirStat = &fsInfo{
 		name:    ".",
-		size:    emptyDirSize,
+		size:    osutil.EmptyDirSize,
 		mode:    fs.ModeDir | fs.ModePerm,
 		modTime: unixEpochTime,
 		isDir:   true,
@@ -65,7 +66,7 @@ func (n *nullFile) Stat() (fs.FileInfo, error) {
 	size := int64(0)
 	if isDir {
 		mode = fs.ModeDir | fs.ModePerm
-		size = emptyDirSize
+		size = osutil.EmptyDirSize
 	}
 	return &fsInfo{
 		name:    path.Base(n.name),
@@ -207,7 +208,7 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 	size := int64(0)
 	if isDir {
 		mode = fs.ModeDir | fs.ModePerm
-		size = emptyDirSize
+		size = osutil.EmptyDirSize
 	}
 	return &fsInfo{
 		name:    name,

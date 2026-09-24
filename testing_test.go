@@ -127,15 +127,15 @@ var (
 	}
 
 	testassetFilenameList = []string{
-		CwdPath,
+		pathutil.CwdPath,
 		"files/index.html",
 		"archives/nested-testassets.zip",
 	}
 
 	testassetDirList = map[string][]string{
-		CwdPath:    {},
-		"files":    {},
-		"archives": {},
+		pathutil.CwdPath: {},
+		"files":          {},
+		"archives":       {},
 	}
 
 	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}

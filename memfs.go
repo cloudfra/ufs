@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -57,7 +58,7 @@ type memNode struct {
 
 func (n *memNode) size() int64 {
 	if n.isDir {
-		return emptyDirSize
+		return osutil.EmptyDirSize
 	}
 	return int64(len(n.content))
 }
@@ -135,7 +136,7 @@ type memDirFile struct {
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
 	return &fsInfo{
 		name:    path.Base(d.path),
-		size:    emptyDirSize,
+		size:    osutil.EmptyDirSize,
 		mode:    d.mode,
 		modTime: d.modTime,
 		isDir:   true,
@@ -192,8 +193,8 @@ func (fsys *memFS) Open(name string) (fs.File, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
 	}
-	if name == CwdPath {
-		return fsys.openDir(CwdPath)
+	if name == pathutil.CwdPath {
+		return fsys.openDir(pathutil.CwdPath)
 	}
 	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
@@ -242,14 +243,14 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 	defer fsys.mu.RUnlock()
 
 	prefix := dir + "/"
-	if dir == CwdPath {
+	if dir == pathutil.CwdPath {
 		prefix = ""
 	}
 
 	var entries []fs.DirEntry
 	seen := make(map[string]struct{})
 	for key, node := range fsys.nodes {
-		if key == CwdPath {
+		if key == pathutil.CwdPath {
 			continue
 		}
 		rest, ok := strings.CutPrefix(key, prefix)
@@ -356,7 +357,7 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 // path. Must be called with fsys.mu held for writing.
 func (fsys *memFS) ensureParentsLocked(name string, now time.Time) {
 	dir := path.Dir(name)
-	if dir == CwdPath {
+	if dir == pathutil.CwdPath {
 		return
 	}
 	parts := pathutil.Split(dir)
@@ -416,9 +417,9 @@ func (fsys *memFS) Stat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
 	}
-	if name == CwdPath {
+	if name == pathutil.CwdPath {
 		fsys.mu.RLock()
-		node := fsys.nodes[CwdPath]
+		node := fsys.nodes[pathutil.CwdPath]
 		fsys.mu.RUnlock()
 		return node.info(), nil
 	}
@@ -438,9 +439,9 @@ func (fsys *memFS) Lstat(name string) (fs.FileInfo, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("lstat", name, fs.ErrClosed)
 	}
-	if name == CwdPath {
+	if name == pathutil.CwdPath {
 		fsys.mu.RLock()
-		node := fsys.nodes[CwdPath]
+		node := fsys.nodes[pathutil.CwdPath]
 		fsys.mu.RUnlock()
 		return node.info(), nil
 	}
@@ -460,8 +461,8 @@ func (fsys *memFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("readdir", name, fs.ErrClosed)
 	}
-	if name == CwdPath {
-		return fsys.listDir(CwdPath)
+	if name == pathutil.CwdPath {
+		return fsys.listDir(pathutil.CwdPath)
 	}
 	if err := pathutil.Validate("readdir", name); err != nil {
 		return nil, err
@@ -487,7 +488,7 @@ func (fsys *memFS) Glob(pattern string) ([]string, error) {
 
 	var matches []string
 	for key := range fsys.nodes {
-		if key == CwdPath {
+		if key == pathutil.CwdPath {
 			continue
 		}
 		matched, err := path.Match(pattern, key)
@@ -509,7 +510,7 @@ func (fsys *memFS) Remove(name string) error {
 	if err := pathutil.Validate("remove", name); err != nil {
 		return err
 	}
-	if name == CwdPath {
+	if name == pathutil.CwdPath {
 		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
 	}
 	fsys.mu.Lock()
@@ -535,11 +536,11 @@ func (fsys *memFS) RemoveAll(name string) error {
 	if fsys.isClosed() {
 		return ufserrors.NewPathError("removeall", name, fs.ErrClosed)
 	}
-	if name == CwdPath {
+	if name == pathutil.CwdPath {
 		fsys.mu.Lock()
 		var removed []string
 		for key := range fsys.nodes {
-			if key != CwdPath {
+			if key != pathutil.CwdPath {
 				removed = append(removed, key)
 				delete(fsys.nodes, key)
 			}
@@ -570,7 +571,13 @@ func (fsys *memFS) RemoveAll(name string) error {
 }
 
 func newMemFS(_ context.Context, name string) (FS, error) {
-	return makeMemFS(name), nil
+	return MakeMemFS(name), nil
+}
+
+// MakeMemFS creates a memory FS without a context.
+// This method is deprecated.
+func MakeMemFS(name string) FS {
+	return makeMemFS(name)
 }
 
 func makeMemFS(name string) *memFS {
@@ -578,8 +585,8 @@ func makeMemFS(name string) *memFS {
 	return &memFS{
 		name: name,
 		nodes: map[string]*memNode{
-			CwdPath: {
-				name:    CwdPath,
+			pathutil.CwdPath: {
+				name:    pathutil.CwdPath,
 				mode:    fs.ModeDir | fs.ModePerm,
 				modTime: now,
 				isDir:   true,

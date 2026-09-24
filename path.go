@@ -16,69 +16,18 @@ package ufs
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
-	"runtime"
-	"strings"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 const (
 	// CwdPath is the [fs.ValidPath] name of a file system's root directory.
-	CwdPath                   = "."
-	emptyDirSize              = 0
-	unixAndWindowsSlashCutset = unixPathSeparator + windowsPathSeparator
-	unixPathSeparator         = "/"
-	windowsPathSeparator      = "\\"
+	CwdPath      = pathutil.CwdPath
+	emptyDirSize = 0
 )
-
-func removePathPrefix(name string, removePath string) (string, bool) {
-	removePath = path.Clean(removePath)
-	name = path.Clean(name)
-	if isCwd(removePath) {
-		return name, true
-	}
-	if removePath == name {
-		return CwdPath, true
-	}
-	return strings.CutPrefix(name, removePath+unixPathSeparator)
-}
-
-func trimSlash(name string) string {
-	return strings.Trim(name, unixAndWindowsSlashCutset)
-}
-
-func splitPath(name string) []string {
-	return strings.Split(trimSlash(name), unixPathSeparator)
-}
-
-func validPath(op string, name string) error {
-	if !fs.ValidPath(name) {
-		return pathError(op, name, fmt.Errorf("%q is not a valid path for %s, %w", name, runtime.GOOS, fs.ErrInvalid))
-	}
-	return nil
-}
-
-func coerceUnixPath(name string) string {
-	return strings.ReplaceAll(name, windowsPathSeparator, unixPathSeparator)
-}
-
-func isDirName(name string) bool {
-	return isCwd(name) || strings.HasSuffix(name, unixPathSeparator)
-}
-
-func isCwd(name string) bool {
-	return name == "" || name == CwdPath
-}
-
-func pathError(op string, name string, err error) error {
-	return &fs.PathError{
-		Op:   op,
-		Path: name,
-		Err:  err,
-	}
-}
 
 type realAbsPathGet interface {
 	getAbsPath(name string) (string, error)
@@ -99,5 +48,5 @@ func AbsPath(fsys any, name string) (string, error) {
 }
 
 func realAbsPathNotSupported(fsys any, name string) error {
-	return pathError("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
+	return ufserrors.NewPathError("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
 }

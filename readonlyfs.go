@@ -14,7 +14,12 @@
 
 package ufs
 
-import "io/fs"
+import (
+	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
+)
 
 var _ WriteFS = (*readOnlyFS)(nil)
 
@@ -34,29 +39,29 @@ func ReadOnly(inner ReadFS) FS {
 }
 
 func (fsys *readOnlyFS) Create(name string) (File, error) {
-	if err := validPath("create", name); err != nil {
+	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("create", name, fs.ErrPermission)
+	return nil, ufserrors.NewPathError("create", name, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := validPath("mkdir", name); err != nil {
+	if err := pathutil.Validate("mkdir", name); err != nil {
 		return err
 	}
-	return pathError("mkdir", name, fs.ErrPermission)
+	return ufserrors.NewPathError("mkdir", name, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) Remove(name string) error {
-	if err := validPath("remove", name); err != nil {
+	if err := pathutil.Validate("remove", name); err != nil {
 		return err
 	}
-	return pathError("remove", name, fs.ErrPermission)
+	return ufserrors.NewPathError("remove", name, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) RemoveAll(name string) error {
-	if err := validPath("removeall", name); err != nil {
+	if err := pathutil.Validate("removeall", name); err != nil {
 		return err
 	}
-	return pathError("removeall", name, fs.ErrPermission)
+	return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
 }

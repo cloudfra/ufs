@@ -18,6 +18,8 @@ import (
 	"context"
 	"io"
 	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var _ Watcher = (*nestFS)(nil)
@@ -37,7 +39,7 @@ func (fsys *nestFS) Watch(ctx context.Context, name string, hook NotifyHook) (io
 
 	w, ok := mountFS.fsys.(Watcher)
 	if !ok {
-		return nil, pathError("watch", name, fs.ErrInvalid)
+		return nil, ufserrors.NewPathError("watch", name, fs.ErrInvalid)
 	}
 
 	return w.Watch(ctx, subName, hook)

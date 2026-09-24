@@ -20,6 +20,9 @@ import (
 	"io/fs"
 	"net/url"
 	"strings"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 const (
@@ -64,10 +67,10 @@ func (fsys *angryFS) String() string {
 }
 
 func (fsys *angryFS) Open(name string) (fs.File, error) {
-	if err := validPath("open", name); err != nil {
+	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("open", name, errAngry)
+	return nil, ufserrors.NewPathError("open", name, errAngry)
 }
 
 func (fsys *angryFS) Close() error {
@@ -75,52 +78,52 @@ func (fsys *angryFS) Close() error {
 }
 
 func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
-	if err := validPath("stat", name); err != nil {
+	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("stat", name, errAngry)
+	return nil, ufserrors.NewPathError("stat", name, errAngry)
 }
 
 func (fsys *angryFS) Create(name string) (File, error) {
-	if err := validPath("create", name); err != nil {
+	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("create", name, errAngry)
+	return nil, ufserrors.NewPathError("create", name, errAngry)
 }
 
 func (fsys *angryFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := validPath("mkdir", name); err != nil {
+	if err := pathutil.Validate("mkdir", name); err != nil {
 		return err
 	}
-	return pathError("mkdir", name, errAngry)
+	return ufserrors.NewPathError("mkdir", name, errAngry)
 }
 
 func (fsys *angryFS) ReadFile(name string) ([]byte, error) {
-	if err := validPath("readfile", name); err != nil {
+	if err := pathutil.Validate("readfile", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("readfile", name, errAngry)
+	return nil, ufserrors.NewPathError("readfile", name, errAngry)
 }
 
 func (fsys *angryFS) ReadLink(name string) (string, error) {
-	if err := validPath("readlink", name); err != nil {
+	if err := pathutil.Validate("readlink", name); err != nil {
 		return "", err
 	}
-	return "", pathError("readlink", name, errAngry)
+	return "", ufserrors.NewPathError("readlink", name, errAngry)
 }
 
 func (fsys *angryFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := validPath("lstat", name); err != nil {
+	if err := pathutil.Validate("lstat", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("lstat", name, errAngry)
+	return nil, ufserrors.NewPathError("lstat", name, errAngry)
 }
 
 func (fsys *angryFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := validPath("readdir", name); err != nil {
+	if err := pathutil.Validate("readdir", name); err != nil {
 		return nil, err
 	}
-	return nil, pathError("readdir", name, errAngry)
+	return nil, ufserrors.NewPathError("readdir", name, errAngry)
 }
 
 func (fsys *angryFS) Glob(_ string) ([]string, error) {
@@ -128,17 +131,17 @@ func (fsys *angryFS) Glob(_ string) ([]string, error) {
 }
 
 func (fsys *angryFS) Remove(name string) error {
-	if err := validPath("remove", name); err != nil {
+	if err := pathutil.Validate("remove", name); err != nil {
 		return err
 	}
-	return pathError("remove", name, errAngry)
+	return ufserrors.NewPathError("remove", name, errAngry)
 }
 
 func (fsys *angryFS) RemoveAll(name string) error {
-	if err := validPath("removeall", name); err != nil {
+	if err := pathutil.Validate("removeall", name); err != nil {
 		return err
 	}
-	return pathError("removeall", name, errAngry)
+	return ufserrors.NewPathError("removeall", name, errAngry)
 }
 
 func newAngryFS(_ context.Context, name string) (FS, error) {

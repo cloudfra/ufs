@@ -20,6 +20,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 // Rsync copies all files under dir from srcFS into destFS, preserving the
@@ -112,7 +115,7 @@ func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
 }
 
 func excludeDirs(name string, d fs.DirEntry, err error) (bool, error) {
-	if isCwd(name) {
+	if pathutil.IsCwd(name) {
 		return true, nil
 	}
 	if err != nil {
@@ -153,7 +156,7 @@ type WalkArgs struct {
 func Walk(fsys fs.FS, dir string, args WalkArgs, f func(string) error) error {
 	adc, ok := fsys.(archiveDirChecker)
 	return fs.WalkDir(fsys, dir, func(name string, d fs.DirEntry, err error) error {
-		if isCwd(name) {
+		if pathutil.IsCwd(name) {
 			return nil
 		}
 		if err != nil {
@@ -201,7 +204,7 @@ func list(fsys fs.FS, dir string, includeDirs bool) ([]string, error) {
 	// or sort is needed.
 	var items []string
 	err := fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
-		if isCwd(p) {
+		if pathutil.IsCwd(p) {
 			return nil // never include "." itself; also tolerates missing root
 		}
 		if err != nil {
@@ -221,7 +224,7 @@ func list(fsys fs.FS, dir string, includeDirs bool) ([]string, error) {
 func Remove(fsys fs.FS, name string) error {
 	r, ok := fsys.(RemoveFileFS)
 	if !ok {
-		return pathError("remove", name, fs.ErrPermission)
+		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
 	}
 	return r.Remove(name)
 }
@@ -232,7 +235,7 @@ func Remove(fsys fs.FS, name string) error {
 func RemoveAll(fsys fs.FS, name string) error {
 	r, ok := fsys.(RemoveFileFS)
 	if !ok {
-		return pathError("removeall", name, fs.ErrPermission)
+		return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
 	}
 	return r.RemoveAll(name)
 }

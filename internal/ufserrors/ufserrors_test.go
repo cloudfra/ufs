@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package ufserrors
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"testing"
 )
 
-func TestJoinErrors(t *testing.T) {
+func TestJoin(t *testing.T) {
 	t.Parallel()
 
 	errA := errors.New("error A")
@@ -46,26 +48,63 @@ func TestJoinErrors(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := joinErrors(tc.errs...)
+			got := Join(tc.errs...)
 			if tc.wantNil {
 				if got != nil {
-					t.Errorf("joinErrors() = %v, want nil", got)
+					t.Errorf("Join() = %v, want nil", got)
 				}
 				return
 			}
 			if got == nil {
-				t.Fatalf("joinErrors() = nil, want non-nil")
+				t.Fatalf("Join() = nil, want non-nil")
 			}
 			if tc.wantSameAs != nil && got != tc.wantSameAs {
-				t.Errorf("joinErrors() returned a wrapped error; want the identical error value, got %v", got)
+				t.Errorf("Join() returned a wrapped error; want the identical error value, got %v", got)
 			}
 			if tc.wantIsA && !errors.Is(got, errA) {
-				t.Errorf("joinErrors(): errors.Is(result, errA) = false, want true")
+				t.Errorf("Join(): errors.Is(result, errA) = false, want true")
 			}
 			if tc.wantIsB && !errors.Is(got, errB) {
-				t.Errorf("joinErrors(): errors.Is(result, errB) = false, want true")
+				t.Errorf("Join(): errors.Is(result, errB) = false, want true")
 			}
 		})
+	}
+}
+
+func TestNewPathError(t *testing.T) {
+	t.Parallel()
+	inner := fmt.Errorf("wrapped: %w", fs.ErrNotExist)
+	err := NewPathError("open", "a/b", inner)
+
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("NewPathError() = %T, want *fs.PathError", err)
+	}
+	if pathErr.Op != "open" || pathErr.Path != "a/b" || pathErr.Err != inner {
+		t.Errorf("NewPathError() = %+v, want Op=open Path=a/b Err=inner", pathErr)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("errors.Is(NewPathError(..., ErrNotExist), fs.ErrNotExist) = false, want true")
+	}
+	if got, want := err.Error(), "open a/b: wrapped: file does not exist"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+	if NewPathError("open", "a", nil) == nil {
+		t.Error("NewPathError(nil err) = nil, want a non-nil *fs.PathError")
+	}
+}
+
+func TestErrDirNotEmpty(t *testing.T) {
+	t.Parallel()
+	err := NewPathError("remove", "dir", ErrDirNotEmpty)
+	if !errors.Is(err, ErrDirNotEmpty) {
+		t.Errorf("errors.Is(%v, ErrDirNotEmpty) = false, want true", err)
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("errors.Is(%v, fs.ErrNotExist) = true, want false", err)
+	}
+	if got, want := err.Error(), "remove dir: directory not empty"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
 	}
 }
 
@@ -88,7 +127,7 @@ func BenchmarkJoin(b *testing.B) {
 		b.Run(bc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for range b.N {
-				joinErrors(bc.errs...) //nolint:errcheck,gosec // The response is not important; this benchmark tracks allocations.
+				Join(bc.errs...) //nolint:errcheck,gosec // The response is not important; this benchmark tracks allocations.
 			}
 		})
 	}

@@ -120,10 +120,12 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 | File                  | Purpose                                                             |
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
-| path.go, path_test.go | validPath — validates paths against fs.ValidPath                    |
+| path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
-| osutil.go             | OS helpers (file download, etc.)                                    |
-| internal/osutil/       | Path-cleaning wrappers around package os, shared by ufs and host    |
+| internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
+| internal/httputil/    | SSRF-hardened file download used by remote archives                 |
+| internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
+| internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
@@ -132,5 +134,6 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 
 * Keep structs private; expose construction via the public New() factory.
 * Factory name arg follows a URI scheme: null://, file:///..., memory:, gs://..., git://..., archive://...
-* All path operations call validPath first — returns fs.PathError for invalid paths.
+* All path operations call pathutil.Validate first — returns fs.PathError for invalid paths.
+* Packages under internal/ must not import the base ufs package.
 * Each backend has its own file, its own tests, and runs the shared fstest.TestFS harness via testFileSystem.

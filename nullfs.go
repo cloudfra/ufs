@@ -23,6 +23,9 @@ import (
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 const (
@@ -57,7 +60,7 @@ type nullFile struct {
 }
 
 func (n *nullFile) Stat() (fs.FileInfo, error) {
-	isDir := isDirName(n.name)
+	isDir := pathutil.IsDirName(n.name)
 	mode := fs.ModePerm
 	size := int64(0)
 	if isDir {
@@ -146,10 +149,10 @@ func (fsys *nullFS) String() string {
 }
 
 func (fsys *nullFS) Open(name string) (fs.File, error) {
-	if err := validPath("open", name); err != nil {
+	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
 	}
-	if isDirName(name) {
+	if pathutil.IsDirName(name) {
 		return &nullReadDirFile{}, nil
 	}
 	return newNullFile(name), nil
@@ -160,7 +163,7 @@ func (fsys *nullFS) Close() error {
 }
 
 func (fsys *nullFS) Create(name string) (File, error) {
-	if err := validPath("create", name); err != nil {
+	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
 
@@ -168,38 +171,38 @@ func (fsys *nullFS) Create(name string) (File, error) {
 }
 
 func (fsys *nullFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := validPath("mkdir", name); err != nil {
+	if err := pathutil.Validate("mkdir", name); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (fsys *nullFS) ReadFile(name string) ([]byte, error) {
-	if err := validPath("readfile", name); err != nil {
+	if err := pathutil.Validate("readfile", name); err != nil {
 		return nil, err
 	}
 	return []byte{}, nil
 }
 
 func (fsys *nullFS) ReadLink(name string) (string, error) {
-	if err := validPath("readlink", name); err != nil {
+	if err := pathutil.Validate("readlink", name); err != nil {
 		return "", err
 	}
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
 }
 
 func (fsys *nullFS) Stat(name string) (fs.FileInfo, error) {
-	if err := validPath("stat", name); err != nil {
+	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
 	}
 	return nullDirStat, nil
 }
 
 func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := validPath("lstat", name); err != nil {
+	if err := pathutil.Validate("lstat", name); err != nil {
 		return nil, err
 	}
-	isDir := isDirName(name)
+	isDir := pathutil.IsDirName(name)
 	mode := fs.ModePerm
 	size := int64(0)
 	if isDir {
@@ -217,7 +220,7 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := validPath("readdir", name); err != nil {
+	if err := pathutil.Validate("readdir", name); err != nil {
 		return nil, err
 	}
 	return []fs.DirEntry{}, nil
@@ -228,14 +231,14 @@ func (fsys *nullFS) Glob(_ string) ([]string, error) {
 }
 
 func (fsys *nullFS) Remove(name string) error {
-	if err := validPath("remove", name); err != nil {
+	if err := pathutil.Validate("remove", name); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (fsys *nullFS) RemoveAll(name string) error {
-	if err := validPath("removeall", name); err != nil {
+	if err := pathutil.Validate("removeall", name); err != nil {
 		return err
 	}
 	return nil

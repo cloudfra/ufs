@@ -17,7 +17,9 @@
 package osutil
 
 import (
+	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -110,4 +112,53 @@ func MkdirTemp(dir string, pattern string) (string, error) {
 		dir = filepath.Clean(dir)
 	}
 	return os.MkdirTemp(dir, pattern)
+}
+
+// CreateTempDirectory creates a new directory in the default temp directory
+// and returns it along with a function that deletes it.
+func CreateTempDirectory() (string, func() error, error) {
+	tmpDir, err := os.MkdirTemp(os.TempDir(), "goapp")
+	if err != nil {
+		return "", func() error { return nil }, fmt.Errorf("cannot create temp directory, %w", err)
+	}
+	return tmpDir, func() error {
+		return DeleteDirectory(tmpDir)
+	}, nil
+}
+
+// Exists reports whether path can be stat'd.
+func Exists(path string) bool {
+	_, err := Stat(path)
+	return err == nil
+}
+
+// DeleteDirectory removes path and its children. It is not an error if path
+// does not exist.
+func DeleteDirectory(path string) error {
+	if err := RemoveAll(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot delete directory %q, %w", path, err)
+	}
+	return nil
+}
+
+// TryDeleteDirectory calls [DeleteDirectory] and logs any error.
+func TryDeleteDirectory(path string) {
+	if err := DeleteDirectory(path); err != nil {
+		slog.Warn("failed to delete directory", "path", path, "error", err)
+	}
+}
+
+// DeleteFile removes the file path. It is not an error if path does not exist.
+func DeleteFile(path string) error {
+	if err := Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot delete file %q, %w", path, err)
+	}
+	return nil
+}
+
+// TryDeleteFile calls [DeleteFile] and logs any error.
+func TryDeleteFile(path string) {
+	if err := DeleteFile(path); err != nil {
+		slog.Warn("failed to delete file", "path", path, "error", err)
+	}
 }

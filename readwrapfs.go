@@ -19,6 +19,9 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var _ ReadFS = (*readWrapFS)(nil)
@@ -43,7 +46,7 @@ func (fsys *readWrapFS) String() string {
 }
 
 func (fsys *readWrapFS) Open(name string) (fs.File, error) {
-	if err := validPath("open", name); err != nil {
+	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
 	}
 	return fsys.fsys.Open(name)
@@ -57,7 +60,7 @@ func (fsys *readWrapFS) Close() error {
 }
 
 func (fsys *readWrapFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := validPath("readdir", name); err != nil {
+	if err := pathutil.Validate("readdir", name); err != nil {
 		return nil, err
 	}
 	if rdfs, ok := fsys.fsys.(fs.ReadDirFS); ok {
@@ -67,7 +70,7 @@ func (fsys *readWrapFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *readWrapFS) ReadFile(name string) ([]byte, error) {
-	if err := validPath("readfile", name); err != nil {
+	if err := pathutil.Validate("readfile", name); err != nil {
 		return nil, err
 	}
 	if rffs, ok := fsys.fsys.(fs.ReadFileFS); ok {
@@ -77,7 +80,7 @@ func (fsys *readWrapFS) ReadFile(name string) ([]byte, error) {
 }
 
 func (fsys *readWrapFS) Stat(name string) (fs.FileInfo, error) {
-	if err := validPath("stat", name); err != nil {
+	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
 	}
 	if sfs, ok := fsys.fsys.(fs.StatFS); ok {
@@ -87,7 +90,7 @@ func (fsys *readWrapFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *readWrapFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := validPath("lstat", name); err != nil {
+	if err := pathutil.Validate("lstat", name); err != nil {
 		return nil, err
 	}
 	if rlfs, ok := fsys.fsys.(fs.ReadLinkFS); ok {
@@ -97,13 +100,13 @@ func (fsys *readWrapFS) Lstat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *readWrapFS) ReadLink(name string) (string, error) {
-	if err := validPath("readlink", name); err != nil {
+	if err := pathutil.Validate("readlink", name); err != nil {
 		return "", err
 	}
 	if rlfs, ok := fsys.fsys.(fs.ReadLinkFS); ok {
 		return rlfs.ReadLink(name)
 	}
-	return "", pathError("readlink", name, fs.ErrInvalid)
+	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
 }
 
 // FromFS wraps a standard library [fs.FS] as a read-only [ReadFS].

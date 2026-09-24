@@ -12,16 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package ufserrors provides error helpers shared by ufs and its internal
+// packages.
+package ufserrors
 
-import "errors"
+import (
+	"errors"
+	"io/fs"
+)
 
-// joinErrors returns nil if all errs are nil, returns the single non-nil error
+// ErrDirNotEmpty is returned when removing a directory that still has
+// children.
+var ErrDirNotEmpty = errors.New("directory not empty")
+
+// NewPathError returns an [fs.PathError] for op on name.
+func NewPathError(op string, name string, err error) error {
+	return &fs.PathError{
+		Op:   op,
+		Path: name,
+		Err:  err,
+	}
+}
+
+// Join returns nil if all errs are nil, returns the single non-nil error
 // directly (without wrapping) if exactly one is non-nil, or [errors.Join]
 // when multiple are non-nil. This avoids the join wrapper overhead and the
 // change in error identity that errors.Join introduces for the
 // single-error case.
-func joinErrors(errs ...error) error {
+func Join(errs ...error) error {
 	var first error
 	multiple := false
 	for _, err := range errs {

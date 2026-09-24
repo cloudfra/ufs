@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"cloud.google.com/go/storage"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/google/go-cmp/cmp"
@@ -336,8 +337,8 @@ func TestGCSFSRemove(t *testing.T) {
 	})
 
 	t.Run("non_empty_dir", func(t *testing.T) {
-		if err := fsys.Remove("dir"); !errors.Is(err, errDirNotEmpty) {
-			t.Errorf("Remove(non-empty dir) = %v, want errDirNotEmpty", err)
+		if err := fsys.Remove("dir"); !errors.Is(err, ufserrors.ErrDirNotEmpty) {
+			t.Errorf("Remove(non-empty dir) = %v, want ufserrors.ErrDirNotEmpty", err)
 		}
 	})
 }

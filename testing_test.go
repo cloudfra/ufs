@@ -21,9 +21,6 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"reflect"
-	"sort"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -255,14 +252,6 @@ func mkdirForTest(tb testing.TB, fsys FS, dirs ...string) {
 	}
 }
 
-/*
-func newFSFuncWithoutContext(fn func(name string) (FS, error)) func(context.Context, string) (FS, error) {
-	return func(_ context.Context, name string) (FS, error) {
-		return fn(name)
-	}
-}
-*/
-
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
 	tb.Helper()
 
@@ -411,66 +400,5 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 				t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
 			}
 		})
-	}
-}
-
-func must(tb testing.TB, err error) {
-	tb.Helper()
-	if err != nil {
-		tb.Error(err)
-	}
-}
-
-func toMapKeys[T any](m map[string]T) []string {
-	keys := make([]string, len(m))
-	idx := 0
-	for k := range m {
-		keys[idx] = k
-		idx++
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func assertContains(t *testing.T, fsys FS, name string, substr string) {
-	t.Helper()
-	data, err := fs.ReadFile(fsys, name)
-	if err != nil {
-		t.Error(err)
-	}
-	if !strings.Contains(string(data), substr) {
-		t.Errorf("%q does not contain %q, (len: %d) %q", name, substr, len(data), string(data))
-	}
-}
-
-func assertDir(t *testing.T, fsys FS, name string, want []string) {
-	t.Helper()
-
-	if gotEntries, err := fsys.ReadDir(name); err != nil {
-		t.Errorf("cannot ReadDir(%q), %s", name, err)
-	} else {
-		gotEntryNames := ufsTesting.DirEntryListToNames(gotEntries)
-		if d := cmp.Diff(want, gotEntryNames); d != "" {
-			t.Errorf("fs.ReadDir(%q) mismatch, got %s, want %s diff(-want,+got):\n %v", name, gotEntryNames, want, d)
-		}
-	}
-
-	if f, err := fsys.Open(name); err != nil {
-		t.Errorf("cannot open %q, %s", name, err)
-	} else {
-		defer ufsTesting.ValidateClose(t, f)()
-		rdf, ok := f.(fs.ReadDirFile)
-		if ok {
-			if gotEntries, err := rdf.ReadDir(-1); err != nil {
-				t.Errorf("cannot ReadDir(%q), %s", name, err)
-			} else {
-				gotEntryNames := ufsTesting.DirEntryListToNames(gotEntries)
-				if d := cmp.Diff(want, gotEntryNames); d != "" {
-					t.Errorf("ReadDir(-1) mismatch, got %s, want %s diff(-want,+got):\n %v", gotEntryNames, want, d)
-				}
-			}
-		} else {
-			t.Errorf("%q does not open a ReadDirFile, %s", name, reflect.TypeOf(f).Name())
-		}
 	}
 }

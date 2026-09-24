@@ -559,7 +559,7 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 			}
 
 			for _, r := range tt.wantReadable {
-				assertContains(t, fsys, r.path, r.substr)
+				ufsTesting.AssertContains(t, fsys, r.path, r.substr)
 			}
 
 			for dir, wantChildren := range tt.wantDirContains {

@@ -25,6 +25,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -125,11 +126,11 @@ func TestFSConventions(t *testing.T) {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := fsysTC.createFS(t)
-			if err := Rsync(srcFS, fsys, CwdPath); err != nil {
+			if err := Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
 				t.Errorf("rsync failed with error, %s", err)
 			}
 
-			allFilenames, err := List(srcFS, CwdPath)
+			allFilenames, err := List(srcFS, pathutil.CwdPath)
 			if err != nil {
 				t.Fatal(err)
 			}

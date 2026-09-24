@@ -23,16 +23,8 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
-
-// seedData returns exactly n bytes of deterministic data based on seed.
-func seedData(seed byte, n int) []byte {
-	rep := bytes.Repeat([]byte{seed}, 1<<20) // 1 MB max block
-	if len(rep) < n {
-		return append(rep, bytes.Repeat([]byte{seed ^ 1}, n-len(rep))...)
-	}
-	return rep[:n]
-}
 
 // buildTree creates a localFS-backed directory tree with nFiles files of fileBytes bytes each,
 // spread across ~depth directory levels. Returns (localFS, tempDir) so caller can use it directly.
@@ -54,7 +46,7 @@ func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
 			t.Fatal(err)
 		}
 		name := subdir + fmt.Sprintf("file_%d.dat", i)
-		data := seedData(byte(i%256), fileBytes)
+		data := ufsTesting.SeedData(byte(i%256), fileBytes)
 		lfsPath := dir + "/" + name
 		if err := osutil.WriteFile(lfsPath, data); err != nil {
 			t.Fatal(err)
@@ -238,7 +230,7 @@ func BenchmarkListFilesSmall(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		data := seedData(byte(i%256), 512)
+		data := ufsTesting.SeedData(byte(i%256), 512)
 		if _, err := f.Write(data); err != nil {
 			b.Fatal(err)
 		}
@@ -266,7 +258,7 @@ func BenchmarkListFilesMedium(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		data := seedData(byte(i%256), 128)
+		data := ufsTesting.SeedData(byte(i%256), 128)
 		if _, err := f.Write(data); err != nil {
 			b.Fatal(err)
 		}
@@ -294,7 +286,7 @@ func BenchmarkListFilesLarge(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		data := seedData(byte(i%256), 128)
+		data := ufsTesting.SeedData(byte(i%256), 128)
 		if _, err := f.Write(data); err != nil {
 			b.Fatal(err)
 		}
@@ -328,7 +320,7 @@ func BenchmarkListSmall(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		data := seedData(byte(i%256), 64)
+		data := ufsTesting.SeedData(byte(i%256), 64)
 		if _, err := f.Write(data); err != nil {
 			b.Fatal(err)
 		}
@@ -362,7 +354,7 @@ func BenchmarkListMedium(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		data := seedData(byte(i%256), 64)
+		data := ufsTesting.SeedData(byte(i%256), 64)
 		if _, err := f.Write(data); err != nil {
 			b.Fatal(err)
 		}
@@ -542,7 +534,7 @@ func BenchmarkMemFSGlob(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		data := seedData(byte(i%256), 1)
+		data := ufsTesting.SeedData(byte(i%256), 1)
 		if _, err := f.Write(data); err != nil {
 			b.Fatal(err)
 		}

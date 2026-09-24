@@ -18,6 +18,8 @@ import (
 	"errors"
 	"io/fs"
 	"time"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 var (
@@ -101,7 +103,7 @@ func (entry *virtualDirEntry) Info() (fs.FileInfo, error) {
 }
 
 func (entry *virtualDirEntry) Size() int64 {
-	return emptyDirSize
+	return osutil.EmptyDirSize
 }
 
 func (entry *virtualDirEntry) ModTime() time.Time {

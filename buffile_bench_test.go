@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"io"
 	"testing"
+
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // bufFileBenchSizes mirrors the Small/Medium/Large convention used by the
@@ -34,7 +36,7 @@ var bufFileBenchSizes = []struct {
 func BenchmarkBufFileStat(b *testing.B) {
 	for _, sz := range bufFileBenchSizes {
 		b.Run(sz.name, func(b *testing.B) {
-			f := newTestBufFile("stat.bin", string(seedData('S', sz.n)))
+			f := newTestBufFile("stat.bin", string(ufsTesting.SeedData('S', sz.n)))
 			b.ResetTimer()
 			for b.Loop() {
 				if _, err := f.Stat(); err != nil {
@@ -52,7 +54,7 @@ func BenchmarkBufFileReadSequential(b *testing.B) {
 	const chunk = 4 << 10 // 4 KB reads
 	for _, sz := range bufFileBenchSizes {
 		b.Run(sz.name, func(b *testing.B) {
-			f := newTestBufFile("read.bin", string(seedData('R', sz.n)))
+			f := newTestBufFile("read.bin", string(ufsTesting.SeedData('R', sz.n)))
 			buf := make([]byte, chunk)
 			b.SetBytes(chunk)
 			b.ResetTimer()
@@ -76,7 +78,7 @@ func BenchmarkBufFileReadAt(b *testing.B) {
 	const chunk = 4 << 10 // 4 KB reads
 	for _, sz := range bufFileBenchSizes {
 		b.Run(sz.name, func(b *testing.B) {
-			f := newTestBufFile("readat.bin", string(seedData('A', sz.n)))
+			f := newTestBufFile("readat.bin", string(ufsTesting.SeedData('A', sz.n)))
 			buf := make([]byte, chunk)
 			maxOff := max(int64(sz.n-chunk), 1)
 			var off int64
@@ -99,7 +101,7 @@ func BenchmarkBufFileReadAt(b *testing.B) {
 func BenchmarkBufFileReadAtParallel(b *testing.B) {
 	const chunk = 4 << 10 // 4 KB reads
 	sz := 1 << 20         // 1 MB content
-	f := newTestBufFile("readat-parallel.bin", string(seedData('P', sz)))
+	f := newTestBufFile("readat-parallel.bin", string(ufsTesting.SeedData('P', sz)))
 	maxOff := int64(sz - chunk)
 
 	b.SetBytes(chunk)
@@ -120,7 +122,7 @@ func BenchmarkBufFileReadAtParallel(b *testing.B) {
 // offsets chosen to always be valid regardless of the file's current
 // position, so the loop never hits the error path.
 func BenchmarkBufFileSeek(b *testing.B) {
-	f := newTestBufFile("seek.bin", string(seedData('K', 1<<20))) // 1 MB
+	f := newTestBufFile("seek.bin", string(ufsTesting.SeedData('K', 1<<20))) // 1 MB
 	seeks := []struct {
 		offset int64
 		whence int
@@ -148,7 +150,7 @@ func BenchmarkMemFileWrite(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			data := seedData('W', chunkSize)
+			data := ufsTesting.SeedData('W', chunkSize)
 			b.SetBytes(int64(chunkSize))
 			b.ResetTimer()
 			for b.Loop() {
@@ -170,7 +172,7 @@ func BenchmarkMemFileWriteString(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			data := string(seedData('S', chunkSize))
+			data := string(ufsTesting.SeedData('S', chunkSize))
 			b.SetBytes(int64(chunkSize))
 			b.ResetTimer()
 			for b.Loop() {

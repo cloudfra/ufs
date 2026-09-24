@@ -32,6 +32,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // utf16Str is a pointer to a null-terminated UTF-16 string (Windows LPCWSTR).
@@ -101,7 +102,7 @@ func notificationName(n uint32) string {
 // fs.ValidPath. ProjFS passes nil for the root directory.
 func projfsPath(name utf16Str) string {
 	if name == nil {
-		return ufs.CwdPath
+		return pathutil.CwdPath
 	}
 	return strings.ReplaceAll(windows.UTF16PtrToString(name), `\`, "/")
 }

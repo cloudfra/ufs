@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 func validateClose(tb testing.TB, closer io.Closer) func() {
@@ -44,7 +44,7 @@ func loadTestAssets(tb testing.TB) map[string][]byte {
 	tb.Helper()
 	src := osutil.DirFS(testAssetsFilesDir)
 	result := make(map[string][]byte)
-	err := fs.WalkDir(src, ufs.CwdPath, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}

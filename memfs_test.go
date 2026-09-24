@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -49,7 +50,7 @@ func TestIsMemFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: CwdPath,
+			name: pathutil.CwdPath,
 			want: false,
 		},
 		{
@@ -502,7 +503,7 @@ func TestMemFSLstat(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		info, err := lfs.Lstat(CwdPath)
+		info, err := lfs.Lstat(pathutil.CwdPath)
 		if err != nil {
 			t.Fatalf("Lstat(.) = %v, want nil", err)
 		}
@@ -555,7 +556,7 @@ func TestMemFSReadDir(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		entries, err := dfs.ReadDir(CwdPath)
+		entries, err := dfs.ReadDir(pathutil.CwdPath)
 		if err != nil {
 			t.Fatalf("ReadDir(.) = %v, want nil", err)
 		}
@@ -875,7 +876,7 @@ func TestMemFSRemove(t *testing.T) {
 	})
 
 	t.Run("root_denied", func(t *testing.T) {
-		if err := fsys.Remove(CwdPath); !errors.Is(err, fs.ErrPermission) {
+		if err := fsys.Remove(pathutil.CwdPath); !errors.Is(err, fs.ErrPermission) {
 			t.Errorf("Remove('.') = %v, want ErrPermission", err)
 		}
 	})
@@ -963,10 +964,10 @@ func TestMemFSRemoveAll(t *testing.T) {
 			t.Errorf("failed to close file: %v", err)
 		}
 
-		if err := fsys2.RemoveAll(CwdPath); err != nil {
+		if err := fsys2.RemoveAll(pathutil.CwdPath); err != nil {
 			t.Fatalf("RemoveAll('.') = %v, want nil", err)
 		}
-		entries, err := fsys2.ReadDir(CwdPath)
+		entries, err := fsys2.ReadDir(pathutil.CwdPath)
 		if err != nil {
 			t.Errorf("failed to read directory: %v", err)
 		}

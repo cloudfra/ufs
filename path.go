@@ -19,14 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
-)
-
-const (
-	// CwdPath is the [fs.ValidPath] name of a file system's root directory.
-	CwdPath      = pathutil.CwdPath
-	emptyDirSize = 0
 )
 
 type realAbsPathGet interface {

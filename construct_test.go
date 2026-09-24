@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -63,7 +64,7 @@ func TestNew(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			uri:      CwdPath,
+			uri:      pathutil.CwdPath,
 			wantType: reflect.TypeFor[*localFS]().Name(),
 			wantErr:  false,
 		},

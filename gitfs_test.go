@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -182,7 +183,7 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 	if err != nil {
 		return err
 	}
-	if err := w.AddGlob(CwdPath); err != nil {
+	if err := w.AddGlob(pathutil.CwdPath); err != nil {
 		return err
 	}
 	_, err = w.Commit("init", &git.CommitOptions{

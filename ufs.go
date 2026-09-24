@@ -289,3 +289,9 @@ type Watcher interface {
 	// should not block for long.
 	Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error)
 }
+
+// OpenFileFS provides OpenFile extension for WriteFS.
+type OpenFileFS interface {
+	// OpenFile is the generalized open call; most users will use Open or Create instead.
+	OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error)
+}

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -203,7 +204,7 @@ func TestNullFSGlob(t *testing.T) {
 }
 
 func TestNullFileStatDir(t *testing.T) {
-	f := newNullFile("subdir" + unixPathSeparator)
+	f := newNullFile("subdir" + pathutil.UnixSeparator)
 	info, err := f.Stat()
 	if err != nil {
 		t.Fatal(err)

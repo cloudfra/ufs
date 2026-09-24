@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 const (
@@ -53,7 +54,7 @@ type localFS struct {
 }
 
 func (fsys *localFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "file", Path: coerceUnixPath(fsys.osFS.Name())}, nil
+	return &url.URL{Scheme: "file", Path: pathutil.CoerceUnix(fsys.osFS.Name())}, nil
 }
 
 func (fsys *localFS) String() string {

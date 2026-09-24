@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package httputil downloads files over HTTP(S) with protections against
+// server-side request forgery and path traversal.
+package httputil
 
 import (
 	"context"
@@ -27,8 +29,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const (
@@ -122,15 +122,18 @@ func sanitizeFilename(rawURL *url.URL) (string, error) {
 	return filename, nil
 }
 
-func downloadFile(ctx context.Context, dir string, uri string) (string, error) {
-	return downloadFileWith(ctx, nil, dir, uri)
+// DownloadFile downloads the file at uri into dir and returns its path. The URL
+// and any redirects are rejected if they resolve to a private or loopback
+// address.
+func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
+	return DownloadFileWith(ctx, nil, dir, uri)
 }
 
-// downloadFileWith downloads the file at uri into dir. If client is nil, a
+// DownloadFileWith downloads the file at uri into dir. If client is nil, a
 // new SSRF-hardened client is created and the URL is pre-validated against
 // private/loopback addresses. When a non-nil client is supplied (tests), the
 // pre-flight validation is skipped because the caller owns transport security.
-func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
+func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
 	parsed, err := url.Parse(uri)
 	if err != nil {
 		return "", fmt.Errorf("invalid download URL: %w", err)
@@ -191,45 +194,4 @@ func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	}
 
 	return archiveFilename, nil
-}
-
-func createOSTempDirectory() (string, func() error, error) {
-	tmpDir, err := os.MkdirTemp(os.TempDir(), "goapp")
-	if err != nil {
-		return "", func() error { return nil }, fmt.Errorf("cannot create temp directory, %w", err)
-	}
-	return tmpDir, func() error {
-		return osDeleteDirectory(tmpDir)
-	}, nil
-}
-
-func osExists(path string) bool {
-	_, err := osutil.Stat(path)
-	return err == nil
-}
-
-func osDeleteDirectory(path string) error {
-	if err := osutil.RemoveAll(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("cannot delete directory %q, %w", path, err)
-	}
-	return nil
-}
-
-func tryOSDeleteDirectory(path string) {
-	if err := osDeleteDirectory(path); err != nil {
-		slog.Warn("failed to delete directory", "path", path, "error", err)
-	}
-}
-
-func osDeleteFile(path string) error {
-	if err := osutil.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("cannot delete file %q, %w", path, err)
-	}
-	return nil
-}
-
-func tryOSDeleteFile(path string) {
-	if err := osDeleteFile(path); err != nil {
-		slog.Warn("failed to delete file", "path", path, "error", err)
-	}
 }

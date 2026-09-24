@@ -24,6 +24,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var _ WriteFS = (*faultFS)(nil)
@@ -124,7 +127,7 @@ func (fsys *faultFS) String() string {
 }
 
 func (fsys *faultFS) maybeInjectFault(op, name string) error {
-	if err := validPath(op, name); err != nil {
+	if err := pathutil.Validate(op, name); err != nil {
 		return err
 	}
 
@@ -150,7 +153,7 @@ func (fsys *faultFS) maybeInjectFault(op, name string) error {
 		if fsys.cfg.Log {
 			slog.Info("fault injected", "op", op, "path", name, "error", faultErr)
 		}
-		return pathError(op, name, faultErr)
+		return ufserrors.NewPathError(op, name, faultErr)
 	}
 	return nil
 }

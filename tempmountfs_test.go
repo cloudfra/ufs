@@ -53,13 +53,13 @@ func TestTempMountFSCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !osExists(capturedDir) {
+	if !osutil.Exists(capturedDir) {
 		t.Error("temp dir should exist before Close")
 	}
 	if err := fsys.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
-	if osExists(capturedDir) {
+	if osutil.Exists(capturedDir) {
 		t.Error("temp dir should be deleted after Close")
 	}
 }
@@ -84,7 +84,7 @@ func TestTempMountFSPrepareError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if capturedDir != "" && osExists(capturedDir) {
+	if capturedDir != "" && osutil.Exists(capturedDir) {
 		t.Error("temp dir should be cleaned up after prepare error")
 	}
 }

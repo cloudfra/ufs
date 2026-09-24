@@ -20,6 +20,9 @@ import (
 	"io/fs"
 	"strings"
 	"sync"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var _ Watcher = (*memFS)(nil)
@@ -29,9 +32,9 @@ var _ Watcher = (*memFS)(nil)
 // through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
 func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
-		return nil, pathError("watch", name, fs.ErrClosed)
+		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
 	}
-	if err := validPath("watch", name); err != nil {
+	if err := pathutil.Validate("watch", name); err != nil {
 		return nil, err
 	}
 
@@ -40,11 +43,11 @@ func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 		node, ok := fsys.nodes[name]
 		if !ok {
 			fsys.mu.RUnlock()
-			return nil, pathError("watch", name, fs.ErrNotExist)
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrNotExist)
 		}
 		if !node.isDir {
 			fsys.mu.RUnlock()
-			return nil, pathError("watch", name, fs.ErrInvalid)
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrInvalid)
 		}
 	}
 	fsys.mu.RUnlock()

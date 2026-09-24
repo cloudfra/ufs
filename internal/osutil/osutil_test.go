@@ -18,9 +18,12 @@ import (
 	"bytes"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -446,5 +449,442 @@ func TestMkdirTemp(t *testing.T) {
 
 	if _, err := MkdirTemp(filepath.Join(dir, "missing"), "x-*"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("MkdirTemp(missing dir) = %v, want fs.ErrNotExist", err)
+	}
+}
+
+func TestCreateTempDirectory(t *testing.T) {
+	dir, cleanup, err := CreateTempDirectory()
+	if err != nil {
+		t.Error(err)
+	}
+	if !Exists(dir) {
+		t.Errorf("'%s' does not exist when it should", dir)
+	}
+
+	if !strings.Contains(dir, "goapp") {
+		t.Errorf("'%s' does not contain 'goapp'", dir)
+	}
+	if err := cleanup(); err != nil {
+		t.Errorf("failed to cleanup temp directory: %v", err)
+	}
+	if Exists(dir) {
+		t.Errorf("'%s' exists when it should not", dir)
+	}
+}
+
+func TestDeleteFile(t *testing.T) {
+	t.Run("nonexistent", func(t *testing.T) {
+		err := DeleteFile("/nonexistent/path/that/cannot/exist-" + t.Name() + ".txt")
+		if err != nil {
+			t.Errorf("DeleteFile(nonexistent) = %v, want nil", err)
+		}
+	})
+
+	t.Run("existing", func(t *testing.T) {
+		f, err := CreateTemp("", "ufs-osutil-test-*.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := f.Name()
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := DeleteFile(p); err != nil {
+			t.Errorf("DeleteFile(existing) = %v, want nil", err)
+		}
+		if Exists(p) {
+			t.Errorf("%q still exists after DeleteFile", p)
+		}
+	})
+}
+
+func TestTryDeleteFile(t *testing.T) {
+	f, err := CreateTemp("", "ufs-try-delete-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := f.Name()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	TryDeleteFile(p)
+	if Exists(p) {
+		t.Errorf("%q still exists after TryDeleteFile", p)
+	}
+}
+
+func TestDeleteDirectoryExists(t *testing.T) {
+	dir, err := MkdirTemp("", "ufs-del-dir-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteDirectory(dir); err != nil {
+		t.Errorf("DeleteDirectory(existing) = %v, want nil", err)
+	}
+	if Exists(dir) {
+		t.Errorf("%q still exists after DeleteDirectory", dir)
+	}
+}
+
+func TestTryDeleteDirectory(t *testing.T) {
+	dir, err := MkdirTemp("", "ufs-try-del-dir-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	TryDeleteDirectory(dir)
+	if Exists(dir) {
+		t.Errorf("%q still exists after TryDeleteDirectory", dir)
+	}
+}
+
+// invalidPath contains a NUL byte, which every supported OS rejects with an
+// error other than fs.ErrNotExist.
+const invalidPath = "invalid\x00name"
+
+// captureLogs redirects the default slog logger to a buffer for the duration
+// of the test. Tests using it must not call t.Parallel.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+func TestCreateTempDirectoryIsDirectory(t *testing.T) {
+	t.Parallel()
+	dir, cleanup, err := CreateTempDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := cleanup(); err != nil {
+			t.Error(err)
+		}
+	})
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.IsDir() {
+		t.Errorf("%q is not a directory", dir)
+	}
+	if !strings.HasPrefix(dir, os.TempDir()) {
+		t.Errorf("%q is not under os.TempDir() %q", dir, os.TempDir())
+	}
+}
+
+func TestCreateTempDirectoryUnique(t *testing.T) {
+	t.Parallel()
+	dir1, cleanup1, err := CreateTempDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := cleanup1(); err != nil {
+			t.Error(err)
+		}
+	}()
+	dir2, cleanup2, err := CreateTempDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := cleanup2(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if dir1 == dir2 {
+		t.Errorf("CreateTempDirectory() returned %q twice", dir1)
+	}
+}
+
+func TestCreateTempDirectoryCleanupRemovesContents(t *testing.T) {
+	t.Parallel()
+	dir, cleanup, err := CreateTempDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "a", "b"), DefaultDirectoryPermissions); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(dir, "a", "b", "file.txt"), []byte("data"))
+
+	if err := cleanup(); err != nil {
+		t.Fatalf("cleanup() = %v, want nil", err)
+	}
+	if Exists(dir) {
+		t.Errorf("%q still exists after cleanup", dir)
+	}
+	if err := cleanup(); err != nil {
+		t.Errorf("second cleanup() = %v, want nil", err)
+	}
+}
+
+// TestCreateTempDirectoryError points every temp directory environment
+// variable at a missing directory so os.MkdirTemp fails. It modifies the
+// environment and cannot run in parallel.
+func TestCreateTempDirectoryError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	for _, env := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(env, missing)
+	}
+	if os.TempDir() != missing {
+		t.Skipf("os.TempDir() = %q, cannot redirect to %q on %s", os.TempDir(), missing, runtime.GOOS)
+	}
+
+	dir, cleanup, err := CreateTempDirectory()
+	if err == nil {
+		t.Fatalf("CreateTempDirectory() = %q, want error", dir)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("CreateTempDirectory() error = %v, want fs.ErrNotExist", err)
+	}
+	if !strings.Contains(err.Error(), "cannot create temp directory") {
+		t.Errorf("CreateTempDirectory() error = %q, want it to mention 'cannot create temp directory'", err)
+	}
+	if dir != "" {
+		t.Errorf("CreateTempDirectory() dir = %q, want empty", dir)
+	}
+	if cleanup == nil {
+		t.Fatal("CreateTempDirectory() cleanup = nil, want a no-op func")
+	}
+	if err := cleanup(); err != nil {
+		t.Errorf("cleanup() after error = %v, want nil", err)
+	}
+}
+
+func TestExists(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	mustWrite(t, file, []byte("data"))
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"file", file, true},
+		{"directory", dir, true},
+		{"unclean path", uncleanPath(dir, "file.txt"), true},
+		{"missing", filepath.Join(dir, "missing"), false},
+		{"missing parent", filepath.Join(dir, "missing", "file.txt"), false},
+		{"file as parent", filepath.Join(file, "child"), false},
+		{"invalid", invalidPath, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Exists(tc.path); got != tc.want {
+				t.Errorf("Exists(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExistsDanglingSymlink(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(filepath.Join(dir, "missing"), link); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if Exists(link) {
+		t.Errorf("Exists(%q) = true for a dangling symlink, want false", link)
+	}
+}
+
+func TestDeleteDirectory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nonexistent", func(t *testing.T) {
+		t.Parallel()
+		if err := DeleteDirectory(filepath.Join(t.TempDir(), "missing")); err != nil {
+			t.Errorf("DeleteDirectory(nonexistent) = %v, want nil", err)
+		}
+	})
+
+	// filepath.Clean turns "" into ".", and os.RemoveAll refuses paths ending
+	// in "." rather than deleting the working directory.
+	for _, name := range []string{"", ".", uncleanPath(".", ".")} {
+		t.Run("refuses "+strconv.Quote(name), func(t *testing.T) {
+			t.Parallel()
+			if err := DeleteDirectory(name); err == nil {
+				t.Errorf("DeleteDirectory(%q) = nil, want error", name)
+			}
+			if _, err := os.Stat("osutil_test.go"); err != nil {
+				t.Fatalf("working directory damaged by DeleteDirectory(%q): %v", name, err)
+			}
+		})
+	}
+
+	t.Run("nested", func(t *testing.T) {
+		t.Parallel()
+		dir := filepath.Join(t.TempDir(), "root")
+		if err := os.MkdirAll(filepath.Join(dir, "a", "b", "c"), DefaultDirectoryPermissions); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, filepath.Join(dir, "top.txt"), []byte("top"))
+		mustWrite(t, filepath.Join(dir, "a", "b", "c", "deep.txt"), []byte("deep"))
+
+		if err := DeleteDirectory(dir); err != nil {
+			t.Fatalf("DeleteDirectory(nested) = %v, want nil", err)
+		}
+		if Exists(dir) {
+			t.Errorf("%q still exists after DeleteDirectory", dir)
+		}
+	})
+
+	t.Run("unclean path", func(t *testing.T) {
+		t.Parallel()
+		parent := t.TempDir()
+		dir := filepath.Join(parent, "target")
+		if err := os.Mkdir(dir, DefaultDirectoryPermissions); err != nil {
+			t.Fatal(err)
+		}
+		if err := DeleteDirectory(uncleanPath(parent, "target")); err != nil {
+			t.Fatalf("DeleteDirectory(unclean) = %v, want nil", err)
+		}
+		if Exists(dir) {
+			t.Errorf("%q still exists after DeleteDirectory", dir)
+		}
+	})
+
+	t.Run("file", func(t *testing.T) {
+		t.Parallel()
+		file := filepath.Join(t.TempDir(), "file.txt")
+		mustWrite(t, file, []byte("data"))
+		if err := DeleteDirectory(file); err != nil {
+			t.Fatalf("DeleteDirectory(file) = %v, want nil", err)
+		}
+		if Exists(file) {
+			t.Errorf("%q still exists after DeleteDirectory", file)
+		}
+	})
+
+	t.Run("leaves siblings", func(t *testing.T) {
+		t.Parallel()
+		parent := t.TempDir()
+		dir := filepath.Join(parent, "target")
+		sibling := filepath.Join(parent, "sibling.txt")
+		if err := os.Mkdir(dir, DefaultDirectoryPermissions); err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, sibling, []byte("keep"))
+		if err := DeleteDirectory(dir); err != nil {
+			t.Fatal(err)
+		}
+		if !Exists(sibling) {
+			t.Errorf("%q was deleted along with %q", sibling, dir)
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Parallel()
+		err := DeleteDirectory(invalidPath)
+		if err == nil {
+			t.Fatal("DeleteDirectory(invalid) = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "cannot delete directory") {
+			t.Errorf("DeleteDirectory(invalid) error = %q, want it to mention 'cannot delete directory'", err)
+		}
+	})
+}
+
+func TestDeleteFileErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-empty directory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "file.txt"), []byte("data"))
+		err := DeleteFile(dir)
+		if err == nil {
+			t.Fatal("DeleteFile(non-empty dir) = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "cannot delete file") {
+			t.Errorf("DeleteFile(non-empty dir) error = %q, want it to mention 'cannot delete file'", err)
+		}
+		if !Exists(dir) {
+			t.Errorf("%q was deleted, want it kept", dir)
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Parallel()
+		if err := DeleteFile(invalidPath); err == nil {
+			t.Fatal("DeleteFile(invalid) = nil, want error")
+		}
+	})
+
+	t.Run("empty directory", func(t *testing.T) {
+		t.Parallel()
+		dir := filepath.Join(t.TempDir(), "empty")
+		if err := os.Mkdir(dir, DefaultDirectoryPermissions); err != nil {
+			t.Fatal(err)
+		}
+		if err := DeleteFile(dir); err != nil {
+			t.Fatalf("DeleteFile(empty dir) = %v, want nil", err)
+		}
+		if Exists(dir) {
+			t.Errorf("%q still exists after DeleteFile", dir)
+		}
+	})
+
+	t.Run("unclean path", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "file.txt")
+		mustWrite(t, file, []byte("data"))
+		if err := DeleteFile(uncleanPath(dir, "file.txt")); err != nil {
+			t.Fatalf("DeleteFile(unclean) = %v, want nil", err)
+		}
+		if Exists(file) {
+			t.Errorf("%q still exists after DeleteFile", file)
+		}
+	})
+}
+
+// The Try* tests capture the default logger and cannot run in parallel.
+
+func TestTryDeleteFileLogsError(t *testing.T) {
+	logs := captureLogs(t)
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "file.txt"), []byte("data"))
+
+	TryDeleteFile(dir)
+	if !strings.Contains(logs.String(), "failed to delete file") {
+		t.Errorf("TryDeleteFile(non-empty dir) logged %q, want 'failed to delete file'", logs.String())
+	}
+	if !Exists(dir) {
+		t.Errorf("%q was deleted, want it kept", dir)
+	}
+}
+
+func TestTryDeleteFileMissingDoesNotLog(t *testing.T) {
+	logs := captureLogs(t)
+	TryDeleteFile(filepath.Join(t.TempDir(), "missing"))
+	if logs.Len() != 0 {
+		t.Errorf("TryDeleteFile(missing) logged %q, want nothing", logs.String())
+	}
+}
+
+func TestTryDeleteDirectoryLogsError(t *testing.T) {
+	logs := captureLogs(t)
+	TryDeleteDirectory(invalidPath)
+	if !strings.Contains(logs.String(), "failed to delete directory") {
+		t.Errorf("TryDeleteDirectory(invalid) logged %q, want 'failed to delete directory'", logs.String())
+	}
+}
+
+func TestTryDeleteDirectoryMissingDoesNotLog(t *testing.T) {
+	logs := captureLogs(t)
+	TryDeleteDirectory(filepath.Join(t.TempDir(), "missing"))
+	if logs.Len() != 0 {
+		t.Errorf("TryDeleteDirectory(missing) logged %q, want nothing", logs.String())
 	}
 }

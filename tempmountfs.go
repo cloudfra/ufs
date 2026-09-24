@@ -19,6 +19,10 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+
+	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var _ localFSInterface = (*tempMountFS)(nil)
@@ -39,7 +43,7 @@ func (fsys *tempMountFS) URI() (*url.URL, error) {
 }
 
 func (fsys *tempMountFS) String() string {
-	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", uriOrDefault(fsys, fsys.name), coerceUnixPath(fsys.name))
+	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", uriOrDefault(fsys, fsys.name), pathutil.CoerceUnix(fsys.name))
 }
 
 func (fsys *tempMountFS) getAbsPath(name string) (string, error) {
@@ -53,7 +57,7 @@ func (fsys *tempMountFS) Open(name string) (fs.File, error) {
 func (fsys *tempMountFS) Close() error {
 	closeErr := fsys.lfs.Close()
 	cleanupErr := fsys.closer()
-	return joinErrors(closeErr, cleanupErr)
+	return ufserrors.Join(closeErr, cleanupErr)
 }
 
 func (fsys *tempMountFS) Create(name string) (File, error) {
@@ -97,21 +101,21 @@ func (fsys *tempMountFS) RemoveAll(name string) error {
 }
 
 func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (FS, error) {
-	tempDir, cleanup, err := createOSTempDirectory()
+	tempDir, cleanup, err := osutil.CreateTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, joinErrors(fmt.Errorf("cannot create temp directory, %w", err), cleanupErr)
+		return nil, ufserrors.Join(fmt.Errorf("cannot create temp directory, %w", err), cleanupErr)
 	}
 
 	if err := prepare(tempDir); err != nil {
 		cleanupErr := cleanup()
-		return nil, joinErrors(fmt.Errorf("cannot prepare temp directory %s, %w", uri, err), cleanupErr)
+		return nil, ufserrors.Join(fmt.Errorf("cannot prepare temp directory %s, %w", uri, err), cleanupErr)
 	}
 
 	lfs, err := newLocalFS(ctx, tempDir)
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, joinErrors(fmt.Errorf("cannot create local fs for temp directory %s, %w", uri, err), cleanupErr)
+		return nil, ufserrors.Join(fmt.Errorf("cannot create local fs for temp directory %s, %w", uri, err), cleanupErr)
 	}
 
 	return makeTempMountFS(lfs.(*localFS), uri, tempDir, cleanup), nil

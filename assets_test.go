@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -57,7 +58,7 @@ func TestAssets(t *testing.T) {
 				}
 				if err := copyFSToFS(osutil.DirFS(testAssetsFilesDir), fsys); err != nil {
 					if closeErr := fsys.Close(); closeErr != nil {
-						return nil, joinErrors(err, fmt.Errorf("failed to close FS after error: %v", closeErr))
+						return nil, ufserrors.Join(err, fmt.Errorf("failed to close FS after error: %v", closeErr))
 					}
 					return nil, err
 				}

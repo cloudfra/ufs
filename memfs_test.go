@@ -1013,61 +1013,12 @@ func TestMemFSStatOpName(t *testing.T) {
 	}
 }
 
-// TestMemFSDirFileConflicts verifies that Create and MkdirAll refuse to
-// replace a directory with a file or place anything under a regular file,
-// and that a rejected call leaves the tree unchanged.
-func TestMemFSDirFileConflicts(t *testing.T) {
-	newFS := func(t *testing.T) *memFS {
-		t.Helper()
-		fsys := makeMemFS("memory:")
-		if err := fsys.MkdirAll("dir/sub", fs.ModePerm); err != nil {
-			t.Fatal(err)
-		}
-		f, err := fsys.Create("dir/file")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := f.WriteString("content"); err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-		return fsys
-	}
-	assertUnchanged := func(t *testing.T, fsys *memFS) {
-		t.Helper()
-		for _, name := range []string{pathutil.CwdPath, "dir", "dir/sub"} {
-			if info, err := fsys.Stat(name); err != nil || !info.IsDir() {
-				t.Errorf("Stat(%q) = (%v, %v), want a directory", name, info, err)
-			}
-		}
-		if got, err := fsys.ReadFile("dir/file"); err != nil || string(got) != "content" {
-			t.Errorf("ReadFile(dir/file) = (%q, %v), want (%q, nil)", got, err, "content")
-		}
-		for _, name := range []string{"dir/file/x", "dir/file/x/y"} {
-			if _, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("Stat(%q) = %v, want fs.ErrNotExist", name, err)
-			}
-		}
-	}
-
-	testCases := []struct {
-		name    string
-		op      func(fsys *memFS) error
-		wantErr error
-		wantOp  string
-	}{
-		{name: "create_on_dir", op: func(fsys *memFS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-		{name: "create_on_root", op: func(fsys *memFS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-		{name: "create_under_file", op: func(fsys *memFS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-		{name: "create_deep_under_file", op: func(fsys *memFS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-		{name: "mkdirall_on_file", op: func(fsys *memFS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-		{name: "mkdirall_under_file", op: func(fsys *memFS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-	}
-	for _, tc := range testCases {
+// TestMemFSDirFileConflictErrors checks the exact errors memFS returns for
+// the conflicts covered by TestFSDirFileConflicts.
+func TestMemFSDirFileConflictErrors(t *testing.T) {
+	for _, tc := range dirFileConflictCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fsys := newFS(t)
+			fsys := newDirFileConflictFS(t, func(testing.TB) FS { return makeMemFS("memory:") })
 			err := tc.op(fsys)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("err = %v, want %v", err, tc.wantErr)
@@ -1076,24 +1027,6 @@ func TestMemFSDirFileConflicts(t *testing.T) {
 			if !errors.As(err, &pe) || pe.Op != tc.wantOp {
 				t.Errorf("err = %#v, want *fs.PathError with Op %q", err, tc.wantOp)
 			}
-			assertUnchanged(t, fsys)
 		})
 	}
-
-	t.Run("existing_dirs_still_ok", func(t *testing.T) {
-		fsys := newFS(t)
-		if err := fsys.MkdirAll("dir/sub/new", fs.ModePerm); err != nil {
-			t.Errorf("MkdirAll(dir/sub/new) = %v, want nil", err)
-		}
-		if err := fsys.MkdirAll(pathutil.CwdPath, fs.ModePerm); err != nil {
-			t.Errorf("MkdirAll(.) = %v, want nil", err)
-		}
-		f, err := fsys.Create("dir/file")
-		if err != nil {
-			t.Fatalf("Create(dir/file) over an existing file = %v, want nil", err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-	})
 }

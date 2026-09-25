@@ -394,6 +394,9 @@ func (fsys *memFS) ReadFile(name string) ([]byte, error) {
 	if !ok {
 		return nil, ufserrors.NewPathError("readfile", name, fs.ErrNotExist)
 	}
+	if node.isDir {
+		return nil, ufserrors.NewPathError("readfile", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
+	}
 	return bytes.Clone(node.content), nil
 }
 

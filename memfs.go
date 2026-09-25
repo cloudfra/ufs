@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudfra/ufs/internal/notifybus"
+	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -42,6 +42,7 @@ var (
 	_ WriteFS        = (*memFS)(nil)
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
+	_ Watcher        = (*memFS)(nil)
 )
 
 func init() {
@@ -82,7 +83,7 @@ type memFS struct {
 	name  string
 	nodes map[string]*memNode
 
-	notifyBus *notifybus.Bus
+	notifyBus *notify.Bus
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -94,17 +95,31 @@ type memFile struct {
 }
 
 func (f *memFile) Write(p []byte) (int, error) {
-	return f.WriteString(string(p))
+	f.mu.Lock()
+	copy(f.writeAtOffsetLocked(len(p)), p)
+	f.syncToFSLocked()
+	f.mu.Unlock()
+
+	f.notifyWrite()
+	return len(p), nil
 }
 
 func (f *memFile) WriteString(s string) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	copy(f.writeAtOffsetLocked(len(s)), s)
+	f.syncToFSLocked()
+	f.mu.Unlock()
 
-	f.content = append(f.content, s...)
+	f.notifyWrite()
+	return len(s), nil
+}
+
+// syncToFSLocked stamps modTime and, if the file is backed by a live memFS,
+// pushes a snapshot of content to the corresponding node so that other open
+// handles and future Opens observe the write. f.mu must be held.
+func (f *memFile) syncToFSLocked() {
 	now := time.Now()
 	f.modTime = now
-
 	if f.fsys != nil {
 		f.fsys.mu.Lock()
 		if node, ok := f.fsys.nodes[f.path]; ok {
@@ -112,10 +127,13 @@ func (f *memFile) WriteString(s string) (int, error) {
 			node.modTime = now
 		}
 		f.fsys.mu.Unlock()
+	}
+}
+
+func (f *memFile) notifyWrite() {
+	if f.fsys != nil {
 		f.fsys.notify(NotifyWrite, f.path)
 	}
-
-	return len(s), nil
 }
 
 func (f *memFile) Close() error {
@@ -270,12 +288,12 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	fsys.notifyBus.CloseAll()
+	err := fsys.notifyBus.Close()
 
 	fsys.mu.Lock()
 	fsys.nodes = nil
 	fsys.mu.Unlock()
-	return nil
+	return err
 }
 
 func (fsys *memFS) Create(name string) (File, error) {
@@ -288,8 +306,17 @@ func (fsys *memFS) Create(name string) (File, error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
+	existing, existed := fsys.nodes[name]
+	if existed && existing.isDir {
+		return nil, ufserrors.NewPathError("create", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
+	}
+	if dir := path.Dir(name); dir != pathutil.CwdPath {
+		if err := fsys.checkDirsLocked(dir); err != nil {
+			return nil, ufserrors.NewPathError("create", name, err)
+		}
+	}
+
 	now := time.Now()
-	_, existed := fsys.nodes[name]
 	node := &memNode{
 		name:    path.Base(name),
 		mode:    fs.ModePerm,
@@ -320,6 +347,12 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
+	if name != pathutil.CwdPath {
+		if err := fsys.checkDirsLocked(name); err != nil {
+			return ufserrors.NewPathError("mkdir", name, err)
+		}
+	}
+
 	now := time.Now()
 	parts := pathutil.Split(name)
 	accum := ""
@@ -346,6 +379,27 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 		fsys.notify(NotifyCreate, p)
 	}
 	return nil
+}
+
+// checkDirsLocked verifies that name and each of its ancestors, where they
+// already exist, are directories, so that a later mutation cannot place a
+// child under a regular file. name must be a valid, non-root path.
+// fsys.mu must be held.
+func (fsys *memFS) checkDirsLocked(name string) error {
+	for i := 0; ; {
+		j := strings.IndexByte(name[i:], '/')
+		p := name
+		if j >= 0 {
+			p = name[:i+j]
+		}
+		if node, ok := fsys.nodes[p]; ok && !node.isDir {
+			return fmt.Errorf("%q is not a directory: %w", p, fs.ErrExist)
+		}
+		if j < 0 {
+			return nil
+		}
+		i += j + 1
+	}
 }
 
 // ensureParentsLocked creates any missing ancestor directories for the given
@@ -388,6 +442,9 @@ func (fsys *memFS) ReadFile(name string) ([]byte, error) {
 	node, ok := fsys.nodes[name]
 	if !ok {
 		return nil, ufserrors.NewPathError("readfile", name, fs.ErrNotExist)
+	}
+	if node.isDir {
+		return nil, ufserrors.NewPathError("readfile", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
 	}
 	return bytes.Clone(node.content), nil
 }
@@ -579,7 +636,7 @@ func makeMemFS(name string) *memFS {
 	now := time.Now()
 	return &memFS{
 		name:      name,
-		notifyBus: notifybus.New(),
+		notifyBus: notify.New(),
 		nodes: map[string]*memNode{
 			pathutil.CwdPath: {
 				name:    pathutil.CwdPath,
@@ -593,4 +650,39 @@ func makeMemFS(name string) *memFS {
 
 func isMemFSUri(name string) bool {
 	return strings.HasPrefix(name, memFSPrefix)
+}
+
+// Watch implements [Watcher] for in-memory file systems. It watches name (a
+// directory) and all nested paths, invoking hook for each mutation performed
+// through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
+func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
+	if fsys.isClosed() {
+		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
+	}
+	if err := pathutil.Validate("watch", name); err != nil {
+		return nil, err
+	}
+
+	fsys.mu.RLock()
+	if name != pathutil.CwdPath {
+		node, ok := fsys.nodes[name]
+		if !ok {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrNotExist)
+		}
+		if !node.isDir {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrInvalid)
+		}
+	}
+	fsys.mu.RUnlock()
+
+	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
+		hook(NotifyOp(op), path)
+	}), nil
+}
+
+// notify sends an event to all active watchers.
+func (fsys *memFS) notify(op NotifyOp, path string) {
+	fsys.notifyBus.Publish(notify.Op(op), path)
 }

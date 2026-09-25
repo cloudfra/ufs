@@ -39,7 +39,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
-	"github.com/cloudfra/ufs/internal/notifybus"
+	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -50,6 +50,7 @@ var (
 	_ ufs.WriteFS    = (*boltFS)(nil)
 	_ fs.GlobFS      = (*boltFS)(nil)
 	_ fs.ReadDirFile = (*boltDirFile)(nil)
+	_ ufs.Watcher    = (*boltFS)(nil)
 
 	// selfKey serves two roles that happen to share the same value: it is the
 	// name of the top-level bolt bucket that represents the root ("." /
@@ -84,7 +85,7 @@ type boltFS struct {
 	absPath string
 	db      *bolt.DB
 
-	notifyBus *notifybus.Bus
+	notifyBus *notify.Bus
 }
 
 // boltFile is an open read-write handle for a regular file. Writes are
@@ -428,16 +429,16 @@ func openDirBucket(name string, bkt *bolt.Bucket) (*boltDirFile, error) {
 }
 
 func (fsys *boltFS) Close() error {
-	fsys.notifyBus.CloseAll()
+	busErr := fsys.notifyBus.Close()
 
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 	if fsys.db == nil {
-		return nil
+		return busErr
 	}
 	err := fsys.db.Close()
 	fsys.db = nil
-	return err
+	return ufserrors.Join(busErr, err)
 }
 
 func (fsys *boltFS) Create(name string) (ufs.File, error) {
@@ -905,6 +906,37 @@ func makeBoltFS(name string) (*boltFS, error) {
 		name:      name,
 		absPath:   absPath,
 		db:        db,
-		notifyBus: notifybus.New(),
+		notifyBus: notify.New(),
 	}, nil
+}
+
+// Watch implements [ufs.Watcher] for bolt-backed file systems. It watches name
+// (a directory) and all nested paths, invoking hook for each mutation
+// performed through the boltFS API (Create, file Close after a write,
+// Remove, RemoveAll, MkdirAll).
+func (fsys *boltFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
+	if fsys.isClosed() {
+		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
+	}
+	if err := pathutil.Validate("watch", name); err != nil {
+		return nil, err
+	}
+
+	if name != pathutil.CwdPath {
+		if err := fsys.view(func(tx *bolt.Tx) error {
+			_, err := lookupDir(tx, name)
+			return err
+		}); err != nil {
+			return nil, ufserrors.NewPathError("watch", name, err)
+		}
+	}
+
+	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
+		hook(ufs.NotifyOp(op), path)
+	}), nil
+}
+
+// notify sends an event to all active watchers.
+func (fsys *boltFS) notify(op ufs.NotifyOp, path string) {
+	fsys.notifyBus.Publish(notify.Op(op), path)
 }

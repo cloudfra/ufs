@@ -12,18 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package notifybus provides a prefix-matching change-event broadcaster for
-// in-process file system backends (as opposed to backends that watch a real
-// OS or remote change feed). A backend holds one [Bus], calls [Bus.Publish]
-// whenever it mutates a path, and hands out a [Subscription] per [Bus.Subscribe]
-// call to satisfy its own Watch method.
-package notifybus
+// Package notify provides a prefix-matching change-event broadcaster for
+// in-process file system backends. A backend holds one [Bus], calls
+// [Bus.Publish] whenever it mutates a path, and hands out a [Subscription]
+// per [Bus.Subscribe] call to satisfy its own Watch method.
+package notify
 
 import (
 	"context"
+	"io"
 	"strings"
 	"sync"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
+
+var (
+	_ io.Closer = (*Bus)(nil)
+	_ io.Closer = (*Subscription)(nil)
+)
+
+// QueueSize is the number of undelivered events a [Subscription] buffers.
+// While its hook is busy and the queue is full, further events for that
+// subscription are dropped rather than blocking [Bus.Publish].
+const QueueSize = 256
 
 // Op describes the kind of change observed on a path. It mirrors ufs.NotifyOp
 // (a plain int conversion at the caller) so this package has no dependency on
@@ -32,18 +44,6 @@ type Op int
 
 // Hook is invoked for each change delivered to a [Subscription].
 type Hook func(op Op, path string)
-
-// Bus broadcasts published events to every active, matching [Subscription].
-// The zero value is not usable; construct one with [New].
-type Bus struct {
-	mu   sync.RWMutex
-	subs []*Subscription
-}
-
-// New returns an empty, ready-to-use Bus.
-func New() *Bus {
-	return &Bus{}
-}
 
 type event struct {
 	op   Op
@@ -61,28 +61,6 @@ type Subscription struct {
 	closeOnce sync.Once
 	done      chan struct{}
 	events    chan event
-}
-
-// Subscribe registers hook to receive every published event whose path falls
-// under prefix ("." watches everything except the root path itself), and
-// starts the background goroutine that delivers them. Delivery stops when
-// ctx is canceled or the returned Subscription is closed, whichever comes
-// first.
-func (b *Bus) Subscribe(ctx context.Context, prefix string, hook Hook) *Subscription {
-	ctx, cancel := context.WithCancel(ctx)
-	sub := &Subscription{
-		bus:    b,
-		prefix: prefix,
-		hook:   hook,
-		cancel: cancel,
-		done:   make(chan struct{}),
-		events: make(chan event, 256),
-	}
-	b.mu.Lock()
-	b.subs = append(b.subs, sub)
-	b.mu.Unlock()
-	go sub.loop(ctx)
-	return sub
 }
 
 // Close stops delivery to this subscription and waits for its background
@@ -113,10 +91,10 @@ func (s *Subscription) loop(ctx context.Context) {
 
 // matches reports whether path falls under this subscription's prefix.
 func (s *Subscription) matches(path string) bool {
-	if s.prefix == "." {
-		return path != "."
+	if s.prefix == pathutil.CwdPath {
+		return path != pathutil.CwdPath
 	}
-	return path == s.prefix || strings.HasPrefix(path, s.prefix+"/")
+	return path == s.prefix || strings.HasPrefix(path, s.prefix+pathutil.UnixSeparator)
 }
 
 // send enqueues an event if the path matches. Non-blocking: drops the event
@@ -131,15 +109,38 @@ func (s *Subscription) send(op Op, path string) {
 	}
 }
 
-func (b *Bus) remove(s *Subscription) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	for i, sub := range b.subs {
-		if sub == s {
-			b.subs = append(b.subs[:i], b.subs[i+1:]...)
-			return
-		}
+// Bus broadcasts published events to every active, matching [Subscription].
+// The zero value is not usable; construct one with [New].
+type Bus struct {
+	mu   sync.RWMutex
+	subs []*Subscription
+}
+
+// New returns an empty, ready-to-use Bus.
+func New() *Bus {
+	return &Bus{}
+}
+
+// Subscribe registers hook to receive every published event whose path falls
+// under prefix ("." watches everything except the root path itself), and
+// starts the background goroutine that delivers them. Delivery stops when
+// ctx is canceled or the returned Subscription is closed, whichever comes
+// first.
+func (b *Bus) Subscribe(ctx context.Context, prefix string, hook Hook) *Subscription {
+	ctx, cancel := context.WithCancel(ctx)
+	sub := &Subscription{
+		bus:    b,
+		prefix: prefix,
+		hook:   hook,
+		cancel: cancel,
+		done:   make(chan struct{}),
+		events: make(chan event, QueueSize),
 	}
+	b.mu.Lock()
+	b.subs = append(b.subs, sub)
+	b.mu.Unlock()
+	go sub.loop(ctx)
+	return sub
 }
 
 // Publish delivers op/path to every active subscription whose prefix
@@ -153,15 +154,27 @@ func (b *Bus) Publish(op Op, path string) {
 	}
 }
 
-// CloseAll cancels every active subscription, without waiting for their
+// Close cancels every active subscription, without waiting for their
 // goroutines to drain, and clears the bus. Intended for use when the owning
 // FS itself is closed; individual Subscription.Close calls that race with it
-// remain safe (idempotent) but redundant.
-func (b *Bus) CloseAll() {
+// remain safe (idempotent) but redundant. It always returns nil.
+func (b *Bus) Close() error {
 	b.mu.Lock()
 	for _, s := range b.subs {
 		s.cancel()
 	}
 	b.subs = nil
 	b.mu.Unlock()
+	return nil
+}
+
+func (b *Bus) remove(s *Subscription) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, sub := range b.subs {
+		if sub == s {
+			b.subs = append(b.subs[:i], b.subs[i+1:]...)
+			return
+		}
+	}
 }

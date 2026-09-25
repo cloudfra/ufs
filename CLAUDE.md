@@ -141,7 +141,7 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
-| internal/notifybus/   | Prefix-matching change-event bus for in-process Watcher impls       |
+| internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |

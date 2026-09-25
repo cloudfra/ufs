@@ -293,8 +293,17 @@ func (fsys *memFS) Create(name string) (File, error) {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
+	existing, existed := fsys.nodes[name]
+	if existed && existing.isDir {
+		return nil, ufserrors.NewPathError("create", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
+	}
+	if dir := path.Dir(name); dir != pathutil.CwdPath {
+		if err := fsys.checkDirsLocked(dir); err != nil {
+			return nil, ufserrors.NewPathError("create", name, err)
+		}
+	}
+
 	now := time.Now()
-	_, existed := fsys.nodes[name]
 	node := &memNode{
 		name:    path.Base(name),
 		mode:    fs.ModePerm,
@@ -325,6 +334,12 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 	fsys.mu.Lock()
 	defer fsys.mu.Unlock()
 
+	if name != pathutil.CwdPath {
+		if err := fsys.checkDirsLocked(name); err != nil {
+			return ufserrors.NewPathError("mkdir", name, err)
+		}
+	}
+
 	now := time.Now()
 	parts := pathutil.Split(name)
 	accum := ""
@@ -351,6 +366,27 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 		fsys.notify(NotifyCreate, p)
 	}
 	return nil
+}
+
+// checkDirsLocked verifies that name and each of its ancestors, where they
+// already exist, are directories, so that a later mutation cannot place a
+// child under a regular file. name must be a valid, non-root path.
+// fsys.mu must be held.
+func (fsys *memFS) checkDirsLocked(name string) error {
+	for i := 0; ; {
+		j := strings.IndexByte(name[i:], '/')
+		p := name
+		if j >= 0 {
+			p = name[:i+j]
+		}
+		if node, ok := fsys.nodes[p]; ok && !node.isDir {
+			return fmt.Errorf("%q is not a directory: %w", p, fs.ErrExist)
+		}
+		if j < 0 {
+			return nil
+		}
+		i += j + 1
+	}
 }
 
 // ensureParentsLocked creates any missing ancestor directories for the given

@@ -1028,3 +1028,21 @@ func TestMemFSStatOpName(t *testing.T) {
 		t.Errorf("Stat() PathError.Op = %q, want %q", pe.Op, "stat")
 	}
 }
+
+// TestMemFSDirFileConflictErrors checks the exact errors memFS returns for
+// the conflicts covered by TestFSDirFileConflicts.
+func TestMemFSDirFileConflictErrors(t *testing.T) {
+	for _, tc := range dirFileConflictCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := newDirFileConflictFS(t, func(testing.TB) FS { return makeMemFS("memory:") })
+			err := tc.op(fsys)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("err = %v, want %v", err, tc.wantErr)
+			}
+			var pe *fs.PathError
+			if !errors.As(err, &pe) || pe.Op != tc.wantOp {
+				t.Errorf("err = %#v, want *fs.PathError with Op %q", err, tc.wantOp)
+			}
+		})
+	}
+}

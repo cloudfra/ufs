@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/notifybus"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -81,8 +82,7 @@ type memFS struct {
 	name  string
 	nodes map[string]*memNode
 
-	watchersMu sync.RWMutex
-	watchers   []*memWatcher
+	notifyBus *notifybus.Bus
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -270,12 +270,7 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	fsys.watchersMu.Lock()
-	for _, mw := range fsys.watchers {
-		mw.cancel()
-	}
-	fsys.watchers = nil
-	fsys.watchersMu.Unlock()
+	fsys.notifyBus.CloseAll()
 
 	fsys.mu.Lock()
 	fsys.nodes = nil
@@ -583,7 +578,8 @@ func MakeMemFS(name string) FS {
 func makeMemFS(name string) *memFS {
 	now := time.Now()
 	return &memFS{
-		name: name,
+		name:      name,
+		notifyBus: notifybus.New(),
 		nodes: map[string]*memNode{
 			pathutil.CwdPath: {
 				name:    pathutil.CwdPath,

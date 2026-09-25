@@ -22,11 +22,10 @@ import (
 	pb "cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"cloud.google.com/go/pubsub/v2/pstest"
 	"cloud.google.com/go/storage"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-
-	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestConvertGCSEventType(t *testing.T) {

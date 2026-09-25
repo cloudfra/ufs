@@ -21,10 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestNewFileInfo(t *testing.T) {

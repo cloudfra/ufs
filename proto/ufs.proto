@@ -140,6 +140,22 @@ message FileSystemInfo {
   string description = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// BoltFileRecord is the value the bolt driver (drivers/boltfs) stores under
+// each file's key in its backing bbolt database. The node's path is not part
+// of the record: it is implied by the bbolt key (and the chain of nested
+// buckets leading to it). BoltFileRecord is internal to that driver and is
+// not part of the RPC surface.
+message BoltFileRecord {
+  // File mode bits, as defined by Go's io/fs.FileMode.
+  uint32 mode = 1;
+
+  // The time the file was last modified.
+  google.protobuf.Timestamp mod_time = 2;
+
+  // Raw file content.
+  bytes content = 3;
+}
+
 // SymlinkHandling controls whether a lookup follows a symbolic link to its
 // target or reports on the link itself.
 enum SymlinkHandling {

@@ -18,8 +18,10 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -442,12 +444,12 @@ func TestFileWrite(t *testing.T) {
 				if pos, err := f.Seek(0, io.SeekCurrent); err != nil || pos != tc.seek+int64(len(tc.write)) {
 					t.Errorf("Seek(0, SeekCurrent) after write = (%d, %v), want (%d, nil)", pos, err, tc.seek+int64(len(tc.write)))
 				}
-				content, _, ok := f.TakeDirty(modTime)
-				if !ok {
-					t.Fatal("TakeDirty() ok = false after a write, want true")
+				if got := readAllAt(t, f); got != tc.want {
+					t.Errorf("content = %q, want %q", got, tc.want)
 				}
-				if string(content) != tc.want {
-					t.Errorf("content = %q, want %q", content, tc.want)
+				// An empty write changes nothing, so it must not force a commit.
+				if _, _, ok := f.TakeDirty(modTime); ok != (tc.write != "") {
+					t.Errorf("TakeDirty() ok = %t, want %t", ok, tc.write != "")
 				}
 			})
 		}
@@ -507,5 +509,98 @@ func TestFilePath(t *testing.T) {
 	f := newTestFile("a/b/c.txt", "")
 	if got := f.Path(); got != "a/b/c.txt" {
 		t.Errorf("Path() = %q, want %q", got, "a/b/c.txt")
+	}
+}
+
+// readAllAt returns the file's whole content via ReadAt, leaving the offset
+// untouched.
+func readAllAt(t *testing.T, f *File) string {
+	t.Helper()
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, info.Size())
+	if n, err := f.ReadAt(buf, 0); err != nil && !errors.Is(err, io.EOF) || n != len(buf) {
+		t.Fatalf("ReadAt() = (%d, %v), want (%d, nil or EOF)", n, err, len(buf))
+	}
+	return string(buf)
+}
+
+// TestFileIOTestReader runs the standard library's reader conformance checks
+// (Read, ReadAt and Seek) against File, both freshly opened and after writes
+// that grow the content.
+func TestFileIOTestReader(t *testing.T) {
+	large := strings.Repeat("0123456789abcdef", 1<<12)
+	testCases := []struct {
+		name string
+		make func(t *testing.T) *File
+		want string
+	}{
+		{name: "empty", make: func(*testing.T) *File { return newTestFile("e.txt", "") }, want: ""},
+		{name: "opened", make: func(*testing.T) *File { return newTestFile("o.txt", "hello world") }, want: "hello world"},
+		{name: "opened_large", make: func(*testing.T) *File { return newTestFile("l.txt", large) }, want: large},
+		{
+			name: "after_writes",
+			make: func(t *testing.T) *File {
+				f := newTestFile("w.txt", "hello world")
+				for _, step := range []struct {
+					off int64
+					s   string
+				}{{0, "HI"}, {11, "!"}, {14, "tail"}} {
+					if _, err := f.Seek(step.off, io.SeekStart); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := f.WriteString(step.s); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := f.Seek(0, io.SeekStart); err != nil {
+					t.Fatal(err)
+				}
+				return f
+			},
+			want: "HIllo world!\x00\x00tail",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := iotest.TestReader(tc.make(t), []byte(tc.want)); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+// BenchmarkFileWrite measures growing a file through sequential and sparse
+// (seek past the end, zero-filled gap) writes.
+func BenchmarkFileWrite(b *testing.B) {
+	for _, bc := range []struct {
+		name   string
+		chunk  int
+		total  int
+		stride int64
+	}{
+		{name: "sequential_4KiB_to_1MiB", chunk: 4 << 10, total: 1 << 20},
+		{name: "sequential_64KiB_to_16MiB", chunk: 64 << 10, total: 16 << 20},
+		{name: "sparse_4KiB_every_8KiB", chunk: 4 << 10, total: 1 << 20, stride: 8 << 10},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			data := make([]byte, bc.chunk)
+			b.ReportAllocs()
+			for b.Loop() {
+				f := New("bench.bin", nil, 0o644, time.Time{})
+				for i := 0; i*bc.chunk < bc.total; i++ {
+					if bc.stride > 0 {
+						if _, err := f.Seek(int64(i)*bc.stride, io.SeekStart); err != nil {
+							b.Fatal(err)
+						}
+					}
+					if _, err := f.Write(data); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
 	}
 }

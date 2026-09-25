@@ -15,8 +15,7 @@
 // Package buffile provides the fully-buffered, in-memory file handle state
 // shared by ufs drivers that load a file's whole content on open and persist
 // it back to their backing store on their own schedule (for example on
-// Close). It depends on the base ufs package, so it lives under
-// drivers/common rather than internal/.
+// Close).
 package buffile
 
 import (
@@ -42,7 +41,7 @@ import (
 type File struct {
 	mu      sync.Mutex
 	path    string
-	content []byte
+	content bytes.Buffer
 	offset  int64
 	mode    fs.FileMode
 	modTime time.Time
@@ -58,7 +57,7 @@ type File struct {
 func New(path string, content []byte, mode fs.FileMode, modTime time.Time) File {
 	return File{
 		path:    path,
-		content: content,
+		content: *bytes.NewBuffer(content),
 		mode:    mode,
 		modTime: modTime,
 	}
@@ -72,7 +71,7 @@ func (f *File) Path() string {
 // Stat returns the file's current name, size, mode and modification time.
 func (f *File) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
-	info := ufs.NewFileInfo(path.Base(f.path), int64(len(f.content)), f.mode, f.modTime)
+	info := ufs.NewFileInfo(path.Base(f.path), int64(f.content.Len()), f.mode, f.modTime)
 	f.mu.Unlock()
 	return info, nil
 }
@@ -81,11 +80,11 @@ func (f *File) Stat() (fs.FileInfo, error) {
 // once the offset reaches the end of the content.
 func (f *File) Read(p []byte) (int, error) {
 	f.mu.Lock()
-	if f.offset >= int64(len(f.content)) {
+	if f.offset >= int64(f.content.Len()) {
 		f.mu.Unlock()
 		return 0, io.EOF
 	}
-	n := copy(p, f.content[f.offset:])
+	n := copy(p, f.content.Bytes()[f.offset:])
 	f.offset += int64(n)
 	f.mu.Unlock()
 	return n, nil
@@ -99,12 +98,12 @@ func (f *File) ReadAt(p []byte, off int64) (int, error) {
 		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("readat", f.path, fmt.Errorf("offset %d is negative: %w", off, fs.ErrInvalid))
 	}
-	if off >= int64(len(f.content)) {
+	if off >= int64(f.content.Len()) {
 		f.mu.Unlock()
 		return 0, io.EOF
 	}
-	n := copy(p, f.content[off:])
-	atEnd := off+int64(n) >= int64(len(f.content))
+	n := copy(p, f.content.Bytes()[off:])
+	atEnd := off+int64(n) >= int64(f.content.Len())
 	f.mu.Unlock()
 	if atEnd {
 		return n, io.EOF
@@ -123,7 +122,7 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekCurrent:
 		newOffset = f.offset + offset
 	case io.SeekEnd:
-		newOffset = int64(len(f.content)) + offset
+		newOffset = int64(f.content.Len()) + offset
 	default:
 		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("seek", f.path, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
@@ -141,8 +140,13 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 // extending the file (zero-filling any gap left by a Seek past the end), and
 // marks the file dirty. It never touches the backing store.
 func (f *File) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
 	f.mu.Lock()
-	copy(f.writeAtOffsetLocked(len(p)), p)
+	n := copy(f.overwritableLocked(len(p)), p)
+	f.content.Write(p[n:])
+	f.offset += int64(len(p))
 	f.dirty = true
 	f.mu.Unlock()
 	return len(p), nil
@@ -151,8 +155,13 @@ func (f *File) Write(p []byte) (int, error) {
 // WriteString is like [File.Write] but takes a string, avoiding a []byte
 // conversion.
 func (f *File) WriteString(s string) (int, error) {
+	if len(s) == 0 {
+		return 0, nil
+	}
 	f.mu.Lock()
-	copy(f.writeAtOffsetLocked(len(s)), s)
+	n := copy(f.overwritableLocked(len(s)), s)
+	f.content.WriteString(s[n:])
+	f.offset += int64(len(s))
 	f.dirty = true
 	f.mu.Unlock()
 	return len(s), nil
@@ -169,7 +178,7 @@ func (f *File) TakeDirty(modTime time.Time) (content []byte, mode fs.FileMode, o
 		f.mu.Unlock()
 		return nil, 0, false
 	}
-	content = bytes.Clone(f.content)
+	content = bytes.Clone(f.content.Bytes())
 	mode = f.mode
 	f.modTime = modTime
 	f.dirty = false
@@ -185,17 +194,26 @@ func (f *File) MarkDirty() {
 	f.mu.Unlock()
 }
 
-// writeAtOffsetLocked grows content as needed so that n bytes starting at
-// offset are addressable, advances offset by n, and returns the n-byte slice
-// the caller should copy its data into. f.mu must be held.
-func (f *File) writeAtOffsetLocked(n int) []byte {
-	if n == 0 {
-		return nil
+// overwritableLocked prepares content for an n-byte write at the current
+// offset. It reserves capacity for any growth up front, so the write costs at
+// most one allocation, and zero-fills the gap left by a Seek past the end
+// (the same sparse-write behavior as os.File). It returns the existing bytes
+// in [offset, offset+n) that the caller must overwrite; the caller then
+// appends the remainder of its data and advances offset by n. f.mu must be
+// held and n must be positive.
+func (f *File) overwritableLocked(n int) []byte {
+	size := int64(f.content.Len())
+	end := f.offset + int64(n)
+	if end > size {
+		f.content.Grow(int(end - size))
 	}
-	if end := f.offset + int64(n); end > int64(len(f.content)) {
-		f.content = append(f.content, make([]byte, end-int64(len(f.content)))...)
+	if gap := f.offset - size; gap > 0 {
+		// Write the gap's zeros from the buffer's own spare capacity, reserved
+		// by Grow above, instead of allocating a zeroed slice.
+		zeros := f.content.AvailableBuffer()[:gap]
+		clear(zeros)
+		f.content.Write(zeros)
+		size = f.offset
 	}
-	dst := f.content[f.offset : f.offset+int64(n)]
-	f.offset += int64(n)
-	return dst
+	return f.content.Bytes()[f.offset:min(end, size)]
 }

@@ -115,6 +115,19 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 | projfs_windows.go      | ProjFS syscall bindings                                          |
 | math.go                | Integer clamping helpers for FUSE/ProjFS conversions             |
 
+### Drivers (`drivers/` subpackages)
+
+Drivers outside the base package import `ufs` (never the reverse) and register
+themselves in `init()` via `ufs.Register`; callers blank-import the package to
+enable its scheme. They may use `internal/` packages.
+
+| Path                     | Purpose                                                          |
+|:-------------------------|:-----------------------------------------------------------------|
+| drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
+
+Shared driver code that depends on `ufs` types goes in `drivers/common/`;
+code with no `ufs` dependency goes in `internal/`.
+
 ### Supporting files
 
 | File                  | Purpose                                                             |
@@ -126,6 +139,7 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
+| internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |

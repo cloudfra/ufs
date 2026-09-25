@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -41,6 +42,7 @@ var (
 	_ WriteFS        = (*memFS)(nil)
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
+	_ Watcher        = (*memFS)(nil)
 )
 
 func init() {
@@ -81,8 +83,7 @@ type memFS struct {
 	name  string
 	nodes map[string]*memNode
 
-	watchersMu sync.RWMutex
-	watchers   []*memWatcher
+	notifyBus *notify.Bus
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -270,17 +271,12 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	fsys.watchersMu.Lock()
-	for _, mw := range fsys.watchers {
-		mw.cancel()
-	}
-	fsys.watchers = nil
-	fsys.watchersMu.Unlock()
+	err := fsys.notifyBus.Close()
 
 	fsys.mu.Lock()
 	fsys.nodes = nil
 	fsys.mu.Unlock()
-	return nil
+	return err
 }
 
 func (fsys *memFS) Create(name string) (File, error) {
@@ -622,7 +618,8 @@ func MakeMemFS(name string) FS {
 func makeMemFS(name string) *memFS {
 	now := time.Now()
 	return &memFS{
-		name: name,
+		name:      name,
+		notifyBus: notify.New(),
 		nodes: map[string]*memNode{
 			pathutil.CwdPath: {
 				name:    pathutil.CwdPath,
@@ -636,4 +633,39 @@ func makeMemFS(name string) *memFS {
 
 func isMemFSUri(name string) bool {
 	return strings.HasPrefix(name, memFSPrefix)
+}
+
+// Watch implements [Watcher] for in-memory file systems. It watches name (a
+// directory) and all nested paths, invoking hook for each mutation performed
+// through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
+func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
+	if fsys.isClosed() {
+		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
+	}
+	if err := pathutil.Validate("watch", name); err != nil {
+		return nil, err
+	}
+
+	fsys.mu.RLock()
+	if name != pathutil.CwdPath {
+		node, ok := fsys.nodes[name]
+		if !ok {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrNotExist)
+		}
+		if !node.isDir {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrInvalid)
+		}
+	}
+	fsys.mu.RUnlock()
+
+	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
+		hook(NotifyOp(op), path)
+	}), nil
+}
+
+// notify sends an event to all active watchers.
+func (fsys *memFS) notify(op NotifyOp, path string) {
+	fsys.notifyBus.Publish(notify.Op(op), path)
 }

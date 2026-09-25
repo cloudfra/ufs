@@ -71,6 +71,20 @@ func WantCloseError(tb testing.TB, closer io.Closer) func() {
 	}
 }
 
+// WaitFor polls cond until it returns true, failing the test if that does not
+// happen within timeout. Use it to wait on state updated by a background
+// goroutine.
+func WaitFor(tb testing.TB, timeout time.Duration, cond func() bool) {
+	tb.Helper()
+	deadline := time.Now().Add(timeout)
+	for !cond() {
+		if time.Now().After(deadline) {
+			tb.Fatalf("condition not met within %s", timeout)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // SkipTestOnWindows skips the test (or sub-test) running on Windows.
 func SkipTestOnWindows(tb testing.TB) {
 	if runtime.GOOS == "windows" {

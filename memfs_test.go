@@ -414,6 +414,22 @@ func TestMemFSReadFile(t *testing.T) {
 			t.Error("ReadFile(../escape.txt) succeeded, want error")
 		}
 	})
+
+	t.Run("directory", func(t *testing.T) {
+		if err := fsys.MkdirAll("dir", fs.ModePerm); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"dir", pathutil.CwdPath} {
+			got, err := rfs.ReadFile(name)
+			if !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("ReadFile(%q) = (%q, %v), want fs.ErrInvalid", name, got, err)
+			}
+			var pe *fs.PathError
+			if !errors.As(err, &pe) || pe.Op != "readfile" || pe.Path != name {
+				t.Errorf("ReadFile(%q) error = %#v, want *fs.PathError{Op: readfile, Path: %q}", name, err, name)
+			}
+		}
+	})
 }
 
 func TestMemFSReadLink(t *testing.T) {

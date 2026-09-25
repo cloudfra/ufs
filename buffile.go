@@ -96,6 +96,23 @@ func (f *bufFile) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
+// writeAtOffsetLocked grows content as needed so that content[offset:offset+n]
+// is valid — zero-padding any gap when offset is past the current end, the
+// same sparse-write behavior as os.File — then returns that slice for the
+// caller to copy into and advances offset by n. The caller must hold f.mu for
+// the duration of the copy, since the returned slice aliases f.content.
+func (f *bufFile) writeAtOffsetLocked(n int) []byte {
+	if n == 0 {
+		return nil
+	}
+	if end := f.offset + int64(n); end > int64(len(f.content)) {
+		f.content = append(f.content, make([]byte, end-int64(len(f.content)))...)
+	}
+	dst := f.content[f.offset : f.offset+int64(n)]
+	f.offset += int64(n)
+	return dst
+}
+
 func (f *bufFile) Seek(offset int64, whence int) (int64, error) {
 	f.mu.Lock()
 	var newOffset int64

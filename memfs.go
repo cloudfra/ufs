@@ -94,17 +94,31 @@ type memFile struct {
 }
 
 func (f *memFile) Write(p []byte) (int, error) {
-	return f.WriteString(string(p))
+	f.mu.Lock()
+	copy(f.writeAtOffsetLocked(len(p)), p)
+	f.syncToFSLocked()
+	f.mu.Unlock()
+
+	f.notifyWrite()
+	return len(p), nil
 }
 
 func (f *memFile) WriteString(s string) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	copy(f.writeAtOffsetLocked(len(s)), s)
+	f.syncToFSLocked()
+	f.mu.Unlock()
 
-	f.content = append(f.content, s...)
+	f.notifyWrite()
+	return len(s), nil
+}
+
+// syncToFSLocked stamps modTime and, if the file is backed by a live memFS,
+// pushes a snapshot of content to the corresponding node so that other open
+// handles and future Opens observe the write. f.mu must be held.
+func (f *memFile) syncToFSLocked() {
 	now := time.Now()
 	f.modTime = now
-
 	if f.fsys != nil {
 		f.fsys.mu.Lock()
 		if node, ok := f.fsys.nodes[f.path]; ok {
@@ -112,10 +126,13 @@ func (f *memFile) WriteString(s string) (int, error) {
 			node.modTime = now
 		}
 		f.fsys.mu.Unlock()
+	}
+}
+
+func (f *memFile) notifyWrite() {
+	if f.fsys != nil {
 		f.fsys.notify(NotifyWrite, f.path)
 	}
-
-	return len(s), nil
 }
 
 func (f *memFile) Close() error {

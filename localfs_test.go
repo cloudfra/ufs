@@ -21,6 +21,8 @@ import (
 	"strings"
 	"testing"
 
+	driverTesting "github.com/cloudfra/ufs/drivers/testing"
+
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -65,7 +67,7 @@ func TestIsLocalFSUri(t *testing.T) {
 
 func TestLocalFS(t *testing.T) {
 	dir := mustTemp(t)
-	testFileSystem(t, newLocalFS, dir)
+	driverTesting.RoundTrip[File](t, fsFactory(newLocalFS, dir))
 }
 
 func TestLocalFSLstat(t *testing.T) {

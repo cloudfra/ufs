@@ -16,16 +16,12 @@ package ufs
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
 	"testing"
-	"testing/fstest"
 
-	"github.com/google/go-cmp/cmp"
+	driverTesting "github.com/cloudfra/ufs/drivers/testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -174,77 +170,17 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 	return result
 }
 
-func testFileSystem(t *testing.T, newFSFunc func(ctx context.Context, name string) (FS, error), name string) {
-	t.Helper()
-	fsys := mustFS(t, newFSFunc, name)
-
-	wantFiles := []string{"a", "ab/b/c", "ab/d/c", "def", "abc", "abc.txt", "temp/abc.txt"}
-
-	mkdirForTest(t, fsys, "ab/b")
-	mkdirForTest(t, fsys, "temp")
-	mkdirForTest(t, fsys, "ab/d")
-
-	for _, name := range wantFiles {
-		t.Run(fmt.Sprintf("crud_%s", name), func(t *testing.T) {
-			wantData := ufsTesting.RandomString(1000)
-			if wf, err := fsys.Create(name); err != nil {
-				t.Errorf("cannot create file %q, %s", name, err)
-			} else {
-				info, err := wf.Stat()
-				if err != nil {
-					t.Errorf("cannot Stat() %q, %s", name, err)
-				}
-				if info == nil {
-					t.Fatalf("info is nil")
-				}
-				if info.IsDir() != false {
-					t.Errorf("%q is a directory, want file", name)
-				}
-				if n, err := io.WriteString(wf, wantData); err != nil {
-					t.Errorf("cannot write file content to %q, %s", name, err)
-				} else if n != len(wantData) {
-					t.Errorf("contents written to file does not match the size got %d, want %d", n, len(wantData))
-				}
-				if err := wf.Close(); err != nil {
-					t.Errorf("failed to Close() write file %q, %s", name, err)
-				}
-			}
-
-			if rf, err := fsys.Open(name); err != nil {
-				t.Errorf("cannot open file %q, %s", name, err)
-			} else {
-				if rf == nil {
-					t.Fatal("rf is nil")
-				}
-				info, err := rf.Stat()
-				if err != nil {
-					t.Errorf("cannot Stat() %q, %s", name, err)
-				}
-				if info == nil {
-					t.Fatal("info is nil")
-				}
-				if info.IsDir() != false {
-					t.Errorf("%q is a directory, want file", name)
-				}
-				if got, err := io.ReadAll(rf); err != nil {
-					t.Errorf("cannot read file content to %q, %s", name, err)
-				} else if diff := cmp.Diff(wantData, string(got)); diff != "" {
-					t.Errorf("io.ReadAll(%s) mismatch (-want +got):\n%s\nwant: %q\ngot: %q", name, diff, wantData, string(got))
-				}
-				if err := rf.Close(); err != nil {
-					t.Errorf("failed to Close() read file %q, %s", name, err)
-				}
-			}
-		})
+// fsFactory adapts a driver constructor to a driverTesting.Factory that
+// creates the file system named name.
+func fsFactory(newFSFunc func(ctx context.Context, name string) (FS, error), name string) driverTesting.Factory {
+	return func(tb testing.TB) fs.FS {
+		return mustFS(tb, newFSFunc, name)
 	}
+}
 
-	if err := fstest.TestFS(fsys, wantFiles...); err != nil {
-		t.Errorf("fstest.TestFS failed for %q: %v", name, err)
-	}
-
-	if err := fsys.Close(); err != nil {
-		t.Errorf("error on Close(), %v", err)
-	}
+// factory adapts tc.createFS to a driverTesting.Factory.
+func (tc fsTestCase) factory() driverTesting.Factory {
+	return func(tb testing.TB) fs.FS { return tc.createFS(tb) }
 }
 
 func mkdirForTest(tb testing.TB, fsys FS, dirs ...string) {
@@ -292,11 +228,7 @@ func TestFSMkdirAll(t *testing.T) {
 	for _, tc := range getAllExceptAngryTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			fsys := tc.createFS(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-				t.Errorf("MkdirAll() = %v, want nil", err)
-			}
+			driverTesting.MkdirAll(t, tc.factory())
 		})
 	}
 }
@@ -305,32 +237,8 @@ func TestFSReadFile(t *testing.T) {
 	t.Parallel()
 	for _, tc := range getReadWriteTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
-			wantData := ufsTesting.RandomString(100)
 			t.Parallel()
-			fsys := tc.createFS(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			f, err := fsys.Create("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("Create failed: %v", err)
-			}
-			if _, err := io.WriteString(f, wantData); err != nil {
-				t.Fatalf("WriteString failed: %v", err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatalf("Close failed: %v", err)
-			}
-
-			rfs, ok := fsys.(fs.ReadFileFS)
-			if !ok {
-				t.Skip("does not implement fs.ReadFileFS")
-			}
-			got, err := rfs.ReadFile("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("ReadFile failed: %v", err)
-			}
-			if diff := cmp.Diff(wantData, string(got)); diff != "" {
-				t.Errorf("ReadFile mismatch (-want +got):\n%s", diff)
-			}
+			driverTesting.ReadFile[File](t, tc.factory())
 		})
 	}
 }
@@ -406,102 +314,15 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 	}
 }
 
-// dirFileConflictCases are Create and MkdirAll calls that conflict with the
-// tree built by newDirFileConflictFS: each replaces a directory with a file
-// or treats a regular file as a directory. wantErr and wantOp are the values
-// memFS returns; other backends may report the conflict differently (for
-// example localFS surfaces the OS's ENOTDIR/EISDIR).
-var dirFileConflictCases = []struct {
-	name    string
-	op      func(fsys FS) error
-	wantErr error
-	wantOp  string
-}{
-	{name: "create_on_dir", op: func(fsys FS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_on_root", op: func(fsys FS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "create_deep_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "mkdirall_on_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-	{name: "mkdirall_under_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-}
-
-// newDirFileConflictFS returns a file system from createFS containing the
-// directories dir and dir/sub and the regular file dir/file.
-func newDirFileConflictFS(t *testing.T, createFS func(testing.TB) FS) FS {
-	t.Helper()
-	fsys := createFS(t)
-	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-	if err := fsys.MkdirAll("dir/sub", fs.ModePerm); err != nil {
-		t.Fatal(err)
-	}
-	f, err := fsys.Create("dir/file")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("content"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return fsys
-}
-
 // TestFSDirFileConflicts verifies that every WriteFS rejects Create and
 // MkdirAll calls that would replace a directory with a file or place anything
 // under a regular file, and that a rejected call leaves the tree unchanged.
 func TestFSDirFileConflicts(t *testing.T) {
 	t.Parallel()
-	for _, fc := range getAllRegularTestCaseList() {
-		t.Run(fc.name, func(t *testing.T) {
+	for _, tc := range getAllRegularTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			for _, tc := range dirFileConflictCases {
-				t.Run(tc.name, func(t *testing.T) {
-					fsys := newDirFileConflictFS(t, fc.createFS)
-					err := tc.op(fsys)
-					var pe *fs.PathError
-					if !errors.As(err, &pe) {
-						t.Errorf("err = %v, want a *fs.PathError", err)
-					}
-					assertDirFileTreeUnchanged(t, fsys)
-				})
-			}
-
-			t.Run("existing_dirs_still_ok", func(t *testing.T) {
-				fsys := newDirFileConflictFS(t, fc.createFS)
-				if err := fsys.MkdirAll("dir/sub/new", fs.ModePerm); err != nil {
-					t.Errorf("MkdirAll(dir/sub/new) = %v, want nil", err)
-				}
-				if err := fsys.MkdirAll(pathutil.CwdPath, fs.ModePerm); err != nil {
-					t.Errorf("MkdirAll(.) = %v, want nil", err)
-				}
-				f, err := fsys.Create("dir/file")
-				if err != nil {
-					t.Fatalf("Create(dir/file) over an existing file = %v, want nil", err)
-				}
-				if err := f.Close(); err != nil {
-					t.Fatal(err)
-				}
-			})
+			driverTesting.DirFileConflicts[File](t, tc.factory())
 		})
-	}
-}
-
-func assertDirFileTreeUnchanged(t *testing.T, fsys FS) {
-	t.Helper()
-	for _, name := range []string{pathutil.CwdPath, "dir", "dir/sub"} {
-		if info, err := fsys.Stat(name); err != nil || !info.IsDir() {
-			t.Errorf("Stat(%q) = (%v, %v), want a directory", name, info, err)
-		}
-	}
-	if got, err := fsys.ReadFile("dir/file"); err != nil || string(got) != "content" {
-		t.Errorf("ReadFile(dir/file) = (%q, %v), want (%q, nil)", got, err, "content")
-	}
-	// Nothing may exist under the regular file. localFS reports ENOTDIR here
-	// rather than fs.ErrNotExist, so only the absence of an entry is checked.
-	for _, name := range []string{"dir/file/x", "dir/file/x/y"} {
-		if info, err := fsys.Stat(name); err == nil {
-			t.Errorf("Stat(%q) = (%v, nil), want an error", name, info)
-		}
 	}
 }

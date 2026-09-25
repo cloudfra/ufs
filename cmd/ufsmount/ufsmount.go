@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/boltfs"
 	"github.com/cloudfra/ufs/host"
 )
 

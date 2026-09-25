@@ -14,6 +14,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/mholt/archives v0.1.5
+	go.etcd.io/bbolt v1.5.0
 	golang.org/x/sys v0.48.0
 	google.golang.org/api v0.298.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260918162117-cecb64721679

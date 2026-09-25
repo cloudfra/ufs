@@ -28,6 +28,7 @@ URI scheme, and a layering helper (ufs.CreateURI) for composing nested file syst
 | Google Cloud | `gs://bucket`  | gcsfs.go       | Google Cloud Storage bucket as a read-only file system.   |
 | Git          | `git://<url>`  | gitfs.go       | Reads files from a git repository (clones on first open). |
 | Archive      | `archive://`   | archivefs.go   | Reads archives (zip, tar, 7z) as read-only FSs.           |
+| BoltDB       | `bolt:/path`   | drivers/boltfs | Single BoltDB file; import `drivers/boltfs` to register.  |
 | Nested       | via CreateURI  | nestfs.go      | Layers one or more virtual FSs at specific mount paths    |
 |              |                |                | inside a base FS.                                         |
 

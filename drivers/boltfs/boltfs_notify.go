@@ -12,24 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+//go:build !wasm
+
+package boltfs
 
 import (
 	"context"
 	"io"
 	"io/fs"
 
+	bolt "go.etcd.io/bbolt"
+
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/notifybus"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ Watcher = (*memFS)(nil)
+var _ ufs.Watcher = (*boltFS)(nil)
 
-// Watch implements [Watcher] for in-memory file systems. It watches name (a
-// directory) and all nested paths, invoking hook for each mutation performed
-// through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
-func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
+// Watch implements [ufs.Watcher] for bolt-backed file systems. It watches name
+// (a directory) and all nested paths, invoking hook for each mutation
+// performed through the boltFS API (Create, file Close after a write,
+// Remove, RemoveAll, MkdirAll).
+func (fsys *boltFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
 	}
@@ -37,26 +43,21 @@ func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 		return nil, err
 	}
 
-	fsys.mu.RLock()
 	if name != pathutil.CwdPath {
-		node, ok := fsys.nodes[name]
-		if !ok {
-			fsys.mu.RUnlock()
-			return nil, ufserrors.NewPathError("watch", name, fs.ErrNotExist)
-		}
-		if !node.isDir {
-			fsys.mu.RUnlock()
-			return nil, ufserrors.NewPathError("watch", name, fs.ErrInvalid)
+		if err := fsys.view(func(tx *bolt.Tx) error {
+			_, err := lookupDir(tx, name)
+			return err
+		}); err != nil {
+			return nil, ufserrors.NewPathError("watch", name, err)
 		}
 	}
-	fsys.mu.RUnlock()
 
 	return fsys.notifyBus.Subscribe(ctx, name, func(op notifybus.Op, path string) {
-		hook(NotifyOp(op), path)
+		hook(ufs.NotifyOp(op), path)
 	}), nil
 }
 
 // notify sends an event to all active watchers.
-func (fsys *memFS) notify(op NotifyOp, path string) {
+func (fsys *boltFS) notify(op ufs.NotifyOp, path string) {
 	fsys.notifyBus.Publish(notifybus.Op(op), path)
 }

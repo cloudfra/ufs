@@ -226,7 +226,7 @@ func (fsys *nestFS) getAbsPath(name string) (string, error) {
 }
 
 func (fsys *nestFS) getDeviceInfo() map[string]deviceInfo {
-	base := fsys.fsys.getDeviceInfo()
+	base := getDeviceInfoOrDefault(fsys.fsys)
 	return combineDeviceInfo(base, "", fsys.mounts.getDeviceInfo())
 }
 

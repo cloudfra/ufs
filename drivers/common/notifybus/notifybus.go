@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package notify provides a prefix-matching change-event broadcaster for
+// Package notifybus provides a prefix-matching change-event broadcaster for
 // in-process file system backends. A backend holds one [Bus], calls
 // [Bus.Publish] whenever it mutates a path, and hands out a [Subscription]
 // per [Bus.Subscribe] call to satisfy its own Watch method.
-package notify
+package notifybus
 
 import (
 	"context"

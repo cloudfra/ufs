@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudfra/ufs/internal/notify"
+	"github.com/cloudfra/ufs/drivers/common/notifybus"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -83,7 +83,7 @@ type memFS struct {
 	name  string
 	nodes map[string]*memNode
 
-	notifyBus *notify.Bus
+	notifyBus *notifybus.Bus
 }
 
 // memFile is an open read-write handle for a regular file. Writes are
@@ -636,7 +636,7 @@ func makeMemFS(name string) *memFS {
 	now := time.Now()
 	return &memFS{
 		name:      name,
-		notifyBus: notify.New(),
+		notifyBus: notifybus.New(),
 		nodes: map[string]*memNode{
 			pathutil.CwdPath: {
 				name:    pathutil.CwdPath,
@@ -677,12 +677,12 @@ func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 	}
 	fsys.mu.RUnlock()
 
-	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
+	return fsys.notifyBus.Subscribe(ctx, name, func(op notifybus.Op, path string) {
 		hook(NotifyOp(op), path)
 	}), nil
 }
 
 // notify sends an event to all active watchers.
 func (fsys *memFS) notify(op NotifyOp, path string) {
-	fsys.notifyBus.Publish(notify.Op(op), path)
+	fsys.notifyBus.Publish(notifybus.Op(op), path)
 }

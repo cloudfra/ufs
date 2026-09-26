@@ -121,13 +121,16 @@ Drivers outside the base package import `ufs` (never the reverse) and register
 themselves in `init()` via `ufs.Register`; callers blank-import the package to
 enable its scheme. They may use `internal/` packages.
 
-| Path                     | Purpose                                                          |
-|:-------------------------|:-----------------------------------------------------------------|
-| drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
-| drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
+| Path                       | Purpose                                                            |
+|:---------------------------|:--------------------------------------------------------------------|
+| drivers/common/buffile/    | Exported fully-buffered file handle for drivers (depends on ufs)  |
+| drivers/common/notifybus/  | Prefix-matching change-event bus for in-process Watcher impls     |
+| drivers/embedfs/           | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 
-Shared driver code that depends on `ufs` types goes in `drivers/common/`;
-code with no `ufs` dependency goes in `internal/`.
+Code shared between the base package and external drivers (or used only by
+external drivers) goes in `drivers/common/`, regardless of whether it depends
+on `ufs` types; code used only internally by the base package goes in
+`internal/`.
 
 ### Supporting files
 
@@ -140,7 +143,6 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
-| internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |

@@ -114,7 +114,7 @@ func newFaultFS(inner FS, cfg FaultConfig) (FS, error) {
 	}, nil
 }
 
-func (fsys *faultFS) getDeviceInfo() map[string]DeviceInfo {
+func (fsys *faultFS) getDeviceInfo() DeviceMap {
 	return fsys.inner.getDeviceInfo()
 }
 

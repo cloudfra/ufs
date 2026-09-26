@@ -71,11 +71,11 @@ type mountMap struct {
 	baseName string
 }
 
-func (m *mountMap) getDeviceInfo() map[string]DeviceInfo {
-	combined := map[string]DeviceInfo{}
+func (m *mountMap) getDeviceInfo() DeviceMap {
+	combined := DeviceMap{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combineDeviceInfo(combined, mountPoint, fsys.getDeviceInfo())
+		combined = combined.combine(mountPoint, fsys.getDeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -225,9 +225,9 @@ func (fsys *nestFS) getAbsPath(name string) (string, error) {
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
-func (fsys *nestFS) getDeviceInfo() map[string]DeviceInfo {
+func (fsys *nestFS) getDeviceInfo() DeviceMap {
 	base := fsys.fsys.getDeviceInfo()
-	return combineDeviceInfo(base, "", fsys.mounts.getDeviceInfo())
+	return base.combine("", fsys.mounts.getDeviceInfo())
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {

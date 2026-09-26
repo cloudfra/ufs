@@ -49,7 +49,7 @@ var (
 	}
 
 	nullDeviceInfo    = newDeviceInfo("null", "null", 1, false)
-	nullDeviceInfoMap = newDeviceInfoMap(nullDeviceInfo)
+	nullDeviceInfoMap = newDeviceMap(nullDeviceInfo)
 )
 
 func init() {
@@ -130,7 +130,7 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) getDeviceInfo() map[string]DeviceInfo {
+func (fsys *nullFS) getDeviceInfo() DeviceMap {
 	return nullDeviceInfoMap
 }
 

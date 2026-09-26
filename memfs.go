@@ -187,9 +187,9 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-func (fsys *memFS) getDeviceInfo() map[string]DeviceInfo {
+func (fsys *memFS) getDeviceInfo() DeviceMap {
 	info := newDeviceInfo(fsys.name, "memory", 2, false)
-	return newDeviceInfoMap(info)
+	return newDeviceMap(info)
 }
 
 func (fsys *memFS) URI() (*url.URL, error) {

@@ -16,6 +16,6 @@
 
 package ufs
 
-func (fsys *localFS) getDeviceInfo() map[string]DeviceInfo {
+func (fsys *localFS) getDeviceInfo() DeviceMap {
 	return defaultDeviceMap
 }

@@ -30,7 +30,7 @@ type readWrapFS struct {
 	fsys fs.FS
 }
 
-func (fsys *readWrapFS) getDeviceInfo() map[string]DeviceInfo {
+func (fsys *readWrapFS) getDeviceInfo() DeviceMap {
 	return getDeviceInfoOrDefault(fsys.fsys)
 }
 

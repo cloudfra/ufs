@@ -23,12 +23,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func (fsys *localFS) getDeviceInfo() map[string]DeviceInfo {
+func (fsys *localFS) getDeviceInfo() DeviceMap {
 	rootPath := fsys.osFS.Name()
 	return windowsDeviceMap(rootPath)
 }
 
-func windowsDeviceMap(rootPath string) map[string]DeviceInfo {
+func windowsDeviceMap(rootPath string) DeviceMap {
 	vol := filepath.VolumeName(rootPath)
 	if vol == "" {
 		return defaultDeviceMap
@@ -37,7 +37,7 @@ func windowsDeviceMap(rootPath string) map[string]DeviceInfo {
 	// NTFS volume mount points (volumes mounted at arbitrary subdirectories) are not
 	// detected here; FindFirstVolumeMountPoint / GetVolumeNameForVolumeMountPoint
 	// could enumerate them in a future implementation.
-	return map[string]DeviceInfo{
+	return DeviceMap{
 		".": windowsDriveInfo(volumeRoot),
 	}
 }

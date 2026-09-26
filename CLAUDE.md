@@ -142,7 +142,7 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
-| testing_test.go       | Shared test harness used by each backend                            |
+| conformance_test.go   | Backend test-case lists; runs every backend through drivers/testing |
 | assets_test.go        | Test asset loading helpers                                          |
 
 ### Conventions

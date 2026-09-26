@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -34,8 +35,8 @@ type tempMountFS struct {
 	closer func() error
 }
 
-func (fsys *tempMountFS) getDeviceInfo() map[string]deviceInfo {
-	return getDeviceInfoOrDefault(fsys.lfs)
+func (fsys *tempMountFS) GetDeviceInfo() DeviceMap {
+	return fsys.lfs.GetDeviceInfo()
 }
 
 func (fsys *tempMountFS) URI() (*url.URL, error) {
@@ -43,7 +44,7 @@ func (fsys *tempMountFS) URI() (*url.URL, error) {
 }
 
 func (fsys *tempMountFS) String() string {
-	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", uriOrDefault(fsys, fsys.name), pathutil.CoerceUnix(fsys.name))
+	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", URIOrDefault(fsys, fsys.name), pathutil.CoerceUnix(fsys.name))
 }
 
 func (fsys *tempMountFS) getAbsPath(name string) (string, error) {
@@ -89,7 +90,7 @@ func (fsys *tempMountFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *tempMountFS) Glob(pattern string) ([]string, error) {
-	return globFS(fsys, pattern)
+	return globutil.GlobFS(fsys, pattern)
 }
 
 func (fsys *tempMountFS) Remove(name string) error {

@@ -47,7 +47,7 @@ var (
 )
 
 func init() {
-	Register(newDriver("gcs", newGCSFS, isGCSFSUri, 1, true, true))
+	Register(NewDriver("gcs", newGCSFS, isGCSFSUri, 1, true, true))
 }
 
 type gcsFS struct {
@@ -200,9 +200,9 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) getDeviceInfo() map[string]deviceInfo {
-	info := newDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
-	return newDeviceInfoMap(info)
+func (fsys *gcsFS) GetDeviceInfo() DeviceMap {
+	info := NewDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
+	return NewDeviceMap(info)
 }
 
 func (fsys *gcsFS) URI() (*url.URL, error) {
@@ -219,7 +219,7 @@ func (fsys *gcsFS) URI() (*url.URL, error) {
 }
 
 func (fsys *gcsFS) String() string {
-	return fmt.Sprintf("gcsFS(%s)", uriOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
+	return fmt.Sprintf("gcsFS(%s)", URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {

@@ -64,12 +64,12 @@ func TestIsLocalFSUri(t *testing.T) {
 }
 
 func TestLocalFS(t *testing.T) {
-	dir := mustTemp(t)
+	dir := t.TempDir()
 	testFileSystem(t, newLocalFS, dir)
 }
 
 func TestLocalFSLstat(t *testing.T) {
-	dir := mustTemp(t)
+	dir := t.TempDir()
 	fsys := mustFS(t, newLocalFS, dir)
 	defer ufsTesting.ValidateClose(t, fsys)()
 
@@ -115,7 +115,7 @@ func TestLocalFSLstat(t *testing.T) {
 }
 
 func TestLocalFSReadLink(t *testing.T) {
-	dir := mustTemp(t)
+	dir := t.TempDir()
 	fsys := mustFS(t, newLocalFS, dir)
 	defer ufsTesting.ValidateClose(t, fsys)()
 
@@ -146,7 +146,7 @@ func TestLocalFSReadLink(t *testing.T) {
 }
 
 func TestLocalFSRemove(t *testing.T) {
-	dir := mustTemp(t)
+	dir := t.TempDir()
 	fsys, err := makeLocalFS(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestLocalFSRemove(t *testing.T) {
 }
 
 func TestLocalFSRemoveAll(t *testing.T) {
-	dir := mustTemp(t)
+	dir := t.TempDir()
 	fsys, err := makeLocalFS(dir)
 	if err != nil {
 		t.Fatal(err)

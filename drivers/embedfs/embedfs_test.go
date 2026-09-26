@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package embedfs
 
 import (
 	"errors"
@@ -22,12 +22,13 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/cloudfra/ufs"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-func makeTestEmbedFS(t *testing.T, name string) FS {
+func makeTestEmbedFS(t *testing.T, name string) ufs.FS {
 	t.Helper()
-	fsys := NewEmbedFS(name, ufsTesting.TestAssetsFS())
+	fsys := New(name, ufsTesting.TestAssetsFS())
 	t.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
 			t.Errorf("Close() = %v", err)
@@ -46,14 +47,14 @@ func TestNewEmbedFSURI(t *testing.T) {
 		{"assets", "embed:///assets?ro=true"},
 		{"data/files", "embed:///data/files?ro=true"},
 	} {
-		fsys := NewEmbedFS(tc.name, ufsTesting.TestAssetsFS())
+		fsys := New(tc.name, ufsTesting.TestAssetsFS())
 		if u, err := fsys.URI(); err != nil {
-			t.Errorf("NewEmbedFS(%q).URI() returned error, %s", tc.name, err)
+			t.Errorf("New(%q).URI() returned error, %s", tc.name, err)
 		} else if got := u.String(); got != tc.wantURI {
-			t.Errorf("NewEmbedFS(%q).URI() = %q, want %q", tc.name, got, tc.wantURI)
+			t.Errorf("New(%q).URI() = %q, want %q", tc.name, got, tc.wantURI)
 		}
 		if got := fsys.String(); !strings.Contains(got, "embedFS(") {
-			t.Errorf("NewEmbedFS(%q).String() = %q, want embedFS(...) wrapper", tc.name, got)
+			t.Errorf("New(%q).String() = %q, want embedFS(...) wrapper", tc.name, got)
 		}
 		if err := fsys.Close(); err != nil {
 			t.Errorf("Close() = %v", err)
@@ -109,7 +110,7 @@ func TestEmbedFSOpenDir(t *testing.T) {
 
 func TestEmbedFSClose(t *testing.T) {
 	t.Parallel()
-	fsys := NewEmbedFS("", ufsTesting.TestAssetsFS())
+	fsys := New("", ufsTesting.TestAssetsFS())
 	if err := fsys.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil", err)
 	}
@@ -242,18 +243,18 @@ func TestEmbedFSInvalidPaths(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		op   func(fsys FS, path string) error
+		op   func(fsys ufs.FS, path string) error
 	}{
-		{"Open", func(fsys FS, path string) error { _, err := fsys.Open(path); return err }},
-		{"Stat", func(fsys FS, path string) error { _, err := fsys.Stat(path); return err }},
-		{"Lstat", func(fsys FS, path string) error { _, err := fsys.Lstat(path); return err }},
-		{"ReadFile", func(fsys FS, path string) error { _, err := fsys.ReadFile(path); return err }},
-		{"ReadDir", func(fsys FS, path string) error { _, err := fsys.ReadDir(path); return err }},
-		{"ReadLink", func(fsys FS, path string) error { _, err := fsys.ReadLink(path); return err }},
-		{"Create", func(fsys FS, path string) error { _, err := fsys.Create(path); return err }},
-		{"MkdirAll", func(fsys FS, path string) error { return fsys.MkdirAll(path, fs.ModePerm) }},
-		{"Remove", func(fsys FS, path string) error { return fsys.Remove(path) }},
-		{"RemoveAll", func(fsys FS, path string) error { return fsys.RemoveAll(path) }},
+		{"Open", func(fsys ufs.FS, path string) error { _, err := fsys.Open(path); return err }},
+		{"Stat", func(fsys ufs.FS, path string) error { _, err := fsys.Stat(path); return err }},
+		{"Lstat", func(fsys ufs.FS, path string) error { _, err := fsys.Lstat(path); return err }},
+		{"ReadFile", func(fsys ufs.FS, path string) error { _, err := fsys.ReadFile(path); return err }},
+		{"ReadDir", func(fsys ufs.FS, path string) error { _, err := fsys.ReadDir(path); return err }},
+		{"ReadLink", func(fsys ufs.FS, path string) error { _, err := fsys.ReadLink(path); return err }},
+		{"Create", func(fsys ufs.FS, path string) error { _, err := fsys.Create(path); return err }},
+		{"MkdirAll", func(fsys ufs.FS, path string) error { return fsys.MkdirAll(path, fs.ModePerm) }},
+		{"Remove", func(fsys ufs.FS, path string) error { return fsys.Remove(path) }},
+		{"RemoveAll", func(fsys ufs.FS, path string) error { return fsys.RemoveAll(path) }},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

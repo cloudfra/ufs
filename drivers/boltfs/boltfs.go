@@ -314,6 +314,10 @@ func listBucket(bkt *bolt.Bucket) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
+func (fsys *boltFS) GetDeviceInfo() ufs.DeviceMap {
+	return ufs.NewDeviceMap(ufs.NewDeviceInfo(fsys.absPath, "bolt", 1, false))
+}
+
 func (fsys *boltFS) URI() (*url.URL, error) {
 	return url.Parse(fsys.name)
 }

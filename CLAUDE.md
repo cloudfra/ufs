@@ -125,6 +125,7 @@ enable its scheme. They may use `internal/` packages.
 |:-------------------------|:-----------------------------------------------------------------|
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
+| drivers/testing/         | Generic fs.FS conformance tests for drivers (no ufs dependency)  |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
 code with no `ufs` dependency goes in `internal/`.
@@ -143,7 +144,7 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
-| testing_test.go       | Shared test harness used by each backend                            |
+| conformance_test.go   | Backend test-case lists; runs every backend through drivers/testing |
 | assets_test.go        | Test asset loading helpers                                          |
 
 ### Conventions
@@ -152,4 +153,4 @@ code with no `ufs` dependency goes in `internal/`.
 * Factory name arg follows a URI scheme: null://, file:///..., memory:, gs://..., git://..., archive://...
 * All path operations call pathutil.Validate first — returns fs.PathError for invalid paths.
 * Packages under internal/ must not import the base ufs package.
-* Each backend has its own file, its own tests, and runs the shared fstest.TestFS harness via testFileSystem.
+* Each backend has its own file, its own tests, and runs the shared conformance suite in drivers/testing (e.g. driverTesting.RoundTrip, which includes fstest.TestFS).

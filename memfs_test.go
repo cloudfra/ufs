@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"testing"
 
+	driverTesting "github.com/cloudfra/ufs/drivers/testing"
+
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -79,7 +81,7 @@ func TestNewMemFS(t *testing.T) {
 }
 
 func TestMemFS(t *testing.T) {
-	testFileSystem(t, newMemFS, "memory://test")
+	driverTesting.RoundTrip[File](t, fsFactory(newMemFS, "memory://test"))
 }
 
 func TestMemFSCreate(t *testing.T) {
@@ -1173,16 +1175,17 @@ func TestMemFSStatOpName(t *testing.T) {
 // TestMemFSDirFileConflictErrors checks the exact errors memFS returns for
 // the conflicts covered by TestFSDirFileConflicts.
 func TestMemFSDirFileConflictErrors(t *testing.T) {
-	for _, tc := range dirFileConflictCases {
-		t.Run(tc.name, func(t *testing.T) {
-			fsys := newDirFileConflictFS(t, func(testing.TB) FS { return makeMemFS("memory:") })
-			err := tc.op(fsys)
-			if !errors.Is(err, tc.wantErr) {
-				t.Errorf("err = %v, want %v", err, tc.wantErr)
+	newFS := func(testing.TB) fs.FS { return makeMemFS("memory:") }
+	for _, tc := range driverTesting.DirFileConflictCases[File]() {
+		t.Run(tc.Name, func(t *testing.T) {
+			fsys := driverTesting.NewDirFileConflictFS[File](t, newFS)
+			err := tc.Op(fsys)
+			if !errors.Is(err, tc.WantErr) {
+				t.Errorf("err = %v, want %v", err, tc.WantErr)
 			}
 			var pe *fs.PathError
-			if !errors.As(err, &pe) || pe.Op != tc.wantOp {
-				t.Errorf("err = %#v, want *fs.PathError with Op %q", err, tc.wantOp)
+			if !errors.As(err, &pe) || pe.Op != tc.WantOp {
+				t.Errorf("err = %#v, want *fs.PathError with Op %q", err, tc.WantOp)
 			}
 		})
 	}

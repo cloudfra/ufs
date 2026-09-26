@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	driverTesting "github.com/cloudfra/ufs/drivers/testing"
+
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -39,9 +41,9 @@ func TestNewTempMountFS(t *testing.T) {
 }
 
 func TestTempMountFSFileSystem(t *testing.T) {
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
+	driverTesting.RoundTrip[File](t, fsFactory(func(ctx context.Context, name string) (FS, error) {
 		return newTempMountFS(ctx, name, func(string) error { return nil })
-	}, "temp://")
+	}, "temp://"))
 }
 
 func TestTempMountFSCleanup(t *testing.T) {

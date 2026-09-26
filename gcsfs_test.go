@@ -22,13 +22,16 @@ import (
 	"strings"
 	"testing"
 
+	driverTesting "github.com/cloudfra/ufs/drivers/testing"
+
 	"cloud.google.com/go/storage"
-	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
-	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/googleapi"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestIsGCSFSUri(t *testing.T) {
@@ -242,9 +245,9 @@ func TestParseGCSPathErrors(t *testing.T) {
 
 func TestGCSFS(t *testing.T) {
 	client := createStorage(t)
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
+	driverTesting.RoundTrip[File](t, fsFactory(func(ctx context.Context, name string) (FS, error) {
 		return makeGCSFSWithClient(ctx, client, name)
-	}, "gs://first")
+	}, "gs://first"))
 }
 
 func createStorage(tb testing.TB) *storage.Client {

@@ -24,10 +24,13 @@ import (
 	"sync"
 	"testing"
 
+	driverTesting "github.com/cloudfra/ufs/drivers/testing"
+
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestNewNestFS(t *testing.T) {
@@ -446,7 +449,7 @@ func TestNestFSStat(t *testing.T) {
 }
 
 func TestNestFS(t *testing.T) {
-	testFileSystem(t, newNestFS, "memory://")
+	driverTesting.RoundTrip[File](t, fsFactory(newNestFS, "memory://"))
 }
 
 func TestNestReadDirFileRead(t *testing.T) {

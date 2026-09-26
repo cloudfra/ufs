@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -86,17 +85,8 @@ func (c *eventCollector) hasEvent(match func(notifyEvent) bool) bool {
 
 const eventDeadline = 5 * time.Second
 
-func skipIfUnsupported(t *testing.T) {
-	t.Helper()
-	switch runtime.GOOS {
-	case "linux", "darwin", "windows", "freebsd", "openbsd", "netbsd", "dragonfly":
-	default:
-		t.Skipf("fsnotify not supported on %s", runtime.GOOS)
-	}
-}
-
 func TestWatchCreateWriteRemove(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 	fsys, err := makeLocalFS(dir)
 	if err != nil {
@@ -140,7 +130,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 }
 
 func TestWatchNestedPreExisting(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	if err := osutil.MkdirAll(filepath.Join(dir, "a", "b")); err != nil {
@@ -177,7 +167,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 // installed the watch on the reported directory, so each step below waits for
 // the event that guarantees the next write cannot race the watch installation.
 func TestWatchNewDirRecursion(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 
 	// startWatch watches a fresh directory and returns it with its collector.
 	startWatch := func(t *testing.T) (string, *eventCollector) {
@@ -259,7 +249,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 }
 
 func TestWatchCloseStopsDelivery(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -299,7 +289,7 @@ func TestWatchCloseStopsDelivery(t *testing.T) {
 }
 
 func TestWatchCtxCancellation(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -336,7 +326,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 }
 
 func TestWatchSubdirectory(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	if err := osutil.MkdirAll(filepath.Join(dir, "watched")); err != nil {
@@ -369,7 +359,7 @@ func TestWatchSubdirectory(t *testing.T) {
 }
 
 func TestWatchInvalidPath(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -390,7 +380,7 @@ func TestWatchInvalidPath(t *testing.T) {
 }
 
 func TestWatchRaceConcurrentClose(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -413,7 +403,7 @@ func TestWatchRaceConcurrentClose(t *testing.T) {
 }
 
 func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -450,7 +440,7 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 }
 
 func TestWatchRaceConcurrentFileCreation(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -497,7 +487,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 }
 
 func TestWatchRaceRapidCreateDelete(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -536,7 +526,7 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 }
 
 func TestWatchRaceRapidDirNesting(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -583,7 +573,7 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 }
 
 func TestWatchRaceCloseAndCancel(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	fsys, err := makeLocalFS(dir)
@@ -617,7 +607,7 @@ func TestWatchRaceCloseAndCancel(t *testing.T) {
 }
 
 func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
-	skipIfUnsupported(t)
+	ufsTesting.SkipUnlessFSNotifySupported(t)
 	dir := t.TempDir()
 
 	// Pre-create several directories.

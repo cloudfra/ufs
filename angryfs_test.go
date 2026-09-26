@@ -19,6 +19,24 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+)
+
+var (
+	testassetFilenameList = []string{
+		pathutil.CwdPath,
+		"files/index.html",
+		"archives/nested-testassets.zip",
+	}
+
+	testassetDirList = map[string][]string{
+		pathutil.CwdPath: {},
+		"files":          {},
+		"archives":       {},
+	}
+
+	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
 )
 
 func TestIsAngryFSUri(t *testing.T) {

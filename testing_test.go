@@ -20,14 +20,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path"
 	"testing"
 	"testing/fstest"
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -49,7 +47,7 @@ var (
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
-				dir := mustTemp(tb)
+				dir := tb.TempDir()
 				fsys, err := newLocalFS(tb.Context(), dir)
 				if err != nil {
 					tb.Fatalf("cannot create localFS file system, %s", err)
@@ -61,7 +59,7 @@ var (
 				})
 				return fsys
 			},
-			wantString: "file://" + osTempDir(),
+			wantString: "file://" + pathutil.TempDir(),
 		},
 		{
 			name: "tempMountFS",
@@ -267,24 +265,6 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 	}
 
 	return fsys
-}
-
-func osTempDir() string {
-	return pathutil.CoerceUnix(os.TempDir())
-}
-
-func mustTemp(tb testing.TB) string {
-	tempDir, err := osutil.MkdirTemp("", "")
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	tb.Cleanup(func() {
-		if err := osutil.RemoveAll(tempDir); err != nil {
-			tb.Error(err)
-		}
-	})
-	return tempDir
 }
 
 func TestFSMkdirAll(t *testing.T) {

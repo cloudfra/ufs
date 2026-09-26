@@ -15,8 +15,6 @@
 package ufs
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -318,50 +316,6 @@ func TestFSBuilderBuildURIEmpty(t *testing.T) {
 		t.Fatalf("New(%q) = %v, want nil", uri, err)
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
-}
-
-func TestFSBuilderBuildURIWithFSMountErrors(t *testing.T) {
-	t.Parallel()
-	b := NewFSBuilder("memory://").MountFS("assets", NewEmbedFS("assets", ufsTesting.TestAssetsFS()))
-	_, err := b.BuildURI()
-	if err == nil {
-		t.Fatal("BuildURI() with MountFS = nil, want error")
-	}
-}
-
-func TestFSBuilderMountFS(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	embedFSys := NewEmbedFS("assets", ufsTesting.TestAssetsFS())
-	fsys, err := NewFSBuilder("memory://").MountFS("assets", embedFSys).Build(ctx)
-	if err != nil {
-		t.Fatalf("Build() = %v, want nil", err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	entries, err := fsys.ReadDir("assets/testassets/files")
-	if err != nil {
-		t.Fatalf("ReadDir(assets/...) = %v, want nil", err)
-	}
-	if len(entries) == 0 {
-		t.Error("ReadDir returned empty entries under embed mount, want non-empty")
-	}
-}
-
-func TestFSBuilderMountFSWriteBlocked(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	embedFSys := NewEmbedFS("assets", ufsTesting.TestAssetsFS())
-	fsys, err := NewFSBuilder("memory://").MountFS("assets", embedFSys).Build(ctx)
-	if err != nil {
-		t.Fatalf("Build() = %v, want nil", err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	_, err = fsys.Create("assets/newfile.txt")
-	if !errors.Is(err, fs.ErrPermission) {
-		t.Errorf("Create under embedFS mount = %v, want fs.ErrPermission", err)
-	}
 }
 
 // containsEntry reports whether name appears in the slice of DirEntry names.

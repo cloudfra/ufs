@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package embedfs wraps a Go embed.FS as a read-only ufs.FS.
+package embedfs
 
 import (
 	"embed"
@@ -20,21 +21,20 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-const embedFSPrefix = "embed://"
-
-var _ WriteFS = (*embedFS)(nil)
+var _ ufs.WriteFS = (*embedFS)(nil)
 
 type embedFS struct {
 	name string
 	fsys embed.FS
 }
 
-func (fsys *embedFS) GetDeviceInfo() DeviceMap {
-	return NewDeviceMap(NewDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
+func (fsys *embedFS) GetDeviceInfo() ufs.DeviceMap {
+	return ufs.NewDeviceMap(ufs.NewDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
 }
 
 func (fsys *embedFS) URI() (*url.URL, error) {
@@ -42,7 +42,7 @@ func (fsys *embedFS) URI() (*url.URL, error) {
 }
 
 func (fsys *embedFS) String() string {
-	return fmt.Sprintf("embedFS(%s)", URIOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("embedFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *embedFS) Open(name string) (fs.File, error) {
@@ -90,7 +90,7 @@ func (fsys *embedFS) ReadLink(name string) (string, error) {
 	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
 }
 
-func (fsys *embedFS) Create(name string) (File, error) {
+func (fsys *embedFS) Create(name string) (ufs.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -118,10 +118,10 @@ func (fsys *embedFS) RemoveAll(name string) error {
 	return ufserrors.NewPathError("removeall", name, fmt.Errorf("embedFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
 }
 
-// NewEmbedFS wraps a Go [embed.FS] as a read-only [FS]. name is used as the
-// label returned by [FS.String]; it is typically the mount path or a
+// New wraps a Go [embed.FS] as a read-only [ufs.FS]. name is used as the
+// label returned by [ufs.FS.String]; it is typically the mount path or a
 // description of the embedded content. Read operations delegate directly to
 // the embed.FS; all write operations return [fs.ErrPermission].
-func NewEmbedFS(name string, fsys embed.FS) FS {
+func New(name string, fsys embed.FS) ufs.FS {
 	return &embedFS{name: name, fsys: fsys}
 }

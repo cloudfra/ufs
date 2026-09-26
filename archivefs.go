@@ -85,7 +85,7 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 }
 
-func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *archiveFS) getDeviceInfo() map[string]DeviceInfo {
 	return archiveDeviceInfoMap
 }
 

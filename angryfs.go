@@ -47,7 +47,7 @@ type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *angryFS) getDeviceInfo() map[string]DeviceInfo {
 	return angryDeviceInfoMap
 }
 

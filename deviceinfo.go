@@ -26,20 +26,24 @@ var (
 	// defaultDeviceInfo is returned when the backing device is not known.
 	//
 	// This signals to ufs that the FS should be treated as unoptimized for features such as parallel directory walking.
-	defaultDeviceInfo = deviceInfo{
+	defaultDeviceInfo = DeviceInfo{
 		name:        "default",
 		deviceType:  "unknown",
 		threadCount: 1,
 	}
 
 	// defaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
-	defaultDeviceMap = map[string]deviceInfo{
+	defaultDeviceMap = map[string]DeviceInfo{
 		".": defaultDeviceInfo,
 	}
 )
 
-// deviceInfo contains platform agnostic information about the backing device of this file system.
-type deviceInfo struct {
+// DeviceInfo contains platform agnostic information about the backing device
+// of this file system. It embeds [fmt.Stringer] to declare that conformance
+// at the type level; the implementation is the String method below.
+type DeviceInfo struct {
+	fmt.Stringer
+
 	// name of the device as specified by the OS or the ufs implementation
 	name string
 	// deviceType is the type of device that backs the FS.
@@ -50,8 +54,8 @@ type deviceInfo struct {
 	remote bool
 }
 
-func newDeviceInfo(name string, deviceType string, threadCount int, remote bool) deviceInfo {
-	return deviceInfo{
+func newDeviceInfo(name string, deviceType string, threadCount int, remote bool) DeviceInfo {
+	return DeviceInfo{
 		name:        name,
 		deviceType:  deviceType,
 		threadCount: threadCount,
@@ -59,38 +63,38 @@ func newDeviceInfo(name string, deviceType string, threadCount int, remote bool)
 	}
 }
 
-// String representation of deviceInfo.
-func (info deviceInfo) String() string {
+// String representation of DeviceInfo.
+func (info DeviceInfo) String() string {
 	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d, remote: %t}", info.name, info.deviceType, info.threadCount, info.remote)
 }
 
-// deviceInfoGet provides an interface to obtain the device backend information of a FS.
-type deviceInfoGet interface {
+// DeviceInfoGet provides an interface to obtain the device backend information of a FS.
+type DeviceInfoGet interface {
 	// getDeviceInfo returns a map based on the relative path of the device.
 	//
 	// The root of the FS has the key ".".
-	getDeviceInfo() map[string]deviceInfo
+	getDeviceInfo() map[string]DeviceInfo
 }
 
-// TODO: Create a deviceMap that encapsulates the map[string]deviceInfo
+// TODO: Create a deviceMap that encapsulates the map[string]DeviceInfo
 
-func newDeviceInfoMap(rootDeviceInfo deviceInfo) map[string]deviceInfo {
-	return map[string]deviceInfo{
+func newDeviceInfoMap(rootDeviceInfo DeviceInfo) map[string]DeviceInfo {
+	return map[string]DeviceInfo{
 		".": rootDeviceInfo,
 	}
 }
 
-func combineDeviceInfo(src map[string]deviceInfo, mountPath string, incoming map[string]deviceInfo) map[string]deviceInfo {
+func combineDeviceInfo(src map[string]DeviceInfo, mountPath string, incoming map[string]DeviceInfo) map[string]DeviceInfo {
 	if len(incoming) == 0 {
 		if len(src) == 0 {
-			return map[string]deviceInfo{}
+			return map[string]DeviceInfo{}
 		}
 		if len(incoming) == 0 {
 			return src
 		}
 	}
 
-	combined := map[string]deviceInfo{}
+	combined := map[string]DeviceInfo{}
 	maps.Copy(combined, src)
 
 	for k, nestedDeviceInfo := range incoming {
@@ -104,7 +108,7 @@ func combineDeviceInfo(src map[string]deviceInfo, mountPath string, incoming map
 	return combined
 }
 
-func getParentDeviceInfo(m map[string]deviceInfo, mountPath string) deviceInfo {
+func getParentDeviceInfo(m map[string]DeviceInfo, mountPath string) DeviceInfo {
 	longest := "."
 	for k := range m {
 		if k == "." {
@@ -117,8 +121,8 @@ func getParentDeviceInfo(m map[string]deviceInfo, mountPath string) deviceInfo {
 	return m[longest]
 }
 
-func getDeviceInfoOrDefault(fsys fs.FS) map[string]deviceInfo {
-	if diFsys, ok := fsys.(deviceInfoGet); ok {
+func getDeviceInfoOrDefault(fsys fs.FS) map[string]DeviceInfo {
+	if diFsys, ok := fsys.(DeviceInfoGet); ok {
 		return diFsys.getDeviceInfo()
 	}
 	return defaultDeviceMap

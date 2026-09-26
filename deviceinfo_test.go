@@ -22,17 +22,17 @@ import (
 )
 
 var (
-	fakeNvmeDeviceInfo = deviceInfo{
+	fakeNvmeDeviceInfo = DeviceInfo{
 		name:        "/dev/nvme0n1",
 		deviceType:  "nvme",
 		threadCount: 2,
 	}
-	fakeHddDeviceInfo = deviceInfo{
+	fakeHddDeviceInfo = DeviceInfo{
 		name:        "/dev/hdd1",
 		deviceType:  "hdd",
 		threadCount: 1,
 	}
-	fakeUsbDeviceInfo = deviceInfo{
+	fakeUsbDeviceInfo = DeviceInfo{
 		name:        "/dev/usb1",
 		deviceType:  "usb",
 		threadCount: 1,
@@ -42,18 +42,18 @@ var (
 func TestNewDeviceInfoMap(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		input deviceInfo
-		want  map[string]deviceInfo
+		input DeviceInfo
+		want  map[string]DeviceInfo
 	}{
 		{
 			input: defaultDeviceInfo,
-			want: map[string]deviceInfo{
+			want: map[string]DeviceInfo{
 				".": defaultDeviceInfo,
 			},
 		},
 		{
 			input: fakeNvmeDeviceInfo,
-			want: map[string]deviceInfo{
+			want: map[string]DeviceInfo{
 				".": fakeNvmeDeviceInfo,
 			},
 		},
@@ -62,7 +62,7 @@ func TestNewDeviceInfoMap(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.input.name, func(t *testing.T) {
 			got := newDeviceInfoMap(tc.input)
-			if d := cmp.Diff(tc.want, got, cmpopts.EquateComparable(deviceInfo{})); d != "" {
+			if d := cmp.Diff(tc.want, got, cmpopts.EquateComparable(DeviceInfo{})); d != "" {
 				t.Errorf("got %v, want %v diff(-want,+got):\n %v", got, tc.want, d)
 			}
 		})
@@ -71,16 +71,16 @@ func TestNewDeviceInfoMap(t *testing.T) {
 
 type mountInfo struct {
 	mountPath string
-	incoming  map[string]deviceInfo
+	incoming  map[string]DeviceInfo
 }
 
 func TestCombineDeviceInfo(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
-		src      map[string]deviceInfo
+		src      map[string]DeviceInfo
 		incoming []mountInfo
-		want     map[string]deviceInfo
+		want     map[string]DeviceInfo
 	}{
 		{
 			name: "src and incoming nil",
@@ -91,7 +91,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 					incoming:  nil,
 				},
 			},
-			want: map[string]deviceInfo{},
+			want: map[string]DeviceInfo{},
 		},
 		{
 			name: "src populated, incoming nil",
@@ -102,7 +102,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 					incoming:  nil,
 				},
 			},
-			want: map[string]deviceInfo{
+			want: map[string]DeviceInfo{
 				".": defaultDeviceInfo,
 			},
 		},
@@ -115,7 +115,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 					incoming:  newDeviceInfoMap(fakeNvmeDeviceInfo),
 				},
 			},
-			want: map[string]deviceInfo{
+			want: map[string]DeviceInfo{
 				"nvme": fakeNvmeDeviceInfo,
 			},
 		},
@@ -128,7 +128,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 					incoming:  newDeviceInfoMap(fakeNvmeDeviceInfo),
 				},
 			},
-			want: map[string]deviceInfo{
+			want: map[string]DeviceInfo{
 				".":    defaultDeviceInfo,
 				"nvme": fakeNvmeDeviceInfo,
 			},
@@ -178,7 +178,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 					incoming:  newDeviceInfoMap(fakeNvmeDeviceInfo),
 				},
 			},
-			want: map[string]deviceInfo{
+			want: map[string]DeviceInfo{
 				".":                   defaultDeviceInfo,
 				"default/default/usb": fakeUsbDeviceInfo,
 				"default/nvme":        fakeNvmeDeviceInfo,
@@ -205,7 +205,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 					incoming:  newDeviceInfoMap(fakeUsbDeviceInfo),
 				},
 			},
-			want: map[string]deviceInfo{
+			want: map[string]DeviceInfo{
 				".":         fakeHddDeviceInfo,
 				"fast":      fakeNvmeDeviceInfo,
 				"fast/slow": fakeHddDeviceInfo,
@@ -220,7 +220,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 			for _, mi := range tc.incoming {
 				got = combineDeviceInfo(got, mi.mountPath, mi.incoming)
 			}
-			if d := cmp.Diff(tc.want, got, cmpopts.EquateComparable(deviceInfo{})); d != "" {
+			if d := cmp.Diff(tc.want, got, cmpopts.EquateComparable(DeviceInfo{})); d != "" {
 				t.Errorf("got %v, want %v diff(-want,+got):\n %v", got, tc.want, d)
 			}
 		})

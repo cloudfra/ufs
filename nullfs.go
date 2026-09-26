@@ -130,7 +130,7 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *nullFS) getDeviceInfo() map[string]DeviceInfo {
 	return nullDeviceInfoMap
 }
 

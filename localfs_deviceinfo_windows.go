@@ -23,12 +23,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *localFS) getDeviceInfo() map[string]DeviceInfo {
 	rootPath := fsys.osFS.Name()
 	return windowsDeviceMap(rootPath)
 }
 
-func windowsDeviceMap(rootPath string) map[string]deviceInfo {
+func windowsDeviceMap(rootPath string) map[string]DeviceInfo {
 	vol := filepath.VolumeName(rootPath)
 	if vol == "" {
 		return defaultDeviceMap
@@ -37,12 +37,12 @@ func windowsDeviceMap(rootPath string) map[string]deviceInfo {
 	// NTFS volume mount points (volumes mounted at arbitrary subdirectories) are not
 	// detected here; FindFirstVolumeMountPoint / GetVolumeNameForVolumeMountPoint
 	// could enumerate them in a future implementation.
-	return map[string]deviceInfo{
+	return map[string]DeviceInfo{
 		".": windowsDriveInfo(volumeRoot),
 	}
 }
 
-func windowsDriveInfo(volumeRoot string) deviceInfo {
+func windowsDriveInfo(volumeRoot string) DeviceInfo {
 	ptr, err := syscall.UTF16PtrFromString(volumeRoot)
 	if err != nil {
 		return defaultDeviceInfo
@@ -51,15 +51,15 @@ func windowsDriveInfo(volumeRoot string) deviceInfo {
 	name := filepath.VolumeName(volumeRoot)
 	switch dt {
 	case windows.DRIVE_REMOVABLE:
-		return deviceInfo{name: name, deviceType: "removable", threadCount: 1}
+		return DeviceInfo{name: name, deviceType: "removable", threadCount: 1}
 	case windows.DRIVE_FIXED:
-		return deviceInfo{name: name, deviceType: "fixed", threadCount: 1}
+		return DeviceInfo{name: name, deviceType: "fixed", threadCount: 1}
 	case windows.DRIVE_REMOTE:
-		return deviceInfo{name: name, deviceType: "network", threadCount: 1}
+		return DeviceInfo{name: name, deviceType: "network", threadCount: 1}
 	case windows.DRIVE_CDROM:
-		return deviceInfo{name: name, deviceType: "cdrom", threadCount: 1}
+		return DeviceInfo{name: name, deviceType: "cdrom", threadCount: 1}
 	case windows.DRIVE_RAMDISK:
-		return deviceInfo{name: name, deviceType: "memory", threadCount: 4}
+		return DeviceInfo{name: name, deviceType: "memory", threadCount: 4}
 	}
 	return defaultDeviceInfo
 }

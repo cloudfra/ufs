@@ -172,6 +172,39 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 	return result
 }
 
+// mkdirAllFS is satisfied by any file system that can create directories.
+type mkdirAllFS interface {
+	fs.FS
+	MkdirAll(name string, perm fs.FileMode) error
+}
+
+// createFileFS is satisfied by any file system that can create files.
+type createFileFS interface {
+	fs.FS
+	Create(name string) (File, error)
+}
+
+// writeFS is satisfied by any file system that can create both files and
+// directories.
+type writeFS interface {
+	createFileFS
+	MkdirAll(name string, perm fs.FileMode) error
+}
+
+// statReadFileFS is satisfied by any file system that can Stat and ReadFile.
+type statReadFileFS interface {
+	fs.StatFS
+	fs.ReadFileFS
+}
+
+// dirFileConflictFS is satisfied by any file system that can create files
+// and directories, then be inspected with Stat and ReadFile.
+type dirFileConflictFS interface {
+	writeFS
+	fs.StatFS
+	fs.ReadFileFS
+}
+
 func testFileSystem(t *testing.T, newFSFunc func(ctx context.Context, name string) (FS, error), name string) {
 	t.Helper()
 	fsys := mustFS(t, newFSFunc, name)
@@ -245,7 +278,7 @@ func testFileSystem(t *testing.T, newFSFunc func(ctx context.Context, name strin
 	}
 }
 
-func mkdirForTest(tb testing.TB, fsys FS, dirs ...string) {
+func mkdirForTest(tb testing.TB, fsys mkdirAllFS, dirs ...string) {
 	tb.Helper()
 	dir := path.Join(dirs...)
 	if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
@@ -267,6 +300,14 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 	return fsys
 }
 
+// checkMkdirAll verifies that a directory can be created.
+func checkMkdirAll(t *testing.T, fsys mkdirAllFS) {
+	t.Helper()
+	if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
+		t.Errorf("MkdirAll() = %v, want nil", err)
+	}
+}
+
 func TestFSMkdirAll(t *testing.T) {
 	t.Parallel()
 	for _, tc := range getAllExceptAngryTestCaseList() {
@@ -274,10 +315,37 @@ func TestFSMkdirAll(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
 			defer ufsTesting.ValidateClose(t, fsys)()
-			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-				t.Errorf("MkdirAll() = %v, want nil", err)
-			}
+			checkMkdirAll(t, fsys)
 		})
+	}
+}
+
+// checkReadFile verifies that content written through Create reads back
+// through ReadFile. It is skipped if the file system does not implement
+// fs.ReadFileFS.
+func checkReadFile(t *testing.T, fsys createFileFS, wantData string) {
+	t.Helper()
+	f, err := fsys.Create("readfile_test.txt")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := io.WriteString(f, wantData); err != nil {
+		t.Fatalf("WriteString failed: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	rfs, ok := fsys.(fs.ReadFileFS)
+	if !ok {
+		t.Skip("does not implement fs.ReadFileFS")
+	}
+	got, err := rfs.ReadFile("readfile_test.txt")
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if diff := cmp.Diff(wantData, string(got)); diff != "" {
+		t.Errorf("ReadFile mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -289,33 +357,12 @@ func TestFSReadFile(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
 			defer ufsTesting.ValidateClose(t, fsys)()
-			f, err := fsys.Create("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("Create failed: %v", err)
-			}
-			if _, err := io.WriteString(f, wantData); err != nil {
-				t.Fatalf("WriteString failed: %v", err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatalf("Close failed: %v", err)
-			}
-
-			rfs, ok := fsys.(fs.ReadFileFS)
-			if !ok {
-				t.Skip("does not implement fs.ReadFileFS")
-			}
-			got, err := rfs.ReadFile("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("ReadFile failed: %v", err)
-			}
-			if diff := cmp.Diff(wantData, string(got)); diff != "" {
-				t.Errorf("ReadFile mismatch (-want +got):\n%s", diff)
-			}
+			checkReadFile(t, fsys, wantData)
 		})
 	}
 }
 
-func verifyFS(t *testing.T, fsys FS) {
+func verifyFS(t *testing.T, fsys fs.FS) {
 	verifyReadOnlyFS(t, fsys)
 }
 
@@ -363,6 +410,22 @@ func TestFS(t *testing.T) {
 	}
 }
 
+// checkURIHasROTag verifies that fsys's URI carries the ro=true query tag
+// every read-only file system attaches to its URI.
+func checkURIHasROTag(t *testing.T, fsys URIGet) {
+	t.Helper()
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatalf("URI() returned error: %v", err)
+	}
+	if u == nil {
+		t.Fatal("URI() = nil, want a URL")
+	}
+	if got := u.Query().Get("ro"); got != "true" {
+		t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
+	}
+}
+
 func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 	t.Parallel()
 
@@ -371,17 +434,7 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
 			defer ufsTesting.ValidateClose(t, fsys)()
-
-			u, err := fsys.URI()
-			if err != nil {
-				t.Fatalf("URI() returned error: %v", err)
-			}
-			if u == nil {
-				t.Fatal("URI() = nil, want a URL")
-			}
-			if got := u.Query().Get("ro"); got != "true" {
-				t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
-			}
+			checkURIHasROTag(t, fsys)
 		})
 	}
 }
@@ -393,21 +446,21 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 // example localFS surfaces the OS's ENOTDIR/EISDIR).
 var dirFileConflictCases = []struct {
 	name    string
-	op      func(fsys FS) error
+	op      func(fsys writeFS) error
 	wantErr error
 	wantOp  string
 }{
-	{name: "create_on_dir", op: func(fsys FS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_on_root", op: func(fsys FS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "create_deep_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "mkdirall_on_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-	{name: "mkdirall_under_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "create_on_dir", op: func(fsys writeFS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_on_root", op: func(fsys writeFS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_under_file", op: func(fsys writeFS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "create_deep_under_file", op: func(fsys writeFS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "mkdirall_on_file", op: func(fsys writeFS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "mkdirall_under_file", op: func(fsys writeFS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
 }
 
 // newDirFileConflictFS returns a file system from createFS containing the
 // directories dir and dir/sub and the regular file dir/file.
-func newDirFileConflictFS(t *testing.T, createFS func(testing.TB) FS) FS {
+func newDirFileConflictFS(t *testing.T, createFS func(testing.TB) FS) dirFileConflictFS {
 	t.Helper()
 	fsys := createFS(t)
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
@@ -467,7 +520,7 @@ func TestFSDirFileConflicts(t *testing.T) {
 	}
 }
 
-func assertDirFileTreeUnchanged(t *testing.T, fsys FS) {
+func assertDirFileTreeUnchanged(t *testing.T, fsys statReadFileFS) {
 	t.Helper()
 	for _, name := range []string{pathutil.CwdPath, "dir", "dir/sub"} {
 		if info, err := fsys.Stat(name); err != nil || !info.IsDir() {

@@ -19,6 +19,7 @@ package pathutil
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"runtime"
 	"strings"
@@ -73,6 +74,11 @@ func Validate(op string, name string) error {
 // CoerceUnix replaces Windows separators in name with Unix separators.
 func CoerceUnix(name string) string {
 	return strings.ReplaceAll(name, WindowsSeparator, UnixSeparator)
+}
+
+// TempDir returns the OS temp directory, coerced to forward slashes.
+func TempDir() string {
+	return CoerceUnix(os.TempDir())
 }
 
 // IsDirName reports whether name refers to a directory by its spelling alone.

@@ -47,7 +47,7 @@ var (
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
-				dir := ufsTesting.MkdirTemp(tb)
+				dir := tb.TempDir()
 				fsys, err := newLocalFS(tb.Context(), dir)
 				if err != nil {
 					tb.Fatalf("cannot create localFS file system, %s", err)
@@ -59,7 +59,7 @@ var (
 				})
 				return fsys
 			},
-			wantString: "file://" + ufsTesting.TempDir(),
+			wantString: "file://" + pathutil.TempDir(),
 		},
 		{
 			name: "tempMountFS",

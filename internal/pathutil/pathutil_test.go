@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"runtime"
 	"strings"
@@ -389,6 +390,17 @@ func TestCoerceUnix(t *testing.T) {
 				t.Errorf("coerceUnix(%q) got: %q, want: %q", tc.input, got, tc.wantCoerceUnix)
 			}
 		})
+	}
+}
+
+func TestTempDirUsesForwardSlashes(t *testing.T) {
+	t.Parallel()
+	got := TempDir()
+	if strings.Contains(got, WindowsSeparator) {
+		t.Errorf("TempDir() = %q, want no %q", got, WindowsSeparator)
+	}
+	if want := CoerceUnix(os.TempDir()); got != want {
+		t.Errorf("TempDir() = %q, want %q", got, want)
 	}
 }
 

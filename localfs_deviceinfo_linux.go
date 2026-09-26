@@ -28,7 +28,7 @@ import (
 
 const procMountsPath = "/proc/self/mounts"
 
-func (fsys *localFS) getDeviceInfo() DeviceMap {
+func (fsys *localFS) GetDeviceInfo() DeviceMap {
 	rootPath := fsys.osFS.Name()
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath

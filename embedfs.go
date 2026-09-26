@@ -33,8 +33,8 @@ type embedFS struct {
 	fsys embed.FS
 }
 
-func (fsys *embedFS) getDeviceInfo() DeviceMap {
-	return newDeviceMap(newDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
+func (fsys *embedFS) GetDeviceInfo() DeviceMap {
+	return NewDeviceMap(newDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
 }
 
 func (fsys *embedFS) URI() (*url.URL, error) {

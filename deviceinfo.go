@@ -72,8 +72,8 @@ func (info DeviceInfo) String() string {
 // that backs it. The root of the FS has the key ".".
 type DeviceMap map[string]DeviceInfo
 
-// newDeviceMap returns a DeviceMap holding only the root's DeviceInfo.
-func newDeviceMap(root DeviceInfo) DeviceMap {
+// NewDeviceMap returns a DeviceMap holding only the root's DeviceInfo.
+func NewDeviceMap(root DeviceInfo) DeviceMap {
 	return DeviceMap{".": root}
 }
 
@@ -116,17 +116,17 @@ func (dm DeviceMap) parent(mountPath string) DeviceInfo {
 	return dm[longest]
 }
 
-// DeviceInfoGet provides an interface to obtain the device backend information of a FS.
-type DeviceInfoGet interface {
-	// getDeviceInfo returns a map based on the relative path of the device.
+// DeviceInfoGetter provides an interface to obtain the device backend information of a FS.
+type DeviceInfoGetter interface {
+	// GetDeviceInfo returns a map based on the relative path of the device.
 	//
 	// The root of the FS has the key ".".
-	getDeviceInfo() DeviceMap
+	GetDeviceInfo() DeviceMap
 }
 
 func getDeviceInfoOrDefault(fsys fs.FS) DeviceMap {
-	if diFsys, ok := fsys.(DeviceInfoGet); ok {
-		return diFsys.getDeviceInfo()
+	if diFsys, ok := fsys.(DeviceInfoGetter); ok {
+		return diFsys.GetDeviceInfo()
 	}
 	return defaultDeviceMap
 }

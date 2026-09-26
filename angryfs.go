@@ -36,7 +36,7 @@ var (
 	errAngry = fs.ErrInvalid
 
 	angryDeviceInfo    = newDeviceInfo("angry", "angry", 1, false)
-	angryDeviceInfoMap = newDeviceMap(angryDeviceInfo)
+	angryDeviceInfoMap = NewDeviceMap(angryDeviceInfo)
 )
 
 func init() {
@@ -47,7 +47,7 @@ type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) getDeviceInfo() DeviceMap {
+func (fsys *angryFS) GetDeviceInfo() DeviceMap {
 	return angryDeviceInfoMap
 }
 

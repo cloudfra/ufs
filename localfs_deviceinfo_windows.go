@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func (fsys *localFS) getDeviceInfo() DeviceMap {
+func (fsys *localFS) GetDeviceInfo() DeviceMap {
 	rootPath := fsys.osFS.Name()
 	return windowsDeviceMap(rootPath)
 }

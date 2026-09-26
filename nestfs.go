@@ -48,10 +48,10 @@ type FSArgs struct {
 }
 
 var (
-	_ FS             = (*nestFS)(nil)
-	_ fs.GlobFS      = (*nestFS)(nil)
-	_ realAbsPathGet = (*nestFS)(nil)
-	_ DeviceInfoGet  = (*mountMap)(nil)
+	_ FS               = (*nestFS)(nil)
+	_ fs.GlobFS        = (*nestFS)(nil)
+	_ realAbsPathGet   = (*nestFS)(nil)
+	_ DeviceInfoGetter = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -71,11 +71,11 @@ type mountMap struct {
 	baseName string
 }
 
-func (m *mountMap) getDeviceInfo() DeviceMap {
+func (m *mountMap) GetDeviceInfo() DeviceMap {
 	combined := DeviceMap{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combined.combine(mountPoint, fsys.getDeviceInfo())
+		combined = combined.combine(mountPoint, fsys.GetDeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -225,9 +225,9 @@ func (fsys *nestFS) getAbsPath(name string) (string, error) {
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
-func (fsys *nestFS) getDeviceInfo() DeviceMap {
-	base := fsys.fsys.getDeviceInfo()
-	return base.combine("", fsys.mounts.getDeviceInfo())
+func (fsys *nestFS) GetDeviceInfo() DeviceMap {
+	base := fsys.fsys.GetDeviceInfo()
+	return base.combine("", fsys.mounts.GetDeviceInfo())
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {

@@ -124,6 +124,7 @@ enable its scheme. They may use `internal/` packages.
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
+| drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
 code with no `ufs` dependency goes in `internal/`.

@@ -14,11 +14,6 @@
 
 package ufs
 
-// Conformance tests run every built-in backend through the shared checks in
-// drivers/testing plus the ufs-specific ReadFS/FS contract (String, URI,
-// interface assertions). Backend-specific tests live in each backend's own
-// _test.go file.
-
 import (
 	"context"
 	"io/fs"
@@ -49,7 +44,7 @@ var (
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
-				dir := ufsTesting.MkdirTemp(tb)
+				dir := tb.TempDir()
 				fsys, err := newLocalFS(tb.Context(), dir)
 				if err != nil {
 					tb.Fatalf("cannot create localFS file system, %s", err)
@@ -187,6 +182,26 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 	return fsys
 }
 
+func TestFSMkdirAll(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getAllExceptAngryTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			driverTesting.MkdirAll(t, tc.factory())
+		})
+	}
+}
+
+func TestFSReadFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getReadWriteTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			driverTesting.ReadFile[File](t, tc.factory())
+		})
+	}
+}
+
 func verifyReadOnlyFS(t *testing.T, fsys fs.FS) {
 	t.Helper()
 	if fsys == nil {
@@ -254,14 +269,23 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 	}
 }
 
-func TestFSString(t *testing.T) {
-	for _, tc := range getAllTestCaseList() {
+// TestFSDirFileConflicts verifies that every WriteFS rejects Create and
+// MkdirAll calls that would replace a directory with a file or place anything
+// under a regular file, and that a rejected call leaves the tree unchanged.
+func TestFSDirFileConflicts(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getAllRegularTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			fsys := tc.createFS(t)
-			if got := fsys.String(); !strings.Contains(got, tc.wantString) {
-				t.Errorf("%s.String() should contain %q: got: %q", fsys, tc.wantString, got)
-			}
+			driverTesting.DirFileConflicts[File](t, tc.factory())
+		})
+	}
+}
+
+func TestInvalidPath(t *testing.T) {
+	for _, tc := range getAllTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			driverTesting.InvalidPaths[File](t, tc.factory())
 		})
 	}
 }
@@ -294,14 +318,6 @@ func TestFSConventions(t *testing.T) {
 	}
 }
 
-func TestInvalidPath(t *testing.T) {
-	for _, tc := range getAllTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			driverTesting.InvalidPaths[File](t, tc.factory())
-		})
-	}
-}
-
 func TestFSClose(t *testing.T) {
 	for _, tc := range getAllRegularTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -311,12 +327,14 @@ func TestFSClose(t *testing.T) {
 	}
 }
 
-func TestFSMkdirAll(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getAllExceptAngryTestCaseList() {
+func TestFSString(t *testing.T) {
+	for _, tc := range getAllTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			driverTesting.MkdirAll(t, tc.factory())
+			fsys := tc.createFS(t)
+			if got := fsys.String(); !strings.Contains(got, tc.wantString) {
+				t.Errorf("%s.String() should contain %q: got: %q", fsys, tc.wantString, got)
+			}
 		})
 	}
 }
@@ -335,29 +353,6 @@ func TestFSCreate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			driverTesting.CreateAndRead[File](t, tc.factory())
-		})
-	}
-}
-
-func TestFSReadFile(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getReadWriteTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			driverTesting.ReadFile[File](t, tc.factory())
-		})
-	}
-}
-
-// TestFSDirFileConflicts verifies that every WriteFS rejects Create and
-// MkdirAll calls that would replace a directory with a file or place anything
-// under a regular file, and that a rejected call leaves the tree unchanged.
-func TestFSDirFileConflicts(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getAllRegularTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			driverTesting.DirFileConflicts[File](t, tc.factory())
 		})
 	}
 }

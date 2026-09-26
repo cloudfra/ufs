@@ -15,7 +15,6 @@
 package testing
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -24,19 +23,5 @@ func TestTempDirUsesForwardSlashes(t *testing.T) {
 	t.Parallel()
 	if got := TempDir(); strings.Contains(got, `\`) {
 		t.Errorf("TempDir() = %q, want no backslashes", got)
-	}
-}
-
-func TestMkdirTempRemovedOnCleanup(t *testing.T) {
-	t.Parallel()
-	var dir string
-	t.Run("create", func(t *testing.T) {
-		dir = MkdirTemp(t)
-		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-			t.Fatalf("os.Stat(%q) = %v, %v; want a directory", dir, info, err)
-		}
-	})
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Errorf("os.Stat(%q) after cleanup = %v, want not exist", dir, err)
 	}
 }

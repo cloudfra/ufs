@@ -21,28 +21,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 // TempDir returns the OS temp directory with forward slashes.
 func TempDir() string {
 	return pathutil.CoerceUnix(os.TempDir())
-}
-
-// MkdirTemp creates a new temp directory and removes it when tb finishes.
-func MkdirTemp(tb testing.TB) string {
-	tb.Helper()
-	dir, err := osutil.MkdirTemp("", "")
-	if err != nil {
-		tb.Fatal(err)
-	}
-	tb.Cleanup(func() {
-		if err := osutil.RemoveAll(dir); err != nil {
-			tb.Error(err)
-		}
-	})
-	return dir
 }
 
 // SkipUnlessFSNotifySupported skips the test on platforms fsnotify does not

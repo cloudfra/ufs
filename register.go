@@ -53,7 +53,8 @@ type Driver struct {
 	ReadWrite bool
 }
 
-func newDriver(name string, createFunc func(context.Context, string) (FS, error), matchFunc func(string) bool, priority int, standard bool, readWrite bool) Driver {
+// NewDriver builds a Driver configuration for a file system driver, to be passed to Register.
+func NewDriver(name string, createFunc func(context.Context, string) (FS, error), matchFunc func(string) bool, priority int, standard bool, readWrite bool) Driver {
 	return Driver{
 		Name:       name,
 		CreateFunc: createFunc,

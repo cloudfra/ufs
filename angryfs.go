@@ -35,12 +35,12 @@ var (
 
 	errAngry = fs.ErrInvalid
 
-	angryDeviceInfo    = newDeviceInfo("angry", "angry", 1, false)
+	angryDeviceInfo    = NewDeviceInfo("angry", "angry", 1, false)
 	angryDeviceInfoMap = NewDeviceMap(angryDeviceInfo)
 )
 
 func init() {
-	Register(newDriver("angry", newAngryFS, isAngryFSUri, 1, false, false))
+	Register(NewDriver("angry", newAngryFS, isAngryFSUri, 1, false, false))
 }
 
 type angryFS struct {
@@ -63,7 +63,7 @@ func (fsys *angryFS) URI() (*url.URL, error) {
 }
 
 func (fsys *angryFS) String() string {
-	return fmt.Sprintf("angryFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("angryFS(%s)", URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *angryFS) Open(name string) (fs.File, error) {

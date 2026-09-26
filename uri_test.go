@@ -85,7 +85,7 @@ func TestUriOrDefault(t *testing.T) {
 			ug := &uriGetter{
 				name: tc.input,
 			}
-			got := uriOrDefault(ug, tc.value)
+			got := URIOrDefault(ug, tc.value)
 			if diff := cmp.Diff(got, tc.want); diff != "" {
 				t.Errorf("got: %q, want: %q, diff: %q", got, tc.want, diff)
 			}

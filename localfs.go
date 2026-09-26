@@ -40,7 +40,7 @@ var (
 )
 
 func init() {
-	Register(newDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
+	Register(NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
 }
 
 type localFSInterface interface {
@@ -58,7 +58,7 @@ func (fsys *localFS) URI() (*url.URL, error) {
 }
 
 func (fsys *localFS) String() string {
-	return fmt.Sprintf("localFS(%s)", uriOrDefault(fsys, fsys.osFS.Name()))
+	return fmt.Sprintf("localFS(%s)", URIOrDefault(fsys, fsys.osFS.Name()))
 }
 
 func (fsys *localFS) getAbsPath(name string) (string, error) {

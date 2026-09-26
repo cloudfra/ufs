@@ -14,17 +14,22 @@
 
 package ufs
 
+// Conformance tests run every built-in backend through the shared checks in
+// drivers/testing plus the ufs-specific ReadFS/FS contract (String, URI,
+// interface assertions). Backend-specific tests live in each backend's own
+// _test.go file.
+
 import (
 	"context"
 	"io/fs"
-	"os"
-	"path"
+	"strings"
 	"testing"
+	"testing/fstest"
 
 	driverTesting "github.com/cloudfra/ufs/drivers/testing"
 
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	internalTesting "github.com/cloudfra/ufs/internal/testing"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -45,7 +50,7 @@ var (
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
-				dir := mustTemp(tb)
+				dir := internalTesting.MkdirTemp(tb)
 				fsys, err := newLocalFS(tb.Context(), dir)
 				if err != nil {
 					tb.Fatalf("cannot create localFS file system, %s", err)
@@ -57,7 +62,7 @@ var (
 				})
 				return fsys
 			},
-			wantString: "file://" + osTempDir(),
+			wantString: "file://" + internalTesting.TempDir(),
 		},
 		{
 			name: "tempMountFS",
@@ -123,20 +128,6 @@ var (
 			wantString: nullFSPrefix,
 		},
 	}
-
-	testassetFilenameList = []string{
-		pathutil.CwdPath,
-		"files/index.html",
-		"archives/nested-testassets.zip",
-	}
-
-	testassetDirList = map[string][]string{
-		pathutil.CwdPath: {},
-		"files":          {},
-		"archives":       {},
-	}
-
-	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
 )
 
 func getReadWriteTestCaseList() []fsTestCase {
@@ -183,14 +174,6 @@ func (tc fsTestCase) factory() driverTesting.Factory {
 	return func(tb testing.TB) fs.FS { return tc.createFS(tb) }
 }
 
-func mkdirForTest(tb testing.TB, fsys FS, dirs ...string) {
-	tb.Helper()
-	dir := path.Join(dirs...)
-	if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-		tb.Fatalf("cannot create directory %q, %s", dir, err)
-	}
-}
-
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
 	tb.Helper()
 
@@ -203,48 +186,6 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 	}
 
 	return fsys
-}
-
-func osTempDir() string {
-	return pathutil.CoerceUnix(os.TempDir())
-}
-
-func mustTemp(tb testing.TB) string {
-	tempDir, err := osutil.MkdirTemp("", "")
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	tb.Cleanup(func() {
-		if err := osutil.RemoveAll(tempDir); err != nil {
-			tb.Error(err)
-		}
-	})
-	return tempDir
-}
-
-func TestFSMkdirAll(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getAllExceptAngryTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			driverTesting.MkdirAll(t, tc.factory())
-		})
-	}
-}
-
-func TestFSReadFile(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getReadWriteTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			driverTesting.ReadFile[File](t, tc.factory())
-		})
-	}
-}
-
-func verifyFS(t *testing.T, fsys FS) {
-	verifyReadOnlyFS(t, fsys)
 }
 
 func verifyReadOnlyFS(t *testing.T, fsys fs.FS) {
@@ -285,7 +226,7 @@ func TestFS(t *testing.T) {
 			if fsys == nil {
 				t.Fatalf("file system is nil")
 			}
-			verifyFS(t, fsys)
+			verifyReadOnlyFS(t, fsys)
 			ufsTesting.ValidateClose(t, fsys)()
 		})
 	}
@@ -310,6 +251,101 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 			if got := u.Query().Get("ro"); got != "true" {
 				t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
 			}
+		})
+	}
+}
+
+func TestFSString(t *testing.T) {
+	for _, tc := range getAllTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			if got := fsys.String(); !strings.Contains(got, tc.wantString) {
+				t.Errorf("%s.String() should contain %q: got: %q", fsys, tc.wantString, got)
+			}
+		})
+	}
+}
+
+func TestFSConventions(t *testing.T) {
+	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
+	if err != nil {
+		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
+	}
+	t.Cleanup(ufsTesting.ValidateClose(t, srcFS))
+	for _, fsysTC := range getReadWriteTestCaseList() {
+		t.Run(fsysTC.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := fsysTC.createFS(t)
+			if err := Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
+				t.Errorf("rsync failed with error, %s", err)
+			}
+
+			allFilenames, err := List(srcFS, pathutil.CwdPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(allFilenames) == 0 {
+				t.Fatal("expected at least 1 file name")
+			}
+			if err := fstest.TestFS(fsys, allFilenames...); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+func TestInvalidPath(t *testing.T) {
+	for _, tc := range getAllTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			driverTesting.InvalidPaths[File](t, tc.factory())
+		})
+	}
+}
+
+func TestFSClose(t *testing.T) {
+	for _, tc := range getAllRegularTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			driverTesting.Close[File](t, tc.factory())
+		})
+	}
+}
+
+func TestFSMkdirAll(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getAllExceptAngryTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			driverTesting.MkdirAll(t, tc.factory())
+		})
+	}
+}
+
+func TestFSReadDir(t *testing.T) {
+	for _, tc := range getAllRegularTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			driverTesting.ReadDir(t, tc.factory())
+		})
+	}
+}
+
+func TestFSCreate(t *testing.T) {
+	for _, tc := range getAllRegularTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			driverTesting.CreateAndRead[File](t, tc.factory())
+		})
+	}
+}
+
+func TestFSReadFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getReadWriteTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			driverTesting.ReadFile[File](t, tc.factory())
 		})
 	}
 }

@@ -141,7 +141,6 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
-| internal/testing/     | Small shared test helpers (temp dirs, platform skips); no ufs import |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | conformance_test.go   | Backend test-case lists; runs every backend through drivers/testing |
 | assets_test.go        | Test asset loading helpers                                          |

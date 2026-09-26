@@ -29,7 +29,6 @@ import (
 	driverTesting "github.com/cloudfra/ufs/drivers/testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
-	internalTesting "github.com/cloudfra/ufs/internal/testing"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -50,7 +49,7 @@ var (
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) FS {
-				dir := internalTesting.MkdirTemp(tb)
+				dir := ufsTesting.MkdirTemp(tb)
 				fsys, err := newLocalFS(tb.Context(), dir)
 				if err != nil {
 					tb.Fatalf("cannot create localFS file system, %s", err)
@@ -62,7 +61,7 @@ var (
 				})
 				return fsys
 			},
-			wantString: "file://" + internalTesting.TempDir(),
+			wantString: "file://" + ufsTesting.TempDir(),
 		},
 		{
 			name: "tempMountFS",

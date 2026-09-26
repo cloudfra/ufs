@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package testing holds small test helpers shared by the ufs package tests
-// and its drivers. Like every internal/ package it must not import the base
-// ufs package, so the root package's own tests can use it.
 package testing
+
+// Host-environment helpers: temp directories and platform-based skips.
 
 import (
 	"os"

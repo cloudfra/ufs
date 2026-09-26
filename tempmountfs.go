@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -89,7 +90,7 @@ func (fsys *tempMountFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *tempMountFS) Glob(pattern string) ([]string, error) {
-	return globFS(fsys, pattern)
+	return globutil.GlobFS(fsys, pattern)
 }
 
 func (fsys *tempMountFS) Remove(name string) error {

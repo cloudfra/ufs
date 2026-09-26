@@ -16,7 +16,6 @@ package ufs
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"strings"
 	"testing"
@@ -247,22 +246,6 @@ func TestFS(t *testing.T) {
 	}
 }
 
-// checkURIHasROTag verifies that fsys's URI carries the ro=true query tag
-// every read-only file system attaches to its URI.
-func checkURIHasROTag(t *testing.T, fsys URIGet) {
-	t.Helper()
-	u, err := fsys.URI()
-	if err != nil {
-		t.Fatalf("URI() returned error: %v", err)
-	}
-	if u == nil {
-		t.Fatal("URI() = nil, want a URL")
-	}
-	if got := u.Query().Get("ro"); got != "true" {
-		t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
-	}
-}
-
 func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 	t.Parallel()
 
@@ -271,7 +254,17 @@ func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
 			defer ufsTesting.ValidateClose(t, fsys)()
-			checkURIHasROTag(t, fsys)
+
+			u, err := fsys.URI()
+			if err != nil {
+				t.Fatalf("URI() returned error: %v", err)
+			}
+			if u == nil {
+				t.Fatal("URI() = nil, want a URL")
+			}
+			if got := u.Query().Get("ro"); got != "true" {
+				t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
+			}
 		})
 	}
 }
@@ -334,19 +327,14 @@ func TestFSClose(t *testing.T) {
 	}
 }
 
-// checkStringContains verifies that fsys.String() contains want.
-func checkStringContains(t *testing.T, fsys fmt.Stringer, want string) {
-	t.Helper()
-	if got := fsys.String(); !strings.Contains(got, want) {
-		t.Errorf("%s.String() should contain %q: got: %q", fsys, want, got)
-	}
-}
-
 func TestFSString(t *testing.T) {
 	for _, tc := range getAllTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			checkStringContains(t, tc.createFS(t), tc.wantString)
+			fsys := tc.createFS(t)
+			if got := fsys.String(); !strings.Contains(got, tc.wantString) {
+				t.Errorf("%s.String() should contain %q: got: %q", fsys, tc.wantString, got)
+			}
 		})
 	}
 }

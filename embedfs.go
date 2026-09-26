@@ -34,7 +34,7 @@ type embedFS struct {
 }
 
 func (fsys *embedFS) GetDeviceInfo() DeviceMap {
-	return NewDeviceMap(newDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
+	return NewDeviceMap(NewDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
 }
 
 func (fsys *embedFS) URI() (*url.URL, error) {
@@ -42,7 +42,7 @@ func (fsys *embedFS) URI() (*url.URL, error) {
 }
 
 func (fsys *embedFS) String() string {
-	return fmt.Sprintf("embedFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("embedFS(%s)", URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *embedFS) Open(name string) (fs.File, error) {

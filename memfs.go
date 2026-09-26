@@ -46,7 +46,7 @@ var (
 )
 
 func init() {
-	Register(newDriver("memory", newMemFS, isMemFSUri, 1, true, true))
+	Register(NewDriver("memory", newMemFS, isMemFSUri, 1, true, true))
 }
 
 // memNode holds the stored state for one file or directory.
@@ -188,7 +188,7 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) GetDeviceInfo() DeviceMap {
-	info := newDeviceInfo(fsys.name, "memory", 2, false)
+	info := NewDeviceInfo(fsys.name, "memory", 2, false)
 	return NewDeviceMap(info)
 }
 
@@ -197,7 +197,7 @@ func (fsys *memFS) URI() (*url.URL, error) {
 }
 
 func (fsys *memFS) String() string {
-	return fmt.Sprintf("memFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("memFS(%s)", URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *memFS) isClosed() bool {

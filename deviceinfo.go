@@ -54,7 +54,9 @@ type DeviceInfo struct {
 	remote bool
 }
 
-func newDeviceInfo(name string, deviceType string, threadCount int, remote bool) DeviceInfo {
+// NewDeviceInfo returns a DeviceInfo describing a backing device by name, type,
+// recommended thread count, and whether it is remote.
+func NewDeviceInfo(name string, deviceType string, threadCount int, remote bool) DeviceInfo {
 	return DeviceInfo{
 		name:        name,
 		deviceType:  deviceType,

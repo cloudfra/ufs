@@ -30,7 +30,7 @@ import (
 )
 
 func init() {
-	Register(newDriver("git", newGitFS, isGitFSUri, 1, true, true))
+	Register(NewDriver("git", newGitFS, isGitFSUri, 1, true, true))
 }
 
 func prepareGitDirectory(name string, gitURL string) error {

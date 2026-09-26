@@ -57,7 +57,7 @@ var (
 				})
 				return fsys
 			},
-			wantString: "file://" + ufsTesting.TempDir(),
+			wantString: "file://" + pathutil.TempDir(),
 		},
 		{
 			name: "tempMountFS",

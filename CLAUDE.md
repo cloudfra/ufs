@@ -124,6 +124,7 @@ enable its scheme. They may use `internal/` packages.
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
+| drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/testing/         | Generic fs.FS conformance tests for drivers (no ufs dependency)  |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
@@ -141,6 +142,7 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
+| internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | conformance_test.go   | Backend test-case lists; runs every backend through drivers/testing |
 | assets_test.go        | Test asset loading helpers                                          |

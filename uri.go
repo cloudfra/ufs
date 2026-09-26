@@ -14,7 +14,8 @@
 
 package ufs
 
-func uriOrDefault(fsys URIGet, value string) string {
+// URIOrDefault returns fsys's canonical URI, or value if fsys reports no URI.
+func URIOrDefault(fsys URIGet, value string) string {
 	u, err := fsys.URI()
 	if err != nil || u == nil {
 		return value

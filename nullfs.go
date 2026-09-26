@@ -48,12 +48,12 @@ var (
 		sys:     nil,
 	}
 
-	nullDeviceInfo    = newDeviceInfo("null", "null", 1, false)
-	nullDeviceInfoMap = newDeviceInfoMap(nullDeviceInfo)
+	nullDeviceInfo    = NewDeviceInfo("null", "null", 1, false)
+	nullDeviceInfoMap = NewDeviceMap(nullDeviceInfo)
 )
 
 func init() {
-	Register(newDriver("null", newNullFS, isNullFSUri, 1, false, true))
+	Register(NewDriver("null", newNullFS, isNullFSUri, 1, false, true))
 }
 
 type nullFile struct {
@@ -130,7 +130,7 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *nullFS) GetDeviceInfo() DeviceMap {
 	return nullDeviceInfoMap
 }
 
@@ -146,7 +146,7 @@ func (fsys *nullFS) URI() (*url.URL, error) {
 }
 
 func (fsys *nullFS) String() string {
-	return fmt.Sprintf("nullFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("nullFS(%s)", URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *nullFS) Open(name string) (fs.File, error) {

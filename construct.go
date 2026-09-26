@@ -196,7 +196,8 @@ func openNestFS(ctx context.Context, name string) (*nestFS, error) {
 }
 
 // FSBuilder composes an [FS] from a root URI and a set of mounts that may be
-// specified as URI strings or as pre-built [FS] instances (e.g. [NewEmbedFS]).
+// specified as URI strings or as pre-built [FS] instances (e.g.
+// github.com/cloudfra/ufs/drivers/embedfs.New).
 // Call [NewFSBuilder] to create one, chain [FSBuilder.Mount] /
 // [FSBuilder.MountFS] to add mounts, then call [FSBuilder.Build] or
 // [FSBuilder.BuildURI].
@@ -278,8 +279,10 @@ func (b *FSBuilder) BuildURI() (string, error) {
 }
 
 func newBaseFS(ctx context.Context, name string) (FS, error) {
-	if strings.HasPrefix(name, embedFSPrefix) {
-		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("embed:// file systems must be created with NewEmbedFS, not New(): %w", fs.ErrInvalid))
+	// drivers/embedfs wraps a Go embed.FS directly and has no URI-based
+	// constructor; give a clear error instead of an unhelpful "not found".
+	if strings.HasPrefix(name, "embed://") {
+		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("embed:// file systems must be created with drivers/embedfs.New, not New(): %w", fs.ErrInvalid))
 	}
 	r := getRegistrar()
 	driver, err := r.match(name)

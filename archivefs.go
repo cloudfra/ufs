@@ -45,15 +45,15 @@ var (
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
-	archiveDeviceInfo    = newDeviceInfo("archive", "archive", 1, false)
-	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
+	archiveDeviceInfo    = NewDeviceInfo("archive", "archive", 1, false)
+	archiveDeviceInfoMap = NewDeviceMap(archiveDeviceInfo)
 )
 
 func init() {
-	Register(newDriver("archive", func(ctx context.Context, name string) (FS, error) {
+	Register(NewDriver("archive", func(ctx context.Context, name string) (FS, error) {
 		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
 	}, isArchiveFSUri, 1, true, false))
-	Register(newDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
+	Register(NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 
 func isArchiveFSUri(name string) bool {
@@ -85,7 +85,7 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 }
 
-func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *archiveFS) GetDeviceInfo() DeviceMap {
 	return archiveDeviceInfoMap
 }
 
@@ -148,7 +148,7 @@ func (fsys *archiveFS) URI() (*url.URL, error) {
 }
 
 func (fsys *archiveFS) String() string {
-	return fmt.Sprintf("archiveFS(%s)", uriOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("archiveFS(%s)", URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {

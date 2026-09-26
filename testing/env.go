@@ -14,20 +14,12 @@
 
 package testing
 
-// Host-environment helpers: temp directories and platform-based skips.
+// Host-environment helpers: platform-based skips.
 
 import (
-	"os"
 	"runtime"
 	"testing"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
-
-// TempDir returns the OS temp directory with forward slashes.
-func TempDir() string {
-	return pathutil.CoerceUnix(os.TempDir())
-}
 
 // SkipUnlessFSNotifySupported skips the test on platforms fsnotify does not
 // support.

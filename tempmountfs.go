@@ -35,7 +35,7 @@ type tempMountFS struct {
 }
 
 func (fsys *tempMountFS) getDeviceInfo() map[string]deviceInfo {
-	return fsys.lfs.getDeviceInfo()
+	return getDeviceInfoOrDefault(fsys.lfs)
 }
 
 func (fsys *tempMountFS) URI() (*url.URL, error) {

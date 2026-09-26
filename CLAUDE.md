@@ -67,6 +67,7 @@ Dispatches to the appropriate implementation based on URI scheme:
 | gs://...      | gcsfs.go         | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS              |
 | git://...     | gitfs.go         | --        | ro       | Impl.   | Reads from a git repo (clones on first open)             |
 | archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
+| bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
 
 ### Layering / nesting
 
@@ -123,6 +124,7 @@ enable its scheme. They may use `internal/` packages.
 
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|
+| drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;

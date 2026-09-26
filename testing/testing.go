@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"math/rand/v2"
+	"os"
 	"reflect"
 	"runtime"
 	"sort"
@@ -29,6 +30,9 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 //go:embed testassets/files
@@ -232,4 +236,24 @@ func SeedData(seed byte, n int) []byte {
 		return append(rep, bytes.Repeat([]byte{seed ^ 1}, n-len(rep))...)
 	}
 	return rep[:n]
+}
+
+// TempDir returns the OS temp directory with forward slashes.
+func TempDir() string {
+	return pathutil.CoerceUnix(os.TempDir())
+}
+
+// MkdirTemp creates a new temp directory and removes it when tb finishes.
+func MkdirTemp(tb testing.TB) string {
+	tb.Helper()
+	dir, err := osutil.MkdirTemp("", "")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() {
+		if err := osutil.RemoveAll(dir); err != nil {
+			tb.Error(err)
+		}
+	})
+	return dir
 }

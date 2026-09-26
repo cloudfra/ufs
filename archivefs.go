@@ -46,7 +46,7 @@ var (
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
 	archiveDeviceInfo    = newDeviceInfo("archive", "archive", 1, false)
-	archiveDeviceInfoMap = newDeviceInfoMap(archiveDeviceInfo)
+	archiveDeviceInfoMap = NewDeviceMap(archiveDeviceInfo)
 )
 
 func init() {
@@ -85,7 +85,7 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 }
 
-func (fsys *archiveFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *archiveFS) GetDeviceInfo() DeviceMap {
 	return archiveDeviceInfoMap
 }
 

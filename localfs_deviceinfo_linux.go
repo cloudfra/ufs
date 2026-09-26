@@ -28,7 +28,7 @@ import (
 
 const procMountsPath = "/proc/self/mounts"
 
-func (fsys *localFS) getDeviceInfo() map[string]deviceInfo {
+func (fsys *localFS) GetDeviceInfo() DeviceMap {
 	rootPath := fsys.osFS.Name()
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath
@@ -51,7 +51,7 @@ type linuxMountEntry struct {
 	fsType     string
 }
 
-func linuxDeviceMapFromReader(rootPath string, r io.Reader) map[string]deviceInfo {
+func linuxDeviceMapFromReader(rootPath string, r io.Reader) DeviceMap {
 	entries := parseLinuxMounts(r)
 	return buildLinuxDeviceMap(rootPath, entries)
 }
@@ -80,8 +80,8 @@ func parseLinuxMounts(r io.Reader) []linuxMountEntry {
 	return entries
 }
 
-func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]deviceInfo {
-	result := map[string]deviceInfo{".": defaultDeviceInfo}
+func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) DeviceMap {
+	result := DeviceMap{".": defaultDeviceInfo}
 
 	// Find the mount that best covers rootPath (longest prefix match).
 	bestMatchLen := -1
@@ -102,7 +102,7 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]
 			continue
 		}
 		di := linuxMakeDeviceInfo(m)
-		if di.name != getParentDeviceInfo(result, rel).name {
+		if di.name != result.parent(rel).name {
 			result[rel] = di
 		}
 	}
@@ -110,7 +110,7 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) map[string]
 	return result
 }
 
-func linuxMakeDeviceInfo(m linuxMountEntry) deviceInfo {
+func linuxMakeDeviceInfo(m linuxMountEntry) DeviceInfo {
 	dt, tc := linuxDeviceTypeAndThreads(m)
 	name := m.device
 	if name == "none" || name == "" {

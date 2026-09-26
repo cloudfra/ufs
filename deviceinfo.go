@@ -26,20 +26,24 @@ var (
 	// defaultDeviceInfo is returned when the backing device is not known.
 	//
 	// This signals to ufs that the FS should be treated as unoptimized for features such as parallel directory walking.
-	defaultDeviceInfo = deviceInfo{
+	defaultDeviceInfo = DeviceInfo{
 		name:        "default",
 		deviceType:  "unknown",
 		threadCount: 1,
 	}
 
 	// defaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
-	defaultDeviceMap = map[string]deviceInfo{
+	defaultDeviceMap = DeviceMap{
 		".": defaultDeviceInfo,
 	}
 )
 
-// deviceInfo contains platform agnostic information about the backing device of this file system.
-type deviceInfo struct {
+// DeviceInfo contains platform agnostic information about the backing device
+// of this file system. It embeds [fmt.Stringer] to declare that conformance
+// at the type level; the implementation is the String method below.
+type DeviceInfo struct {
+	fmt.Stringer
+
 	// name of the device as specified by the OS or the ufs implementation
 	name string
 	// deviceType is the type of device that backs the FS.
@@ -50,8 +54,8 @@ type deviceInfo struct {
 	remote bool
 }
 
-func newDeviceInfo(name string, deviceType string, threadCount int, remote bool) deviceInfo {
-	return deviceInfo{
+func newDeviceInfo(name string, deviceType string, threadCount int, remote bool) DeviceInfo {
+	return DeviceInfo{
 		name:        name,
 		deviceType:  deviceType,
 		threadCount: threadCount,
@@ -59,54 +63,49 @@ func newDeviceInfo(name string, deviceType string, threadCount int, remote bool)
 	}
 }
 
-// String representation of deviceInfo.
-func (info deviceInfo) String() string {
+// String representation of DeviceInfo.
+func (info DeviceInfo) String() string {
 	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d, remote: %t}", info.name, info.deviceType, info.threadCount, info.remote)
 }
 
-// deviceInfoGet provides an interface to obtain the device backend information of a FS.
-type deviceInfoGet interface {
-	// getDeviceInfo returns a map based on the relative path of the device.
-	//
-	// The root of the FS has the key ".".
-	getDeviceInfo() map[string]deviceInfo
+// DeviceMap maps a device-relative path to the [DeviceInfo] of the device
+// that backs it. The root of the FS has the key ".".
+type DeviceMap map[string]DeviceInfo
+
+// NewDeviceMap returns a DeviceMap holding only the root's DeviceInfo.
+func NewDeviceMap(root DeviceInfo) DeviceMap {
+	return DeviceMap{".": root}
 }
 
-// TODO: Create a deviceMap that encapsulates the map[string]deviceInfo
-
-func newDeviceInfoMap(rootDeviceInfo deviceInfo) map[string]deviceInfo {
-	return map[string]deviceInfo{
-		".": rootDeviceInfo,
-	}
-}
-
-func combineDeviceInfo(src map[string]deviceInfo, mountPath string, incoming map[string]deviceInfo) map[string]deviceInfo {
+// combine merges dm with incoming, whose paths are relative to mountPath, and
+// returns the result. An incoming path is dropped as redundant when it names
+// the same device as its nearest ancestor already in dm.
+func (dm DeviceMap) combine(mountPath string, incoming DeviceMap) DeviceMap {
 	if len(incoming) == 0 {
-		if len(src) == 0 {
-			return map[string]deviceInfo{}
+		if len(dm) == 0 {
+			return DeviceMap{}
 		}
-		if len(incoming) == 0 {
-			return src
-		}
+		return dm
 	}
 
-	combined := map[string]deviceInfo{}
-	maps.Copy(combined, src)
+	combined := DeviceMap{}
+	maps.Copy(combined, dm)
 
-	for k, nestedDeviceInfo := range incoming {
+	for k, nested := range incoming {
 		fullPath := path.Join(mountPath, k)
-		parentDeviceInfo := getParentDeviceInfo(combined, fullPath)
-		if nestedDeviceInfo.name != parentDeviceInfo.name {
-			combined[fullPath] = nestedDeviceInfo
+		parent := combined.parent(fullPath)
+		if nested.name != parent.name {
+			combined[fullPath] = nested
 		}
 	}
 
 	return combined
 }
 
-func getParentDeviceInfo(m map[string]deviceInfo, mountPath string) deviceInfo {
+// parent returns the DeviceInfo of mountPath's nearest ancestor in dm.
+func (dm DeviceMap) parent(mountPath string) DeviceInfo {
 	longest := "."
-	for k := range m {
+	for k := range dm {
 		if k == "." {
 			continue
 		}
@@ -114,12 +113,20 @@ func getParentDeviceInfo(m map[string]deviceInfo, mountPath string) deviceInfo {
 			longest = k
 		}
 	}
-	return m[longest]
+	return dm[longest]
 }
 
-func getDeviceInfoOrDefault(fsys fs.FS) map[string]deviceInfo {
-	if diFsys, ok := fsys.(deviceInfoGet); ok {
-		return diFsys.getDeviceInfo()
+// DeviceInfoGetter provides an interface to obtain the device backend information of a FS.
+type DeviceInfoGetter interface {
+	// GetDeviceInfo returns a map based on the relative path of the device.
+	//
+	// The root of the FS has the key ".".
+	GetDeviceInfo() DeviceMap
+}
+
+func getDeviceInfoOrDefault(fsys fs.FS) DeviceMap {
+	if diFsys, ok := fsys.(DeviceInfoGetter); ok {
+		return diFsys.GetDeviceInfo()
 	}
 	return defaultDeviceMap
 }

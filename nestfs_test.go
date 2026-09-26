@@ -614,7 +614,7 @@ func TestNestFSRemoveAll(t *testing.T) {
 }
 
 func TestNestFSGlobFallback(t *testing.T) {
-	// archiveFS does not implement fs.GlobFS, triggering the globFS fallback in nestFS.
+	// archiveFS does not implement fs.GlobFS, triggering the globutil fallback in nestFS.
 	afs := mustArchiveFS(t)
 	nfs := makeNestFS(t.Context(), afs)
 	defer ufsTesting.ValidateClose(t, nfs)()

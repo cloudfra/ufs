@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -605,7 +606,7 @@ func (fsys *nestFS) Glob(pattern string) ([]string, error) {
 	if cFsys, ok := fsys.fsys.(fs.GlobFS); ok {
 		return cFsys.Glob(pattern)
 	}
-	return globFS(fsys, pattern)
+	return globutil.GlobFS(fsys, pattern)
 }
 
 func (fsys *nestFS) validPath(op string, name string) error {

@@ -619,6 +619,16 @@ func (fsys *nestFS) validPath(op string, name string) error {
 	return nil
 }
 
+// NewNestFS returns a nested file system described by the URI name.
+func NewNestFS(ctx context.Context, name string) (FS, error) {
+	return newNestFS(ctx, name)
+}
+
+// WrapNestFS wraps fsys in a nested file system with no additional mounts.
+func WrapNestFS(ctx context.Context, fsys WriteFS) FS {
+	return makeNestFS(ctx, fsys)
+}
+
 func newNestFS(ctx context.Context, name string) (FS, error) {
 	fsys, err := newBaseFS(ctx, name)
 	if err != nil {
@@ -627,7 +637,7 @@ func newNestFS(ctx context.Context, name string) (FS, error) {
 	return makeNestFS(ctx, fsys), nil
 }
 
-func makeNestFS(ctx context.Context, fsys FS, args ...FSArgs) *nestFS {
+func makeNestFS(ctx context.Context, fsys WriteFS, args ...FSArgs) *nestFS {
 	var a FSArgs
 	if len(args) > 0 {
 		a = args[0]

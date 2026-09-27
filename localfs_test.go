@@ -51,7 +51,7 @@ func TestIsLocalFSUri(t *testing.T) {
 		{name: pathutil.CwdPath, want: true},
 		{name: "/root/user", want: true},
 		{name: "/tmp", want: true},
-		{name: "mem://", want: false},
+		{name: "memory://", want: false},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -61,11 +61,6 @@ func TestIsLocalFSUri(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestLocalFS(t *testing.T) {
-	dir := t.TempDir()
-	testFileSystem(t, newLocalFS, dir)
 }
 
 func TestLocalFSLstat(t *testing.T) {

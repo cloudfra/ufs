@@ -34,6 +34,17 @@ func NewPathError(op string, name string, err error) error {
 	}
 }
 
+// ChangePathErrorOp sets Op to op when err is an [*fs.PathError], modifying
+// err in place, and returns val and err unchanged otherwise. It lets a method
+// that delegates to another (such as Lstat calling Stat) report its own op.
+func ChangePathErrorOp[T any](val T, err error, op string) (T, error) {
+	if perr, ok := err.(*fs.PathError); ok {
+		perr.Op = op
+		return val, err
+	}
+	return val, err
+}
+
 // Join returns nil if all errs are nil, returns the single non-nil error
 // directly (without wrapping) if exactly one is non-nil, or [errors.Join]
 // when multiple are non-nil. This avoids the join wrapper overhead and the

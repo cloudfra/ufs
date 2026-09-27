@@ -16,7 +16,9 @@ package ufs
 
 import (
 	"io/fs"
+	"net/url"
 
+	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -36,6 +38,21 @@ func ReadOnly(inner ReadFS) FS {
 	return &readOnlyFS{
 		ReadFS: inner,
 	}
+}
+
+func (fsys *readOnlyFS) URI() (*url.URL, error) {
+	u, err := fsys.ReadFS.URI()
+	if err != nil {
+		return nil, err
+	}
+	v := u.Query()
+	v.Set("ro", "true")
+	u.RawQuery = v.Encode()
+	return u, nil
+}
+
+func (fsys *readOnlyFS) String() string {
+	return fsutil.String(fsys.ReadFS)
 }
 
 func (fsys *readOnlyFS) Create(name string) (File, error) {

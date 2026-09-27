@@ -29,7 +29,7 @@ func TestIsAngryFSUri(t *testing.T) {
 		{name: "angry:", want: true},
 		{name: "angry://", want: true},
 		{name: "angryfs://", want: false},
-		{name: "mem://", want: false},
+		{name: "memory://", want: false},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

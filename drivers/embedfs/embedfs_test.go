@@ -23,8 +23,15 @@ import (
 	"testing/fstest"
 
 	"github.com/cloudfra/ufs"
+	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
+
+func TestDriverTest(t *testing.T) {
+	ufsdriversTesting.ReadFS(t, func(t *testing.T) ufs.ReadFS {
+		return makeTestEmbedFS(t, "ok")
+	})
+}
 
 func makeTestEmbedFS(t *testing.T, name string) ufs.FS {
 	t.Helper()

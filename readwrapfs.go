@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -36,12 +37,22 @@ func (fsys *readWrapFS) GetDeviceInfo() DeviceMap {
 
 func (fsys *readWrapFS) URI() (*url.URL, error) {
 	if ug, ok := fsys.fsys.(URIGet); ok {
-		return ug.URI()
+		u, err := ug.URI()
+		if err != nil {
+			return nil, err
+		}
+		v := u.Query()
+		v.Set("ro", "true")
+		u.RawQuery = v.Encode()
+		return u, nil
 	}
 	return nil, nil
 }
 
 func (fsys *readWrapFS) String() string {
+	if _, ok := fsys.fsys.(fmt.Stringer); ok {
+		return fmt.Sprintf("readWrapFS(%s)", fsutil.String(fsys.fsys))
+	}
 	return fmt.Sprintf("readWrapFS(%T)", fsys.fsys)
 }
 

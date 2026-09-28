@@ -18,6 +18,22 @@
 // that platform.
 //go:build !wasm
 
+// Package boltfs registers the "bolt:" ufs driver, a read-write file system
+// stored in a single BoltDB (go.etcd.io/bbolt) file. Import it for its side
+// effect to make bolt: URIs available to [ufs.New]:
+//
+//	import _ "github.com/cloudfra/ufs/drivers/boltfs"
+//
+//	fsys, err := ufs.New(ctx, "bolt:/path/to/data.db")
+//
+// The equivalent bolt:///path/to/data.db form is also accepted; it is the form
+// the file system's URI method returns.
+//
+// Directories are nested buckets and files are key/value entries in their
+// parent directory's bucket. Writes to an open file are buffered in memory
+// and committed to the database, in a single transaction, when the file is
+// closed. The driver is unavailable on GOARCH=wasm, where bbolt does not
+// build; there, bolt: URIs return an error.
 package boltfs
 
 import (
@@ -63,6 +79,15 @@ var (
 
 	errIsDirectory = errors.New("is a directory")
 )
+
+const (
+	boltFSScheme = "bolt"
+	boltFSPrefix = boltFSScheme + ":"
+)
+
+func isBoltFSUri(name string) bool {
+	return strings.HasPrefix(name, boltFSPrefix)
+}
 
 func init() {
 	ufs.Register(ufs.Driver{

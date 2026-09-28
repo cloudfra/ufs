@@ -26,24 +26,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/cloudfra/ufs"
+	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
-
-func writeTestFile(t *testing.T, fsys ufs.FS, name, content string) {
-	t.Helper()
-	f, err := fsys.Create(name)
-	if err != nil {
-		t.Fatalf("Create(%q) = %v", name, err)
-	}
-	if _, err := f.WriteString(content); err != nil {
-		t.Fatalf("WriteString(%q) = %v", name, err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("Close(%q) = %v", name, err)
-	}
-}
 
 // TestBoltFSViaNew verifies the driver registers itself with ufs so that
 // bolt: URIs resolve through the public factory.
@@ -55,7 +42,7 @@ func TestBoltFSViaNew(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	writeTestFile(t, fsys, "dir/file.txt", "via new")
+	ufsdriversTesting.WriteFile(t, fsys, "dir/file.txt", "via new")
 	ufsTesting.AssertContains(t, fsys, "dir/file.txt", "via new")
 }
 
@@ -81,7 +68,7 @@ func TestBoltFSReopenPersists(t *testing.T) {
 	if err := fsys.MkdirAll("a/b", 0o750); err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, fsys, "a/b/c.txt", "persisted")
+	ufsdriversTesting.WriteFile(t, fsys, "a/b/c.txt", "persisted")
 	if err := fsys.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +140,7 @@ func TestBoltFSCreateOnDirectory(t *testing.T) {
 // Create and MkdirAll under a file, but only requires Stat to fail.
 func TestBoltFSFileAsParent(t *testing.T) {
 	fsys := newTestBoltFS(t)
-	writeTestFile(t, fsys, "file", "x")
+	ufsdriversTesting.WriteFile(t, fsys, "file", "x")
 	if _, err := fsys.Stat("file/child.txt"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(file/child.txt) = %v, want fs.ErrNotExist", err)
 	}
@@ -165,7 +152,7 @@ func TestBoltFSFileAsParent(t *testing.T) {
 func TestBoltFSNamesSortingBeforeSelfKey(t *testing.T) {
 	fsys := newTestBoltFS(t)
 	for _, name := range []string{"dir/-dash", "dir/!bang", "dir/zeta", "dir/Alpha"} {
-		writeTestFile(t, fsys, name, name)
+		ufsdriversTesting.WriteFile(t, fsys, name, name)
 	}
 	if err := fsys.MkdirAll("dir/+sub", fs.ModePerm); err != nil {
 		t.Fatal(err)
@@ -183,7 +170,7 @@ func TestBoltFSNamesSortingBeforeSelfKey(t *testing.T) {
 	if err := fsys.MkdirAll("only", fs.ModePerm); err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, fsys, "only/-first", "x")
+	ufsdriversTesting.WriteFile(t, fsys, "only/-first", "x")
 	if err := fsys.Remove("only"); !errors.Is(err, ufserrors.ErrDirNotEmpty) {
 		t.Errorf("Remove(only) = %v, want directory not empty", err)
 	}
@@ -215,7 +202,7 @@ func TestBoltFileCloseAfterFSClose(t *testing.T) {
 
 func TestBoltFileOpenedForReadCloseIsNoop(t *testing.T) {
 	fsys := newTestBoltFS(t)
-	writeTestFile(t, fsys, "r.txt", "read only")
+	ufsdriversTesting.WriteFile(t, fsys, "r.txt", "read only")
 	f, err := fsys.Open("r.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +228,7 @@ func TestBoltFileOpenedForReadCloseIsNoop(t *testing.T) {
 
 func TestBoltFSWatchOnFile(t *testing.T) {
 	fsys := newTestBoltFS(t)
-	writeTestFile(t, fsys, "file.txt", "x")
+	ufsdriversTesting.WriteFile(t, fsys, "file.txt", "x")
 	_, err := fsys.(ufs.Watcher).Watch(t.Context(), "file.txt", func(ufs.NotifyOp, string) {})
 	if !errors.Is(err, fs.ErrInvalid) {
 		t.Errorf("Watch(file.txt) = %v, want fs.ErrInvalid", err)
@@ -254,7 +241,7 @@ func TestBoltFSURIAndString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, fsys, "a.txt", "hello")
+	ufsdriversTesting.WriteFile(t, fsys, "a.txt", "hello")
 	u, err := fsys.URI()
 	if err != nil {
 		t.Fatal(err)

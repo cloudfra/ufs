@@ -39,3 +39,19 @@ func FS(t *testing.T, createFSFunc func(t *testing.T) ufs.FS) {
 		return createFSFunc(t)
 	})
 }
+
+// WriteFile creates name in fsys with content, stopping the test if Create,
+// the write, or Close fails.
+func WriteFile(tb testing.TB, fsys ufs.WriteFS, name, content string) {
+	tb.Helper()
+	f, err := fsys.Create(name)
+	if err != nil {
+		tb.Fatalf("Create(%q) = %v", name, err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		tb.Fatalf("WriteString(%q) = %v", name, err)
+	}
+	if err := f.Close(); err != nil {
+		tb.Fatalf("Close(%q) = %v", name, err)
+	}
+}

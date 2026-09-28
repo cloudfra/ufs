@@ -19,9 +19,18 @@ package boltfs
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cloudfra/ufs"
 )
+
+// boltFSPrefix and isBoltFSUri mirror boltfs.go, which does not build on
+// GOARCH=wasm.
+const boltFSPrefix = "bolt:"
+
+func isBoltFSUri(name string) bool {
+	return strings.HasPrefix(name, boltFSPrefix)
+}
 
 func init() {
 	ufs.Register(ufs.Driver{

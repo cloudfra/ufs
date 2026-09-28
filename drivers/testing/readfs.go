@@ -17,6 +17,9 @@
 package testing
 
 import (
+	"io/fs"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -160,6 +163,27 @@ func assertDirFileTreeUnchanged(t *testing.T, fsys ufs.ReadFS) {
 	for _, name := range []string{"dir/file/x", "dir/file/x/y"} {
 		if info, err := fsys.Stat(name); err == nil {
 			t.Errorf("Stat(%q) = (%v, nil), want an error", name, info)
+		}
+	}
+}
+
+// OpenWithNew verifies that [ufs.New] opens uri, which checks that the driver
+// for uri is registered, and that each file in want holds exactly its
+// content. Drivers outside the ufs package register on import, so call it from
+// the driver's own tests.
+func OpenWithNew(t *testing.T, uri string, want map[string]string) {
+	t.Helper()
+	fsys, err := ufs.New(t.Context(), uri)
+	if err != nil {
+		t.Fatalf("ufs.New(%q) = %v, want nil", uri, err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	for _, name := range slices.Sorted(maps.Keys(want)) {
+		got, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			t.Errorf("ReadFile(%q) = %v, want nil", name, err)
+		} else if string(got) != want[name] {
+			t.Errorf("ReadFile(%q) = %q, want %q", name, got, want[name])
 		}
 	}
 }

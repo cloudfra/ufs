@@ -14,7 +14,7 @@
 
 //go:build !aix
 
-package ufs
+package gitfs
 
 import (
 	"io"
@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -92,8 +93,8 @@ func TestNewGitFSInvalid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := newGitFS(t.Context(), tt.url); err == nil {
-				t.Fatalf("newGitFS(%q) = nil error, want error", tt.url)
+			if _, err := New(t.Context(), tt.url); err == nil {
+				t.Fatalf("New(%q) = nil error, want error", tt.url)
 			}
 		})
 	}
@@ -117,9 +118,9 @@ func TestNewGitFSLocalRepo(t *testing.T) {
 		t.Fatalf("initTestGitRepo: %v", err)
 	}
 
-	fsys, err := newGitFS(t.Context(), srcDir)
+	fsys, err := New(t.Context(), srcDir)
 	if err != nil {
-		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
+		t.Fatalf("New(%q) = %v, want nil", srcDir, err)
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
@@ -155,9 +156,9 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 		t.Fatalf("initTestGitRepo: %v", err)
 	}
 
-	fsys, err := newGitFS(t.Context(), srcDir)
+	fsys, err := New(t.Context(), srcDir)
 	if err != nil {
-		t.Fatalf("newGitFS(%q) = %v, want nil", srcDir, err)
+		t.Fatalf("New(%q) = %v, want nil", srcDir, err)
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
@@ -165,6 +166,17 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 	if _, err := fsys.Open(".git"); err == nil {
 		t.Error("Open(\".git\") succeeded, want error — .git dir should be removed")
 	}
+}
+
+// TestNewViaUFSNew checks that importing the package registers the driver,
+// so ufs.New opens a ".git" URI with it.
+func TestNewViaUFSNew(t *testing.T) {
+	srcDir := filepath.Join(t.TempDir(), "src.git")
+	want := map[string]string{"hello.txt": "via ufs.New"}
+	if err := initTestGitRepo(t, srcDir, want); err != nil {
+		t.Fatalf("initTestGitRepo: %v", err)
+	}
+	ufsdriversTesting.OpenWithNew(t, srcDir, want)
 }
 
 // initTestGitRepo creates a git repo at dir with the given files committed.

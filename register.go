@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 )
 
@@ -51,6 +52,11 @@ type Driver struct {
 
 	// ReadWrite indicates that the driver supports read-write operations.
 	ReadWrite bool
+
+	// Params reports whether a URI query key is a parameter of this driver.
+	// [New] leaves claimed keys on the URI it passes to CreateFunc and treats
+	// every other key as a nested mount. Nil claims no keys.
+	Params func(key string) bool
 }
 
 // NewDriver builds a Driver configuration for a file system driver, to be passed to Register.
@@ -126,6 +132,28 @@ func (r *registrar) match(name string) (Driver, error) {
 		return emptyRegistration, fmt.Errorf("cannot find a ufs file system driver for %q", name)
 	}
 	return result, nil
+}
+
+// splitParams moves the query keys that name's driver claims through
+// Driver.Params from vals into the returned values, leaving only nested
+// mounts in vals. It returns nil if no driver matches name or the driver
+// claims no keys.
+func (r *registrar) splitParams(name string, vals url.Values) url.Values {
+	reg, err := r.match(name)
+	if err != nil || reg.Params == nil {
+		return nil
+	}
+	var params url.Values
+	for key, val := range vals {
+		if reg.Params(key) {
+			if params == nil {
+				params = url.Values{}
+			}
+			params[key] = val
+			delete(vals, key)
+		}
+	}
+	return params
 }
 
 func (r *registrar) create(ctx context.Context, name string) (FS, error) {

@@ -15,12 +15,14 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -560,5 +562,42 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestNewKeepsDriverParams checks that New leaves the query keys a driver
+// claims through Driver.Params on the URI it passes to that driver, and still
+// treats every other key as a nested mount.
+func TestNewKeepsDriverParams(t *testing.T) {
+	t.Parallel()
+
+	scheme := uniqueDriverName("paramtest")
+	var gotName atomic.Value
+	Register(Driver{
+		Name: scheme,
+		CreateFunc: func(_ context.Context, name string) (FS, error) {
+			gotName.Store(name)
+			return makeMemFS(name), nil
+		},
+		MatchFunc: func(name string) bool { return strings.HasPrefix(name, scheme+":") },
+		Params:    func(key string) bool { return key == "opt" || key == "other" },
+		Priority:  1,
+	})
+
+	fsys, err := New(t.Context(), scheme+"://host/dir?opt=1&other=a%26b&sub=memory%3A%2F%2F")
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+	if got, want := gotName.Load(), scheme+"://host/dir?opt=1&other=a%26b"; got != want {
+		t.Errorf("driver received %q, want %q", got, want)
+	}
+	info, err := fsys.Stat("sub")
+	if err != nil {
+		t.Fatalf("Stat(%q) = %v, want the nested mount", "sub", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("Stat(%q).IsDir() = false, want true", "sub")
 	}
 }

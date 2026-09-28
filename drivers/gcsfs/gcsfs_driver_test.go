@@ -15,6 +15,7 @@
 package gcsfs_test
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -33,4 +34,32 @@ func TestGCSFSDriver(t *testing.T) {
 		}
 		return fsys
 	})
+}
+
+// TestNewKeepsSubscription checks that ufs.New passes the subscription query
+// parameter to gcsFS instead of treating it as a nested mount point.
+func TestNewKeepsSubscription(t *testing.T) {
+	// Point the client at an unreachable emulator: New makes no requests, and
+	// this keeps the test from looking for real credentials.
+	t.Setenv("STORAGE_EMULATOR_HOST", "127.0.0.1:1")
+
+	const subscription = "projects/my-proj/subscriptions/my-sub"
+	name := "gs://first/dir?subscription=" + url.QueryEscape(subscription)
+	fsys, err := ufs.New(t.Context(), name)
+	if err != nil {
+		t.Fatalf("ufs.New(%q) = %v, want nil", name, err)
+	}
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v, want nil", err)
+		}
+	})
+
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	if got := u.Query().Get("subscription"); got != subscription {
+		t.Errorf("URI() subscription = %q, want %q", got, subscription)
+	}
 }

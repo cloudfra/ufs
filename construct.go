@@ -156,6 +156,9 @@ func nameToURI(name string) (*url.URL, error) {
 // contents. No explicit configuration is required.
 //
 // Use [CreateURI] to pre-configure additional mount points before calling New.
+// Query keys that the base URI's driver claims through [Driver].Params (for
+// example gs://bucket?subscription=...) stay on the base URI instead of being
+// treated as mount points.
 func New(ctx context.Context, name string) (FS, error) {
 	if specs := parseMountSpec(name); specs != nil {
 		return newFromMountSpec(ctx, specs)
@@ -165,9 +168,13 @@ func New(ctx context.Context, name string) (FS, error) {
 		baseURI := *u
 		baseURI.RawQuery = ""
 		baseURI.Fragment = ""
+		mounts := u.Query()
+		if params := getRegistrar().splitParams(baseURI.String(), mounts); params != nil {
+			baseURI.RawQuery = params.Encode()
+		}
 		nFS, err := openNestFS(ctx, baseURI.String())
 		if err == nil {
-			for mountPath, mountURI := range u.Query() {
+			for mountPath, mountURI := range mounts {
 				if mountPath == "ro" {
 					continue
 				}

@@ -52,7 +52,15 @@ var (
 )
 
 func init() {
-	ufs.Register(ufs.NewDriver("gcs", New, isGCSFSUri, 1, true, true))
+	driver := ufs.NewDriver("gcs", New, isGCSFSUri, 1, true, true)
+	driver.Params = isGCSFSParam
+	ufs.Register(driver)
+}
+
+// isGCSFSParam reports whether key is a gs:// URI query parameter, so ufs.New
+// keeps it on the URI instead of treating it as a nested mount.
+func isGCSFSParam(key string) bool {
+	return key == "subscription"
 }
 
 type gcsFS struct {

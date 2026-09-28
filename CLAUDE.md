@@ -120,7 +120,9 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 
 Drivers outside the base package import `ufs` (never the reverse) and register
 themselves in `init()` via `ufs.Register`; callers blank-import the package to
-enable its scheme. They may use `internal/` packages.
+enable its scheme. They may use `internal/` packages. A driver that reads URI
+query parameters sets `Driver.Params` to claim those keys; otherwise `New`
+treats every query key (except `ro`) as a nested mount point.
 
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|

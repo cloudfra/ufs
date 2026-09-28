@@ -65,7 +65,7 @@ Dispatches to the appropriate implementation based on URI scheme:
 | memory:       | memfs.go         | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
 | file:///...   | localfs.go       | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
-| git://...     | gitfs.go         | --        | ro       | Impl.   | Reads from a git repo (clones on first open)             |
+| git://...     | drivers/gitfs/   | --        | ro       | Impl.   | Reads from a git repo (clones on first open; blank-import drivers/gitfs) |
 | archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
 | bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
 
@@ -128,6 +128,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
+| drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;

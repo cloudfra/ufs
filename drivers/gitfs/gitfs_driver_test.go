@@ -12,21 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+//go:build !aix
+
+package gitfs
 
 import (
 	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/cloudfra/ufs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 func TestGitFSDriver(t *testing.T) {
@@ -50,39 +48,10 @@ func TestGitFSDriver(t *testing.T) {
 
 		// Use a file:// URI so String() reports a URI rather than a bare path.
 		srcURI := (&url.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(filepath.ToSlash(srcDir), "/")}).String()
-		fsys, err := ufs.MakeGitFS(t.Context(), srcURI)
+		fsys, err := New(t.Context(), srcURI)
 		if err != nil {
 			t.Fatalf("cannot create gitFS %q, %s", srcURI, err)
 		}
 		return fsys
 	})
-}
-
-// initTestGitRepo creates a git repo at dir with the given files committed.
-func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
-	t.Helper()
-	repo, err := git.PlainInit(dir, false)
-	if err != nil {
-		return err
-	}
-	for name, content := range files {
-		if err := osutil.WriteFile(filepath.Join(dir, name), []byte(content)); err != nil {
-			return err
-		}
-	}
-	w, err := repo.Worktree()
-	if err != nil {
-		return err
-	}
-	if err := w.AddGlob(pathutil.CwdPath); err != nil {
-		return err
-	}
-	_, err = w.Commit("init", &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Test",
-			Email: "test@test.com",
-			When:  time.Now(),
-		},
-	})
-	return err
 }

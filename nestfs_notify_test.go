@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs/drivers/testing/eventtest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -32,7 +33,7 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 		}
 	}()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -50,7 +51,7 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyCreate && ev.Path == "test.txt"
 	})
 }
@@ -67,7 +68,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 		}
 	}()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -86,7 +87,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 		t.Fatalf("failed to close file: %v", err)
 	}
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyCreate && ev.Path == "sub/inside.txt"
 	})
 
@@ -101,7 +102,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if ec.HasEvent(func(ev ufsTesting.Event[NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Path == "outside.txt"
 	}) {
 		t.Error("received event for file outside watched subdirectory")

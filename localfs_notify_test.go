@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs/drivers/testing/eventtest"
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -47,7 +48,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -61,7 +62,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyCreate && ev.Path == "hello.txt"
 	})
 
@@ -69,7 +70,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyWrite && ev.Path == "hello.txt"
 	})
 
@@ -77,7 +78,7 @@ func TestWatchCreateWriteRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyRemove && ev.Path == "hello.txt"
 	})
 }
@@ -96,7 +97,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -110,7 +111,7 @@ func TestWatchNestedPreExisting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyCreate && ev.Path == "a/b/deep.txt"
 	})
 }
@@ -123,7 +124,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 	skipIfUnsupported(t)
 
 	// startWatch watches a fresh directory and returns it with its collector.
-	startWatch := func(t *testing.T) (string, *ufsTesting.EventCollector[NotifyOp]) {
+	startWatch := func(t *testing.T) (string, *eventtest.EventCollector[NotifyOp]) {
 		t.Helper()
 		dir := t.TempDir()
 		fsys, err := makeLocalFS(dir)
@@ -132,7 +133,7 @@ func TestWatchNewDirRecursion(t *testing.T) {
 		}
 		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
-		ec := ufsTesting.NewEventCollector[NotifyOp]()
+		ec := eventtest.NewEventCollector[NotifyOp]()
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(cancel)
 
@@ -155,21 +156,21 @@ func TestWatchNewDirRecursion(t *testing.T) {
 		if err := osutil.Mkdir(filepath.Join(dir, "new")); err != nil {
 			t.Fatal(err)
 		}
-		ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 			return ev.Op == NotifyCreate && ev.Path == "new"
 		})
 
 		if err := osutil.Mkdir(filepath.Join(dir, "new", "sub")); err != nil {
 			t.Fatal(err)
 		}
-		ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 			return ev.Op == NotifyCreate && ev.Path == "new/sub"
 		})
 
 		if err := osutil.WriteFile(filepath.Join(dir, "new", "sub", "file.txt"), []byte("x")); err != nil {
 			t.Fatal(err)
 		}
-		ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 			return ev.Op == NotifyCreate && ev.Path == "new/sub/file.txt"
 		})
 	})
@@ -188,14 +189,14 @@ func TestWatchNewDirRecursion(t *testing.T) {
 		if err := os.Rename(filepath.Join(staging, "new"), filepath.Join(dir, "new")); err != nil {
 			t.Fatal(err)
 		}
-		ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 			return ev.Op == NotifyCreate && ev.Path == "new"
 		})
 
 		if err := osutil.WriteFile(filepath.Join(dir, "new", "sub", "file.txt"), []byte("x")); err != nil {
 			t.Fatal(err)
 		}
-		ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 			return ev.Op == NotifyCreate && ev.Path == "new/sub/file.txt"
 		})
 	})
@@ -211,7 +212,7 @@ func TestWatchCloseStopsDelivery(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -234,7 +235,7 @@ func TestWatchCloseStopsDelivery(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if ec.HasEvent(func(ev ufsTesting.Event[NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Path == "after.txt"
 	}) {
 		t.Error("received event after Close()")
@@ -251,7 +252,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 
 	closer, err := fsys.Watch(ctx, ".", ec.Hook)
@@ -271,7 +272,7 @@ func TestWatchCtxCancellation(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if ec.HasEvent(func(ev ufsTesting.Event[NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Path == "post_cancel.txt"
 	}) {
 		t.Error("received event after context cancellation")
@@ -292,7 +293,7 @@ func TestWatchSubdirectory(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -306,7 +307,7 @@ func TestWatchSubdirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyCreate && ev.Path == "watched/inside.txt"
 	})
 }
@@ -402,7 +403,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -433,7 +434,7 @@ func TestWatchRaceConcurrentFileCreation(t *testing.T) {
 	// coalesce events.
 	for w := range writers {
 		prefix := fmt.Sprintf("w%d_", w)
-		ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 			return ev.Op == NotifyCreate && len(ev.Path) >= len(prefix) && ev.Path[:len(prefix)] == prefix
 		})
 	}
@@ -449,7 +450,7 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -473,7 +474,7 @@ func TestWatchRaceRapidCreateDelete(t *testing.T) {
 	if err := osutil.WriteFile(filepath.Clean(filepath.Join(dir, "survivor.txt")), []byte("ok")); err != nil {
 		t.Fatal(err)
 	}
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Path == "survivor.txt"
 	})
 }
@@ -488,7 +489,7 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -513,14 +514,14 @@ func TestWatchRaceRapidDirNesting(t *testing.T) {
 	// The watcher must survive the rapid nesting. Verify by writing a file
 	// into one of the deep directories after a short settle and confirming
 	// the watcher still delivers events.
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Op == NotifyCreate
 	})
 
 	if err := osutil.WriteFile(filepath.Clean(filepath.Join(dir, "still_alive.txt")), []byte("ok")); err != nil {
 		t.Fatal(err)
 	}
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Path == "still_alive.txt"
 	})
 }
@@ -576,7 +577,7 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	ec := ufsTesting.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -597,7 +598,7 @@ func TestWatchRaceDirRemoveDuringWatch(t *testing.T) {
 	if err := osutil.WriteFile(filepath.Clean(filepath.Join(dir, "after_rmdir.txt")), []byte("ok")); err != nil {
 		t.Fatal(err)
 	}
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
 		return ev.Path == "after_rmdir.txt"
 	})
 }

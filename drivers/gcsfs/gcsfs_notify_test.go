@@ -23,6 +23,7 @@ import (
 	"cloud.google.com/go/pubsub/v2/pstest"
 	"cloud.google.com/go/storage"
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/testing/eventtest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -312,7 +313,7 @@ func newPstestGCSFS(tb testing.TB, bucket string, baseDir string) (*gcsFS, *pste
 func TestGCSWatchPubSub(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "data")
 
-	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -328,7 +329,7 @@ func TestGCSWatchPubSub(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Op == ufs.NotifyCreate && ev.Path == "hello.txt"
 	})
 }
@@ -336,7 +337,7 @@ func TestGCSWatchPubSub(t *testing.T) {
 func TestGCSWatchPubSubDelete(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "")
 
-	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -352,7 +353,7 @@ func TestGCSWatchPubSubDelete(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Op == ufs.NotifyRemove && ev.Path == "removed.txt"
 	})
 }
@@ -360,7 +361,7 @@ func TestGCSWatchPubSubDelete(t *testing.T) {
 func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "")
 
-	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -384,11 +385,11 @@ func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Op == ufs.NotifyCreate && ev.Path == "expected.txt"
 	})
 
-	if ec.HasEvent(func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Path == "file.txt"
 	}) {
 		t.Error("received event for wrong bucket")
@@ -398,7 +399,7 @@ func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 func TestGCSWatchPubSubCloseStopsDelivery(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "")
 
-	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -413,7 +414,7 @@ func TestGCSWatchPubSubCloseStopsDelivery(t *testing.T) {
 		"objectId":  "before.txt",
 		"bucketId":  "my-bucket",
 	})
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Path == "before.txt"
 	})
 
@@ -425,7 +426,7 @@ func TestGCSWatchPubSubCloseStopsDelivery(t *testing.T) {
 func TestGCSWatchPubSubNestedPath(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "root/dir")
 
-	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -441,7 +442,7 @@ func TestGCSWatchPubSubNestedPath(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Op == ufs.NotifyCreate && ev.Path == "sub/file.txt"
 	})
 }

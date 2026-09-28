@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testing
+// Package eventtest provides an [EventCollector] for tests of ufs.Watcher
+// implementations: it records the notifications a Watch delivers so tests can
+// wait for and assert on them.
+//
+// It depends only on the standard library, so both the ufs package's own tests
+// and driver packages can import it.
+package eventtest
 
 import (
 	"slices"

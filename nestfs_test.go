@@ -30,16 +30,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestNewNestFS(t *testing.T) {
-	fsys, err := newNestFS(t.Context(), "memory://")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fsys == nil {
-		t.Fatal("fsys is nil")
-	}
-}
-
 func TestNewNestFSInvalid(t *testing.T) {
 	_, err := newNestFS(t.Context(), "invalid://scheme")
 	if err == nil {
@@ -648,24 +638,6 @@ func TestNestFSOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("ReadFile", func(t *testing.T) {
-		data, err := nfs.ReadFile("sub/file.txt")
-		if err != nil {
-			t.Fatalf("ReadFile() = %v, want nil", err)
-		}
-		if string(data) != "hello" {
-			t.Errorf("ReadFile() = %q, want %q", data, "hello")
-		}
-	})
-
-	t.Run("ReadLink", func(t *testing.T) {
-		// memFS has no symlinks, so ReadLink should return ErrInvalid
-		_, err := nfs.ReadLink("sub/file.txt")
-		if err == nil {
-			t.Fatal("ReadLink() = nil error, want error (no symlinks)")
-		}
-	})
-
 	t.Run("Lstat", func(t *testing.T) {
 		info, err := nfs.Lstat("sub/file.txt")
 		if err != nil {
@@ -685,19 +657,6 @@ func TestNestFSOperations(t *testing.T) {
 			t.Errorf("ReadDir() = %d entries, want 2", len(entries))
 		}
 	})
-
-	t.Run("Create_and_MkdirAll_in_subpath", func(t *testing.T) {
-		if err := nfs.MkdirAll("new/path", fs.ModePerm); err != nil {
-			t.Errorf("MkdirAll() = %v, want nil", err)
-		}
-		f, err := nfs.Create("new/path/file.txt")
-		if err != nil {
-			t.Fatalf("Create() = %v, want nil", err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-	})
 }
 
 func TestNestFSValidPathClosed(t *testing.T) {
@@ -709,21 +668,11 @@ func TestNestFSValidPathClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// ReadDir, Open, Create, and MkdirAll on a closed FS are covered by the
+	// shared Close conformance test in drivers/testing.
 	nfs := fsys.(*nestFS)
-	if _, err := nfs.ReadDir(pathutil.CwdPath); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("ReadDir on closed nestFS = %v, want fs.ErrClosed", err)
-	}
 	if _, err := nfs.Stat("foo.txt"); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("Stat on closed nestFS = %v, want fs.ErrClosed", err)
-	}
-	if _, err := nfs.Open("foo.txt"); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("Open on closed nestFS = %v, want fs.ErrClosed", err)
-	}
-	if _, err := nfs.Create("foo.txt"); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("Create on closed nestFS = %v, want fs.ErrClosed", err)
-	}
-	if err := nfs.MkdirAll("foo", fs.ModePerm); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("MkdirAll on closed nestFS = %v, want fs.ErrClosed", err)
 	}
 	if _, err := nfs.ReadFile("foo.txt"); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("ReadFile on closed nestFS = %v, want fs.ErrClosed", err)

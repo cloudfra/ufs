@@ -311,7 +311,7 @@ func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
 			}
 		}
-		ufsTesting.AssertDirs(t, fsys, wantDirTree(mkdirAllLeaves))
+		ufsTesting.AssertDirsInOrder(t, fsys, wantDirTree(mkdirAllLeaves))
 		for _, dir := range mkdirAllLeaves {
 			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
 				t.Errorf("MkdirAll(%q) on existing directories = %v, want nil", dir, err)
@@ -342,7 +342,7 @@ func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.Write
 				t.Fatalf("Close() = %v, want nil", err)
 			}
 		}
-		ufsTesting.AssertDirs(t, fsys, wantDirTree(mkdirAllLeaves, "file"))
+		ufsTesting.AssertDirsInOrder(t, fsys, wantDirTree(mkdirAllLeaves, "file"))
 	})
 }
 

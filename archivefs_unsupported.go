@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build plan9
+
 package ufs
 
 import (
@@ -21,9 +23,11 @@ import (
 	"io/fs"
 )
 
-// Archive support is unavailable on Plan 9: github.com/mholt/archives pulls
-// in github.com/spf13/afero (through github.com/bodgit/sevenzip), which uses
-// syscall.EBADFD, and Plan 9's syscall package does not define it.
+// Archives are not supported on Plan 9: github.com/mholt/archives pulls in
+// github.com/spf13/afero (through github.com/bodgit/sevenzip), which uses
+// syscall.EBADFD, and Plan 9's syscall package does not define it. The archive
+// driver stays registered (see archivefs.go) so archive: URIs fail with
+// errors.ErrUnsupported instead of falling through to another driver.
 
 // archiveExtList is empty so that isMountableArchivePath never matches and
 // localFS and nestFS don't offer archives as mountable directories.
@@ -31,11 +35,11 @@ var archiveExtList []string
 
 var errArchiveUnsupported = fmt.Errorf("archives are not supported on plan9: %w", errors.ErrUnsupported)
 
-func newArchiveFSFromLocalFS(_ context.Context, name string) (*archiveFS, error) {
+func newArchiveFSFromLocalFS(_ context.Context, name string) (FS, error) {
 	return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, errArchiveUnsupported)
 }
 
-func newArchiveFSFromFile(_ context.Context, file fs.File) (*archiveFS, error) {
+func newArchiveFSFromFile(_ context.Context, file fs.File) (FS, error) {
 	stat, err := file.Stat()
 	if err != nil {
 		return nil, err

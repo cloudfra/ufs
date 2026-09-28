@@ -66,7 +66,7 @@ Dispatches to the appropriate implementation based on URI scheme:
 | file:///...   | localfs.go       | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
 | git://...     | drivers/gitfs/   | --        | ro       | Impl.   | Reads from a git repo (clones on first open; blank-import drivers/gitfs) |
-| archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs; unsupported on plan9 (archivefs_plan9.go) |
+| archive://    | archivefs_supported.go | archiveFS | ro | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs; archivefs.go holds the shared driver code; unsupported on plan9 (archivefs_unsupported.go) |
 | bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
 
 ### Layering / nesting

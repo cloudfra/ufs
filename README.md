@@ -92,6 +92,38 @@ make test-deflake
 make build
 ```
 
+## Android builds
+
+`make build` builds `android/arm64` on every host. On a `linux/amd64` host it
+also builds `android/386`, `android/amd64` and `android/arm/v7`, which need cgo
+external linking: the first build downloads Android NDK r28c (about 700 MB)
+into `build/toolchain/` and links with its clang. That needs `curl` and `unzip`
+on the host (`apt install curl unzip`).
+
+`android/arm/v5` and `android/arm/v6` are not built. NDK r17 and newer only
+target ARMv7 (`armeabi-v7a`), so the last NDK that can link them is r16b, the
+final release with `armeabi` (ARMv5TE). To build them by hand on a
+`linux/amd64` host:
+
+```bash
+# Packages: curl, unzip and python3 (apt install curl unzip python3)
+curl -LO https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip
+unzip -q android-ndk-r16b-linux-x86_64.zip
+# API 23 or newer: Go's runtime/cgo uses the stderr symbol, which bionic
+# only exports from Android 6.0 (API 23).
+python3 android-ndk-r16b/build/tools/make_standalone_toolchain.py \
+    --arch arm --api 23 --install-dir ndk-armeabi
+# Use the toolchain's gcc: its clang needs libncurses.so.5 (the libncurses5
+# package), which current Debian and Ubuntu releases no longer ship.
+CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=5 \
+    CC="$PWD/ndk-armeabi/bin/arm-linux-androideabi-gcc" \
+    go build -o build/bin/android/arm/v5/walk ./cmd/walk
+```
+
+Use `GOARM=6` for v6. Both `walk` and `ufsmount` link this way. The binaries
+require Android 6.0 or newer, and no ARMv5 or ARMv6 device shipped with
+Android 6.0 or newer, so these builds are left out of `make build`.
+
 ## Use ollama with Claude Code
 
 ```bash

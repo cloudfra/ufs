@@ -345,7 +345,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	}
 	ctx := fsys.ctx
 	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
+	var newFS FS
 	if ok {
 		absName, err := lfs.getAbsPath(name)
 		if err != nil {

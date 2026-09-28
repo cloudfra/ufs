@@ -148,20 +148,15 @@ func TestBoltFSCreateOnDirectory(t *testing.T) {
 	}
 }
 
+// TestBoltFSFileAsParent checks that Stat under a regular file reports
+// fs.ErrNotExist. drivers/testing's DirFileConflicts covers rejecting
+// Create and MkdirAll under a file, but only requires Stat to fail.
 func TestBoltFSFileAsParent(t *testing.T) {
 	fsys := newTestBoltFS(t)
 	writeTestFile(t, fsys, "file", "x")
-
-	if err := fsys.MkdirAll("file/sub", fs.ModePerm); err == nil {
-		t.Error("MkdirAll(file/sub) succeeded, want error")
-	}
-	if _, err := fsys.Create("file/child.txt"); err == nil {
-		t.Error("Create(file/child.txt) succeeded, want error")
-	}
 	if _, err := fsys.Stat("file/child.txt"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(file/child.txt) = %v, want fs.ErrNotExist", err)
 	}
-	ufsTesting.AssertContains(t, fsys, "file", "x")
 }
 
 // TestBoltFSNamesSortingBeforeSelfKey covers names that sort before the

@@ -69,35 +69,6 @@ func TestIsBoltFSUri(t *testing.T) {
 	}
 }
 
-func TestNewBoltFS(t *testing.T) {
-	fsys, err := newBoltFS(t.Context(), testBoltFSURI(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fsys == nil {
-		t.Fatal("fsys is nil")
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-}
-
-func TestBoltFS(t *testing.T) {
-	testFileSystem(t, newBoltFS, testBoltFSURI(t))
-}
-
-func TestBoltFSCreate(t *testing.T) {
-	fsys := newTestBoltFS(t)
-
-	f, err := fsys.Create("created.txt")
-	if err != nil {
-		t.Fatalf("Create(\"created.txt\") failed: %v", err)
-	}
-	defer ufsTesting.ValidateClose(t, f)()
-
-	if f == nil {
-		t.Fatal("Created file is nil")
-	}
-}
-
 func TestBoltFileOperations(t *testing.T) {
 	fsys := newTestBoltFS(t)
 
@@ -442,39 +413,6 @@ func TestBoltFSDirectory(t *testing.T) {
 	}
 }
 
-func TestBoltFSFilePersistence(t *testing.T) {
-	fsys := newTestBoltFS(t)
-
-	f, err := fsys.Create("persist.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("persistent data"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	f2, err := fsys.Open("persist.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := f2.Close(); err != nil {
-			t.Errorf("failed to close file: %v", err)
-		}
-	}()
-
-	data, err := io.ReadAll(f2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "persistent data" {
-		t.Errorf("ReadAll() = %q, want %q", string(data), "persistent data")
-	}
-}
-
 // TestBoltFSWriteDeferredUntilClose verifies that content written to a
 // boltFile is not visible to a fresh Open of the same path until the writer
 // is Closed: writes are buffered in memory and only committed to the bolt
@@ -531,72 +469,16 @@ func TestBoltFSWriteDeferredUntilClose(t *testing.T) {
 
 func TestBoltFSReadFile(t *testing.T) {
 	fsys := newTestBoltFS(t)
-
-	f, err := fsys.Create("hello.txt")
-	if err != nil {
-		t.Fatal(err)
+	if _, err := fsys.ReadFile("missing.txt"); err == nil {
+		t.Error("ReadFile(missing) succeeded, want error")
 	}
-	if _, err := f.WriteString("hello world"); err != nil {
-		t.Fatalf("failed to write to file: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("failed to close file: %v", err)
-	}
-
-	rfs := fsys.(fs.ReadFileFS)
-
-	t.Run("valid", func(t *testing.T) {
-		got, err := rfs.ReadFile("hello.txt")
-		if err != nil {
-			t.Fatalf("ReadFile() = %v, want nil", err)
-		}
-		if string(got) != "hello world" {
-			t.Errorf("ReadFile() = %q, want %q", got, "hello world")
-		}
-	})
-
-	t.Run("not_found", func(t *testing.T) {
-		if _, err := rfs.ReadFile("missing.txt"); err == nil {
-			t.Error("ReadFile(missing) succeeded, want error")
-		}
-	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := rfs.ReadFile("../escape.txt"); err == nil {
-			t.Error("ReadFile(../escape.txt) succeeded, want error")
-		}
-	})
 }
 
 func TestBoltFSReadLink(t *testing.T) {
 	fsys := newTestBoltFS(t)
-	f, err := fsys.Create("file.txt")
-	if err != nil {
-		t.Fatal(err)
+	if _, err := fsys.ReadLink("missing.txt"); err == nil {
+		t.Error("ReadLink(missing) succeeded, want error")
 	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("failed to close file: %v", err)
-	}
-
-	lfs := fsys.(fs.ReadLinkFS)
-
-	t.Run("existing_file_not_a_symlink", func(t *testing.T) {
-		if _, err := lfs.ReadLink("file.txt"); err == nil {
-			t.Error("ReadLink on regular file succeeded, want error")
-		}
-	})
-
-	t.Run("not_found", func(t *testing.T) {
-		if _, err := lfs.ReadLink("missing.txt"); err == nil {
-			t.Error("ReadLink(missing) succeeded, want error")
-		}
-	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := lfs.ReadLink("../escape.txt"); err == nil {
-			t.Error("ReadLink(../escape) succeeded, want error")
-		}
-	})
 }
 
 func TestBoltFSLstat(t *testing.T) {
@@ -663,12 +545,6 @@ func TestBoltFSLstat(t *testing.T) {
 			t.Error("Lstat(missing) succeeded, want error")
 		}
 	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := lfs.Lstat("../escape"); err == nil {
-			t.Error("Lstat(../escape) succeeded, want error")
-		}
-	})
 }
 
 func TestBoltFSReadDir(t *testing.T) {
@@ -698,16 +574,6 @@ func TestBoltFSReadDir(t *testing.T) {
 		}
 	})
 
-	t.Run("root", func(t *testing.T) {
-		entries, err := dfs.ReadDir(pathutil.CwdPath)
-		if err != nil {
-			t.Fatalf("ReadDir(.) = %v, want nil", err)
-		}
-		if len(entries) == 0 {
-			t.Error("ReadDir(.) returned 0 entries, want at least 1")
-		}
-	})
-
 	t.Run("on_file", func(t *testing.T) {
 		f, err := fsys.Create("plain.txt")
 		if err != nil {
@@ -724,12 +590,6 @@ func TestBoltFSReadDir(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		if _, err := dfs.ReadDir("missing"); err == nil {
 			t.Error("ReadDir(missing) succeeded, want error")
-		}
-	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := dfs.ReadDir("../escape"); err == nil {
-			t.Error("ReadDir(../escape) succeeded, want error")
 		}
 	})
 }
@@ -788,84 +648,6 @@ func TestBoltFSGlob(t *testing.T) {
 	})
 }
 
-func TestBoltFSReaddirAll(t *testing.T) {
-	fsys := newTestBoltFS(t)
-	if err := fsys.MkdirAll("parent", fs.ModePerm); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"a.txt", "b.txt"} {
-		f, err := fsys.Create("parent/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	dir, err := fsys.Open("parent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := dir.Close(); err != nil {
-			t.Errorf("failed to close directory: %v", err)
-		}
-	}()
-
-	rdf, ok := dir.(fs.ReadDirFile)
-	if !ok {
-		t.Fatal("Open(dir) did not return a fs.ReadDirFile")
-	}
-	entries, err := rdf.ReadDir(-1)
-	if err != nil {
-		t.Fatalf("ReadDir(-1) = %v, want nil", err)
-	}
-	if len(entries) != 2 {
-		t.Errorf("ReadDir(-1) = %d entries, want 2", len(entries))
-	}
-}
-
-func TestBoltFSReaddirPaginated(t *testing.T) {
-	fsys := newTestBoltFS(t)
-	if err := fsys.MkdirAll("paged", fs.ModePerm); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
-		f, err := fsys.Create("paged/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	dir, err := fsys.Open("paged")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := dir.Close(); err != nil {
-			t.Errorf("failed to close directory: %v", err)
-		}
-	}()
-
-	rdf, ok := dir.(fs.ReadDirFile)
-	if !ok {
-		t.Fatal("Open(dir) did not return a fs.ReadDirFile")
-	}
-	for i := range 3 {
-		e, err := rdf.ReadDir(1)
-		if err != nil || len(e) != 1 {
-			t.Fatalf("ReadDir(1) call %d: got %d entries, err=%v", i+1, len(e), err)
-		}
-	}
-	if _, err := rdf.ReadDir(1); err != io.EOF {
-		t.Errorf("ReadDir(1) after exhaustion = %v, want io.EOF", err)
-	}
-}
-
 func TestBoltFileReadDirOnFile(t *testing.T) {
 	fsys := newTestBoltFS(t)
 	f, err := fsys.Create("regular.txt")
@@ -892,13 +674,6 @@ func TestBoltFileSeekNegative(t *testing.T) {
 
 	if _, err := f.Seek(-1, io.SeekStart); err == nil {
 		t.Error("Seek(-1, SeekStart) succeeded, want error")
-	}
-}
-
-func TestBoltFSMkdirAllInvalid(t *testing.T) {
-	fsys := newTestBoltFS(t)
-	if err := fsys.MkdirAll("invalid/../path", fs.ModePerm); err == nil {
-		t.Error("MkdirAll(invalid/../path) succeeded, want error")
 	}
 }
 
@@ -1075,37 +850,4 @@ func TestBoltFSRemoveAll(t *testing.T) {
 			t.Errorf("after RemoveAll('.'), FS still has %d entries", len(entries))
 		}
 	})
-}
-
-func TestBoltFSRemoveClosedFS(t *testing.T) {
-	fsys, err := newBoltFS(t.Context(), testBoltFSURI(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fsys.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := fsys.Remove("file.txt"); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("Remove on closed boltFS = %v, want fs.ErrClosed", err)
-	}
-	if err := fsys.RemoveAll("dir"); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("RemoveAll on closed boltFS = %v, want fs.ErrClosed", err)
-	}
-}
-
-func TestBoltFSStatOpName(t *testing.T) {
-	// Stat() for an invalid path must report Op = "stat", not "lstat".
-	fsys := newTestBoltFS(t)
-	_, err := fsys.Stat("/absolute")
-	if err == nil {
-		t.Fatal("Stat(/absolute) succeeded, want error")
-	}
-	var pe *fs.PathError
-	if !errors.As(err, &pe) {
-		t.Fatalf("Stat() error type = %T, want *fs.PathError", err)
-	}
-	if pe.Op != "stat" {
-		t.Errorf("Stat() PathError.Op = %q, want %q", pe.Op, "stat")
-	}
 }

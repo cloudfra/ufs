@@ -22,12 +22,9 @@ import (
 	"log/slog"
 	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/mholt/archives"
 
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -42,8 +39,6 @@ const (
 
 var (
 	_ WriteFS = (*archiveFS)(nil)
-
-	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
 	archiveDeviceInfo    = NewDeviceInfo("archive", "archive", 1, false)
 	archiveDeviceInfoMap = NewDeviceMap(archiveDeviceInfo)
@@ -233,53 +228,6 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 		return err
 	}
 	return ufserrors.NewPathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
-}
-
-func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
-	info, err := osutil.Stat(name)
-	if err != nil {
-		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
-	}
-	if info.IsDir() {
-		fsys, err := archives.FileSystem(ctx, name, nil)
-		if err != nil {
-			return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
-		}
-		return makeArchiveFS(fsys, name, nil), nil
-	}
-
-	// Open the file ourselves and hand archives.FileSystem a stream rather than
-	// a bare path. archives.ArchiveFS.Open re-opens the file with os.Open on every
-	// call when given only a Path, and leaks that handle whenever the opened name
-	// is a directory within the archive (its dirFile.Close is a no-op that never
-	// references the opened file). Passing a Stream makes ArchiveFS reuse this
-	// single file instead, so the only handle to close is the one we own here.
-	file, err := osutil.Open(filepath.Clean(name))
-	if err != nil {
-		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
-	}
-	fsys, err := archives.FileSystem(ctx, name, file)
-	if err != nil {
-		return nil, ufserrors.Join(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
-	}
-	return makeArchiveFS(fsys, name, file), nil
-}
-
-func newArchiveFSFromFile(ctx context.Context, file fs.File) (*archiveFS, error) {
-	stat, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	readerAtSeeker, ok := file.(archives.ReaderAtSeeker)
-	if !ok {
-		return nil, fmt.Errorf("cannot mount archive %q: file does not support seek and random read", stat.Name())
-	}
-	afs, err := archives.FileSystem(ctx, stat.Name(), readerAtSeeker)
-	if err != nil {
-		return nil, err
-	}
-	result := makeArchiveFS(afs, stat.Name(), file)
-	return result, nil
 }
 
 func makeArchiveFS(fsys fs.FS, name string, closer io.Closer) *archiveFS {

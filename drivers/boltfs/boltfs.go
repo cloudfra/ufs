@@ -14,9 +14,9 @@
 
 // go.etcd.io/bbolt has no support for GOARCH=wasm (it has no MaxAllocSize
 // constant for that architecture, and its mmap-based storage model has no
-// wasm implementation regardless); see boltfs_wasm.go for the stub used on
-// that platform.
-//go:build !wasm
+// wasm implementation regardless) or GOOS=plan9 (no mmap or flock); see
+// boltfs_unsupported.go for the stub used on those platforms.
+//go:build !wasm && !plan9
 
 // Package boltfs registers the "bolt:" ufs driver, a read-write file system
 // stored in a single BoltDB (go.etcd.io/bbolt) file. Import it for its side
@@ -32,8 +32,8 @@
 // Directories are nested buckets and files are key/value entries in their
 // parent directory's bucket. Writes to an open file are buffered in memory
 // and committed to the database, in a single transaction, when the file is
-// closed. The driver is unavailable on GOARCH=wasm, where bbolt does not
-// build; there, bolt: URIs return an error.
+// closed. The driver is unavailable on GOARCH=wasm and GOOS=plan9, where
+// bbolt does not build; there, bolt: URIs return an error.
 package boltfs
 
 import (

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build aix || wasip1
+//go:build aix || wasip1 || plan9
 
 package gitfs
 
@@ -23,14 +23,14 @@ import (
 	"github.com/cloudfra/ufs"
 )
 
-// The driver is registered on aix and wasip1 too, but isGitFSUri never matches
-// there, so ufs.New treats git URIs as it would with no gitfs driver.
+// The driver is registered on aix, wasip1 and plan9 too, but isGitFSUri never
+// matches there, so ufs.New treats git URIs as it would with no gitfs driver.
 func init() {
 	ufs.Register(ufs.NewDriver("git", New, isGitFSUri, 1, true, true))
 }
 
-// New reports that gitfs is unavailable on GOOS=aix and GOOS=wasip1, where
-// go-git does not build.
+// New reports that gitfs is unavailable on GOOS=aix, GOOS=wasip1 and
+// GOOS=plan9, where go-git does not build.
 func New(_ context.Context, name string) (ufs.FS, error) {
 	return nil, fmt.Errorf("cannot mount %q, gitfs is not supported on this operating system", name)
 }

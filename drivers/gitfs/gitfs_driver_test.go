@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !aix && !wasip1
+//go:build !aix && !wasip1 && !plan9
 
 package gitfs
 

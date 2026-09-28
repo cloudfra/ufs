@@ -18,7 +18,6 @@ ASSETS = $(PROTOS)
 GO_PACKAGE = github.com/cloudfra/ufs
 ALL_APPS = ufsmount walk
 PRODUCTION=1
-PLAN9_PLATFORMS:=
 
 PROTOS = proto/ufs.pb.go
 PROTOS += proto/ufs_grpc.pb.go

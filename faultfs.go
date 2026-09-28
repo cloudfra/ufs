@@ -22,7 +22,6 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -30,18 +29,6 @@ import (
 )
 
 var _ WriteFS = (*faultFS)(nil)
-
-// faultErrors is a set of realistic errors that applications commonly
-// encounter from file system operations.
-//
-// TODO: allow callers to supply a custom error set via FaultConfig.
-var faultErrors = []error{
-	syscall.EIO,
-	syscall.ENOSPC,
-	syscall.EACCES,
-	syscall.EDQUOT,
-	syscall.ECONNRESET,
-}
 
 // FaultConfig controls fault injection behavior for a [faultFS] wrapper.
 type FaultConfig struct {

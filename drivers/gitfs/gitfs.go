@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !aix && !wasip1
+//go:build !aix && !wasip1 && !plan9
 
 // Package gitfs provides a read-only ufs file system with the contents of a
 // git repository, cloned into a temporary directory when it is opened.
@@ -20,8 +20,8 @@
 //
 //	import _ "github.com/cloudfra/ufs/drivers/gitfs"
 //
-// The driver is unavailable on GOOS=aix and GOOS=wasip1, where go-git does
-// not build; there, these URIs are not matched.
+// The driver is unavailable on GOOS=aix, GOOS=wasip1 and GOOS=plan9, where
+// go-git does not build; there, these URIs are not matched.
 package gitfs
 
 import (

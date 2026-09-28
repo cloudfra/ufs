@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// github.com/fsouza/fake-gcs-server depends on github.com/pkg/xattr, which
+// does not build on Plan 9.
+//go:build !plan9
+
 package gcsfs_test
 
 import (

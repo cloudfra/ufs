@@ -12,24 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !wasm && !plan9
+package ufs
 
-package boltfs
+import "syscall"
 
-import (
-	"testing"
-
-	"github.com/cloudfra/ufs"
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-)
-
-func TestBoltFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
-		name := testBoltFSURI(t)
-		fsys, err := makeBoltFS(name)
-		if err != nil {
-			t.Fatalf("cannot create boltFS %q, %s", name, err)
-		}
-		return fsys
-	})
+// faultErrors is the Plan 9 version of the realistic errors in
+// faultfs_notplan9.go. Plan 9's syscall package has no ENOSPC, EDQUOT or
+// ECONNRESET, so ETIMEDOUT stands in for a failed remote connection.
+var faultErrors = []error{
+	syscall.EIO,
+	syscall.EACCES,
+	syscall.ETIMEDOUT,
 }

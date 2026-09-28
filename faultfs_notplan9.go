@@ -12,24 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !wasm && !plan9
+//go:build !plan9
 
-package boltfs
+package ufs
 
-import (
-	"testing"
+import "syscall"
 
-	"github.com/cloudfra/ufs"
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-)
-
-func TestBoltFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
-		name := testBoltFSURI(t)
-		fsys, err := makeBoltFS(name)
-		if err != nil {
-			t.Fatalf("cannot create boltFS %q, %s", name, err)
-		}
-		return fsys
-	})
+// faultErrors is a set of realistic errors that applications commonly
+// encounter from file system operations.
+//
+// TODO: allow callers to supply a custom error set via FaultConfig.
+var faultErrors = []error{
+	syscall.EIO,
+	syscall.ENOSPC,
+	syscall.EACCES,
+	syscall.EDQUOT,
+	syscall.ECONNRESET,
 }

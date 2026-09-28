@@ -15,13 +15,9 @@
 package ufs
 
 import (
-	"errors"
-	"fmt"
+	"context"
 	"io"
 	"io/fs"
-	"path"
-	"sort"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -29,92 +25,6 @@ import (
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
-
-func TestInvalidPath(t *testing.T) {
-	invalidPaths := []string{
-		"/absolute/path",
-		"../relative/path",
-		"invalid/../path",
-		"",
-	}
-
-	for _, fsysTC := range getAllTestCaseList() {
-		for _, path := range invalidPaths {
-			t.Run(fmt.Sprintf("Open/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				_, err := fsys.Open(path)
-				ufsTesting.AssertInvalidPathError(t, path, err, "open")
-			})
-
-			t.Run(fmt.Sprintf("ReadDir/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				_, err := fsys.ReadDir(path)
-				ufsTesting.AssertInvalidPathError(t, path, err, "readdir")
-			})
-
-			t.Run(fmt.Sprintf("Create/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				_, err := fsys.Create(path)
-				ufsTesting.AssertInvalidPathError(t, path, err, "create")
-			})
-
-			t.Run(fmt.Sprintf("MkdirAll/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				err := fsys.MkdirAll(path, fs.ModeDir)
-				ufsTesting.AssertInvalidPathError(t, path, err, "mkdir")
-			})
-
-			t.Run(fmt.Sprintf("ReadFileFS/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				if rf, ok := fsys.(fs.ReadFileFS); ok {
-					_, err := rf.ReadFile(path)
-					ufsTesting.AssertInvalidPathError(t, path, err, "readfile")
-				}
-			})
-
-			t.Run(fmt.Sprintf("ReadLink/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				if rf, ok := fsys.(fs.ReadLinkFS); ok {
-					_, err := rf.ReadLink(path)
-					ufsTesting.AssertInvalidPathError(t, path, err, "readlink")
-				}
-			})
-
-			t.Run(fmt.Sprintf("Lstat/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				if rf, ok := fsys.(fs.ReadLinkFS); ok {
-					_, err := rf.Lstat(path)
-					ufsTesting.AssertInvalidPathError(t, path, err, "lstat")
-				}
-			})
-
-			t.Run(fmt.Sprintf("Remove/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				if r, ok := fsys.(RemoveFileFS); ok {
-					err := r.Remove(path)
-					ufsTesting.AssertInvalidPathError(t, path, err, "remove")
-				}
-			})
-
-			t.Run(fmt.Sprintf("RemoveAll/%s/%s", fsysTC.name, path), func(t *testing.T) {
-				t.Parallel()
-				fsys := fsysTC.createFS(t)
-				if r, ok := fsys.(RemoveFileFS); ok {
-					err := r.RemoveAll(path)
-					ufsTesting.AssertInvalidPathError(t, path, err, "removeall")
-				}
-			})
-		}
-	}
-}
 
 func TestFSConventions(t *testing.T) {
 	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
@@ -144,243 +54,308 @@ func TestFSConventions(t *testing.T) {
 	}
 }
 
-func TestFSClose(t *testing.T) {
-	for _, fsysTC := range getAllRegularTestCaseList() {
-		t.Run(fsysTC.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := fsysTC.createFS(t)
-			for i := range 10 {
-				if err := fsys.Close(); err != nil {
-					t.Errorf("Close() [%d] failed with error, %s", i, err)
-				}
-			}
-
-			t.Run("Open", func(t *testing.T) {
-				f, err := fsys.Open(".")
-				if f != nil {
-					buf := make([]byte, 64)
-					if bytesWritten, err := f.Read(buf); bytesWritten != 0 && err != fs.ErrClosed {
-						t.Errorf("Open('.') worked for a closed file system, read %d (want: 0) bytes with error= %s (want: fs.ErrClosed), file: %+v", bytesWritten, err, f)
-					}
-				}
-				if !errors.Is(err, fs.ErrClosed) {
-					t.Errorf("Open('.') did not return fs.ErrClosed, got: %s", err)
-				}
-			})
-
-			t.Run("Create", func(t *testing.T) {
-				f, err := fsys.Create("file.txt")
-				if f != nil {
-					buf := make([]byte, 64)
-					if bytesWritten, err := f.Write(buf); bytesWritten != 0 && err != fs.ErrClosed {
-						t.Errorf("Create('file.txt') worked for a closed file system, read %d (want: 0) bytes with error= %s (want: fs.ErrClosed), file: %+v", bytesWritten, err, f)
-					}
-				}
-				if !errors.Is(err, fs.ErrClosed) {
-					t.Errorf("Create('file.txt') did not return fs.ErrClosed, got: %s", err)
-				}
-			})
-
-			t.Run("MkdirAll", func(t *testing.T) {
-				if err := fsys.MkdirAll("a/b/c", fs.ModePerm); !errors.Is(err, fs.ErrClosed) {
-					t.Errorf("MkdirAll('a/b/c') did not return fs.ErrClosed, got: %s", err)
-				}
-			})
-
-			t.Run("Remove", func(t *testing.T) {
-				if err := fsys.Remove("file.txt"); !errors.Is(err, fs.ErrClosed) {
-					t.Errorf("Remove('file.txt') did not return fs.ErrClosed, got: %s", err)
-				}
-			})
-
-			t.Run("RemoveAll", func(t *testing.T) {
-				if err := fsys.RemoveAll("dir"); !errors.Is(err, fs.ErrClosed) {
-					t.Errorf("RemoveAll('dir') did not return fs.ErrClosed, got: %s", err)
-				}
-			})
-
-			t.Run("ReadDir", func(t *testing.T) {
-				entries, err := fs.ReadDir(fsys, ".")
-				if len(entries) != 0 {
-					t.Errorf("ReadDir('.') returned results for a closed file system, got: %v", entries)
-				}
-				if !errors.Is(err, fs.ErrClosed) {
-					t.Errorf("ReadDir('.') did not return fs.ErrClosed, got: %s", err)
-				}
-			})
-		})
-	}
+type fsTestCase struct {
+	name       string
+	createFS   func(tb testing.TB) FS
+	wantString string
 }
 
-func TestFSString(t *testing.T) {
-	for _, tc := range getAllTestCaseList() {
+var (
+	readWriteFSTestCaseList = []fsTestCase{
+		{
+			name: "localFS",
+			createFS: func(tb testing.TB) FS {
+				dir := tb.TempDir()
+				fsys, err := newLocalFS(tb.Context(), dir)
+				if err != nil {
+					tb.Fatalf("cannot create localFS file system, %s", err)
+				}
+				tb.Cleanup(func() {
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
+				})
+				return fsys
+			},
+			wantString: "file://" + pathutil.TempDir(),
+		},
+		{
+			name: "tempMountFS",
+			createFS: func(tb testing.TB) FS {
+				fsys, err := newTempMountFS(tb.Context(), "test://", func(string) error { return nil })
+				if err != nil {
+					tb.Fatalf("cannot create tempMountFS file system, %s", err)
+				}
+				tb.Cleanup(func() {
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
+				})
+				return fsys
+			},
+			wantString: "test:",
+		},
+		{
+			name: "memFS",
+			createFS: func(tb testing.TB) FS {
+				fsys := makeMemFS(memFSPrefix)
+				tb.Cleanup(func() {
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
+				})
+				return fsys
+			},
+			wantString: memFSPrefix,
+		},
+	}
+
+	readOnlyFSTestCaseList = []fsTestCase{
+		{
+			name: "nullFS",
+			createFS: func(tb testing.TB) FS {
+				fsys := makeNullFS(nullFSPrefix)
+				tb.Cleanup(func() {
+					if err := fsys.Close(); err != nil {
+						tb.Errorf("Close() = %v", err)
+					}
+				})
+				return fsys
+			},
+			wantString: nullFSPrefix,
+		},
+	}
+
+	// permDeniedFSTestCaseList holds FSes whose write operations return
+	// fs.ErrPermission rather than succeeding silently.
+	permDeniedFSTestCaseList = []fsTestCase{
+		{
+			name: "readOnlyFS",
+			createFS: func(tb testing.TB) FS {
+				inner := makeNullFS(nullFSPrefix)
+				tb.Cleanup(func() {
+					if err := inner.Close(); err != nil {
+						tb.Fatalf("failed to close inner FS: %v", err)
+					}
+				})
+				return ReadOnly(inner)
+			},
+			wantString: nullFSPrefix,
+		},
+	}
+
+	testassetFilenameList = []string{
+		pathutil.CwdPath,
+		"files/index.html",
+		"archives/nested-testassets.zip",
+	}
+
+	testassetDirList = map[string][]string{
+		pathutil.CwdPath: {},
+		"files":          {},
+		"archives":       {},
+	}
+
+	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
+)
+
+func getReadWriteTestCaseList() []fsTestCase {
+	return readWriteFSTestCaseList
+}
+
+func getAllRegularTestCaseList() []fsTestCase {
+	return appendNestFSTestCase(readWriteFSTestCaseList)
+}
+
+func getAllExceptAngryTestCaseList() []fsTestCase {
+	return appendNestFSTestCase(append(readOnlyFSTestCaseList, readWriteFSTestCaseList...))
+}
+
+func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
+	ctx := context.Background()
+	result := make([]fsTestCase, len(tcl)*2)
+	for idx, tc := range tcl {
+		result[idx*2] = tc
+		result[idx*2+1] = fsTestCase{
+			name: "nestFS." + tc.name,
+			createFS: func(tb testing.TB) FS {
+				return makeNestFS(ctx, tc.createFS(tb))
+			},
+		}
+	}
+	return result
+}
+
+func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
+	tb.Helper()
+
+	fsys, err := newFSFunc(tb.Context(), name)
+	if err != nil {
+		tb.Fatalf("FileSystem %q has an error, %s", name, err)
+	}
+	if fsys == nil {
+		tb.Fatalf("FileSystem %q is nil", name)
+	}
+
+	return fsys
+}
+
+func TestFSMkdirAll(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getAllExceptAngryTestCaseList() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := tc.createFS(t)
-			if got := fsys.String(); !strings.Contains(got, tc.wantString) {
-				t.Errorf("%s.String() should contain %q: got: %q", fsys, tc.wantString, got)
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
+				t.Errorf("MkdirAll() = %v, want nil", err)
 			}
 		})
 	}
 }
 
-func TestFSReadDir(t *testing.T) {
-	for _, fsysTC := range getAllRegularTestCaseList() {
-		t.Run(fsysTC.name, func(t *testing.T) {
+func TestFSReadFile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range getReadWriteTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			wantData := ufsTesting.RandomString(100)
 			t.Parallel()
-			fsys := fsysTC.createFS(t)
-
-			dirs := []string{"a", "b", "b/a/c", "b/b", "b/c", "c", "d/e/f/g", "d/e/g", "a/b/c/d/e/f/g"}
-			lsMap := map[string][]string{
-				".":             {"a", "b", "c", "d"},
-				"a":             {"b"},
-				"b":             {"a", "b", "c"},
-				"b/a":           {"c"},
-				"b/a/c":         {},
-				"b/b":           {},
-				"b/c":           {},
-				"c":             {},
-				"d":             {"e"},
-				"d/e":           {"f", "g"},
-				"d/e/f":         {"g"},
-				"d/e/f/g":       {},
-				"d/e/g":         {},
-				"a/b":           {"c"},
-				"a/b/c":         {"d"},
-				"a/b/c/d":       {"e"},
-				"a/b/c/d/e":     {"f"},
-				"a/b/c/d/e/f":   {"g"},
-				"a/b/c/d/e/f/g": {},
+			fsys := tc.createFS(t)
+			defer ufsTesting.ValidateClose(t, fsys)()
+			f, err := fsys.Create("readfile_test.txt")
+			if err != nil {
+				t.Fatalf("Create failed: %v", err)
+			}
+			if _, err := io.WriteString(f, wantData); err != nil {
+				t.Fatalf("WriteString failed: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatalf("Close failed: %v", err)
 			}
 
-			for _, dir := range dirs {
-				t.Run(fmt.Sprintf("MkdirAll/%s", dir), func(t *testing.T) {
-					if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-						t.Errorf("cannot Mkdir(%q), %s", dir, err)
-					}
-				})
+			rfs, ok := fsys.(fs.ReadFileFS)
+			if !ok {
+				t.Skip("does not implement fs.ReadFileFS")
 			}
-
-			for input, want := range lsMap {
-				t.Run(fmt.Sprintf("ReadDir/%s", input), func(t *testing.T) {
-					gotEntries, err := fsys.ReadDir(input)
-					if err != nil {
-						t.Errorf("cannot ReadDir(%q), got error: %s", input, err)
-					}
-					gotNames := ufsTesting.DirEntryListToNames(gotEntries)
-					if diff := cmp.Diff(want, gotNames); diff != "" {
-						t.Errorf("got %s, want %s diff(-want,+got):\n %v", gotNames, want, diff)
-					}
-				})
-
-				t.Run(fmt.Sprintf("Open/%s", input), func(t *testing.T) {
-					f, err := fsys.Open(input)
-					if err != nil {
-						t.Fatalf("cannot ReadDir(%q), got error: %s", input, err)
-					}
-					defer ufsTesting.ValidateClose(t, f)()
-					if rdf, ok := f.(fs.ReadDirFile); ok {
-						entries, err := rdf.ReadDir(-1)
-						if err != nil {
-							t.Errorf("ReadDir(-1) failed with error, %s", err)
-						}
-						gotNames := ufsTesting.DirEntryListToNames(entries)
-						sort.Strings(gotNames)
-						sort.Strings(want)
-						if diff := cmp.Diff(want, gotNames); diff != "" {
-							t.Errorf("ReadDir(-1) got %s, want %s diff(-want,+got):\n %v", gotNames, want, diff)
-						}
-					}
-				})
+			got, err := rfs.ReadFile("readfile_test.txt")
+			if err != nil {
+				t.Fatalf("ReadFile failed: %v", err)
+			}
+			if diff := cmp.Diff(wantData, string(got)); diff != "" {
+				t.Errorf("ReadFile mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func TestFSCreate(t *testing.T) {
-	for _, fsysTC := range getAllRegularTestCaseList() {
-		t.Run(fsysTC.name, func(t *testing.T) {
+func verifyFS(t *testing.T, fsys FS) {
+	verifyReadOnlyFS(t, fsys)
+}
+
+func verifyReadOnlyFS(t *testing.T, fsys fs.FS) {
+	t.Helper()
+	if fsys == nil {
+		t.Fatal("file system is nil")
+	}
+	if _, ok := fsys.(ReadFS); !ok {
+		t.Errorf("file system does not implement ReadFS")
+	}
+}
+
+func TestReadOnlyFS(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range append(append(readWriteFSTestCaseList, readOnlyFSTestCaseList...), permDeniedFSTestCaseList...) {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			fsys := fsysTC.createFS(t)
+			fsys := tc.createFS(t)
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if fsys == nil {
+				t.Fatalf("file system is nil")
+			}
+			verifyReadOnlyFS(t, fsys)
+			ufsTesting.ValidateClose(t, fsys)()
+		})
+	}
+}
 
-			filenames := []string{"b/a/c", "b/b", "b/c", "c", "d/e/f/g", "d/e/g", "a/b/c/d/e/f/g"}
+func TestFS(t *testing.T) {
+	t.Parallel()
 
-			for _, filename := range filenames {
-				t.Run(fmt.Sprintf("Create/%s", filename), func(t *testing.T) {
-					dir := path.Dir(filename)
-					if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-						t.Errorf("cannot Mkdir(%q), %s", dir, err)
-					}
+	for _, tc := range readWriteFSTestCaseList {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if fsys == nil {
+				t.Fatalf("file system is nil")
+			}
+			verifyFS(t, fsys)
+			ufsTesting.ValidateClose(t, fsys)()
+		})
+	}
+}
 
-					t.Run("Create", func(t *testing.T) {
-						f, err := fsys.Create(filename)
-						if err != nil {
-							t.Errorf("Open(%q) failed, %s", filename, err)
-						}
-						bytesWritten, err := f.WriteString(filename)
-						if err != nil {
-							t.Errorf("WriteString(%q) failed to write, %s", filename, err)
-						}
-						if bytesWritten != len(filename) {
-							t.Errorf("WriteString(%q) bytesWritten mismatch, want: %d, got: %d", filename, len(filename), bytesWritten)
-						}
-						if err := f.Close(); err != nil {
-							t.Errorf("Close() got error, %s", err)
-						}
-					})
+func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
+	t.Parallel()
 
-					t.Run("ReadFile", func(t *testing.T) {
-						data, err := fsys.ReadFile(filename)
-						if err != nil {
-							t.Errorf("ReadFile(%q) got error, %s", filename, err)
-						}
-						gotData := string(data)
-						if gotData != filename {
-							t.Errorf("ReadFile(%q) mismatch, got: %q, want: %q", filename, gotData, filename)
-						}
-					})
+	for _, tc := range append(readOnlyFSTestCaseList, permDeniedFSTestCaseList...) {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer ufsTesting.ValidateClose(t, fsys)()
 
-					t.Run("Open", func(t *testing.T) {
-						rf, err := fsys.Open(filename)
-						if err != nil {
-							t.Errorf("Open(%q) got error, %s", filename, err)
-						}
-						data, err := io.ReadAll(rf)
-						if err != nil {
-							t.Errorf("io.ReadAll(%q) got error, %s", filename, err)
-						}
-						if err := rf.Close(); err != nil {
-							t.Errorf("Close() got error, %s", err)
-						}
-						gotData := string(data)
-						if gotData != filename {
-							t.Errorf("io.ReadAll(%q) mismatch, got: %q, want: %q", filename, gotData, filename)
-						}
-					})
-
-					t.Run("ReadLink", func(t *testing.T) {
-						lfilename, err := fsys.ReadLink(filename)
-						if err == nil {
-							t.Errorf("ReadLink(%q) error was nil", filename)
-						} else if _, ok := err.(*fs.PathError); !ok {
-							t.Errorf("ReadLink(%q) error was not of type *fs.PathError, %s", filename, err)
-						}
-						if lfilename != "" {
-							t.Errorf("ReadLink(%q) mismatch, got: %q, want: ''", filename, lfilename)
-						}
-					})
-
-					t.Run("Lstat", func(t *testing.T) {
-						stat, err := fsys.Lstat(filename)
-						if err != nil {
-							t.Errorf("Lstat(%q) got error, %s", filename, err)
-						}
-						if stat == nil {
-							t.Errorf("Lstat(%q) returned nil FileInfo", filename)
-						}
-					})
-				})
+			u, err := fsys.URI()
+			if err != nil {
+				t.Fatalf("URI() returned error: %v", err)
+			}
+			if u == nil {
+				t.Fatal("URI() = nil, want a URL")
+			}
+			if got := u.Query().Get("ro"); got != "true" {
+				t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
 			}
 		})
 	}
+}
+
+// dirFileConflictCases are Create and MkdirAll calls that conflict with the
+// tree built by newDirFileConflictFS: each replaces a directory with a file
+// or treats a regular file as a directory. wantErr and wantOp are the values
+// memFS returns; other backends may report the conflict differently (for
+// example localFS surfaces the OS's ENOTDIR/EISDIR).
+var dirFileConflictCases = []struct {
+	name    string
+	op      func(fsys FS) error
+	wantErr error
+	wantOp  string
+}{
+	{name: "create_on_dir", op: func(fsys FS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_on_root", op: func(fsys FS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "create_deep_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "mkdirall_on_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "mkdirall_under_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+}
+
+// newDirFileConflictFS returns a file system from createFS containing the
+// directories dir and dir/sub and the regular file dir/file.
+func newDirFileConflictFS(t *testing.T, createFS func(testing.TB) FS) FS {
+	t.Helper()
+	fsys := createFS(t)
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+	if err := fsys.MkdirAll("dir/sub", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Create("dir/file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("content"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return fsys
 }

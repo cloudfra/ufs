@@ -54,7 +54,7 @@ func TestIsNullFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "mem://",
+			name: "memory://",
 			want: false,
 		},
 	}

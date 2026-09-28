@@ -171,6 +171,14 @@ func (fsys *localFS) Glob(pattern string) ([]string, error) {
 	return globutil.GlobFS(fsys, pattern)
 }
 
+// MakeLocalFS returns a local disk file system rooted at the file:// URI name.
+//
+// Deprecated: MakeLocalFS exists only to support the shared driver tests in
+// drivers/testing and will be removed soon. Use New instead.
+func MakeLocalFS(name string) (WriteFS, error) {
+	return makeLocalFS(name)
+}
+
 func makeLocalFS(name string) (*localFS, error) {
 	name = localFSNormalizePath(name)
 	absPath, err := filepath.Abs(name)

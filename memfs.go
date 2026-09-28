@@ -627,7 +627,9 @@ func newMemFS(_ context.Context, name string) (FS, error) {
 }
 
 // MakeMemFS creates a memory FS without a context.
-// This method is deprecated.
+//
+// Deprecated: MakeMemFS exists only to support the shared driver tests in
+// drivers/testing and will be removed soon. Use New instead.
 func MakeMemFS(name string) FS {
 	return makeMemFS(name)
 }

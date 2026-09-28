@@ -457,7 +457,8 @@ func (fsys *gcsFS) ReadLink(name string) (string, error) {
 }
 
 func (fsys *gcsFS) Lstat(name string) (fs.FileInfo, error) {
-	return fsys.Stat(name)
+	val, err := fsys.Stat(name)
+	return ufserrors.ChangePathErrorOp(val, err, "lstat")
 }
 
 func (fsys *gcsFS) Remove(name string) error {
@@ -542,6 +543,15 @@ func makeGCSFS(ctx context.Context, name string) (*gcsFS, error) {
 		}
 	}
 
+	return makeGCSFSWithClient(ctx, gcsClient, name)
+}
+
+// MakeGCSFS returns a GCS-backed file system for the gs:// URI name using
+// gcsClient.
+//
+// Deprecated: MakeGCSFS exists only to support the shared driver tests in
+// drivers/testing and will be removed soon. Use New instead.
+func MakeGCSFS(ctx context.Context, gcsClient *storage.Client, name string) (WriteFS, error) {
 	return makeGCSFSWithClient(ctx, gcsClient, name)
 }
 

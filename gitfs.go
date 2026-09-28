@@ -50,6 +50,14 @@ func prepareGitDirectory(name string, gitURL string) error {
 	return nil
 }
 
+// MakeGitFS returns a file system backed by the git repository URI name.
+//
+// Deprecated: MakeGitFS exists only to support the shared driver tests in
+// drivers/testing and will be removed soon. Use New instead.
+func MakeGitFS(ctx context.Context, name string) (WriteFS, error) {
+	return newGitFS(ctx, name)
+}
+
 func newGitFS(ctx context.Context, name string) (FS, error) {
 	if !isGitFSUri(name) {
 		return nil, fmt.Errorf("%q is not a valid git repository", name)

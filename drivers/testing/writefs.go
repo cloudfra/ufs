@@ -38,6 +38,7 @@ func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteF
 	ReadFile(t, createFSFunc)
 	InvalidPathsForWriteFS(t, createFSFunc)
 	Create(t, createFSFunc)
+	Conventions(t, createFSFunc)
 	// TODO: gcsfs is broken here.
 	// Close(t, createFSFunc)
 	readFS(t, func(t *testing.T) ufs.ReadFS {
@@ -68,6 +69,7 @@ func writeFS(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	ReadDir(t, createFSFunc)
 	Close(t, createFSFunc)
 	Create(t, createFSFunc)
+	Conventions(t, createFSFunc)
 	readFS(t, func(t *testing.T) ufs.ReadFS {
 		return createFSFunc(t)
 	})
@@ -220,6 +222,32 @@ func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name strin
 	if err := fsys.Close(); err != nil {
 		t.Errorf("error on Close(), %v", err)
 	}
+}
+
+// Conventions copies the ufs test assets into the file system with
+// [ufs.Rsync] and verifies the result satisfies the [fstest.TestFS]
+// conventions for every copied file.
+func Conventions(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+	t.Run("Conventions", func(t *testing.T) {
+		t.Parallel()
+		srcFS := ufsTesting.TestAssetsFS()
+		fsys := createFSFunc(t)
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+		if err := ufs.Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
+			t.Fatalf("Rsync() = %v, want nil", err)
+		}
+
+		filenames, err := ufs.List(srcFS, pathutil.CwdPath)
+		if err != nil {
+			t.Fatalf("List() = %v, want nil", err)
+		}
+		if len(filenames) == 0 {
+			t.Fatal("List() returned no files, want at least 1")
+		}
+		if err := fstest.TestFS(fsys, filenames...); err != nil {
+			t.Error(err)
+		}
+	})
 }
 
 // MkdirAll verifies that MkdirAll succeeds for a new subdirectory.

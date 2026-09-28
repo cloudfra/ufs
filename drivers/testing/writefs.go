@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"testing"
 	"testing/fstest"
@@ -250,52 +251,89 @@ func Conventions(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	})
 }
 
+// mkdirAllLeaves are the deepest directories the MkdirAll tests create. They
+// form a tree with sibling directories at every level and leaves at different
+// depths, so a file system that hides, merges, or replaces a neighbor when it
+// creates a directory fails the listing checks:
+//
+//	mkdirall/
+//	├── a/
+//	│   ├── b/ → c/, d/
+//	│   └── e/ → f/, g/
+//	├── h/
+//	│   ├── i/ → j/, k/
+//	│   └── l/
+//	└── m/
+//
+// Everything lives under mkdirall/ so files the file system already holds
+// cannot collide with or show up in the checks.
+var mkdirAllLeaves = []string{
+	"mkdirall/a/b/c",
+	"mkdirall/a/b/d",
+	"mkdirall/a/e/f",
+	"mkdirall/a/e/g",
+	"mkdirall/h/i/j",
+	"mkdirall/h/i/k",
+	"mkdirall/h/l",
+	"mkdirall/m",
+}
+
+// wantDirTree returns the expected entries of every directory in the tree
+// formed by leaves: each directory lists its child directories, and each leaf
+// lists leafEntries.
+func wantDirTree(leaves []string, leafEntries ...string) map[string][]string {
+	want := map[string][]string{}
+	for _, leaf := range leaves {
+		want[leaf] = append([]string{}, leafEntries...)
+		for dir := leaf; path.Dir(dir) != pathutil.CwdPath; dir = path.Dir(dir) {
+			parent := path.Dir(dir)
+			if !slices.Contains(want[parent], path.Base(dir)) {
+				want[parent] = append(want[parent], path.Base(dir))
+			}
+		}
+	}
+	for _, names := range want {
+		sort.Strings(names)
+	}
+	return want
+}
+
 // MkdirAll verifies that MkdirAll creates every missing directory in a path,
-// that each one is reported as a directory and listed by its parent, and that
-// repeating the call on existing directories succeeds.
+// that each one is reported as a directory and listed by its parent next to
+// its siblings, and that repeating the call on existing directories succeeds.
 func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	t.Run("MkdirAll", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
 		defer ufsTesting.ValidateClose(t, fsys)()
-		// All paths live under one new directory so files the file system
-		// already holds cannot collide with or show up in the checks.
-		// Sibling directories at each level check that creating one directory
-		// neither hides nor replaces its neighbors.
-		for _, dir := range []string{"mkdirall/subdir", "mkdirall/a/b/c", "mkdirall/a/d"} {
+		for _, dir := range mkdirAllLeaves {
 			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
 				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
 			}
 		}
-		assertDirs(t, fsys, map[string][]string{
-			"mkdirall":        {"a", "subdir"},
-			"mkdirall/a":      {"b", "d"},
-			"mkdirall/a/b":    {"c"},
-			"mkdirall/a/b/c":  {},
-			"mkdirall/a/d":    {},
-			"mkdirall/subdir": {},
-		})
-		if err := fsys.MkdirAll("mkdirall/a/b/c", fs.ModePerm); err != nil {
-			t.Errorf("MkdirAll(%q) on existing directories = %v, want nil", "mkdirall/a/b/c", err)
+		assertDirs(t, fsys, wantDirTree(mkdirAllLeaves))
+		for _, dir := range mkdirAllLeaves {
+			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+				t.Errorf("MkdirAll(%q) on existing directories = %v, want nil", dir, err)
+			}
 		}
 	})
 }
 
 // MkdirAllWithBuckets is the MkdirAll check for bucket-backed file systems,
 // which have no real directories: MkdirAll must succeed, and once a file is
-// created under the path every parent directory must exist.
+// created in each leaf every parent directory must exist and list its
+// siblings.
 func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	t.Run("MkdirAllWithBuckets", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
 		defer ufsTesting.ValidateClose(t, fsys)()
-		// Sibling directories at each level check that the virtual directories
-		// derived from object names keep neighbors apart.
-		for _, dir := range []string{"mkdirall/a/b", "mkdirall/a/c", "mkdirall/d"} {
+		for _, dir := range mkdirAllLeaves {
 			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
 				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
 			}
-			name := dir + "/file"
+			name := path.Join(dir, "file")
 			f, err := fsys.Create(name)
 			if err != nil {
 				t.Fatalf("Create(%q) = %v, want nil", name, err)
@@ -304,13 +342,7 @@ func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.Write
 				t.Fatalf("Close() = %v, want nil", err)
 			}
 		}
-		assertDirs(t, fsys, map[string][]string{
-			"mkdirall":     {"a", "d"},
-			"mkdirall/a":   {"b", "c"},
-			"mkdirall/a/b": {"file"},
-			"mkdirall/a/c": {"file"},
-			"mkdirall/d":   {"file"},
-		})
+		assertDirs(t, fsys, wantDirTree(mkdirAllLeaves, "file"))
 	})
 }
 

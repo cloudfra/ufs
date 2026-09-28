@@ -185,10 +185,12 @@ func AssertContains(tb testing.TB, fsys fs.FS, name string, substr string) {
 }
 
 // AssertDir asserts that the directory name in fsys contains exactly the
-// entries in want, in order. It checks both fs.ReadDirFS.ReadDir(name) and
-// fs.ReadDirFile.ReadDir(-1) on the file returned by fsys.Open(name), so both
-// code paths of an implementation are exercised. It calls tb.Fatalf if fsys
-// does not implement fs.ReadDirFS.
+// entries in want. It checks both fs.ReadDirFS.ReadDir(name), which must
+// return them in the order of want (sorted, per the fs.ReadDirFS contract), and
+// fs.ReadDirFile.ReadDir(-1) on the file returned by fsys.Open(name), which may
+// return them in any order because fs.ReadDirFile only promises directory
+// order. Both code paths of an implementation are exercised. It calls
+// tb.Fatalf if fsys does not implement fs.ReadDirFS.
 func AssertDir(tb testing.TB, fsys fs.FS, name string, want []string) {
 	tb.Helper()
 
@@ -215,13 +217,37 @@ func AssertDir(tb testing.TB, fsys fs.FS, name string, want []string) {
 				tb.Errorf("cannot ReadDir(%q), %s", name, err)
 			} else {
 				gotEntryNames := DirEntryListToNames(gotEntries)
-				if d := cmp.Diff(want, gotEntryNames); d != "" {
+				sort.Strings(gotEntryNames)
+				wantSorted := append([]string{}, want...)
+				sort.Strings(wantSorted)
+				if d := cmp.Diff(wantSorted, gotEntryNames); d != "" {
 					tb.Errorf("ReadDir(-1) mismatch, got %s, want %s diff(-want,+got):\n %v", gotEntryNames, want, d)
 				}
 			}
 		} else {
 			tb.Errorf("%q does not open a ReadDirFile, %s", name, reflect.TypeOf(f).Name())
 		}
+	}
+}
+
+// AssertDirs asserts that every key of want is a directory in fsys whose
+// entries are exactly the names in want, in order. Each directory must be
+// reported as a directory by [fs.Stat], and its entries are checked with
+// [AssertDir]. Stat alone is not enough: a file system may report any path as
+// a directory, so every one is also listed. Directories are checked in sorted
+// order so failures are reported deterministically.
+func AssertDirs(tb testing.TB, fsys fs.FS, want map[string][]string) {
+	tb.Helper()
+	dirs := make([]string, 0, len(want))
+	for dir := range want {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	for _, dir := range dirs {
+		if info, err := fs.Stat(fsys, dir); err != nil || !info.IsDir() {
+			tb.Errorf("fs.Stat(%q) = (%v, %v), want a directory", dir, info, err)
+		}
+		AssertDir(tb, fsys, dir, want[dir])
 	}
 }
 

@@ -311,7 +311,7 @@ func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
 			}
 		}
-		assertDirs(t, fsys, wantDirTree(mkdirAllLeaves))
+		ufsTesting.AssertDirs(t, fsys, wantDirTree(mkdirAllLeaves))
 		for _, dir := range mkdirAllLeaves {
 			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
 				t.Errorf("MkdirAll(%q) on existing directories = %v, want nil", dir, err)
@@ -342,28 +342,8 @@ func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.Write
 				t.Fatalf("Close() = %v, want nil", err)
 			}
 		}
-		assertDirs(t, fsys, wantDirTree(mkdirAllLeaves, "file"))
+		ufsTesting.AssertDirs(t, fsys, wantDirTree(mkdirAllLeaves, "file"))
 	})
-}
-
-// assertDirs checks that each key of want is a directory whose entries are
-// exactly the names in want. Stat alone is not enough: a file system may
-// report any path as a directory, so each one is also listed.
-func assertDirs(t *testing.T, fsys ufs.ReadFS, want map[string][]string) {
-	t.Helper()
-	for dir, wantNames := range want {
-		if info, err := fsys.Stat(dir); err != nil || !info.IsDir() {
-			t.Errorf("Stat(%q) = (%v, %v), want a directory", dir, info, err)
-		}
-		entries, err := fsys.ReadDir(dir)
-		if err != nil {
-			t.Errorf("ReadDir(%q) = %v, want nil", dir, err)
-			continue
-		}
-		if diff := cmp.Diff(wantNames, ufsTesting.DirEntryListToNames(entries)); diff != "" {
-			t.Errorf("ReadDir(%q) mismatch (-want +got):\n%s", dir, diff)
-		}
-	}
 }
 
 // ReadFile verifies that data written to a file can be read back.

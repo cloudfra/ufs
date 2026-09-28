@@ -70,7 +70,7 @@ ifeq ($(origin NETBSD_PLATFORMS),undefined)
 NETBSD_PLATFORMS = netbsd/amd64 netbsd/arm64 netbsd/386 netbsd/arm/v5 netbsd/arm/v6 netbsd/arm/v7
 endif
 ifeq ($(origin OPENBSD_PLATFORMS),undefined)
-OPENBSD_PLATFORMS = openbsd/386 openbsd/amd64 openbsd/arm/v5 openbsd/arm/v6 openbsd/arm/v7 openbsd/arm64
+OPENBSD_PLATFORMS = openbsd/386 openbsd/amd64 openbsd/arm/v5 openbsd/arm/v6 openbsd/arm/v7 openbsd/arm64 openbsd/ppc64 openbsd/riscv64
 endif
 ifeq ($(origin PLAN9_PLATFORMS),undefined)
 PLAN9_PLATFORMS = plan9/386 plan9/amd64 plan9/arm/v5 plan9/arm/v6 plan9/arm/v7
@@ -81,6 +81,9 @@ endif
 ifeq ($(origin JS_PLATFORMS),undefined)
 JS_PLATFORMS = js/wasm
 endif
+ifeq ($(origin WASIP1_PLATFORMS),undefined)
+WASIP1_PLATFORMS = wasip1/wasm
+endif
 ifeq ($(origin ILLUMOS_PLATFORMS),undefined)
 ILLUMOS_PLATFORMS = illumos/amd64
 endif
@@ -89,7 +92,7 @@ AIX_PLATFORMS = aix/ppc64
 endif
 MAIN_PLATFORMS = windows/amd64 linux/amd64 linux/arm64
 RELEASE_PLATFORMS = linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/arm64
-NICHE_PLATFORMS = $(JS_PLATFORMS) $(ILLUMOS_PLATFORMS) $(AIX_PLATFORMS) $(ANDROID_PLATFORMS) $(DARWIN_PLATFORMS) $(IOS_PLATFORMS) $(DRAGONFLY_PLATFORMS) $(FREEBSD_PLATFORMS) $(NETBSD_PLATFORMS) $(OPENBSD_PLATFORMS) $(PLAN9_PLATFORMS) $(SOLARIS_PLATFORMS)
+NICHE_PLATFORMS = $(JS_PLATFORMS) $(WASIP1_PLATFORMS) $(ILLUMOS_PLATFORMS) $(AIX_PLATFORMS) $(ANDROID_PLATFORMS) $(DARWIN_PLATFORMS) $(IOS_PLATFORMS) $(DRAGONFLY_PLATFORMS) $(FREEBSD_PLATFORMS) $(NETBSD_PLATFORMS) $(OPENBSD_PLATFORMS) $(PLAN9_PLATFORMS) $(SOLARIS_PLATFORMS)
 ALL_PLATFORMS = $(LINUX_PLATFORMS) $(WINDOWS_PLATFORMS) $(NICHE_PLATFORMS)
 
 MAIN_BINARIES = $(foreach app,$(ALL_APPS),$(foreach platform,$(MAIN_PLATFORMS),build/bin/$(platform)/$(app)$(if $(findstring windows,$(platform)),.exe,)))

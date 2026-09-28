@@ -44,6 +44,7 @@ func String(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
 	t.Run("String", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 		if got := fsys.String(); !strings.Contains(got, "//") {
 			t.Errorf("%s.String() should contain %q: got: %q", fsys, "//", got)
 		}
@@ -127,6 +128,14 @@ func InvalidPathsForReadFS(t *testing.T, createFS func(*testing.T) ufs.ReadFS) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := createFS(t)
+			// Close only to release resources (e.g. directory handles that block
+			// temp dir removal on Windows); Close behavior is covered elsewhere
+			// and some file systems, such as angryFS, fail it by design.
+			t.Cleanup(func() {
+				if err := fsys.Close(); err != nil {
+					t.Logf("Close() = %v", err)
+				}
+			})
 			for _, p := range invalidPaths {
 				t.Run(p, func(t *testing.T) {
 					ufsTesting.AssertInvalidPathError(t, p, tc.op(fsys, p), tc.wantOp)

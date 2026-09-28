@@ -79,6 +79,7 @@ func ReadDir(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	t.Run("ReadDir", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
 		dirs := []string{"a", "b", "b/a/c", "b/b", "b/c", "c", "d/e/f/g", "d/e/g", "a/b/c/d/e/f/g"}
 		lsMap := map[string][]string{
@@ -471,6 +472,14 @@ func InvalidPathsForWriteFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS)
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := createFS(t)
+			// Close only to release resources (e.g. directory handles that block
+			// temp dir removal on Windows); Close behavior is covered elsewhere
+			// and some file systems, such as angryFS, fail it by design.
+			t.Cleanup(func() {
+				if err := fsys.Close(); err != nil {
+					t.Logf("Close() = %v", err)
+				}
+			})
 			for _, p := range invalidPaths {
 				t.Run(p, func(t *testing.T) {
 					ufsTesting.AssertInvalidPathError(t, p, tc.op(fsys, p), tc.wantOp)
@@ -486,6 +495,7 @@ func Create(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
 	t.Run("Create", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFS(t)
+		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
 		filenames := []string{"b/a/c", "b/b", "b/c", "c", "d/e/f/g", "d/e/g", "a/b/c/d/e/f/g"}
 

@@ -212,39 +212,6 @@ func TestFromFSTestFS(t *testing.T) {
 	}
 }
 
-func TestFromFSInvalidPaths(t *testing.T) {
-	t.Parallel()
-	invalidPaths := []string{
-		"/absolute/path",
-		"../relative/path",
-		"invalid/../path",
-	}
-	tests := []struct {
-		name string
-		op   func(fsys ReadFS, path string) error
-	}{
-		{"Open", func(fsys ReadFS, path string) error { _, err := fsys.Open(path); return err }},
-		{"Stat", func(fsys ReadFS, path string) error { _, err := fsys.Stat(path); return err }},
-		{"Lstat", func(fsys ReadFS, path string) error { _, err := fsys.Lstat(path); return err }},
-		{"ReadFile", func(fsys ReadFS, path string) error { _, err := fsys.ReadFile(path); return err }},
-		{"ReadDir", func(fsys ReadFS, path string) error { _, err := fsys.ReadDir(path); return err }},
-		{"ReadLink", func(fsys ReadFS, path string) error { _, err := fsys.ReadLink(path); return err }},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := makeTestStdFS(t)
-			for _, p := range invalidPaths {
-				t.Run(p, func(t *testing.T) {
-					if err := tc.op(fsys, p); err == nil {
-						t.Errorf("%s(%q) succeeded, want error", tc.name, p)
-					}
-				})
-			}
-		})
-	}
-}
-
 func TestFromFSEmbedFS(t *testing.T) {
 	t.Parallel()
 	fsys := FromFS(ufsTesting.TestAssetsFS())

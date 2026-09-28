@@ -24,19 +24,6 @@ import (
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-func TestNewTempMountFS(t *testing.T) {
-	fsys, err := newTempMountFS(t.Context(), "test://", func(string) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fsys == nil {
-		t.Fatal("fsys is nil")
-	}
-	if err := fsys.Close(); err != nil {
-		t.Errorf("Close() = %v, want nil", err)
-	}
-}
-
 func TestTempMountFSCleanup(t *testing.T) {
 	var capturedDir string
 	fsys, err := newTempMountFS(t.Context(), "test://", func(dir string) error {

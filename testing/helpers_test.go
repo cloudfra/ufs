@@ -555,7 +555,7 @@ func (everyDirFile) Read([]byte) (int, error)           { return 0, errors.New("
 func (everyDirFile) Close() error                       { return nil }
 func (everyDirFile) ReadDir(int) ([]fs.DirEntry, error) { return []fs.DirEntry{}, nil }
 
-func TestAssertDirs(t *testing.T) {
+func TestAssertDirsInOrder(t *testing.T) {
 	t.Parallel()
 
 	mapFS := fstest.MapFS{
@@ -567,7 +567,7 @@ func TestAssertDirs(t *testing.T) {
 	t.Run("match", func(t *testing.T) {
 		t.Parallel()
 		m := &captureTB{T: t}
-		utesting.AssertDirs(m, mapFS, map[string][]string{
+		utesting.AssertDirsInOrder(m, mapFS, map[string][]string{
 			"top":   {"a", "b", "file"},
 			"top/a": {"x.txt"},
 			"top/b": {"y.txt"},
@@ -580,27 +580,37 @@ func TestAssertDirs(t *testing.T) {
 	t.Run("listing_mismatch", func(t *testing.T) {
 		t.Parallel()
 		m := &captureTB{T: t}
-		utesting.AssertDirs(m, mapFS, map[string][]string{"top": {"a", "file"}})
+		utesting.AssertDirsInOrder(m, mapFS, map[string][]string{"top": {"a", "file"}})
 		if len(m.errors) == 0 {
-			t.Error("AssertDirs reported no error for a listing missing a sibling")
+			t.Error("AssertDirsInOrder reported no error for a listing missing a sibling")
 		}
 	})
 
 	t.Run("regular_file_is_not_a_directory", func(t *testing.T) {
 		t.Parallel()
 		m := &captureTB{T: t}
-		utesting.AssertDirs(m, mapFS, map[string][]string{"top/file": {}})
-		if !slices.ContainsFunc(m.errors, func(e string) bool { return strings.Contains(e, "want a directory") }) {
-			t.Errorf("AssertDirs did not report a regular file as not a directory: %v", m.errors)
+		utesting.AssertDirsInOrder(m, mapFS, map[string][]string{"top/file": {}})
+		// The file exists, so only the "not a directory" failure applies.
+		if !slices.ContainsFunc(m.errors, func(e string) bool { return strings.Contains(e, `fs.Stat("top/file") reports mode`) }) {
+			t.Errorf("AssertDirsInOrder did not report a regular file as not a directory: %v", m.errors)
+		}
+		if slices.ContainsFunc(m.errors, func(e string) bool { return strings.HasPrefix(e, `fs.Stat("top/file") = `) }) {
+			t.Errorf("AssertDirsInOrder reported a Stat error for an existing file: %v", m.errors)
 		}
 	})
 
 	t.Run("missing_directory", func(t *testing.T) {
 		t.Parallel()
 		m := &captureTB{T: t}
-		utesting.AssertDirs(m, mapFS, map[string][]string{"top/missing": {}})
-		if !slices.ContainsFunc(m.errors, func(e string) bool { return strings.Contains(e, "want a directory") }) {
-			t.Errorf("AssertDirs did not report a missing directory: %v", m.errors)
+		utesting.AssertDirsInOrder(m, mapFS, map[string][]string{"top/missing": {}})
+		// Stat fails, so only the Stat error applies, not "reports mode".
+		if !slices.ContainsFunc(m.errors, func(e string) bool {
+			return strings.HasPrefix(e, `fs.Stat("top/missing") = `) && strings.Contains(e, "file does not exist")
+		}) {
+			t.Errorf("AssertDirsInOrder did not report the Stat error for a missing directory: %v", m.errors)
+		}
+		if slices.ContainsFunc(m.errors, func(e string) bool { return strings.Contains(e, "reports mode") }) {
+			t.Errorf("AssertDirsInOrder reported a mode for a directory that does not exist: %v", m.errors)
 		}
 	})
 
@@ -609,15 +619,15 @@ func TestAssertDirs(t *testing.T) {
 		// Every path Stats as a directory, but nothing is listed, so the
 		// expected children must be reported missing.
 		m := &captureTB{T: t}
-		utesting.AssertDirs(m, everyDirFS{}, map[string][]string{
+		utesting.AssertDirsInOrder(m, everyDirFS{}, map[string][]string{
 			"top":   {"a"},
 			"top/a": {},
 		})
 		if len(m.errors) == 0 {
-			t.Error("AssertDirs accepted a file system that reports every path as an empty directory")
+			t.Error("AssertDirsInOrder accepted a file system that reports every path as an empty directory")
 		}
 		for _, e := range m.errors {
-			if strings.Contains(e, "want a directory") {
+			if strings.HasPrefix(e, "fs.Stat(") {
 				t.Errorf("unexpected Stat failure for a file system whose Stat always succeeds: %q", e)
 			}
 		}
@@ -626,7 +636,7 @@ func TestAssertDirs(t *testing.T) {
 	t.Run("checks_in_sorted_order", func(t *testing.T) {
 		t.Parallel()
 		m := &captureTB{T: t}
-		utesting.AssertDirs(m, mapFS, map[string][]string{
+		utesting.AssertDirsInOrder(m, mapFS, map[string][]string{
 			"z_missing": {},
 			"a_missing": {},
 			"m_missing": {},
@@ -640,7 +650,7 @@ func TestAssertDirs(t *testing.T) {
 			}
 		}
 		if want := []string{"a_missing", "m_missing", "z_missing"}; !slices.Equal(order, want) {
-			t.Errorf("AssertDirs checked directories in order %v, want %v", order, want)
+			t.Errorf("AssertDirsInOrder checked directories in order %v, want %v", order, want)
 		}
 	})
 }

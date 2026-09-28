@@ -20,9 +20,11 @@ import (
 	"embed"
 	"io"
 	"io/fs"
+	"maps"
 	"math/rand/v2"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -185,12 +187,15 @@ func AssertContains(tb testing.TB, fsys fs.FS, name string, substr string) {
 }
 
 // AssertDir asserts that the directory name in fsys contains exactly the
-// entries in want. It checks both fs.ReadDirFS.ReadDir(name), which must
-// return them in the order of want (sorted, per the fs.ReadDirFS contract), and
-// fs.ReadDirFile.ReadDir(-1) on the file returned by fsys.Open(name), which may
-// return them in any order because fs.ReadDirFile only promises directory
-// order. Both code paths of an implementation are exercised. It calls
-// tb.Fatalf if fsys does not implement fs.ReadDirFS.
+// entries in want, which must be sorted by name. It checks both ways a file
+// system can list a directory: [fs.ReadDirFS], which must return the entries
+// in the order of want, and the [fs.ReadDirFile] opened for name, which may
+// return them in any order. It stops the test if fsys is not an
+// [fs.ReadDirFS].
+//
+// Use AssertDir to check the listing of one directory. To check several
+// directories at once, including that each one exists, use
+// [AssertDirsInOrder].
 func AssertDir(tb testing.TB, fsys fs.FS, name string, want []string) {
 	tb.Helper()
 
@@ -218,7 +223,7 @@ func AssertDir(tb testing.TB, fsys fs.FS, name string, want []string) {
 			} else {
 				gotEntryNames := DirEntryListToNames(gotEntries)
 				sort.Strings(gotEntryNames)
-				wantSorted := append([]string{}, want...)
+				wantSorted := slices.Clone(want)
 				sort.Strings(wantSorted)
 				if d := cmp.Diff(wantSorted, gotEntryNames); d != "" {
 					tb.Errorf("ReadDir(-1) mismatch, got %s, want %s diff(-want,+got):\n %v", gotEntryNames, want, d)
@@ -230,22 +235,21 @@ func AssertDir(tb testing.TB, fsys fs.FS, name string, want []string) {
 	}
 }
 
-// AssertDirs asserts that every key of want is a directory in fsys whose
-// entries are exactly the names in want, in order. Each directory must be
-// reported as a directory by [fs.Stat], and its entries are checked with
-// [AssertDir]. Stat alone is not enough: a file system may report any path as
-// a directory, so every one is also listed. Directories are checked in sorted
-// order so failures are reported deterministically.
-func AssertDirs(tb testing.TB, fsys fs.FS, want map[string][]string) {
+// AssertDirsInOrder asserts that each key of want names a directory in fsys
+// whose entries are exactly want[key], sorted by name. Each directory must be
+// reported as a directory by [fs.Stat], and its entries are then checked with
+// [AssertDir]. Checking [fs.Stat] alone is not enough, because a file system
+// may report any path as a directory. Directories are checked in order of
+// name, so failures are reported in the same order on every run.
+func AssertDirsInOrder(tb testing.TB, fsys fs.FS, want map[string][]string) {
 	tb.Helper()
-	dirs := make([]string, 0, len(want))
-	for dir := range want {
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs)
-	for _, dir := range dirs {
-		if info, err := fs.Stat(fsys, dir); err != nil || !info.IsDir() {
-			tb.Errorf("fs.Stat(%q) = (%v, %v), want a directory", dir, info, err)
+	for _, dir := range slices.Sorted(maps.Keys(want)) {
+		info, err := fs.Stat(fsys, dir)
+		switch {
+		case err != nil:
+			tb.Errorf("fs.Stat(%q) = %v, want a directory", dir, err)
+		case !info.IsDir():
+			tb.Errorf("fs.Stat(%q) reports mode %v, want a directory", dir, info.Mode())
 		}
 		AssertDir(tb, fsys, dir, want[dir])
 	}

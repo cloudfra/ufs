@@ -15,7 +15,6 @@
 package ufs
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"path/filepath"
@@ -239,18 +238,4 @@ func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
 			t.Errorf("entry list contains '.', %v", entries)
 		}
 	}
-}
-
-func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
-	tb.Helper()
-
-	fsys, err := newFSFunc(tb.Context(), name)
-	if err != nil {
-		tb.Fatalf("FileSystem %q has an error, %s", name, err)
-	}
-	if fsys == nil {
-		tb.Fatalf("FileSystem %q is nil", name)
-	}
-
-	return fsys
 }

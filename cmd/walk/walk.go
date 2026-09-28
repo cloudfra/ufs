@@ -23,6 +23,7 @@ import (
 	"os"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/gcsfs" // registers gs://
 )
 
 var pathFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")

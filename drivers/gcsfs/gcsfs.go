@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package gcsfs provides a ufs file system backed by a Google Cloud Storage
+// bucket. Importing it registers the gs:// scheme with [ufs.New]:
+//
+//	import _ "github.com/cloudfra/ufs/drivers/gcsfs"
+package gcsfs
 
 import (
 	"context"
@@ -29,6 +33,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"google.golang.org/api/googleapi"
@@ -42,12 +47,12 @@ const (
 )
 
 var (
-	_ WriteFS = (*gcsFS)(nil)
-	_ File    = (*gcsFile)(nil)
+	_ ufs.WriteFS = (*gcsFS)(nil)
+	_ ufs.File    = (*gcsFile)(nil)
 )
 
 func init() {
-	Register(NewDriver("gcs", newGCSFS, isGCSFSUri, 1, true, true))
+	ufs.Register(ufs.NewDriver("gcs", New, isGCSFSUri, 1, true, true))
 }
 
 type gcsFS struct {
@@ -79,13 +84,7 @@ func (f *gcsFile) Stat() (fs.FileInfo, error) {
 	if f.isDir {
 		mode = fs.ModeDir | fs.ModePerm
 	}
-	return &fsInfo{
-		name:    path.Base(f.name),
-		size:    f.size,
-		mode:    mode,
-		modTime: f.modTime,
-		isDir:   f.isDir,
-	}, nil
+	return ufs.NewFileInfo(path.Base(f.name), f.size, mode, f.modTime), nil
 }
 
 func (f *gcsFile) Read(p []byte) (int, error) {
@@ -200,9 +199,9 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) GetDeviceInfo() DeviceMap {
-	info := NewDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
-	return NewDeviceMap(info)
+func (fsys *gcsFS) GetDeviceInfo() ufs.DeviceMap {
+	info := ufs.NewDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
+	return ufs.NewDeviceMap(info)
 }
 
 func (fsys *gcsFS) URI() (*url.URL, error) {
@@ -219,7 +218,7 @@ func (fsys *gcsFS) URI() (*url.URL, error) {
 }
 
 func (fsys *gcsFS) String() string {
-	return fmt.Sprintf("gcsFS(%s)", URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
+	return fmt.Sprintf("gcsFS(%s)", ufs.URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
@@ -287,7 +286,7 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	if name == pathutil.CwdPath {
-		return &fsInfo{name: pathutil.CwdPath, mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+		return ufs.NewFileInfo(pathutil.CwdPath, 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
 	}
 	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
@@ -296,12 +295,7 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	objPath := path.Join(fsys.baseDir, name)
 	attrs, err := fsys.client.Bucket(fsys.bucket).Object(objPath).Attrs(fsys.ctx)
 	if err == nil {
-		return &fsInfo{
-			name:    path.Base(name),
-			size:    attrs.Size,
-			mode:    fs.ModePerm,
-			modTime: attrs.Updated,
-		}, nil
+		return ufs.NewFileInfo(path.Base(name), attrs.Size, fs.ModePerm, attrs.Updated), nil
 	}
 	if !errors.Is(err, storage.ErrObjectNotExist) {
 		return nil, ufserrors.NewPathError("stat", name, err)
@@ -315,7 +309,7 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	if len(entries) == 0 {
 		return nil, ufserrors.NewPathError("stat", name, fs.ErrNotExist)
 	}
-	return &fsInfo{name: path.Base(name), mode: fs.ModeDir | fs.ModePerm, isDir: true}, nil
+	return ufs.NewFileInfo(path.Base(name), 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
@@ -349,23 +343,13 @@ func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 			if dirName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-				name:  dirName,
-				mode:  fs.ModeDir | fs.ModePerm,
-				isDir: true,
-			}))
+			entries = append(entries, fs.FileInfoToDirEntry(ufs.NewFileInfo(dirName, 0, fs.ModeDir|fs.ModePerm, time.Time{})))
 		} else {
 			fileName := strings.TrimPrefix(attrs.Name, listPrefix)
 			if fileName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(&fsInfo{
-				name:    fileName,
-				size:    attrs.Size,
-				mode:    fs.ModePerm,
-				modTime: attrs.Updated,
-				isDir:   false,
-			}))
+			entries = append(entries, fs.FileInfoToDirEntry(ufs.NewFileInfo(fileName, attrs.Size, fs.ModePerm, attrs.Updated)))
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -381,7 +365,7 @@ func (fsys *gcsFS) Close() error {
 	return fsys.client.Close()
 }
 
-func (fsys *gcsFS) Create(name string) (File, error) {
+func (fsys *gcsFS) Create(name string) (ufs.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -525,7 +509,10 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 	return nil
 }
 
-func newGCSFS(ctx context.Context, name string) (FS, error) {
+// New returns a file system for the gs://bucket/dir URI name, authenticating
+// with the default Google Cloud credentials. When no credentials are available
+// it falls back to unauthenticated access, which works for public buckets.
+func New(ctx context.Context, name string) (ufs.FS, error) {
 	return makeGCSFS(ctx, name)
 }
 
@@ -546,12 +533,10 @@ func makeGCSFS(ctx context.Context, name string) (*gcsFS, error) {
 	return makeGCSFSWithClient(ctx, gcsClient, name)
 }
 
-// MakeGCSFS returns a GCS-backed file system for the gs:// URI name using
-// gcsClient.
-//
-// Deprecated: MakeGCSFS exists only to support the shared driver tests in
-// drivers/testing and will be removed soon. Use New instead.
-func MakeGCSFS(ctx context.Context, gcsClient *storage.Client, name string) (WriteFS, error) {
+// NewWithClient returns a file system for the gs://bucket/dir URI name that
+// uses gcsClient for every request, for callers that need custom credentials,
+// endpoints, or options.
+func NewWithClient(ctx context.Context, gcsClient *storage.Client, name string) (ufs.FS, error) {
 	return makeGCSFSWithClient(ctx, gcsClient, name)
 }
 

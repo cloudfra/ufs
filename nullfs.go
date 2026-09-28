@@ -249,6 +249,14 @@ func newNullFS(_ context.Context, name string) (FS, error) {
 	return makeNullFS(name), nil
 }
 
+// MakeNullFS creates a null FS without a context.
+//
+// Deprecated: MakeNullFS exists only to support the shared driver tests in
+// drivers/testing and will be removed soon. Use New instead.
+func MakeNullFS(name string) FS {
+	return makeNullFS(name)
+}
+
 func makeNullFS(name string) *nullFS {
 	return &nullFS{
 		name: name,

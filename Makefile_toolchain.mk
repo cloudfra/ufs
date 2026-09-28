@@ -44,6 +44,11 @@ TFLINT_VERSION = latest
 TRIVY_VERSION = 0.74.0
 # https://github.com/goptics/vizb/releases
 VIZB_VERSION = 0.21.0
+# https://developer.android.com/ndk/downloads
+ANDROID_NDK_VERSION = r28c
+# Minimum Android API level for the NDK's clang target wrappers; 21 is the
+# lowest the NDK supports.
+ANDROID_API = 21
 
 ifeq ($(OS),Windows_NT)
 	DOCKERCOMPOSE_PACKAGE = https://github.com/docker/compose/releases/download/v$(DOCKERCOMPOSE_VERSION)/docker-compose-windows-x86_64.exe
@@ -110,6 +115,14 @@ TERRAFORM = build/toolchain/bin/terraform$(EXE)
 TFLINT = build/toolchain/bin/tflint$(EXE)
 TRIVY = build/toolchain/bin/trivy$(EXE)
 VIZB = build/toolchain/bin/vizb$(EXE)
+
+# The Android NDK supplies the C toolchain that android/386, android/amd64 and
+# android/arm need for cgo external linking. It is ~700 MB, so it is not part
+# of COMMON_TOOLCHAIN (`make tools`); only those binaries depend on it (see
+# Makefile_build.mk). Only the linux-x86_64 host package is wired up.
+ANDROID_NDK = build/toolchain/android-ndk-$(ANDROID_NDK_VERSION)
+ANDROID_NDK_BIN = $(ANDROID_NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin
+ANDROID_NDK_CLANG = $(ANDROID_NDK_BIN)/clang
 
 COMMON_TOOLCHAIN = $(ACTIONLINT) $(CERTTOOL) $(DOCKER_COMPOSE) $(GOCOVER_COBERTURA) $(GOFUMPT) $(GOLANGCI_LINT) $(GOVULNCHECK) $(HADOLINT) $(REVIVE) $(RUMDL) $(SHELLCHECK) $(TERRAFORM) $(TFLINT) $(TRIVY) $(VIZB)
 
@@ -217,6 +230,17 @@ endif
 $(VIZB):
 	# https://github.com/goptics/vizb
 	GOBIN="$(TOOLCHAIN_BIN)" $(GO_WITH_PROXY) install github.com/goptics/vizb@v$(VIZB_VERSION)
+
+$(ANDROID_NDK_CLANG): build/archives/android-ndk.zip
+	rm -rf "$(REPOSITORY_ROOT)/$(ANDROID_NDK)"
+	mkdir -p "$(TOOLCHAIN_DIR)"
+	(cd "$(TOOLCHAIN_DIR)" && unzip -q "$(REPOSITORY_ROOT)/$<")
+	touch "$(REPOSITORY_ROOT)/$@"
+
+build/archives/android-ndk.zip:
+	mkdir -p "$(dir $@)"
+	$(CURL) -o "$(REPOSITORY_ROOT)/$@" -L "https://dl.google.com/android/repository/android-ndk-$(ANDROID_NDK_VERSION)-linux.zip"
+	touch "$(REPOSITORY_ROOT)/$@"
 
 build/archives/terraform.zip:
 	mkdir -p "$(dir $@)"

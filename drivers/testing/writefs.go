@@ -34,7 +34,7 @@ import (
 // WriteFSWithBuckets runs the write conformance suite for bucket-backed file
 // systems (such as object stores) that lack full directory semantics.
 func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
-	MkdirAll(t, createFSFunc)
+	MkdirAllWithBuckets(t, createFSFunc)
 	ReadFile(t, createFSFunc)
 	InvalidPathsForWriteFS(t, createFSFunc)
 	Create(t, createFSFunc)
@@ -222,16 +222,78 @@ func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name strin
 	}
 }
 
-// MkdirAll verifies that MkdirAll succeeds for a new subdirectory.
+// MkdirAll verifies that MkdirAll creates every missing directory in a path,
+// that each one is reported as a directory and listed by its parent, and that
+// repeating the call on existing directories succeeds.
 func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	t.Run("MkdirAll", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
 		defer ufsTesting.ValidateClose(t, fsys)()
-		if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-			t.Errorf("MkdirAll() = %v, want nil", err)
+		// All paths live under one new directory so files the file system
+		// already holds cannot collide with or show up in the checks.
+		for _, dir := range []string{"mkdirall/subdir", "mkdirall/a/b/c"} {
+			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
+			}
+		}
+		assertDirs(t, fsys, map[string][]string{
+			"mkdirall":        {"a", "subdir"},
+			"mkdirall/a":      {"b"},
+			"mkdirall/a/b":    {"c"},
+			"mkdirall/a/b/c":  {},
+			"mkdirall/subdir": {},
+		})
+		if err := fsys.MkdirAll("mkdirall/a/b/c", fs.ModePerm); err != nil {
+			t.Errorf("MkdirAll(%q) on existing directories = %v, want nil", "mkdirall/a/b/c", err)
 		}
 	})
+}
+
+// MkdirAllWithBuckets is the MkdirAll check for bucket-backed file systems,
+// which have no real directories: MkdirAll must succeed, and once a file is
+// created under the path every parent directory must exist.
+func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+	t.Run("MkdirAllWithBuckets", func(t *testing.T) {
+		t.Parallel()
+		fsys := createFSFunc(t)
+		defer ufsTesting.ValidateClose(t, fsys)()
+		if err := fsys.MkdirAll("mkdirall/a/b", fs.ModePerm); err != nil {
+			t.Fatalf("MkdirAll(%q) = %v, want nil", "mkdirall/a/b", err)
+		}
+		f, err := fsys.Create("mkdirall/a/b/file")
+		if err != nil {
+			t.Fatalf("Create(%q) = %v, want nil", "mkdirall/a/b/file", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatalf("Close() = %v, want nil", err)
+		}
+		assertDirs(t, fsys, map[string][]string{
+			"mkdirall":     {"a"},
+			"mkdirall/a":   {"b"},
+			"mkdirall/a/b": {"file"},
+		})
+	})
+}
+
+// assertDirs checks that each key of want is a directory whose entries are
+// exactly the names in want. Stat alone is not enough: a file system may
+// report any path as a directory, so each one is also listed.
+func assertDirs(t *testing.T, fsys ufs.ReadFS, want map[string][]string) {
+	t.Helper()
+	for dir, wantNames := range want {
+		if info, err := fsys.Stat(dir); err != nil || !info.IsDir() {
+			t.Errorf("Stat(%q) = (%v, %v), want a directory", dir, info, err)
+		}
+		entries, err := fsys.ReadDir(dir)
+		if err != nil {
+			t.Errorf("ReadDir(%q) = %v, want nil", dir, err)
+			continue
+		}
+		if diff := cmp.Diff(wantNames, ufsTesting.DirEntryListToNames(entries)); diff != "" {
+			t.Errorf("ReadDir(%q) mismatch (-want +got):\n%s", dir, diff)
+		}
+	}
 }
 
 // ReadFile verifies that data written to a file can be read back.

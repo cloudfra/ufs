@@ -13,18 +13,29 @@
 // limitations under the License.
 
 //go:build aix
-// +build aix
 
-package ufs
+package gitfs
 
 import (
+	"context"
 	"fmt"
+	"strings"
+
+	"github.com/cloudfra/ufs"
 )
 
-func newGitFS(name string) (FS, error) {
+// The driver is still registered on aix so git URIs fail with New's error
+// instead of falling through to another driver.
+func init() {
+	ufs.Register(ufs.NewDriver("git", New, isGitFSUri, 1, true, true))
+}
+
+// New reports that gitfs is unavailable on GOOS=aix.
+func New(_ context.Context, name string) (ufs.FS, error) {
 	return nil, fmt.Errorf("cannot mount %q, gitfs is not supported on this operating system", name)
 }
 
+// isGitFSUri mirrors gitfs.go, which does not build on GOOS=aix.
 func isGitFSUri(uri string) bool {
-	return false
+	return strings.HasSuffix(strings.ToLower(uri), ".git")
 }

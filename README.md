@@ -26,7 +26,7 @@ URI scheme, and a layering helper (ufs.CreateURI) for composing nested file syst
 | Memory       | `memory:`      | memfs.go       | In-memory storage; lost when the process exits.           |
 | Local        | `file:///path` | localfs.go     | Local disk, mounted at a root path via os.OpenRoot.       |
 | Google Cloud | `gs://bucket`  | drivers/gcsfs  | Google Cloud Storage bucket as a read-only file system.¹  |
-| Git          | `git://<url>`  | gitfs.go       | Reads files from a git repository (clones on first open). |
+| Git          | `git://<url>`  | drivers/gitfs  | Reads files from a git repository (clones on first open).¹|
 | Archive      | `archive://`   | archivefs.go   | Reads archives (zip, tar, 7z) as read-only FSs.           |
 | BoltDB       | `bolt:/path`   | drivers/boltfs | Single BoltDB file.¹                                      |
 | Nested       | via CreateURI  | nestfs.go      | Layers one or more virtual FSs at specific mount paths    |

@@ -13,9 +13,15 @@
 // limitations under the License.
 
 //go:build !aix
-// +build !aix
 
-package ufs
+// Package gitfs provides a read-only ufs file system with the contents of a
+// git repository, cloned into a temporary directory when it is opened.
+// Importing it registers URIs ending in ".git" with [ufs.New]:
+//
+//	import _ "github.com/cloudfra/ufs/drivers/gitfs"
+//
+// The driver is unavailable on GOOS=aix; there, these URIs return an error.
+package gitfs
 
 import (
 	"context"
@@ -24,13 +30,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
 func init() {
-	Register(NewDriver("git", newGitFS, isGitFSUri, 1, true, true))
+	ufs.Register(ufs.NewDriver("git", New, isGitFSUri, 1, true, true))
 }
 
 func prepareGitDirectory(name string, gitURL string) error {
@@ -50,20 +57,15 @@ func prepareGitDirectory(name string, gitURL string) error {
 	return nil
 }
 
-// MakeGitFS returns a file system backed by the git repository URI name.
-//
-// Deprecated: MakeGitFS exists only to support the shared driver tests in
-// drivers/testing and will be removed soon. Use New instead.
-func MakeGitFS(ctx context.Context, name string) (WriteFS, error) {
-	return newGitFS(ctx, name)
-}
-
-func newGitFS(ctx context.Context, name string) (FS, error) {
+// New returns a file system with the contents of the git repository name,
+// which must end in ".git". The repository is cloned into a temporary
+// directory that is removed when the file system is closed.
+func New(ctx context.Context, name string) (ufs.FS, error) {
 	if !isGitFSUri(name) {
 		return nil, fmt.Errorf("%q is not a valid git repository", name)
 	}
 
-	return newTempMountFS(ctx, name, func(tempDir string) error {
+	return ufs.NewTempMountFS(ctx, name, func(tempDir string) error {
 		return prepareGitDirectory(tempDir, name)
 	})
 }

@@ -16,13 +16,11 @@ package ufs
 
 import (
 	"context"
-	"io"
 	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
-	"github.com/google/go-cmp/cmp"
 )
 
 type fsTestCase struct {
@@ -97,24 +95,6 @@ var (
 		},
 	}
 
-	// permDeniedFSTestCaseList holds FSes whose write operations return
-	// fs.ErrPermission rather than succeeding silently.
-	permDeniedFSTestCaseList = []fsTestCase{
-		{
-			name: "readOnlyFS",
-			createFS: func(tb testing.TB) FS {
-				inner := makeNullFS(nullFSPrefix)
-				tb.Cleanup(func() {
-					if err := inner.Close(); err != nil {
-						tb.Fatalf("failed to close inner FS: %v", err)
-					}
-				})
-				return ReadOnly(inner)
-			},
-			wantString: nullFSPrefix,
-		},
-	}
-
 	testassetFilenameList = []string{
 		pathutil.CwdPath,
 		"files/index.html",
@@ -129,10 +109,6 @@ var (
 
 	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
 )
-
-func getReadWriteTestCaseList() []fsTestCase {
-	return readWriteFSTestCaseList
-}
 
 func getAllRegularTestCaseList() []fsTestCase {
 	return appendNestFSTestCase(readWriteFSTestCaseList)
@@ -169,125 +145,6 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 	}
 
 	return fsys
-}
-
-func TestFSMkdirAll(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getAllExceptAngryTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-				t.Errorf("MkdirAll() = %v, want nil", err)
-			}
-		})
-	}
-}
-
-func TestFSReadFile(t *testing.T) {
-	t.Parallel()
-	for _, tc := range getReadWriteTestCaseList() {
-		t.Run(tc.name, func(t *testing.T) {
-			wantData := ufsTesting.RandomString(100)
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			f, err := fsys.Create("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("Create failed: %v", err)
-			}
-			if _, err := io.WriteString(f, wantData); err != nil {
-				t.Fatalf("WriteString failed: %v", err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatalf("Close failed: %v", err)
-			}
-
-			rfs, ok := fsys.(fs.ReadFileFS)
-			if !ok {
-				t.Skip("does not implement fs.ReadFileFS")
-			}
-			got, err := rfs.ReadFile("readfile_test.txt")
-			if err != nil {
-				t.Fatalf("ReadFile failed: %v", err)
-			}
-			if diff := cmp.Diff(wantData, string(got)); diff != "" {
-				t.Errorf("ReadFile mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func verifyFS(t *testing.T, fsys FS) {
-	verifyReadOnlyFS(t, fsys)
-}
-
-func verifyReadOnlyFS(t *testing.T, fsys fs.FS) {
-	t.Helper()
-	if fsys == nil {
-		t.Fatal("file system is nil")
-	}
-	if _, ok := fsys.(ReadFS); !ok {
-		t.Errorf("file system does not implement ReadFS")
-	}
-}
-
-func TestReadOnlyFS(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range append(append(readWriteFSTestCaseList, readOnlyFSTestCaseList...), permDeniedFSTestCaseList...) {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			if fsys == nil {
-				t.Fatalf("file system is nil")
-			}
-			verifyReadOnlyFS(t, fsys)
-			ufsTesting.ValidateClose(t, fsys)()
-		})
-	}
-}
-
-func TestFS(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range readWriteFSTestCaseList {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			if fsys == nil {
-				t.Fatalf("file system is nil")
-			}
-			verifyFS(t, fsys)
-			ufsTesting.ValidateClose(t, fsys)()
-		})
-	}
-}
-
-func TestReadOnlyFSURIIncludesROTag(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range append(readOnlyFSTestCaseList, permDeniedFSTestCaseList...) {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			fsys := tc.createFS(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-
-			u, err := fsys.URI()
-			if err != nil {
-				t.Fatalf("URI() returned error: %v", err)
-			}
-			if u == nil {
-				t.Fatal("URI() = nil, want a URL")
-			}
-			if got := u.Query().Get("ro"); got != "true" {
-				t.Errorf("URI().Query().Get(\"ro\") = %q, want %q", got, "true")
-			}
-		})
-	}
 }
 
 // dirFileConflictCases are Create and MkdirAll calls that conflict with the

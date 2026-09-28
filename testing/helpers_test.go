@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -106,6 +107,34 @@ func (n noReadDirFileFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 	return struct{ fs.File }{f}, nil
+}
+
+// reversedReadDirFileFS returns directories whose fs.ReadDirFile.ReadDir
+// lists entries in reverse order, as an OS directory may. ReadDirFS.ReadDir is
+// the MapFS one and stays sorted.
+type reversedReadDirFileFS struct {
+	fstest.MapFS
+}
+
+func (r reversedReadDirFileFS) Open(name string) (fs.File, error) {
+	f, err := r.MapFS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if rdf, ok := f.(fs.ReadDirFile); ok {
+		return reversedReadDirFile{rdf}, nil
+	}
+	return f, nil
+}
+
+type reversedReadDirFile struct {
+	fs.ReadDirFile
+}
+
+func (r reversedReadDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	entries, err := r.ReadDirFile.ReadDir(n)
+	slices.Reverse(entries)
+	return entries, err
 }
 
 // fakeDirEntry implements fs.DirEntry and fs.FileInfo.
@@ -454,12 +483,24 @@ func TestAssertDir(t *testing.T) {
 		}
 	})
 
-	t.Run("order_matters", func(t *testing.T) {
+	t.Run("order_matters_for_readdirfs", func(t *testing.T) {
 		t.Parallel()
+		// fs.ReadDirFS.ReadDir must return sorted entries, so an unsorted want
+		// fails there. fs.ReadDirFile only promises directory order, so the
+		// Open(dir).ReadDir(-1) path accepts the entries in any order.
 		m := &captureTB{T: t}
 		utesting.AssertDir(m, mapFS, "dir", []string{"b.txt", "a.txt", "sub"})
-		if len(m.errors) != 2 {
-			t.Errorf("captured %d errors, want 2: %v", len(m.errors), m.errors)
+		if len(m.errors) != 1 || !strings.HasPrefix(m.errors[0], "fs.ReadDir(") {
+			t.Errorf("captured errors %v, want exactly one fs.ReadDir mismatch", m.errors)
+		}
+	})
+
+	t.Run("readdirfile_any_order", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDir(m, reversedReadDirFileFS{mapFS}, "dir", []string{"a.txt", "b.txt", "sub"})
+		if len(m.errors) != 0 || len(m.fatals) != 0 {
+			t.Errorf("unexpected failures for a ReadDirFile in reverse order: errors=%v fatals=%v", m.errors, m.fatals)
 		}
 	})
 
@@ -491,6 +532,115 @@ func TestAssertDir(t *testing.T) {
 		}
 		if len(m.errors) != 0 {
 			t.Errorf("unexpected errors after fatal: %v", m.errors)
+		}
+	})
+}
+
+// everyDirFS reports every path as an empty directory, like a file system
+// whose MkdirAll creates nothing but whose Stat claims success.
+type everyDirFS struct{}
+
+func (everyDirFS) Open(name string) (fs.File, error) {
+	return everyDirFile{name: name}, nil
+}
+
+func (everyDirFS) ReadDir(string) ([]fs.DirEntry, error) { return []fs.DirEntry{}, nil }
+
+type everyDirFile struct{ name string }
+
+func (f everyDirFile) Stat() (fs.FileInfo, error) {
+	return fakeDirEntry{name: f.name, isDir: true}, nil
+}
+func (everyDirFile) Read([]byte) (int, error)           { return 0, errors.New("is a directory") }
+func (everyDirFile) Close() error                       { return nil }
+func (everyDirFile) ReadDir(int) ([]fs.DirEntry, error) { return []fs.DirEntry{}, nil }
+
+func TestAssertDirs(t *testing.T) {
+	t.Parallel()
+
+	mapFS := fstest.MapFS{
+		"top/a/x.txt": {},
+		"top/b/y.txt": {},
+		"top/file":    {},
+	}
+
+	t.Run("match", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDirs(m, mapFS, map[string][]string{
+			"top":   {"a", "b", "file"},
+			"top/a": {"x.txt"},
+			"top/b": {"y.txt"},
+		})
+		if len(m.errors) != 0 || len(m.fatals) != 0 {
+			t.Errorf("unexpected failures: errors=%v fatals=%v", m.errors, m.fatals)
+		}
+	})
+
+	t.Run("listing_mismatch", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDirs(m, mapFS, map[string][]string{"top": {"a", "file"}})
+		if len(m.errors) == 0 {
+			t.Error("AssertDirs reported no error for a listing missing a sibling")
+		}
+	})
+
+	t.Run("regular_file_is_not_a_directory", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDirs(m, mapFS, map[string][]string{"top/file": {}})
+		if !slices.ContainsFunc(m.errors, func(e string) bool { return strings.Contains(e, "want a directory") }) {
+			t.Errorf("AssertDirs did not report a regular file as not a directory: %v", m.errors)
+		}
+	})
+
+	t.Run("missing_directory", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDirs(m, mapFS, map[string][]string{"top/missing": {}})
+		if !slices.ContainsFunc(m.errors, func(e string) bool { return strings.Contains(e, "want a directory") }) {
+			t.Errorf("AssertDirs did not report a missing directory: %v", m.errors)
+		}
+	})
+
+	t.Run("stat_alone_is_not_enough", func(t *testing.T) {
+		t.Parallel()
+		// Every path Stats as a directory, but nothing is listed, so the
+		// expected children must be reported missing.
+		m := &captureTB{T: t}
+		utesting.AssertDirs(m, everyDirFS{}, map[string][]string{
+			"top":   {"a"},
+			"top/a": {},
+		})
+		if len(m.errors) == 0 {
+			t.Error("AssertDirs accepted a file system that reports every path as an empty directory")
+		}
+		for _, e := range m.errors {
+			if strings.Contains(e, "want a directory") {
+				t.Errorf("unexpected Stat failure for a file system whose Stat always succeeds: %q", e)
+			}
+		}
+	})
+
+	t.Run("checks_in_sorted_order", func(t *testing.T) {
+		t.Parallel()
+		m := &captureTB{T: t}
+		utesting.AssertDirs(m, mapFS, map[string][]string{
+			"z_missing": {},
+			"a_missing": {},
+			"m_missing": {},
+		})
+		var order []string
+		for _, e := range m.errors {
+			for _, name := range []string{"a_missing", "m_missing", "z_missing"} {
+				if strings.Contains(e, "fs.Stat(\""+name+"\")") {
+					order = append(order, name)
+				}
+			}
+		}
+		if want := []string{"a_missing", "m_missing", "z_missing"}; !slices.Equal(order, want) {
+			t.Errorf("AssertDirs checked directories in order %v, want %v", order, want)
 		}
 	})
 }

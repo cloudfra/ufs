@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+package gcsfs_test
 
 import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/gcsfs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 )
 
@@ -25,8 +26,8 @@ func TestGCSFSDriver(t *testing.T) {
 	ufsdriversTesting.WriteFSWithBuckets(t, func(t *testing.T) ufs.WriteFS {
 		ctx := t.Context()
 		name := "gs://first"
-		client := ufs.CreateFakeGcsBackend(t)
-		fsys, err := ufs.MakeGCSFS(ctx, client, name)
+		client := gcsfs.CreateFakeGcsBackend(t)
+		fsys, err := gcsfs.NewWithClient(ctx, client, name)
 		if err != nil {
 			t.Fatalf("cannot create gcsFS %q, %s", name, err)
 		}

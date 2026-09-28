@@ -260,16 +260,19 @@ func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 		defer ufsTesting.ValidateClose(t, fsys)()
 		// All paths live under one new directory so files the file system
 		// already holds cannot collide with or show up in the checks.
-		for _, dir := range []string{"mkdirall/subdir", "mkdirall/a/b/c"} {
+		// Sibling directories at each level check that creating one directory
+		// neither hides nor replaces its neighbors.
+		for _, dir := range []string{"mkdirall/subdir", "mkdirall/a/b/c", "mkdirall/a/d"} {
 			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
 				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
 			}
 		}
 		assertDirs(t, fsys, map[string][]string{
 			"mkdirall":        {"a", "subdir"},
-			"mkdirall/a":      {"b"},
+			"mkdirall/a":      {"b", "d"},
 			"mkdirall/a/b":    {"c"},
 			"mkdirall/a/b/c":  {},
+			"mkdirall/a/d":    {},
 			"mkdirall/subdir": {},
 		})
 		if err := fsys.MkdirAll("mkdirall/a/b/c", fs.ModePerm); err != nil {
@@ -286,20 +289,27 @@ func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.Write
 		t.Parallel()
 		fsys := createFSFunc(t)
 		defer ufsTesting.ValidateClose(t, fsys)()
-		if err := fsys.MkdirAll("mkdirall/a/b", fs.ModePerm); err != nil {
-			t.Fatalf("MkdirAll(%q) = %v, want nil", "mkdirall/a/b", err)
-		}
-		f, err := fsys.Create("mkdirall/a/b/file")
-		if err != nil {
-			t.Fatalf("Create(%q) = %v, want nil", "mkdirall/a/b/file", err)
-		}
-		if err := f.Close(); err != nil {
-			t.Fatalf("Close() = %v, want nil", err)
+		// Sibling directories at each level check that the virtual directories
+		// derived from object names keep neighbors apart.
+		for _, dir := range []string{"mkdirall/a/b", "mkdirall/a/c", "mkdirall/d"} {
+			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
+			}
+			name := dir + "/file"
+			f, err := fsys.Create(name)
+			if err != nil {
+				t.Fatalf("Create(%q) = %v, want nil", name, err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatalf("Close() = %v, want nil", err)
+			}
 		}
 		assertDirs(t, fsys, map[string][]string{
-			"mkdirall":     {"a"},
-			"mkdirall/a":   {"b"},
+			"mkdirall":     {"a", "d"},
+			"mkdirall/a":   {"b", "c"},
 			"mkdirall/a/b": {"file"},
+			"mkdirall/a/c": {"file"},
+			"mkdirall/d":   {"file"},
 		})
 	})
 }

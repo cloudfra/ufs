@@ -254,20 +254,34 @@ func TestBoltFSWatchOnFile(t *testing.T) {
 }
 
 func TestBoltFSURIAndString(t *testing.T) {
-	uri := boltFSPrefix + filepath.ToSlash(filepath.Join(t.TempDir(), "s.db"))
-	fsys, err := makeBoltFS(uri)
+	dbPath := filepath.Join(t.TempDir(), "s.db")
+	fsys, err := makeBoltFS(boltFSPrefix + filepath.ToSlash(dbPath))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ufsTesting.ValidateClose(t, fsys)()
+	writeTestFile(t, fsys, "a.txt", "hello")
 	u, err := fsys.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.String() != uri {
-		t.Errorf("URI() = %q, want %q", u, uri)
+	if u.Scheme != boltFSScheme {
+		t.Errorf("URI().Scheme = %q, want %q", u.Scheme, boltFSScheme)
 	}
-	if got, want := fsys.String(), "boltFS("+uri+")"; got != want {
+	if got, want := u.Path, pathutil.CoerceUnix(dbPath); got != want {
+		t.Errorf("URI().Path = %q, want %q", got, want)
+	}
+	if got, want := fsys.String(), "boltFS("+u.String()+")"; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
+	}
+	ufsTesting.ValidateClose(t, fsys)()
+
+	// The URI must reopen the same database.
+	reopened, err := makeBoltFS(u.String())
+	if err != nil {
+		t.Fatalf("makeBoltFS(%q) = %v", u, err)
+	}
+	defer ufsTesting.ValidateClose(t, reopened)()
+	if got, err := reopened.ReadFile("a.txt"); err != nil || string(got) != "hello" {
+		t.Errorf("ReadFile(a.txt) after reopening %q = (%q, %v), want (%q, nil)", u, got, err, "hello")
 	}
 }

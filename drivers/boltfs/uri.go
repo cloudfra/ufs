@@ -20,6 +20,9 @@
 //
 //	fsys, err := ufs.New(ctx, "bolt:/path/to/data.db")
 //
+// The equivalent bolt:///path/to/data.db form is also accepted; it is the form
+// the file system's URI method returns.
+//
 // Directories are nested buckets and files are key/value entries in their
 // parent directory's bucket. Writes to an open file are buffered in memory
 // and committed to the database, in a single transaction, when the file is
@@ -30,7 +33,8 @@ package boltfs
 import "strings"
 
 const (
-	boltFSPrefix = "bolt:"
+	boltFSScheme = "bolt"
+	boltFSPrefix = boltFSScheme + ":"
 )
 
 func isBoltFSUri(name string) bool {

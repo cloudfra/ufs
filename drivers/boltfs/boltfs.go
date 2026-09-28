@@ -318,16 +318,14 @@ func (fsys *boltFS) GetDeviceInfo() ufs.DeviceMap {
 	return ufs.NewDeviceMap(ufs.NewDeviceInfo(fsys.absPath, "bolt", 1, false))
 }
 
+// URI returns the bolt:///abs/path form of the database path, which
+// makeBoltFS accepts, so the URI reopens the same database.
 func (fsys *boltFS) URI() (*url.URL, error) {
-	return url.Parse(fsys.name)
+	return &url.URL{Scheme: boltFSScheme, Path: pathutil.CoerceUnix(fsys.absPath)}, nil
 }
 
 func (fsys *boltFS) String() string {
-	name := fsys.name
-	if u, err := fsys.URI(); err == nil && u != nil {
-		name = u.String()
-	}
-	return fmt.Sprintf("boltFS(%s)", name)
+	return fmt.Sprintf("boltFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *boltFS) isClosed() bool {
@@ -873,6 +871,8 @@ func makeBoltFS(name string) (*boltFS, error) {
 	if !ok {
 		return nil, fmt.Errorf("%q does not contain the scheme, %q", name, boltFSPrefix)
 	}
+	// bolt:///abs/path (the form URI returns) has an empty authority.
+	localPath = strings.TrimPrefix(localPath, "//")
 	if localPath == "" {
 		return nil, fmt.Errorf("%q does not name a bolt database file", name)
 	}

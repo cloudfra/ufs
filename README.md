@@ -25,12 +25,16 @@ URI scheme, and a layering helper (ufs.CreateURI) for composing nested file syst
 | Null         | `null://`      | nullfs.go      | Acts as /dev/null. Writes discarded, reads return empty.  |
 | Memory       | `memory:`      | memfs.go       | In-memory storage; lost when the process exits.           |
 | Local        | `file:///path` | localfs.go     | Local disk, mounted at a root path via os.OpenRoot.       |
-| Google Cloud | `gs://bucket`  | gcsfs.go       | Google Cloud Storage bucket as a read-only file system.   |
+| Google Cloud | `gs://bucket`  | drivers/gcsfs  | Google Cloud Storage bucket as a read-only file system.¹  |
 | Git          | `git://<url>`  | gitfs.go       | Reads files from a git repository (clones on first open). |
 | Archive      | `archive://`   | archivefs.go   | Reads archives (zip, tar, 7z) as read-only FSs.           |
-| BoltDB       | `bolt:/path`   | drivers/boltfs | Single BoltDB file; import `drivers/boltfs` to register.  |
+| BoltDB       | `bolt:/path`   | drivers/boltfs | Single BoltDB file.¹                                      |
 | Nested       | via CreateURI  | nestfs.go      | Layers one or more virtual FSs at specific mount paths    |
 |              |                |                | inside a base FS.                                         |
+
+¹ Drivers under `drivers/` register their scheme when imported. For example, add
+`import _ "github.com/cloudfra/ufs/drivers/gcsfs"` to open `gs://` URIs with `ufs.New`,
+or `import _ "github.com/cloudfra/ufs/drivers/boltfs"` to open `bolt:` URIs.
 
 ## Public API
 

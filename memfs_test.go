@@ -68,38 +68,6 @@ func TestIsMemFSUri(t *testing.T) {
 	}
 }
 
-func TestNewMemFS(t *testing.T) {
-	fsys, err := newMemFS(t.Context(), "memory://test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fsys == nil {
-		t.Fatal("fsys is nil")
-	}
-}
-
-func TestMemFS(t *testing.T) {
-	testFileSystem(t, newMemFS, "memory://test")
-}
-
-func TestMemFSCreate(t *testing.T) {
-	fsys, err := newMemFS(t.Context(), "memory://test")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Valid Create
-	f, err := fsys.Create("created.txt")
-	if err != nil {
-		t.Fatalf("Create(\"created.txt\") failed: %v", err)
-	}
-	defer ufsTesting.ValidateClose(t, f)()
-
-	if f == nil {
-		t.Fatal("Created file is nil")
-	}
-}
-
 func TestMemFileOperations(t *testing.T) {
 	fsys, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {
@@ -476,83 +444,17 @@ func TestMemFSDirectory(t *testing.T) {
 	}
 }
 
-func TestMemFSFilePersistence(t *testing.T) {
-	fsys, err := newMemFS(t.Context(), "memory://test")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create and write a file
-	f, err := fsys.Create("persist.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = f.WriteString("persistent data")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	// Reopen and read
-	f2, err := fsys.Open("persist.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := f2.Close(); err != nil {
-			t.Errorf("failed to close file: %v", err)
-		}
-	}()
-
-	data, err := io.ReadAll(f2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "persistent data" {
-		t.Errorf("ReadAll() = %q, want %q", string(data), "persistent data")
-	}
-}
-
 func TestMemFSReadFile(t *testing.T) {
 	fsys, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	f, err := fsys.Create("hello.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("hello world"); err != nil {
-		t.Fatalf("failed to write to file: %v", err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("failed to close file: %v", err)
-	}
-
 	rfs := fsys.(fs.ReadFileFS)
-
-	t.Run("valid", func(t *testing.T) {
-		got, err := rfs.ReadFile("hello.txt")
-		if err != nil {
-			t.Fatalf("ReadFile() = %v, want nil", err)
-		}
-		if string(got) != "hello world" {
-			t.Errorf("ReadFile() = %q, want %q", got, "hello world")
-		}
-	})
 
 	t.Run("not_found", func(t *testing.T) {
 		if _, err := rfs.ReadFile("missing.txt"); err == nil {
 			t.Error("ReadFile(missing) succeeded, want error")
-		}
-	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := rfs.ReadFile("../escape.txt"); err == nil {
-			t.Error("ReadFile(../escape.txt) succeeded, want error")
 		}
 	})
 
@@ -578,31 +480,11 @@ func TestMemFSReadLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := fsys.Create("file.txt")
-	if err != nil {
-		t.Errorf("Create() returned an error, %s", err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("failed to close file: %v", err)
-	}
-
 	lfs := fsys.(fs.ReadLinkFS)
-
-	t.Run("existing_file_not_a_symlink", func(t *testing.T) {
-		if _, err := lfs.ReadLink("file.txt"); err == nil {
-			t.Error("ReadLink on regular file succeeded, want error")
-		}
-	})
 
 	t.Run("not_found", func(t *testing.T) {
 		if _, err := lfs.ReadLink("missing.txt"); err == nil {
 			t.Error("ReadLink(missing) succeeded, want error")
-		}
-	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := lfs.ReadLink("../escape.txt"); err == nil {
-			t.Error("ReadLink(../escape) succeeded, want error")
 		}
 	})
 }
@@ -674,12 +556,6 @@ func TestMemFSLstat(t *testing.T) {
 			t.Error("Lstat(missing) succeeded, want error")
 		}
 	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := lfs.Lstat("../escape"); err == nil {
-			t.Error("Lstat(../escape) succeeded, want error")
-		}
-	})
 }
 
 func TestMemFSReadDir(t *testing.T) {
@@ -712,16 +588,6 @@ func TestMemFSReadDir(t *testing.T) {
 		}
 	})
 
-	t.Run("root", func(t *testing.T) {
-		entries, err := dfs.ReadDir(pathutil.CwdPath)
-		if err != nil {
-			t.Fatalf("ReadDir(.) = %v, want nil", err)
-		}
-		if len(entries) == 0 {
-			t.Error("ReadDir(.) returned 0 entries, want at least 1")
-		}
-	})
-
 	t.Run("on_file", func(t *testing.T) {
 		f, err := fsys.Create("plain.txt")
 		if err != nil {
@@ -738,12 +604,6 @@ func TestMemFSReadDir(t *testing.T) {
 	t.Run("not_found", func(t *testing.T) {
 		if _, err := dfs.ReadDir("missing"); err == nil {
 			t.Error("ReadDir(missing) succeeded, want error")
-		}
-	})
-
-	t.Run("invalid_path", func(t *testing.T) {
-		if _, err := dfs.ReadDir("../escape"); err == nil {
-			t.Error("ReadDir(../escape) succeeded, want error")
 		}
 	})
 }
@@ -923,16 +783,6 @@ func TestMemFileSeekNegative(t *testing.T) {
 
 	if _, err := f.Seek(-1, io.SeekStart); err == nil {
 		t.Error("Seek(-1, SeekStart) succeeded, want error")
-	}
-}
-
-func TestMemFSMkdirAllInvalid(t *testing.T) {
-	fsys, err := newMemFS(t.Context(), "memory://test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := fsys.MkdirAll("invalid/../path", fs.ModePerm); err == nil {
-		t.Error("MkdirAll(invalid/../path) succeeded, want error")
 	}
 }
 
@@ -1132,42 +982,6 @@ func TestMemFSRemoveAll(t *testing.T) {
 			t.Errorf("after RemoveAll('.'), FS still has %d entries", len(entries))
 		}
 	})
-}
-
-func TestMemFSRemoveClosedFS(t *testing.T) {
-	fsys, err := newMemFS(t.Context(), "memory://test")
-	if err != nil {
-		t.Fatalf("newMemFS returned an error, %s", err)
-	}
-	if err := fsys.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := fsys.Remove("file.txt"); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("Remove on closed memFS = %v, want fs.ErrClosed", err)
-	}
-	if err := fsys.RemoveAll("dir"); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("RemoveAll on closed memFS = %v, want fs.ErrClosed", err)
-	}
-}
-
-func TestMemFSStatOpName(t *testing.T) {
-	// Stat() for an invalid path must report Op = "stat", not "lstat".
-	fsys, err := newMemFS(t.Context(), "memory://test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = fsys.Stat("/absolute")
-	if err == nil {
-		t.Fatal("Stat(/absolute) succeeded, want error")
-	}
-	var pe *fs.PathError
-	if !errors.As(err, &pe) {
-		t.Fatalf("Stat() error type = %T, want *fs.PathError", err)
-	}
-	if pe.Op != "stat" {
-		t.Errorf("Stat() PathError.Op = %q, want %q", pe.Op, "stat")
-	}
 }
 
 // TestMemFSDirFileConflictErrors checks the exact errors memFS returns for

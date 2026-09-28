@@ -65,7 +65,8 @@ func (fsys *embedFS) Stat(name string) (fs.FileInfo, error) {
 
 func (fsys *embedFS) Lstat(name string) (fs.FileInfo, error) {
 	// embed.FS contains no symlinks, so Lstat is identical to Stat.
-	return fsys.Stat(name)
+	val, err := fsys.Stat(name)
+	return ufserrors.ChangePathErrorOp(val, err, "lstat")
 }
 
 func (fsys *embedFS) ReadDir(name string) ([]fs.DirEntry, error) {

@@ -54,7 +54,7 @@ func TestIsNullFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "mem://",
+			name: "memory://",
 			want: false,
 		},
 	}
@@ -360,6 +360,27 @@ func TestNullFSRemoveAll(t *testing.T) {
 	nfs := mustNullFS(t)
 	if err := nfs.RemoveAll("dir"); err != nil {
 		t.Errorf("RemoveAll() = %v, want nil", err)
+	}
+}
+
+// TestNullFSMkdirAll checks nullFS's discard semantics for directories:
+// MkdirAll succeeds but creates nothing, so the shared MkdirAll conformance
+// test (which requires the directories to be listed) does not apply to it.
+func TestNullFSMkdirAll(t *testing.T) {
+	nfs := mustNullFS(t)
+	for _, dir := range []string{"subdir", "a/b/c"} {
+		if err := nfs.MkdirAll(dir, fs.ModePerm); err != nil {
+			t.Errorf("MkdirAll(%q) = %v, want nil", dir, err)
+		}
+	}
+	for _, dir := range []string{pathutil.CwdPath, "a", "a/b"} {
+		entries, err := nfs.ReadDir(dir)
+		if err != nil {
+			t.Errorf("ReadDir(%q) = %v, want nil", dir, err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("ReadDir(%q) = %v after MkdirAll, want no entries (nullFS discards writes)", dir, ufsTesting.DirEntryListToNames(entries))
+		}
 	}
 }
 

@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package gcsfs
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -53,7 +52,7 @@ func TestIsGCSFSUri(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "mem://",
+			name: "memory://",
 			want: false,
 		},
 	}
@@ -240,14 +239,7 @@ func TestParseGCSPathErrors(t *testing.T) {
 	}
 }
 
-func TestGCSFS(t *testing.T) {
-	client := createStorage(t)
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
-		return makeGCSFSWithClient(ctx, client, name)
-	}, "gs://first")
-}
-
-func createStorage(tb testing.TB) *storage.Client {
+func CreateFakeGcsBackend(tb testing.TB) *storage.Client {
 	fakeUpdatedTime := ufsTesting.MustTime(tb, "2006-01-02T15:04:05Z")
 	server := fakestorage.NewServer([]fakestorage.Object{
 		{
@@ -314,7 +306,7 @@ func createStorage(tb testing.TB) *storage.Client {
 }
 
 func TestGCSFSRemove(t *testing.T) {
-	client := createStorage(t)
+	client := CreateFakeGcsBackend(t)
 	ctx := t.Context()
 	fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 	if err != nil {
@@ -348,7 +340,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("subtree", func(t *testing.T) {
-		client := createStorage(t)
+		client := CreateFakeGcsBackend(t)
 		fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 		if err != nil {
 			t.Fatal(err)
@@ -367,7 +359,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 	})
 
 	t.Run("not_exist_is_noop", func(t *testing.T) {
-		client := createStorage(t)
+		client := CreateFakeGcsBackend(t)
 		fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 		if err != nil {
 			t.Fatal(err)
@@ -380,7 +372,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		client := createStorage(t)
+		client := CreateFakeGcsBackend(t)
 		fsys, err := makeGCSFSWithClient(ctx, client, "gs://first")
 		if err != nil {
 			t.Fatal(err)

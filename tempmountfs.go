@@ -44,7 +44,7 @@ func (fsys *tempMountFS) URI() (*url.URL, error) {
 }
 
 func (fsys *tempMountFS) String() string {
-	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", URIOrDefault(fsys, fsys.name), pathutil.CoerceUnix(fsys.name))
+	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", URIOrDefault(fsys, fsys.uri), pathutil.CoerceUnix(fsys.name))
 }
 
 func (fsys *tempMountFS) getAbsPath(name string) (string, error) {
@@ -99,6 +99,12 @@ func (fsys *tempMountFS) Remove(name string) error {
 
 func (fsys *tempMountFS) RemoveAll(name string) error {
 	return fsys.lfs.RemoveAll(name)
+}
+
+// NewTempMountFS returns a file system for uri backed by a temporary local
+// directory; prepare is called with the directory path to populate it.
+func NewTempMountFS(ctx context.Context, uri string, prepare func(string) error) (FS, error) {
+	return newTempMountFS(ctx, uri, prepare)
 }
 
 func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (FS, error) {

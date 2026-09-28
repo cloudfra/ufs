@@ -148,6 +148,15 @@ func newAngryFS(_ context.Context, name string) (FS, error) {
 	return makeAngryFS(name), nil
 }
 
+// MakeAngryFS returns an angry file system named name, whose operations
+// always fail.
+//
+// Deprecated: MakeAngryFS exists only to support the shared driver tests in
+// drivers/testing and will be removed soon. Use New instead.
+func MakeAngryFS(name string) WriteFS {
+	return makeAngryFS(name)
+}
+
 func makeAngryFS(name string) *angryFS {
 	return &angryFS{
 		name: name,

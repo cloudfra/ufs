@@ -64,7 +64,7 @@ Dispatches to the appropriate implementation based on URI scheme:
 | null://       | nullfs.go        | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
 | memory:       | memfs.go         | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
 | file:///...   | localfs.go       | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
-| gs://...      | gcsfs.go         | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS              |
+| gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
 | git://...     | gitfs.go         | --        | ro       | Impl.   | Reads from a git repo (clones on first open)             |
 | archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
 | bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
@@ -127,6 +127,8 @@ enable its scheme. They may use `internal/` packages.
 | drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
+| drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
+| drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
 code with no `ufs` dependency goes in `internal/`.

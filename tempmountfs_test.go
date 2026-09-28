@@ -15,7 +15,6 @@
 package ufs
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"path/filepath"
@@ -24,25 +23,6 @@ import (
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
-
-func TestNewTempMountFS(t *testing.T) {
-	fsys, err := newTempMountFS(t.Context(), "test://", func(string) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fsys == nil {
-		t.Fatal("fsys is nil")
-	}
-	if err := fsys.Close(); err != nil {
-		t.Errorf("Close() = %v, want nil", err)
-	}
-}
-
-func TestTempMountFSFileSystem(t *testing.T) {
-	testFileSystem(t, func(ctx context.Context, name string) (FS, error) {
-		return newTempMountFS(ctx, name, func(string) error { return nil })
-	}, "temp://")
-}
 
 func TestTempMountFSCleanup(t *testing.T) {
 	var capturedDir string

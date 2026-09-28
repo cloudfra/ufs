@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package gcsfs
 
 import (
 	"context"
@@ -26,13 +26,14 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 	"cloud.google.com/go/storage"
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ Watcher = (*gcsFS)(nil)
+var _ ufs.Watcher = (*gcsFS)(nil)
 
-// Watch implements [Watcher] for GCS file systems using Cloud Pub/Sub
+// Watch implements [ufs.Watcher] for GCS file systems using Cloud Pub/Sub
 // notifications. The gcsFS must be constructed with a subscription query
 // parameter (e.g. gs://bucket/prefix?subscription=projects/P/subscriptions/S)
 // so that Watch knows which Pub/Sub subscription to pull from.
@@ -40,7 +41,7 @@ var _ Watcher = (*gcsFS)(nil)
 // GCS bucket notifications must be configured separately (via gsutil or the
 // GCS API) to publish object-change events to the Pub/Sub topic that the
 // subscription is attached to.
-func (fsys *gcsFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
+func (fsys *gcsFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
 	if err := pathutil.Validate("watch", name); err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func (fsys *gcsFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 type gcsWatcher struct {
 	fsys        *gcsFS
 	psClient    *pubsub.Client
-	hook        NotifyHook
+	hook        ufs.NotifyHook
 	cancel      context.CancelFunc
 	watchPrefix string
 
@@ -161,16 +162,16 @@ func (gw *gcsWatcher) handleMessage(msg *pubsub.Message) {
 	gw.hook(op, rel)
 }
 
-func convertGCSEventType(eventType string) (NotifyOp, bool) {
+func convertGCSEventType(eventType string) (ufs.NotifyOp, bool) {
 	switch eventType {
 	case storage.ObjectFinalizeEvent:
-		return NotifyCreate, true
+		return ufs.NotifyCreate, true
 	case storage.ObjectDeleteEvent:
-		return NotifyRemove, true
+		return ufs.NotifyRemove, true
 	case storage.ObjectMetadataUpdateEvent:
-		return NotifyChmod, true
+		return ufs.NotifyChmod, true
 	case storage.ObjectArchiveEvent:
-		return NotifyRemove, true
+		return ufs.NotifyRemove, true
 	default:
 		return 0, false
 	}

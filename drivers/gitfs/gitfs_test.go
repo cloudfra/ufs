@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudfra/ufs"
+	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -172,15 +172,11 @@ func TestNewGitFSNoGitDir(t *testing.T) {
 // so ufs.New opens a ".git" URI with it.
 func TestNewViaUFSNew(t *testing.T) {
 	srcDir := filepath.Join(t.TempDir(), "src.git")
-	if err := initTestGitRepo(t, srcDir, map[string]string{"hello.txt": "via ufs.New"}); err != nil {
+	want := map[string]string{"hello.txt": "via ufs.New"}
+	if err := initTestGitRepo(t, srcDir, want); err != nil {
 		t.Fatalf("initTestGitRepo: %v", err)
 	}
-	fsys, err := ufs.New(t.Context(), srcDir)
-	if err != nil {
-		t.Fatalf("ufs.New(%q) = %v, want nil", srcDir, err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-	ufsTesting.AssertContains(t, fsys, "hello.txt", "via ufs.New")
+	ufsdriversTesting.OpenWithNew(t, srcDir, want)
 }
 
 // initTestGitRepo creates a git repo at dir with the given files committed.

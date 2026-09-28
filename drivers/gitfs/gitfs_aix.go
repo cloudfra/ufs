@@ -19,13 +19,12 @@ package gitfs
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/cloudfra/ufs"
 )
 
-// The driver is still registered on aix so git URIs fail with New's error
-// instead of falling through to another driver.
+// The driver is registered on aix too, but isGitFSUri never matches there, so
+// ufs.New treats git URIs as it would with no gitfs driver.
 func init() {
 	ufs.Register(ufs.NewDriver("git", New, isGitFSUri, 1, true, true))
 }
@@ -35,7 +34,7 @@ func New(_ context.Context, name string) (ufs.FS, error) {
 	return nil, fmt.Errorf("cannot mount %q, gitfs is not supported on this operating system", name)
 }
 
-// isGitFSUri mirrors gitfs.go, which does not build on GOOS=aix.
-func isGitFSUri(uri string) bool {
-	return strings.HasSuffix(strings.ToLower(uri), ".git")
+// isGitFSUri returns false: gitfs is not supported on GOOS=aix.
+func isGitFSUri(string) bool {
+	return false
 }

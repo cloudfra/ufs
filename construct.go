@@ -287,7 +287,9 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 	r := getRegistrar()
 	driver, err := r.match(name)
 	if err != nil {
-		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s, %w", name, runtime.GOOS, err))
+		// Drivers outside this package (drivers/...) register their scheme only
+		// when imported, so a missing blank import looks like an unknown path.
+		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
 	}
 	fsys, err := r.create(ctx, name)
 	if err != nil {

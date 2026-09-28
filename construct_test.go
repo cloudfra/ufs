@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -33,6 +34,20 @@ func TestNewBaseFSInvalid(t *testing.T) {
 	}
 	if _, ok := err.(*fs.PathError); !ok {
 		t.Errorf("newBaseFS(unknown://) returned %T, want *fs.PathError", err)
+	}
+}
+
+// TestNewBaseFSUnregisteredDriverHint checks that the error for a URI no
+// registered driver matches suggests a missing driver import. gs:// is served
+// by drivers/gcsfs, which the ufs package's own tests never import.
+func TestNewBaseFSUnregisteredDriverHint(t *testing.T) {
+	const name = "gs://bucket/dir"
+	_, err := newBaseFS(t.Context(), name)
+	if _, ok := err.(*fs.PathError); !ok {
+		t.Fatalf("newBaseFS(%q) = %v (%T), want *fs.PathError", name, err, err)
+	}
+	if want := "check that the driver package is imported"; !strings.Contains(err.Error(), want) {
+		t.Errorf("newBaseFS(%q) = %q, want it to contain %q", name, err, want)
 	}
 }
 

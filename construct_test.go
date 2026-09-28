@@ -37,21 +37,17 @@ func TestNewBaseFSInvalid(t *testing.T) {
 	}
 }
 
-// TestNewBaseFSOptionalDriverNotImported checks that a URI for a driver that
-// lives outside this package names the package to import when that driver is
-// not registered. The ufs package's own tests never import drivers/*.
-func TestNewBaseFSOptionalDriverNotImported(t *testing.T) {
-	for _, d := range optionalDrivers {
-		name := d.prefix + "//bucket/dir"
-		t.Run(name, func(t *testing.T) {
-			_, err := newBaseFS(t.Context(), name)
-			if _, ok := err.(*fs.PathError); !ok {
-				t.Fatalf("newBaseFS(%q) = %v (%T), want *fs.PathError", name, err, err)
-			}
-			if !strings.Contains(err.Error(), d.pkg) {
-				t.Errorf("newBaseFS(%q) = %q, want it to name %q", name, err, d.pkg)
-			}
-		})
+// TestNewBaseFSUnregisteredDriverHint checks that the error for a URI no
+// registered driver matches suggests a missing driver import. gs:// is served
+// by drivers/gcsfs, which the ufs package's own tests never import.
+func TestNewBaseFSUnregisteredDriverHint(t *testing.T) {
+	const name = "gs://bucket/dir"
+	_, err := newBaseFS(t.Context(), name)
+	if _, ok := err.(*fs.PathError); !ok {
+		t.Fatalf("newBaseFS(%q) = %v (%T), want *fs.PathError", name, err, err)
+	}
+	if want := "check that the driver package is imported"; !strings.Contains(err.Error(), want) {
+		t.Errorf("newBaseFS(%q) = %q, want it to contain %q", name, err, want)
 	}
 }
 

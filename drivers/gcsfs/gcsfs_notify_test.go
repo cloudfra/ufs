@@ -312,11 +312,11 @@ func newPstestGCSFS(tb testing.TB, bucket string, baseDir string) (*gcsFS, *pste
 func TestGCSWatchPubSub(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "data")
 
-	ec := newEventCollector()
+	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.Watch(ctx, ".", ec.hook)
+	closer, err := fsys.Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,19 +328,19 @@ func TestGCSWatchPubSub(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
-		return ev.op == ufs.NotifyCreate && ev.path == "hello.txt"
+	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "hello.txt"
 	})
 }
 
 func TestGCSWatchPubSubDelete(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "")
 
-	ec := newEventCollector()
+	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.Watch(ctx, ".", ec.hook)
+	closer, err := fsys.Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,19 +352,19 @@ func TestGCSWatchPubSubDelete(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
-		return ev.op == ufs.NotifyRemove && ev.path == "removed.txt"
+	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyRemove && ev.Path == "removed.txt"
 	})
 }
 
 func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "")
 
-	ec := newEventCollector()
+	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.Watch(ctx, ".", ec.hook)
+	closer, err := fsys.Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,12 +384,12 @@ func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
-		return ev.op == ufs.NotifyCreate && ev.path == "expected.txt"
+	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "expected.txt"
 	})
 
-	if ec.hasEvent(func(ev notifyEvent) bool {
-		return ev.path == "file.txt"
+	if ec.HasEvent(func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+		return ev.Path == "file.txt"
 	}) {
 		t.Error("received event for wrong bucket")
 	}
@@ -398,11 +398,11 @@ func TestGCSWatchPubSubFiltersBucket(t *testing.T) {
 func TestGCSWatchPubSubCloseStopsDelivery(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "")
 
-	ec := newEventCollector()
+	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.Watch(ctx, ".", ec.hook)
+	closer, err := fsys.Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,8 +413,8 @@ func TestGCSWatchPubSubCloseStopsDelivery(t *testing.T) {
 		"objectId":  "before.txt",
 		"bucketId":  "my-bucket",
 	})
-	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
-		return ev.path == "before.txt"
+	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+		return ev.Path == "before.txt"
 	})
 
 	if err := closer.Close(); err != nil {
@@ -425,11 +425,11 @@ func TestGCSWatchPubSubCloseStopsDelivery(t *testing.T) {
 func TestGCSWatchPubSubNestedPath(t *testing.T) {
 	fsys, srv := newPstestGCSFS(t, "my-bucket", "root/dir")
 
-	ec := newEventCollector()
+	ec := ufsTesting.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.Watch(ctx, ".", ec.hook)
+	closer, err := fsys.Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestGCSWatchPubSubNestedPath(t *testing.T) {
 		"bucketId":  "my-bucket",
 	})
 
-	ec.waitFor(t, eventDeadline, func(ev notifyEvent) bool {
-		return ev.op == ufs.NotifyCreate && ev.path == "sub/file.txt"
+	ec.WaitFor(t, ufsTesting.EventDeadline, func(ev ufsTesting.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "sub/file.txt"
 	})
 }

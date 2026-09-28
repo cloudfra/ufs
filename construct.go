@@ -278,16 +278,6 @@ func (b *FSBuilder) BuildURI() (string, error) {
 	return CreateURI(rootName, nested)
 }
 
-// optionalDrivers lists URI prefixes served by drivers that live outside this
-// package and register themselves when imported, so a missing import produces
-// a clear error instead of an unhelpful "not found".
-var optionalDrivers = []struct {
-	prefix string
-	pkg    string
-}{
-	{prefix: "gs:", pkg: "github.com/cloudfra/ufs/drivers/gcsfs"},
-}
-
 func newBaseFS(ctx context.Context, name string) (FS, error) {
 	// drivers/embedfs wraps a Go embed.FS directly and has no URI-based
 	// constructor; give a clear error instead of an unhelpful "not found".
@@ -297,12 +287,9 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 	r := getRegistrar()
 	driver, err := r.match(name)
 	if err != nil {
-		for _, d := range optionalDrivers {
-			if strings.HasPrefix(name, d.prefix) {
-				return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("the driver for %q is not registered; add import _ %q, %w", name, d.pkg, err))
-			}
-		}
-		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s, %w", name, runtime.GOOS, err))
+		// Drivers outside this package (drivers/...) register their scheme only
+		// when imported, so a missing blank import looks like an unknown path.
+		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
 	}
 	fsys, err := r.create(ctx, name)
 	if err != nil {

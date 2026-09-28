@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"testing"
 	"testing/fstest"
@@ -34,7 +35,7 @@ import (
 // WriteFSWithBuckets runs the write conformance suite for bucket-backed file
 // systems (such as object stores) that lack full directory semantics.
 func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
-	MkdirAll(t, createFSFunc)
+	MkdirAllWithBuckets(t, createFSFunc)
 	ReadFile(t, createFSFunc)
 	InvalidPathsForWriteFS(t, createFSFunc)
 	Create(t, createFSFunc)
@@ -250,15 +251,98 @@ func Conventions(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	})
 }
 
-// MkdirAll verifies that MkdirAll succeeds for a new subdirectory.
+// mkdirAllLeaves are the deepest directories the MkdirAll tests create. They
+// form a tree with sibling directories at every level and leaves at different
+// depths, so a file system that hides, merges, or replaces a neighbor when it
+// creates a directory fails the listing checks:
+//
+//	mkdirall/
+//	├── a/
+//	│   ├── b/ → c/, d/
+//	│   └── e/ → f/, g/
+//	├── h/
+//	│   ├── i/ → j/, k/
+//	│   └── l/
+//	└── m/
+//
+// Everything lives under mkdirall/ so files the file system already holds
+// cannot collide with or show up in the checks.
+var mkdirAllLeaves = []string{
+	"mkdirall/a/b/c",
+	"mkdirall/a/b/d",
+	"mkdirall/a/e/f",
+	"mkdirall/a/e/g",
+	"mkdirall/h/i/j",
+	"mkdirall/h/i/k",
+	"mkdirall/h/l",
+	"mkdirall/m",
+}
+
+// wantDirTree returns the expected entries of every directory in the tree
+// formed by leaves: each directory lists its child directories, and each leaf
+// lists leafEntries.
+func wantDirTree(leaves []string, leafEntries ...string) map[string][]string {
+	want := map[string][]string{}
+	for _, leaf := range leaves {
+		want[leaf] = append([]string{}, leafEntries...)
+		for dir := leaf; path.Dir(dir) != pathutil.CwdPath; dir = path.Dir(dir) {
+			parent := path.Dir(dir)
+			if !slices.Contains(want[parent], path.Base(dir)) {
+				want[parent] = append(want[parent], path.Base(dir))
+			}
+		}
+	}
+	for _, names := range want {
+		sort.Strings(names)
+	}
+	return want
+}
+
+// MkdirAll verifies that MkdirAll creates every missing directory in a path,
+// that each one is reported as a directory and listed by its parent next to
+// its siblings, and that repeating the call on existing directories succeeds.
 func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	t.Run("MkdirAll", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
 		defer ufsTesting.ValidateClose(t, fsys)()
-		if err := fsys.MkdirAll("subdir", fs.ModePerm); err != nil {
-			t.Errorf("MkdirAll() = %v, want nil", err)
+		for _, dir := range mkdirAllLeaves {
+			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
+			}
 		}
+		ufsTesting.AssertDirsInOrder(t, fsys, wantDirTree(mkdirAllLeaves))
+		for _, dir := range mkdirAllLeaves {
+			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+				t.Errorf("MkdirAll(%q) on existing directories = %v, want nil", dir, err)
+			}
+		}
+	})
+}
+
+// MkdirAllWithBuckets is the MkdirAll check for bucket-backed file systems,
+// which have no real directories: MkdirAll must succeed, and once a file is
+// created in each leaf every parent directory must exist and list its
+// siblings.
+func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+	t.Run("MkdirAllWithBuckets", func(t *testing.T) {
+		t.Parallel()
+		fsys := createFSFunc(t)
+		defer ufsTesting.ValidateClose(t, fsys)()
+		for _, dir := range mkdirAllLeaves {
+			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+				t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
+			}
+			name := path.Join(dir, "file")
+			f, err := fsys.Create(name)
+			if err != nil {
+				t.Fatalf("Create(%q) = %v, want nil", name, err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatalf("Close() = %v, want nil", err)
+			}
+		}
+		ufsTesting.AssertDirsInOrder(t, fsys, wantDirTree(mkdirAllLeaves, "file"))
 	})
 }
 

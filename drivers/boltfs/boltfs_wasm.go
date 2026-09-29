@@ -35,7 +35,7 @@ func isBoltFSUri(name string) bool {
 func init() {
 	ufs.Register(ufs.Driver{
 		Name:       "bolt",
-		CreateFunc: newBoltFS,
+		CreateFunc: New,
 		MatchFunc:  isBoltFSUri,
 		Priority:   1,
 		Standard:   true,
@@ -43,11 +43,11 @@ func init() {
 	})
 }
 
-// newBoltFS reports that boltFS is unavailable on GOARCH=wasm:
+// New reports that boltFS is unavailable on GOARCH=wasm:
 // go.etcd.io/bbolt has no MaxAllocSize constant for that architecture, and
 // its mmap-based storage model has no wasm implementation regardless. The
 // driver is still registered so bolt: URIs fail with this clear error
 // instead of falling through to another driver.
-func newBoltFS(_ context.Context, name string) (ufs.FS, error) {
+func New(_ context.Context, name string) (ufs.FS, error) {
 	return nil, fmt.Errorf("boltFS (%q) is not supported on this platform: go.etcd.io/bbolt does not support GOARCH=wasm", name)
 }

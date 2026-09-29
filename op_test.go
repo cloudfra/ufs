@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -912,5 +914,107 @@ func TestRemoveAllNull(t *testing.T) {
 	fsys := mustNullFS(t)
 	if err := RemoveAll(fsys, "dir"); err != nil {
 		t.Errorf("RemoveAll on nullFS = %v, want nil", err)
+	}
+}
+
+func TestChtimes(t *testing.T) {
+	past := time.Now().Add(-time.Hour).Truncate(time.Second)
+	tests := []struct {
+		name string
+		// setup creates a file named "dir/file" holding "content" whose
+		// modification time is past, and returns its file system.
+		setup func(t *testing.T) FS
+	}{
+		{
+			name: "local",
+			setup: func(t *testing.T) FS {
+				dir := t.TempDir()
+				if err := os.Mkdir(filepath.Join(dir, "dir"), osutil.DefaultDirectoryPermissions); err != nil {
+					t.Fatal(err)
+				}
+				hostPath := filepath.Join(dir, "dir", "file")
+				if err := os.WriteFile(hostPath, []byte("content"), osutil.DefaultFilePermissions); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chtimes(hostPath, past, past); err != nil {
+					t.Fatal(err)
+				}
+				return mustFS(t, newLocalFS, dir)
+			},
+		},
+		{
+			name: "memory",
+			setup: func(t *testing.T) FS {
+				fsys := makeMemFS("memory://chtimes")
+				if err := fsys.MkdirAll("dir", fs.ModePerm); err != nil {
+					t.Fatal(err)
+				}
+				f, err := fsys.Create("dir/file")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.WriteString("content"); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+				fsys.mu.Lock()
+				fsys.nodes["dir/file"].modTime = past
+				fsys.mu.Unlock()
+				return fsys
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := tc.setup(t)
+			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+			before, err := fsys.Stat("dir/file")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !before.ModTime().Equal(past) {
+				t.Fatalf("setup ModTime() = %v, want %v", before.ModTime(), past)
+			}
+			if err := Chtimes(fsys, "dir/file"); err != nil {
+				t.Fatalf("Chtimes() = %v", err)
+			}
+			after, err := fsys.Stat("dir/file")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !after.ModTime().After(past) {
+				t.Errorf("ModTime() after Chtimes = %v, want after %v", after.ModTime(), past)
+			}
+			if got, err := fsys.ReadFile("dir/file"); err != nil || string(got) != "content" {
+				t.Errorf("ReadFile() = (%q, %v), want (%q, nil)", got, err, "content")
+			}
+
+			if err := Chtimes(fsys, "dir/missing"); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("Chtimes(missing) = %v, want fs.ErrNotExist", err)
+			}
+			if err := Chtimes(fsys, "dir"); !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("Chtimes(dir) = %v, want fs.ErrInvalid", err)
+			}
+			ufsTesting.AssertInvalidPathError(t, "../escape", Chtimes(fsys, "../escape"), "chtimes")
+		})
+	}
+}
+
+func TestChtimesReadOnly(t *testing.T) {
+	inner := makeMemFS("memory://chtimes-ro")
+	f, err := inner.Create("file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fsys := ReadOnly(inner)
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+	if err := Chtimes(fsys, "file"); !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("Chtimes() on a read-only FS = %v, want fs.ErrPermission", err)
 	}
 }

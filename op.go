@@ -75,6 +75,40 @@ func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error
 	return nil
 }
 
+// Chtimes sets the modification time of the file name in fsys to now. It is
+// named after [os.Chtimes] but takes no times: it rewrites the file's content
+// through fsys (ReadFile, then Create, Write and Close), so the file system's
+// own Create stamps the new time and no file system needs a way to set an
+// arbitrary modification time. The rewrite reads and writes the whole file
+// and is not atomic.
+//
+// A missing file returns an error wrapping [fs.ErrNotExist] and a directory
+// an error wrapping [fs.ErrInvalid].
+func Chtimes(fsys FS, name string) error {
+	if err := pathutil.Validate("chtimes", name); err != nil {
+		return err
+	}
+	info, err := fsys.Stat(name)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return ufserrors.NewPathError("chtimes", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
+	}
+	content, err := fsys.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	f, err := fsys.Create(name)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(content); err != nil {
+		return ufserrors.Join(err, f.Close())
+	}
+	return f.Close()
+}
+
 // ForEachFilename calls f for each file path (not directory) under dir,
 // streaming results without building an intermediate slice. If fsys implements
 // [ForEachFilenameIter], its native implementation is used directly; otherwise

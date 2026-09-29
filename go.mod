@@ -9,7 +9,7 @@ require (
 	cloud.google.com/go/storage v1.68.0
 	github.com/dustin/go-humanize v1.1.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/fsouza/fake-gcs-server v1.55.1
+	github.com/fsouza/fake-gcs-server v1.56.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0

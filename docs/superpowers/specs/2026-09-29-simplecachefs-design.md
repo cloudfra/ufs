@@ -10,8 +10,8 @@ Add `drivers/simplecachefs`, a lossy two-tier cache file system:
 
 Writes land in the hot tier. A write log records them and flushes them to the
 warm tier in batches, on a timer or once enough dirty data accumulates. Warm
-hits are promoted back into the hot tier. Entries are evicted oldest-first
-(FIFO), by TTL and by capacity. When the cache has no room, writes fail with
+hits are promoted back into the hot tier with `ufs.Chtimes`. Entries are
+evicted oldest-first (FIFO by modification time), by TTL and by capacity. When the cache has no room, writes fail with
 `ErrNoSpace` rather than blocking.
 
 The cache is **not durable**. `Sync` and `Close` persist the hot tier to the
@@ -33,9 +33,10 @@ directory; nothing is added directly to `drivers/common/`.
 - `proto/writelog.proto`: a `WriteLogEntry` message in the existing
   `cloudfra.ufs` proto package.
 - `drivers/boltfs/batch.go`: boltfs implements `writelog.BatchWriter`.
-- `ufs.go` and `memfs.go`: an optional `ufs.ChtimesFS` interface, implemented
-  by memfs, so promoted files keep their modification time. This is the only
-  change to memfs (see [Promotion](#promotion)).
+- `op.go`: a `ufs.Chtimes` function, named after `os.Chtimes`, that sets a
+  file's modification time to now by rewriting it through the FS's normal
+  write path. It is a plain function, not an FS interface. No driver, memfs
+  included, is changed to support it (see [Promotion](#promotion)).
 
 ## Configuration
 
@@ -129,7 +130,7 @@ wraps the memory FS directly.
 | `drivers/common/writelog/filelog.go` | `FileLog`: appends entries with payloads to segment files on disk |
 | `drivers/common/overlay/overlay.go` | `overlay.FS`: N-layer union with tombstones |
 | `drivers/boltfs/batch.go` | `(*boltFS).BatchWrite`: applies entries in one bolt transaction |
-| `ufs.go`, `memfs.go` | `ufs.ChtimesFS` interface and memfs implementation |
+| `op.go` | `ufs.Chtimes` |
 | `drivers/simplecachefs/simplecachefs.go` | `New`, `cacheFS`, the `ufs.FS` methods, `Sync` |
 | `drivers/simplecachefs/config.go` | `Config`, conversion methods, defaults and validation |
 | `drivers/simplecachefs/index.go` | Per-tier FIFO index and byte totals |
@@ -276,8 +277,9 @@ func (f *FS) Barrier()
   `Commit` deletes the segments the snapshot covered.
 - On open, existing segments are kept. A torn final record, from a crash
   mid-append, is truncated.
-- simplecachefs does not use `FileLog`: the cache is not durable. It is the
-  on-disk counterpart of `MemoryLog`, built and tested with it.
+- `FileLog` is a separate struct from `MemoryLog`; both implement
+  `writelog.Log`. simplecachefs does not use `FileLog`, because the cache is
+  not durable. It is built and tested alongside `MemoryLog`.
 
 ## boltfs as a `writelog.BatchWriter`
 
@@ -384,8 +386,8 @@ removed path never reaches a lower layer.
 ### Why FIFO
 
 LRU needs a write to the index on every read to bump the entry, which puts a
-lock on the read path. FIFO only changes the index on writes, promotions and
-removes.
+lock on the read path. FIFO only changes the index on writes (including
+promotions, which go through `Chtimes`) and removes.
 
 The per-entry metadata is the same either way: path, size and a timestamp.
 That is roughly 100 bytes per file (about 10 MB for 100k files). It is small
@@ -396,10 +398,10 @@ LRU can be added later.
 
 - One index per tier: a map from path to `{size, modTime, *list.Element}`
   plus a `container/list`, oldest first.
-  - **Warm** is ordered by modification time. Eviction and TTL delete
+  - Both tiers are ordered by modification time. Eviction and TTL delete
     strictly by modification time, popping from the front.
-  - **Hot** is ordered by when the entry entered the hot tier: a write, or a
-    promotion of a warm hit. For writes that is the modification time.
+  - Every entry enters hot through a write or `Chtimes`, both of which set its
+    modification time to now, so appending to the back keeps the order.
 - A write moves the entry to the back. A remove unlinks it. Eviction and TTL
   pop from the front. Every operation is O(1).
 - Running totals: `hotBytes` and `warmBytes`. Dirty bytes come from
@@ -435,33 +437,64 @@ LRU can be added later.
 - `Open`, `ReadFile`, `Stat` and `ReadDir` go through the overlay: hot first,
   then warm.
 - A warm hit on a file read with `Open` or `ReadFile` is promoted into hot
-  (below). `Stat` and `ReadDir` never promote.
+  (below). `Stat` and `ReadDir` never promote. The read returns the content
+  and `ModTime` as they were before the promotion.
 - TTL is enforced by the sweep, not on read. An expired entry can remain
   readable until the next sweep, at most `SweepInterval` late.
 
+### Chtimes (`op.go`)
+
+```go
+// Chtimes sets the modification time of the file name to now by rewriting
+// its content through fsys (ReadFile, then Create, Write and Close). It is
+// named after os.Chtimes but always uses the current time. A missing file
+// returns fs.ErrNotExist, and a directory returns fs.ErrInvalid.
+func Chtimes(fsys FS, name string) error
+```
+
+- `Chtimes` uses only the `ufs.FS` write path, so it works on every writable
+  driver and needs no new driver capability. The FS's own `Create` sets the
+  new modification time.
+- It never sets an arbitrary modification time: there is no time argument,
+  and no driver or FS interface gains a `Chtimes` method. A modification
+  time only ever moves to *now*.
+- Cost: one read and one full rewrite of the file. That is fine for the
+  cache's bounded file sizes, and the reason it is not a general-purpose
+  `Chtimes` for large files.
+
 ### Promotion
 
-A file served from warm is copied into hot so repeated reads come from
-memory:
+A file served from warm is passed through `Chtimes` on the cache, so repeated reads
+come from memory:
 
 - It is promoted only when `hotBytes + size ≤ SoftLimit × MemorySize`.
   Promotion never evicts anything and never triggers the hard-evict
-  goroutine. When there is no room, the file is served from warm.
-- The copy is written to the memory FS **directly**, not through
-  `writelog.FS`, so it is clean and is never flushed back.
-- The copy keeps the warm modification time via `ufs.ChtimesFS`, so `Stat`
-  reports the same `ModTime` before and after promotion. That is the one
-  memfs change: an optional interface in `ufs.go` that mirrors `os.Chtimes`
-  (`Chtimes(name string, atime, mtime time.Time) error`), implemented by
-  memfs with a node update and a `NotifyChmod` event.
-- The promoted entry goes to the back of the hot index. Its warm entry keeps
-  its warm position, so warm TTL and eviction are unaffected.
+  goroutine. When there is no room, the file is served from warm and left
+  alone.
+- Promotion does what `ufs.Chtimes` does on the overlay, reusing the content it
+  just read instead of reading it twice. It rewrites the file through the
+  overlay's layer 0, the `writelog.FS` over memfs. The hot copy therefore
+  gets a modification time of now, and the write log records an `OP_PUT`.
+- The next flush writes the file back to warm with the new modification
+  time, so both tiers agree. A later `Stat` reports the same `ModTime`
+  whichever tier serves it, and the time never moves backwards when the hot
+  copy is dropped. Warm bytes are unchanged, since the record is replaced
+  in place.
+- Because a promotion is a write:
+  - It moves the file to the back of both FIFOs, so frequently read files
+    survive eviction. That gives LRU-like behavior without touching the
+    index on hot hits.
+  - It restarts the file's TTL. TTL counts from the last write or
+    promotion.
+  - It costs one warm rewrite per promoted file per flush, deduped with
+    other writes to the same file.
+- Promotion is skipped while the hard-evict goroutine runs.
 - **Race safety:** promotion holds the promotion lock in write mode while it
   re-checks that the path is still not in hot (`Stat` on the memory FS) and
-  not hidden (`overlay.Hidden`), and then writes the copy. Writes and removes
+  not hidden (`overlay.Hidden`), and then rewrites it. Writes and removes
   hold the lock in read mode. A promotion therefore can't overwrite a newer
   write or bring back a removed file. The promotion reads from warm before
-  taking the lock, so the lock is held only for the in-memory copy.
+  taking the lock, so the lock is held only for the in-memory rewrite.
 - A promotion failure is logged at `slog.Debug` and the read still succeeds.
   It never fails a read.
 
@@ -587,8 +620,11 @@ return `fs.ErrClosed`.
     configuration nothing is evicted, and the cache must pass unchanged. A
     helper asserts after each run that no eviction happened, so a
     misconfigured test fails loudly rather than flaking.
-- **`ufs.ChtimesFS` on memfs:** `Stat` and `ReadDir` report the new
-  modification time; missing paths return `fs.ErrNotExist`.
+- **`ufs.Chtimes`** (on `memory:` and `file:`):
+  - An existing file keeps its content and gets a later `ModTime`.
+  - A missing file returns `fs.ErrNotExist`.
+  - A directory returns `fs.ErrInvalid`.
+  - A read-only FS returns `fs.ErrPermission`.
 - **writelog:**
   - `writelog.FS` records only successful operations, records a remove that
     returned `fs.ErrNotExist`, and doesn't record a failed `Close`.
@@ -627,10 +663,12 @@ return `fs.ErrClosed`.
   - A write that races a flush stays pending. A remove that races a flush is
     not resurrected.
   - Promotion:
-    - A warm hit is promoted and keeps its `ModTime`.
-    - No promotion above the soft limit.
+    - A warm hit is promoted. The read returns the pre-promotion
+      `ModTime`, and afterwards `Stat` reports the `Chtimes` time in both tiers
+      once flushed.
+    - No promotion above the soft limit or during hard eviction.
     - A promotion racing a write or a remove doesn't overwrite or resurrect.
-    - A promoted entry is never flushed back.
+    - A promoted file moves to the back of both FIFOs and its TTL restarts.
   - The flush evicts the oldest warm entries when the soft limit would be
     crossed.
   - TTL expiry in warm (cascading to clean hot copies), a dirty expired

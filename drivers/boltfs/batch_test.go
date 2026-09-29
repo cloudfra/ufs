@@ -192,6 +192,17 @@ func TestBatchWriteMissingModTime(t *testing.T) {
 	}
 }
 
+func TestNewExposesBatchWrite(t *testing.T) {
+	fsys, err := New(t.Context(), testBoltFSURI(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+	if _, ok := fsys.(batchWriter); !ok {
+		t.Errorf("New() = %T, want it to implement BatchWrite", fsys)
+	}
+}
+
 func TestBatchWriteClosed(t *testing.T) {
 	fsys, err := makeBoltFS(testBoltFSURI(t))
 	if err != nil {

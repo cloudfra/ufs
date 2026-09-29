@@ -92,7 +92,7 @@ func isBoltFSUri(name string) bool {
 func init() {
 	ufs.Register(ufs.Driver{
 		Name:       "bolt",
-		CreateFunc: newBoltFS,
+		CreateFunc: New,
 		MatchFunc:  isBoltFSUri,
 		Priority:   1,
 		Standard:   true,
@@ -905,7 +905,11 @@ func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error
 	return nil
 }
 
-func newBoltFS(_ context.Context, name string) (ufs.FS, error) {
+// New opens the bolt database named by the bolt: URI name (bolt:/path/to.db
+// or bolt:///path/to.db), creating it if needed. Unlike [ufs.New], which wraps
+// every driver, it returns the boltFS itself, so callers can reach methods
+// such as BatchWrite.
+func New(_ context.Context, name string) (ufs.FS, error) {
 	return makeBoltFS(name)
 }
 

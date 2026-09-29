@@ -24,6 +24,7 @@ PROTOS = proto/ufs.pb.go
 PROTOS += proto/ufs_grpc.pb.go
 PROTOS += proto/ufs.pb.gw.go
 PROTOS += proto/ufs.swagger.json
+PROTOS += proto/writelog.pb.go
 
 ZIP = zip
 RAR = rar

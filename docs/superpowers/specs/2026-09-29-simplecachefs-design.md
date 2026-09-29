@@ -8,30 +8,34 @@ Add `drivers/simplecachefs`, a lossy two-tier cache file system:
 - **warm** tier: a `bolt:` FS on local disk. Optional: with no storage path
   the cache is memory-only.
 
-Writes land in the hot tier. A write log collects them, dedupes repeated
-writes to the same path, and flushes them to the warm tier in one bolt
-transaction, on a timer or once enough dirty data accumulates. Entries are
-evicted oldest-first (FIFO by modification time), by TTL and by capacity.
-When the cache has no room, writes fail with `ErrNoSpace` rather than
-blocking.
+Writes land in the hot tier. A write log records them and flushes them to the
+warm tier in batches, on a timer or once enough dirty data accumulates. Warm
+hits are promoted back into the hot tier. Entries are evicted oldest-first
+(FIFO), by TTL and by capacity. When the cache has no room, writes fail with
+`ErrNoSpace` rather than blocking.
 
-`Sync` and `Close` persist everything to the warm tier. Only a crash loses
-data: whatever was written since the last flush.
+The cache is **not durable**. `Sync` and `Close` persist the hot tier to the
+warm tier, but a crash loses whatever was written since the last flush, and
+eviction may drop any entry at any time.
 
 simplecachefs is a standalone FS, not a cache in front of an origin. It is a
 temporary, purpose-built component and is configured programmatically only;
 it has no URI scheme.
 
-Supporting changes:
+Supporting changes. Each package's code lives in a file inside its own
+directory; nothing is added directly to `drivers/common/`.
 
-- `drivers/common/overlay`: a generic N-layer overlay `ufs.FS` with
-  tombstones.
-- `proto/writelog`: a `WriteLogEntry` protobuf message.
-- `ufs` (base package): `WriteLogEmitter` and `BatchWriter` interfaces.
-- `drivers/common/writelog`: a deduping write log, and `Apply`, which writes
-  entries to any `ufs.FS`.
-- `memfs.go`: implements `WriteLogEmitter`.
-- `drivers/boltfs`: implements `BatchWriter`.
+- `drivers/common/overlay/overlay.go` (package `overlay`): a generic N-layer
+  overlay `ufs.FS` with tombstones.
+- `drivers/common/writelog/` (package `writelog`): the `writelog.FS` wrapper
+  that records writes to any FS, two write logs (in-memory and on-disk), and
+  the `BatchWriter` interface.
+- `proto/writelog.proto`: a `WriteLogEntry` message in the existing
+  `cloudfra.ufs` proto package.
+- `drivers/boltfs/batch.go`: boltfs implements `writelog.BatchWriter`.
+- `ufs.go` and `memfs.go`: an optional `ufs.ChtimesFS` interface, implemented
+  by memfs, so promoted files keep their modification time. This is the only
+  change to memfs (see [Promotion](#promotion)).
 
 ## Configuration
 
@@ -51,6 +55,7 @@ type Config struct {
 	TTL            string  `yaml:"ttl"`            // Expiry from last write. Default "0" (off).
 	SweepInterval  string  `yaml:"sweepInterval"`  // Maintenance period. Default "30s".
 	FlushThreshold float64 `yaml:"flushThreshold"` // Flush when dirty bytes reach this fraction of MemorySize. Default 0.05.
+	SyncLog        bool    `yaml:"syncLog"`        // Record writes synchronously. Default false (async).
 }
 
 var (
@@ -91,8 +96,8 @@ var (
     also cross the hard limit, so the sweep has room to work.
   - With a warm tier: `MemorySize > LowWater × StorageSize`, since a flush of
     a full hot tier must fit after a sweep.
-  - Memory-only: `StorageSize` or `FlushThreshold` set, since neither has a
-    meaning without a warm tier.
+  - Memory-only: `StorageSize`, `FlushThreshold` or `SyncLog` set, since
+    none has a meaning without a warm tier.
   - A `Policy` other than `fifo` (including `lru`, which is not implemented).
 - The config also carries an unexported clock (`now func() time.Time`) so
   tests control TTL and timers.
@@ -100,14 +105,14 @@ var (
 ## Architecture
 
 ```text
-              ┌──────────────────── simplecachefs ────────────────────┐
-              │  overlay.FS                                            │
- caller ────▶ │    layer 0 = memory:  (hot)  ──emits──▶ writelog.Log   │
-              │    layer 1 = bolt:    (warm) ◀── BatchWrite ── flush   │
-              │  FIFO index per tier (size, modTime)                   │
-              │  maintenance goroutine ◀── timer / signal              │
-              │  hard-evict goroutine  ◀── on demand                   │
-              └────────────────────────────────────────────────────────┘
+              ┌────────────────────────── simplecachefs ──────────────────────────┐
+              │  overlay.FS                                                        │
+ caller ────▶ │    layer 0 = writelog.FS(memory:) ── records ──▶ writelog.MemoryLog│
+              │    layer 1 = bolt:  ◀── BatchWrite (background) ── flush           │
+              │  FIFO index per tier                                               │
+              │  maintenance goroutine ◀── timer / signal                          │
+              │  hard-evict goroutine  ◀── on demand                               │
+              └────────────────────────────────────────────────────────────────────┘
 ```
 
 In memory-only mode there is no overlay, write log or warm tier: the cache
@@ -117,25 +122,27 @@ wraps the memory FS directly.
 
 | File | Purpose |
 |:--|:--|
-| `proto/writelog/writelog.proto` | `WriteLogEntry` message (Go package `github.com/cloudfra/ufs/proto/writelogpb`) |
-| `writelog.go` (base `ufs`) | `WriteLogEmitter`, `WriteLogSink` and `BatchWriter` interfaces |
-| `memfs.go` | `(*memFS).SetWriteLog`: emits an entry for every mutation |
-| `drivers/boltfs/batch.go` | `(*boltFS).BatchWrite`: applies entries in one bolt transaction |
-| `drivers/common/writelog/writelog.go` | `writelog.Log` (dedupe, drain, restore) and `writelog.Apply` |
+| `proto/writelog.proto` | `WriteLogEntry` message (package `cloudfra.ufs`, Go package `github.com/cloudfra/ufs/proto`) |
+| `drivers/common/writelog/writelog.go` | `Log` and `BatchWriter` interfaces, `Apply` |
+| `drivers/common/writelog/fs.go` | `writelog.FS`: wraps a `ufs.FS` and records successful writes |
+| `drivers/common/writelog/memorylog.go` | `MemoryLog`: deduped entries that reference payloads in the source FS |
+| `drivers/common/writelog/filelog.go` | `FileLog`: appends entries with payloads to segment files on disk |
 | `drivers/common/overlay/overlay.go` | `overlay.FS`: N-layer union with tombstones |
+| `drivers/boltfs/batch.go` | `(*boltFS).BatchWrite`: applies entries in one bolt transaction |
+| `ufs.go`, `memfs.go` | `ufs.ChtimesFS` interface and memfs implementation |
 | `drivers/simplecachefs/simplecachefs.go` | `New`, `cacheFS`, the `ufs.FS` methods, `Sync` |
 | `drivers/simplecachefs/config.go` | `Config`, conversion methods, defaults and validation |
 | `drivers/simplecachefs/index.go` | Per-tier FIFO index and byte totals |
-| `drivers/simplecachefs/maintain.go` | Maintenance goroutine (flush, TTL, soft sweep) and hard-evict goroutine |
+| `drivers/simplecachefs/maintain.go` | Maintenance goroutine (flush, TTL, soft sweep), hard-evict goroutine, promotion |
 
-## Write log
+## Write log (`drivers/common/writelog`)
 
 ### `WriteLogEntry` (protobuf)
 
-A new file `proto/writelog/writelog.proto`, with the same edition and options
-as `proto/ufs.proto`. It gets its own Go package so the base `ufs` package can
-import it without pulling in the gRPC and gateway code generated for
-`proto/ufs.proto`. The Makefile's `PROTOS` list gains its generated file.
+A new file `proto/writelog.proto` in the flat `proto/` directory, with the
+same proto package (`cloudfra.ufs`), `go_package`, edition and options as
+`proto/ufs.proto`. The proto build rules gain its generated
+`proto/writelog.pb.go`.
 
 ```proto
 message WriteLogEntry {
@@ -149,90 +156,140 @@ message WriteLogEntry {
   string name = 2;
   uint32 mode = 3;                           // io/fs.FileMode bits.
   google.protobuf.Timestamp mod_time = 4;
-  bytes content = 5;                         // OP_PUT only.
+  int64 size = 5;                            // OP_PUT: content length.
+  bytes content = 6;                         // OP_PUT: set only when the payload is attached.
 }
 ```
 
-### Interfaces (base `ufs`)
+### Interfaces
 
 ```go
-// WriteLogSink receives write log entries.
-type WriteLogSink interface {
-	Append(entry *writelogpb.WriteLogEntry)
-}
+package writelog // github.com/cloudfra/ufs/drivers/common/writelog
 
-// WriteLogEmitter is implemented by an FS that can report every mutation
-// synchronously, in the order it is applied.
-type WriteLogEmitter interface {
-	// SetWriteLog sets the sink that receives an entry for every mutation.
-	// A nil sink stops emission.
-	SetWriteLog(sink WriteLogSink)
+// Log records write log entries.
+type Log interface {
+	// Append records entry. entry.Content is empty; a log that needs the
+	// payload reads it from the source FS it was created with.
+	Append(entry *pb.WriteLogEntry) error
+	// Snapshot returns the pending entries with payloads attached, ordered
+	// for replay: removes, then mkdirs (parents first), then puts.
+	Snapshot() (*Snapshot, error)
+	// Commit removes the snapshot's entries that nothing newer has replaced.
+	Commit(s *Snapshot) error
+	// Pending reports whether name has an uncommitted entry.
+	Pending(name string) bool
+	// Bytes reports the total size of pending OP_PUT entries.
+	Bytes() int64
 }
 
 // BatchWriter is implemented by an FS that can apply entries atomically.
 type BatchWriter interface {
 	// BatchWrite applies entries in order, all or nothing.
-	BatchWrite(entries []*writelogpb.WriteLogEntry) error
+	BatchWrite(entries []*pb.WriteLogEntry) error
 }
+
+// Apply writes entries to fsys: with BatchWrite when fsys is a BatchWriter,
+// otherwise one entry at a time (MkdirAll, Create+Write+Close, RemoveAll),
+// which is not atomic.
+func Apply(fsys ufs.FS, entries []*pb.WriteLogEntry) error
 ```
 
-- Emission is **synchronous**, not built on `Watch`. `Watch` delivers events
-  from a background goroutine, so a `Sync` could run before the last write's
-  event had arrived and miss it.
-- `Append` is called with the emitter's lock held. It must be fast and must
-  not call back into the FS.
+In every replay path (`Apply`, `BatchWrite`, and snapshots), a missing file is
+not an error: a remove of a path that does not exist succeeds, and a put whose
+payload can no longer be read from the source because the file was removed
+is skipped (its remove is recorded after it).
 
-### memfs as a `WriteLogEmitter`
+### `writelog.FS` (recording wrapper)
 
-- memfs calls the sink where it already calls `notify`:
-  - `OP_PUT` on `Create` and on every `Write`/`WriteString`.
-  - `OP_MKDIR` for each directory `MkdirAll` creates.
-  - `OP_REMOVE_ALL` on `Remove` and `RemoveAll`.
-- `content` **aliases** the memfs node's buffer; nothing is copied. This is
-  safe because memfs never mutates a node's buffer once published: each write
-  replaces `node.content` with a new clone (`syncToFSLocked`). The
-  implementation documents this invariant on `memNode.content` and tests it.
-- The change to memfs is one `sink` field, one setter and a few `Append`
-  calls next to the existing `notify` calls.
+`writelog.FS` wraps any `ufs.FS` and records the writes made through it. The
+wrapped FS is unmodified, so this works for memfs and every other driver.
 
-### boltfs as a `BatchWriter`
+```go
+type Mode int
+
+const (
+	Async Mode = iota // Record on a background goroutine.
+	Sync              // Record in the calling goroutine before returning.
+)
+
+func NewFS(inner ufs.FS, log Log, mode Mode) *FS
+
+// Barrier blocks until every write that completed before the call has been recorded.
+func (f *FS) Barrier()
+```
+
+- **What it records.** Only operations that succeed on the inner FS:
+  - `OP_PUT` when a file from `Create` is closed. The entry carries name,
+    mode, modTime and size (from `Stat` after close), not the content.
+  - `OP_MKDIR` on `MkdirAll`.
+  - `OP_REMOVE_ALL` on `Remove` and `RemoveAll`. A remove that fails with
+    `fs.ErrNotExist` still counts as a success and is recorded, since the
+    path may exist in a lower layer that this FS doesn't see.
+  - A write or close that returns any other error is not recorded.
+- **Async** (the default): recording happens on a background goroutine fed
+  by a bounded channel. A full channel blocks the writer rather than
+  dropping a record. Records can trail the writes, but `Barrier` makes a
+  flush see every write that completed before it, so nothing is missed.
+- **Sync**: recording happens before the write call returns, so `Barrier`
+  is a no-op.
+- Reads, `Stat`, `ReadDir` and the rest pass straight through.
+- `Watch` passes through when the inner FS implements `ufs.Watcher`.
+  Watch-driven recording isn't used: events can be coalesced or dropped, and
+  a remove of a path the inner FS never held produces no event.
+
+### `MemoryLog` (in-memory, deduped)
+
+`NewMemoryLog(src ufs.ReadFS) *MemoryLog`
+
+- It holds entries only, never payloads. An entry **references** its
+  payload in the source FS (the memfs that `writelog.FS` wraps), so pending
+  data isn't held twice. `Snapshot` reads each payload from `src` with
+  `ReadFile`. That copy is short-lived and bounded by the batch being
+  flushed.
+- It dedupes as entries arrive, keeping at most one pending entry per path:
+  - `OP_PUT` replaces any earlier entry for the same path.
+  - `OP_REMOVE_ALL` drops every pending entry at or below the path, then
+    records itself.
+  - `OP_MKDIR` is dropped when a pending entry for the same path already
+    exists.
+- After dedupe, no pending entry is covered by a later remove. Replaying
+  removes, then mkdirs, then puts is therefore equivalent to replaying the
+  entries in arrival order.
+- Each pending entry carries a sequence number. `Commit` removes an entry
+  only if its sequence number still matches the snapshot. An entry written
+  again after the snapshot stays pending.
+- A payload read in `Snapshot` sees the newest content, which may be newer
+  than the entry. That's harmless: the newer write has its own pending entry
+  and is committed or rewritten on the next flush.
+
+### `FileLog` (on disk, segmented)
+
+`NewFileLog(dir string, src ufs.ReadFS, segmentSize int64) (*FileLog, error)`
+
+- Appends each entry **with its payload** (read from `src` at append time) to
+  the current segment file in `dir`. Entries are length-delimited
+  `WriteLogEntry` protos (`protodelim`).
+- Segment files are named `NNNNNNNNNN.wlog` in increasing order. The current
+  segment is rotated once it reaches `segmentSize` (default 64 MiB).
+- `Snapshot` rotates the current segment, reads every closed segment, and
+  dedupes the entries in memory with the same rules as `MemoryLog`.
+  `Commit` deletes the segments the snapshot covered.
+- On open, existing segments are kept. A torn final record, from a crash
+  mid-append, is truncated.
+- simplecachefs does not use `FileLog`: the cache is not durable. It is the
+  on-disk counterpart of `MemoryLog`, built and tested with it.
+
+## boltfs as a `writelog.BatchWriter`
 
 - `BatchWrite` runs every entry in a single `db.Update` transaction, in
-  order. Any failure rolls back the whole batch.
+  order. Any failure rolls back the whole batch, and the caller leaves the
+  entries in its write log.
 - It reuses the existing helpers (`parentBucket`, `createDirBucket`,
   `removeAllChildren`, `encodeBoltRecord`), so it adds a loop over entries,
   not new storage logic.
 - `mod_time` is preserved, so FIFO order and TTL survive a flush and a reopen.
 - Notifications for each entry fire after the commit.
 - The wasm stub returns `errors.ErrUnsupported`.
-
-### `writelog.Log` (dedupe)
-
-`drivers/common/writelog.Log` implements `ufs.WriteLogSink` and holds pending
-entries.
-
-- It dedupes as entries arrive, keeping at most one pending entry per path:
-  - `OP_PUT` replaces any earlier entry for the same path. Only the last
-    content of a file that is written many times is kept, and the superseded
-    buffers can be garbage collected.
-  - `OP_REMOVE_ALL` drops every pending entry at or below the path, then
-    records itself.
-  - `OP_MKDIR` is dropped when a pending entry for the same path already
-    exists.
-- After dedupe, no pending entry is covered by a later remove. Applying all
-  removes first, then mkdirs (sorted, parents first), then puts is therefore
-  equivalent to applying the entries in arrival order.
-- `Drain()` swaps out the pending set and returns it in that order. Writes
-  during a flush go to the fresh set.
-- `Restore(drained)` puts a failed batch back. Each entry is re-added only if
-  nothing newer is pending for its path.
-- `Has(name)` and `Bytes()` report whether a path is dirty and the total
-  pending content size.
-
-`writelog.Apply(fsys ufs.FS, entries)` applies entries to any FS. It uses
-`BatchWrite` when `fsys` is a `ufs.BatchWriter`, and otherwise falls back to
-`MkdirAll`, `Create`+`Write`+`Close` and `RemoveAll` one entry at a time
-(not atomic).
 
 ## Overlay (`drivers/common/overlay`)
 
@@ -250,6 +307,8 @@ func New(layers ...ufs.FS) (*FS, error)
 func (o *FS) Tombstones() map[string]uint64
 // ClearTombstones removes each tombstone whose sequence number still matches the snapshot.
 func (o *FS) ClearTombstones(snapshot map[string]uint64)
+// Hidden reports whether name, or an ancestor of it, has a tombstone.
+func (o *FS) Hidden(name string) bool
 
 func (o *FS) Layer(i int) ufs.FS
 ```
@@ -272,31 +331,44 @@ few lines, so the overlay is N-layer even though simplecachefs uses two.
   mutex). They are not persisted. The owner applies each removal to every
   lower layer and then calls `ClearTombstones`.
 - A path is *hidden* when it or any ancestor has a tombstone. The check is
-  O(depth).
+  O(depth) map lookups, and is skipped when the map is empty.
 - Recording a tombstone on a path that already has one assigns a new sequence
   number, so `ClearTombstones` with an older snapshot leaves it in place.
 
 ### Operations
 
-- **`Open`, `ReadFile`, `Stat`, `Lstat`, `ReadLink`:** layer 0 first. On
-  `fs.ErrNotExist`, try each lower layer in turn unless the path is hidden;
-  return `fs.ErrNotExist` when no layer has it. Any other error is returned
-  without consulting lower layers.
-- **`ReadDir`:** the merge of every layer's entries, sorted by name. The
-  highest layer wins on duplicate names, and hidden entries from lower layers
-  are omitted. The directory exists if any layer that is allowed to show it
-  has it. A file in one layer and a directory of the same name in a lower
-  layer resolves to the higher one.
+Every operation that consults a lower layer checks tombstones first, so a
+removed path never reaches a lower layer.
+
+- **`Open`, `ReadFile`, `Stat`, `Lstat`, `ReadLink`:**
+  1. Try layer 0 and return its result unless it is `fs.ErrNotExist`. Any
+     other error is returned as is.
+  2. If `name` is hidden, return `fs.ErrNotExist` without touching the lower
+     layers.
+  3. Try each lower layer in turn. Return `fs.ErrNotExist` when none has it.
+- **`ReadDir`:**
+  - If `name` is hidden and layer 0 doesn't have it, return `fs.ErrNotExist`.
+  - Otherwise, merge layer 0's entries with the lower layers' entries.
+    Skip lower layers entirely when `name` is hidden. Skip any lower-layer
+    entry whose child path is hidden: a tombstone on `d/x` removes `x` from
+    the listing of `d`.
+  - Sort the merged entries by name. The highest layer wins on duplicate
+    names.
+  - A file in one layer and a directory of the same name in a lower layer
+    resolves to the higher one.
 - **`Open` on a directory:** returns a directory file whose `ReadDir` is the
   merged listing, snapshotted at open.
-- **`Glob`:** `fs.Glob` over the merged `ReadDir` (`internal/globutil`).
+- **`Glob`:** `fs.Glob` over the merged `ReadDir` (`internal/globutil`), so
+  hidden paths never match.
 - **`Create`, `MkdirAll`:** go to layer 0. Missing parents are created in
-  layer 0 with `MkdirAll`. Creating a path does not clear tombstones, since
-  layer 0 is always visible.
+  layer 0 with `MkdirAll`. Creating a path does not clear tombstones: layer 0
+  is always visible, and the tombstone must keep hiding the lower layers'
+  stale content under that path, such as other files in a directory that
+  was removed with `RemoveAll`.
 - **`Remove`:** fails with `fs.ErrNotExist` if the path is visible in no
-  layer, and with `ErrDirNotEmpty` if it is a directory whose merged listing
-  is non-empty. Otherwise it removes the path from layer 0 (ignoring
-  `fs.ErrNotExist`) and records a tombstone.
+  layer, and with `ErrDirNotEmpty` if it is a directory whose merged
+  (tombstone-filtered) listing is non-empty. Otherwise it removes the path
+  from layer 0 (ignoring `fs.ErrNotExist`) and records a tombstone.
 - **`RemoveAll`:** `RemoveAll` on layer 0 and records a tombstone. Succeeds
   when the path does not exist, like `os.RemoveAll`.
 - A tombstone is recorded on every remove, even when no lower layer holds the
@@ -312,109 +384,143 @@ few lines, so the overlay is N-layer even though simplecachefs uses two.
 ### Why FIFO
 
 LRU needs a write to the index on every read to bump the entry, which puts a
-lock on the read path. FIFO by modification time only changes the index on
-writes and removes, and deleting strictly by modification time is also what
-TTL needs.
+lock on the read path. FIFO only changes the index on writes, promotions and
+removes.
 
-The per-entry metadata is the same either way: path, size and modification
-time. That is roughly 100 bytes per file (about 10 MB for 100k files). It is
-small enough that the metadata does not by itself argue for LRU. `Policy`
-exists so LRU can be added later.
+The per-entry metadata is the same either way: path, size and a timestamp.
+That is roughly 100 bytes per file (about 10 MB for 100k files). It is small
+enough that the metadata does not by itself argue for LRU. `Policy` exists so
+LRU can be added later.
 
 ### Structure
 
 - One index per tier: a map from path to `{size, modTime, *list.Element}`
-  and a `container/list` ordered by `modTime`, oldest first.
-- A write moves the entry to the back, since it becomes the newest. A remove
-  unlinks it. Eviction and TTL pop from the front. Every operation is O(1).
+  plus a `container/list`, oldest first.
+  - **Warm** is ordered by modification time. Eviction and TTL delete
+    strictly by modification time, popping from the front.
+  - **Hot** is ordered by when the entry entered the hot tier: a write, or a
+    promotion of a warm hit. For writes that is the modification time.
+- A write moves the entry to the back. A remove unlinks it. Eviction and TTL
+  pop from the front. Every operation is O(1).
 - Running totals: `hotBytes` and `warmBytes`. Dirty bytes come from
-  `writelog.Log.Bytes()`.
+  `MemoryLog.Bytes()`.
 - One mutex guards both indexes. Tier I/O happens outside it.
-- The read path does not touch the index.
+- The read path touches the index only when it promotes.
 - On `New`, the warm tier is walked once (`fs.WalkDir`) and its entries are
-  sorted by `modTime` to rebuild the warm index and `warmBytes`. The hot tier
+  sorted by modTime to rebuild the warm index and `warmBytes`. The hot tier
   starts empty.
 
 ## Data flow
 
 ### Writes
 
-- `Create` returns a wrapper around the hot tier's file. Before each
+- `Create` returns a wrapper around the file from layer 0. Before each
   `Write`/`WriteString` it checks:
   1. If the file would exceed `MaxFileSize`: fail with `ErrFileTooLarge`.
   2. If the hard-evict goroutine is running: fail with `ErrNoSpace`.
   3. If `hotBytes` plus the growth would exceed `MemorySize`: fail with
      `ErrNoSpace` and start the hard-evict goroutine.
-  4. Otherwise reserve the growth and write to the memory FS, which emits an
-     `OP_PUT` into the write log.
-- Errors are wrapped in `fs.PathError`.
+  4. Otherwise reserve the growth and write through `writelog.FS` to memfs.
+     On `Close`, `writelog.FS` records an `OP_PUT`.
+- Errors are wrapped in `fs.PathError`. A failed write is not recorded.
 - After a write, if `hotBytes ≥ SoftLimit × MemorySize` or dirty bytes
   `≥ FlushThreshold × MemorySize`, the maintenance goroutine is signalled.
 - `Create` and `MkdirAll` also fail with `ErrNoSpace` while the hard-evict
   goroutine runs.
+- Writes and removes hold the cache's promotion lock in read mode (see
+  [Promotion](#promotion)).
 
 ### Reads
 
 - `Open`, `ReadFile`, `Stat` and `ReadDir` go through the overlay: hot first,
   then warm.
-- Warm hits are served from bolt without being copied into hot. Under FIFO a
-  promoted copy would carry its original, old `modTime` and be the first
-  thing evicted, so promotion would only add memory churn.
+- A warm hit on a file read with `Open` or `ReadFile` is promoted into hot
+  (below). `Stat` and `ReadDir` never promote.
 - TTL is enforced by the sweep, not on read. An expired entry can remain
   readable until the next sweep, at most `SweepInterval` late.
+
+### Promotion
+
+A file served from warm is copied into hot so repeated reads come from
+memory:
+
+- It is promoted only when `hotBytes + size ≤ SoftLimit × MemorySize`.
+  Promotion never evicts anything and never triggers the hard-evict
+  goroutine. When there is no room, the file is served from warm.
+- The copy is written to the memory FS **directly**, not through
+  `writelog.FS`, so it is clean and is never flushed back.
+- The copy keeps the warm modification time via `ufs.ChtimesFS`, so `Stat`
+  reports the same `ModTime` before and after promotion. That is the one
+  memfs change: an optional interface in `ufs.go` that mirrors `os.Chtimes`
+  (`Chtimes(name string, atime, mtime time.Time) error`), implemented by
+  memfs with a node update and a `NotifyChmod` event.
+- The promoted entry goes to the back of the hot index. Its warm entry keeps
+  its warm position, so warm TTL and eviction are unaffected.
+- **Race safety:** promotion holds the promotion lock in write mode while it
+  re-checks that the path is still not in hot (`Stat` on the memory FS) and
+  not hidden (`overlay.Hidden`), and then writes the copy. Writes and removes
+  hold the lock in read mode. A promotion therefore can't overwrite a newer
+  write or bring back a removed file. The promotion reads from warm before
+  taking the lock, so the lock is held only for the in-memory copy.
+- A promotion failure is logged at `slog.Debug` and the read still succeeds.
+  It never fails a read.
 
 ### Removes
 
 - `Remove`/`RemoveAll` go through the overlay, which deletes from hot right
-  away and records a tombstone.
-- memfs emits `OP_REMOVE_ALL`, which drops any pending writes for the path
-  from the write log.
+  away and records a tombstone. `writelog.FS` records `OP_REMOVE_ALL`, even
+  when hot didn't hold the path, and that drops any pending writes for the
+  path.
 - The hot index drops the entries at once. Warm entries stay counted in
-  `warmBytes` until a flush applies the tombstone.
+  `warmBytes` until a flush applies the removal.
 
 ### Flush
 
 A flush writes the write log and tombstones to the warm tier and makes room
-there in the same transaction:
+there in the same transaction. It runs on the maintenance goroutine (or the
+hard-evict goroutine, or `Sync`), so writers never wait on bolt.
 
-1. Snapshot the overlay's tombstones and `Drain()` the write log.
-2. Compute the warm tier's size after the batch. If it would exceed
+1. `writelog.FS.Barrier()`, so every completed write is in the log.
+2. Snapshot the overlay's tombstones, then `MemoryLog.Snapshot()`, which
+   attaches payloads by reading them from hot.
+3. TTL: drop from the batch any `OP_PUT` whose modTime has expired, and
+   remove that file from hot.
+4. Compute the warm tier's size after the batch. If it would exceed
    `SoftLimit × StorageSize`, pick the oldest warm entries (from the front of
    the warm index) to evict until it would be at or below
    `LowWater × StorageSize`. Validation guarantees a full hot tier fits after
    this.
-3. Build one batch: `OP_REMOVE_ALL` for each tombstone and each evicted
-   entry, then the drained entries (their own removes, then mkdirs, then
-   puts).
-4. `writelog.Apply` the batch to the warm tier. Bolt applies it as one
-   transaction.
-5. On success:
-   - Update the warm index and `warmBytes`.
-   - Call `ClearTombstones(snapshot)`.
-   - Hot entries that were in the batch are now clean. A path written again
-     during the flush is back in the fresh write log, so it stays dirty.
-   - The sequence-number check means a remove that raced the flush keeps its
-     tombstone, and the next flush applies it.
-6. On failure, `Restore` the drained entries, keep the tombstones, and log at
-   `slog.Warn`. The next wake-up retries.
+5. Build one batch: `OP_REMOVE_ALL` for each tombstone and each evicted
+   entry, then the snapshot's entries (removes, mkdirs, puts). Duplicate
+   removes are harmless.
+6. `BatchWrite` it. Bolt commits it as one transaction.
+7. On success:
+   - `MemoryLog.Commit(snapshot)`, `ClearTombstones(tombstone snapshot)`,
+     and update the warm index and `warmBytes`.
+   - Hot copies of files evicted from warm in step 4 are dropped only if
+     they are clean.
+   - A path written or removed again during the flush has a newer sequence
+     number, so it stays pending or tombstoned for the next flush.
+8. On failure, nothing is committed or cleared: the entries stay in the write
+   log and the tombstones stay in place. The failure is logged at
+   `slog.Warn`, and the next wake-up retries.
 
-A hot entry is **clean** when it is neither pending in the write log nor in a
-batch being flushed. Only clean hot entries can be evicted.
+A hot entry is **clean** when `MemoryLog.Pending` is false for it. Only clean
+hot entries can be dropped by a sweep.
 
 ### Sweep
 
 A sweep runs a flush, then:
 
-1. **TTL:** if `TTL > 0`, pop entries whose `now − modTime ≥ TTL` from the
-   front of each tier's index. Expired warm entries are removed in one batch.
-   Expired hot entries are removed from the memory FS. A dirty hot entry that
-   has expired is dropped and its write-log entry discarded.
+1. **Warm TTL:** if `TTL > 0`, pop warm entries whose `now − modTime ≥ TTL`
+   from the front of the warm index and remove them in one batch. Clean hot
+   copies of them are dropped too.
 2. **Hot soft limit:** if `hotBytes ≥ SoftLimit × MemorySize`, drop clean
    hot entries oldest-first until `hotBytes ≤ LowWater × MemorySize`. Warm
    still holds them.
 
-In memory-only mode there is nothing to flush: step 2 drops the oldest hot
-entries regardless, since none are dirty.
+In memory-only mode there is nothing to flush. TTL pops hot entries directly,
+and step 2 drops the oldest hot entries regardless, since none are dirty.
 
 ### Maintenance goroutine
 
@@ -451,8 +557,9 @@ high-water mark and does not grow without bound. There is no compaction.
 ### Close
 
 `Close` stops the maintenance goroutine, waits for any hard-evict goroutine,
-runs a final `Sync`, then closes the overlay (hot, then warm). It joins their
-errors. Methods called after `Close` return `fs.ErrClosed`.
+runs a final `Sync`, stops the `writelog.FS` recorder, then closes the
+overlay (hot, then warm). It joins their errors. Methods called after `Close`
+return `fs.ErrClosed`.
 
 ## Error handling
 
@@ -460,6 +567,10 @@ errors. Methods called after `Close` return `fs.ErrClosed`.
   them with `errors.Is`.
 - Background flush and sweep failures are logged with `slog` and retried on
   the next wake-up. They never fail a read.
+- In the write log and flush path, `fs.ErrNotExist` on a remove is success,
+  and a put whose payload is gone is skipped (see [Interfaces](#interfaces)).
+  The public `Remove` still reports `fs.ErrNotExist` for a path that is
+  visible in no layer, as the `fs.FS` contract requires.
 - A warm read that fails with anything other than `fs.ErrNotExist` returns
   that error.
 - Invalid paths fail through `pathutil.Validate` with `fs.PathError`, as in
@@ -469,27 +580,38 @@ errors. Methods called after `Close` return `fs.ErrClosed`.
 
 - **Conformance** (`drivers/testing` `WriteFS`):
   - `overlay.FS` over two and three `memory:` layers.
+  - `writelog.FS` over `memory:` in both modes.
   - simplecachefs memory-only, and with the bolt file in `t.TempDir()`.
-- **memfs:**
-  - The emitted sequence for `Create`, `Write`, `MkdirAll`, `Remove` and
-    `RemoveAll`.
-  - An emitted buffer stays unchanged after later writes (the aliasing
-    invariant).
-  - `SetWriteLog(nil)` stops emission.
+  - The cache may drop data by design, so the cache conformance runs use
+    sizes far above what the suite writes and `TTL` off. In that
+    configuration nothing is evicted, and the cache must pass unchanged. A
+    helper asserts after each run that no eviction happened, so a
+    misconfigured test fails loudly rather than flaking.
+- **`ufs.ChtimesFS` on memfs:** `Stat` and `ReadDir` report the new
+  modification time; missing paths return `fs.ErrNotExist`.
+- **writelog:**
+  - `writelog.FS` records only successful operations, records a remove that
+    returned `fs.ErrNotExist`, and doesn't record a failed `Close`.
+  - `Barrier` in async mode; a full channel blocks rather than drops.
+  - `MemoryLog`: dedupe of put/put, put/remove, remove/put, mkdir/put, and
+    remove of a parent. Snapshot order. `Commit` keeps entries rewritten
+    after the snapshot. A put whose source file is gone is skipped.
+  - `FileLog`: append, rotation at `segmentSize`, snapshot dedupe, `Commit`
+    deleting segments, reopen with existing segments, and truncation of a
+    torn final record.
+  - `Apply` with and without a `BatchWriter`; a remove of a missing path
+    succeeds.
 - **boltfs `BatchWrite`:** entries applied in order, rollback on a failing
   entry, `mod_time` preserved, notifications only after commit.
-- **writelog:**
-  - Dedupe of put/put, put/remove, remove/put, mkdir/put, and remove of a
-    parent.
-  - `Drain` order.
-  - `Restore` not overriding newer entries.
-  - `Apply` with and without a `BatchWriter`.
 - **overlay:**
   - Shadowing across three layers; `ReadDir` merge, ordering and
     duplicates; file-vs-directory conflicts.
+  - Tombstones in every operation: a hidden file, a file under a hidden
+    directory, `ReadDir` of a directory with a hidden child and of a hidden
+    directory recreated in layer 0, `Glob` skipping hidden paths.
   - `Remove` of files in various layers; a non-empty merged directory;
     `RemoveAll` hiding a subtree; creating a file under a tombstoned
-    directory.
+    directory without exposing its old siblings.
   - `ClearTombstones` leaves a tombstone that was re-recorded after the
     snapshot.
 - **simplecachefs** (injected clock; tests call `Sync` or signal the
@@ -500,12 +622,19 @@ errors. Methods called after `Close` return `fs.ErrClosed`.
   - `ErrNoSpace` when hot is full of dirty data, the hard-evict window, and
     writes succeeding after it.
   - Flush at `FlushThreshold` and on `SweepInterval`. `Sync` persists
-    everything and sweeps. `Close` persists everything.
-  - A write that races a flush stays dirty. A remove that races a flush is
+    everything and sweeps. `Close` persists everything. A failing
+    `BatchWrite` leaves the entries pending, and they are flushed on retry.
+  - A write that races a flush stays pending. A remove that races a flush is
     not resurrected.
+  - Promotion:
+    - A warm hit is promoted and keeps its `ModTime`.
+    - No promotion above the soft limit.
+    - A promotion racing a write or a remove doesn't overwrite or resurrect.
+    - A promoted entry is never flushed back.
   - The flush evicts the oldest warm entries when the soft limit would be
     crossed.
-  - TTL expiry in both tiers, including a dirty expired entry.
+  - TTL expiry in warm (cascading to clean hot copies), a dirty expired
+    entry dropped at flush, and memory-only TTL.
   - Memory-only FIFO eviction.
   - Reopening an existing bolt file rebuilds `warmBytes` and FIFO order.
   - Methods after `Close` return `fs.ErrClosed`.
@@ -516,7 +645,6 @@ errors. Methods called after `Close` return `fs.ErrClosed`.
 - A cold tier or origin.
 - URI and `MountSpecOptions` configuration.
 - LRU or other eviction policies.
-- Promotion of warm hits into the hot tier.
+- Using `FileLog` in simplecachefs.
 - `Watch` on the overlay or the cache.
 - Compaction of the bolt file.
-- Crash durability for data not yet flushed.

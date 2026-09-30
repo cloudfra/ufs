@@ -917,17 +917,59 @@ func TestRemoveAllNull(t *testing.T) {
 	}
 }
 
+// chtimesMemFixture creates a file "dir/file" holding "content" in fsys and sets
+// the modification time of both to past through the backing store.
+func chtimesMemFixture(t *testing.T, name string, past time.Time) *memFS {
+	t.Helper()
+	fsys := makeMemFS(name)
+	if err := fsys.MkdirAll("dir", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Create("dir/file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("content"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fsys.mu.Lock()
+	fsys.nodes["dir"].modTime = past
+	fsys.nodes["dir/file"].modTime = past
+	fsys.mu.Unlock()
+	return fsys
+}
+
+// noChtimesFS hides the inner file system's [ChtimesFS] so that [Chtimes]
+// takes its rewrite fallback.
+type noChtimesFS struct {
+	WriteFS
+}
+
+func assertModTime(t *testing.T, fsys WriteFS, name string, want time.Time) {
+	t.Helper()
+	info, err := fsys.Stat(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(want) {
+		t.Errorf("Stat(%q).ModTime() = %v, want %v", name, info.ModTime(), want)
+	}
+}
+
 func TestChtimes(t *testing.T) {
 	past := time.Now().Add(-time.Hour).Truncate(time.Second)
+	mtime := past.Add(-24 * time.Hour)
+	atime := past.Add(-48 * time.Hour)
 	tests := []struct {
-		name string
-		// setup creates a file named "dir/file" holding "content" whose
-		// modification time is past, and returns its file system.
-		setup func(t *testing.T) FS
+		name  string
+		setup func(t *testing.T) WriteFS
 	}{
 		{
 			name: "local",
-			setup: func(t *testing.T) FS {
+			setup: func(t *testing.T) WriteFS {
 				dir := t.TempDir()
 				if err := os.Mkdir(filepath.Join(dir, "dir"), osutil.DefaultDirectoryPermissions); err != nil {
 					t.Fatal(err)
@@ -936,32 +978,33 @@ func TestChtimes(t *testing.T) {
 				if err := os.WriteFile(hostPath, []byte("content"), osutil.DefaultFilePermissions); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Chtimes(hostPath, past, past); err != nil {
-					t.Fatal(err)
+				for _, p := range []string{hostPath, filepath.Join(dir, "dir")} {
+					if err := os.Chtimes(p, past, past); err != nil {
+						t.Fatal(err)
+					}
 				}
 				return mustFS(t, newLocalFS, dir)
 			},
 		},
 		{
 			name: "memory",
-			setup: func(t *testing.T) FS {
-				fsys := makeMemFS("memory://chtimes")
-				if err := fsys.MkdirAll("dir", fs.ModePerm); err != nil {
-					t.Fatal(err)
-				}
-				f, err := fsys.Create("dir/file")
+			setup: func(t *testing.T) WriteFS {
+				return chtimesMemFixture(t, "memory://chtimes", past)
+			},
+		},
+		{
+			name: "nested",
+			setup: func(t *testing.T) WriteFS {
+				return makeNestFS(t.Context(), chtimesMemFixture(t, "memory://chtimes-nested", past))
+			},
+		},
+		{
+			name: "fault",
+			setup: func(t *testing.T) WriteFS {
+				fsys, err := newFaultFS(chtimesMemFixture(t, "memory://chtimes-fault", past), FaultConfig{})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := f.WriteString("content"); err != nil {
-					t.Fatal(err)
-				}
-				if err := f.Close(); err != nil {
-					t.Fatal(err)
-				}
-				fsys.mu.Lock()
-				fsys.nodes["dir/file"].modTime = past
-				fsys.mu.Unlock()
 				return fsys
 			},
 		},
@@ -970,37 +1013,69 @@ func TestChtimes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fsys := tc.setup(t)
 			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+			if _, ok := fsys.(ChtimesFS); !ok {
+				t.Fatalf("%T does not implement ChtimesFS", fsys)
+			}
+			assertModTime(t, fsys, "dir/file", past)
 
-			before, err := fsys.Stat("dir/file")
-			if err != nil {
-				t.Fatal(err)
+			if err := Chtimes(fsys, "dir/file", time.Time{}, time.Time{}); err != nil {
+				t.Fatalf("Chtimes(zero times) = %v", err)
 			}
-			if !before.ModTime().Equal(past) {
-				t.Fatalf("setup ModTime() = %v, want %v", before.ModTime(), past)
-			}
-			if err := Chtimes(fsys, "dir/file"); err != nil {
+			assertModTime(t, fsys, "dir/file", past)
+
+			if err := Chtimes(fsys, "dir/file", atime, mtime); err != nil {
 				t.Fatalf("Chtimes() = %v", err)
 			}
-			after, err := fsys.Stat("dir/file")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !after.ModTime().After(past) {
-				t.Errorf("ModTime() after Chtimes = %v, want after %v", after.ModTime(), past)
-			}
+			assertModTime(t, fsys, "dir/file", mtime)
 			if got, err := fsys.ReadFile("dir/file"); err != nil || string(got) != "content" {
 				t.Errorf("ReadFile() = (%q, %v), want (%q, nil)", got, err, "content")
 			}
 
-			if err := Chtimes(fsys, "dir/missing"); !errors.Is(err, fs.ErrNotExist) {
+			if err := Chtimes(fsys, "dir", atime, mtime); err != nil {
+				t.Fatalf("Chtimes(dir) = %v", err)
+			}
+			assertModTime(t, fsys, "dir", mtime)
+
+			if err := Chtimes(fsys, "dir/missing", atime, mtime); !errors.Is(err, fs.ErrNotExist) {
 				t.Errorf("Chtimes(missing) = %v, want fs.ErrNotExist", err)
 			}
-			if err := Chtimes(fsys, "dir"); !errors.Is(err, fs.ErrInvalid) {
-				t.Errorf("Chtimes(dir) = %v, want fs.ErrInvalid", err)
-			}
-			ufsTesting.AssertInvalidPathError(t, "../escape", Chtimes(fsys, "../escape"), "chtimes")
+			ufsTesting.AssertInvalidPathError(t, "../escape", Chtimes(fsys, "../escape", atime, mtime), "chtimes")
 		})
 	}
+}
+
+func TestChtimesFallback(t *testing.T) {
+	past := time.Now().Add(-time.Hour).Truncate(time.Second)
+	inner := chtimesMemFixture(t, "memory://chtimes-fallback", past)
+	fsys := noChtimesFS{inner}
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+	if err := Chtimes(fsys, "dir/file", time.Time{}, time.Time{}); err != nil {
+		t.Fatalf("Chtimes(zero times) = %v", err)
+	}
+	assertModTime(t, fsys, "dir/file", past)
+
+	if err := Chtimes(fsys, "dir/file", past, past.Add(-time.Hour)); err != nil {
+		t.Fatalf("Chtimes() = %v", err)
+	}
+	info, err := fsys.Stat("dir/file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().After(past) {
+		t.Errorf("ModTime() after the fallback = %v, want the rewrite time (after %v)", info.ModTime(), past)
+	}
+	if got, err := fsys.ReadFile("dir/file"); err != nil || string(got) != "content" {
+		t.Errorf("ReadFile() = (%q, %v), want (%q, nil)", got, err, "content")
+	}
+
+	if err := Chtimes(fsys, "dir", past, past); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("Chtimes(dir) = %v, want errors.ErrUnsupported", err)
+	}
+	if err := Chtimes(fsys, "dir/missing", past, past); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Chtimes(missing) = %v, want fs.ErrNotExist", err)
+	}
+	ufsTesting.AssertInvalidPathError(t, "../escape", Chtimes(fsys, "../escape", past, past), "chtimes")
 }
 
 func TestChtimesReadOnly(t *testing.T) {
@@ -1014,7 +1089,39 @@ func TestChtimesReadOnly(t *testing.T) {
 	}
 	fsys := ReadOnly(inner)
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-	if err := Chtimes(fsys, "file"); !errors.Is(err, fs.ErrPermission) {
+	now := time.Now()
+	if err := Chtimes(fsys, "file", now, now); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("Chtimes() on a read-only FS = %v, want fs.ErrPermission", err)
+	}
+	ufsTesting.AssertInvalidPathError(t, "../escape", fsys.(ChtimesFS).Chtimes("../escape", now, now), "chtimes")
+}
+
+func TestChtimesClosed(t *testing.T) {
+	now := time.Now()
+	mem := makeMemFS("memory://chtimes-closed")
+	nested := makeNestFS(t.Context(), makeMemFS("memory://chtimes-closed-nested"))
+	for _, fsys := range []WriteFS{mem, nested} {
+		if err := fsys.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := Chtimes(fsys, "file", now, now); !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("Chtimes() on closed %T = %v, want fs.ErrClosed", fsys, err)
+		}
+	}
+	openMem := makeMemFS("memory://chtimes-open")
+	ufsTesting.AssertInvalidPathError(t, "../escape", openMem.Chtimes("../escape", now, now), "chtimes")
+	lfs := mustFS(t, newLocalFS, t.TempDir())
+	t.Cleanup(ufsTesting.ValidateClose(t, lfs))
+	ufsTesting.AssertInvalidPathError(t, "../escape", lfs.(ChtimesFS).Chtimes("../escape", now, now), "chtimes")
+}
+
+func TestChtimesFaultInjected(t *testing.T) {
+	fsys, err := newFaultFS(makeMemFS("memory://chtimes-injected"), FaultConfig{ErrorRate: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := Chtimes(fsys, "file", now, now); err == nil {
+		t.Error("Chtimes() with ErrorRate 1 = nil, want an injected error")
 	}
 }

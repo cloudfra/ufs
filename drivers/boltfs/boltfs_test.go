@@ -703,7 +703,7 @@ func TestBoltFileDirRead(t *testing.T) {
 }
 
 func TestBoltFSClosedOperations(t *testing.T) {
-	fsys, err := newBoltFS(t.Context(), testBoltFSURI(t))
+	fsys, err := New(t.Context(), testBoltFSURI(t))
 	if err != nil {
 		t.Fatal(err)
 	}

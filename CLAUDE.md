@@ -124,7 +124,7 @@ enable its scheme. They may use `internal/` packages.
 
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|
-| drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
+| drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm); boltfs.New returns the unwrapped FS; BatchWrite applies WriteLogEntry batches in one transaction |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/common/overlay/  | overlay.FS: N-layer union FS with in-memory tombstones; writes go to the top layer |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |

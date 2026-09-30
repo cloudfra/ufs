@@ -43,6 +43,7 @@ var (
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
 	_ Watcher        = (*memFS)(nil)
+	_ ChtimesFS      = (*memFS)(nil)
 )
 
 func init() {
@@ -619,6 +620,28 @@ func (fsys *memFS) RemoveAll(name string) error {
 	for _, p := range removed {
 		fsys.notify(NotifyRemove, p)
 	}
+	return nil
+}
+
+// Chtimes sets the modification time of name to mtime. memFS does not track
+// access times, so atime is ignored; a zero mtime leaves it unchanged.
+func (fsys *memFS) Chtimes(name string, _, mtime time.Time) error {
+	if fsys.isClosed() {
+		return ufserrors.NewPathError("chtimes", name, fs.ErrClosed)
+	}
+	if err := pathutil.Validate("chtimes", name); err != nil {
+		return err
+	}
+	fsys.mu.Lock()
+	node, ok := fsys.nodes[name]
+	if ok && !mtime.IsZero() {
+		node.modTime = mtime
+	}
+	fsys.mu.Unlock()
+	if !ok {
+		return ufserrors.NewPathError("chtimes", name, fs.ErrNotExist)
+	}
+	fsys.notify(NotifyChmod, name)
 	return nil
 }
 

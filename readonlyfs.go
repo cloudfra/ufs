@@ -17,13 +17,17 @@ package ufs
 import (
 	"io/fs"
 	"net/url"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ WriteFS = (*readOnlyFS)(nil)
+var (
+	_ WriteFS   = (*readOnlyFS)(nil)
+	_ ChtimesFS = (*readOnlyFS)(nil)
+)
 
 // readOnlyFS wraps a [ReadFS] and satisfies [FS] by returning
 // [fs.ErrPermission] for all write operations.
@@ -60,6 +64,14 @@ func (fsys *readOnlyFS) Create(name string) (File, error) {
 		return nil, err
 	}
 	return nil, ufserrors.NewPathError("create", name, fs.ErrPermission)
+}
+
+// Chtimes always returns [fs.ErrPermission].
+func (fsys *readOnlyFS) Chtimes(name string, _, _ time.Time) error {
+	if err := pathutil.Validate("chtimes", name); err != nil {
+		return err
+	}
+	return ufserrors.NewPathError("chtimes", name, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) MkdirAll(name string, _ fs.FileMode) error {

@@ -50,6 +50,7 @@ is github.com/cloudfra/ufs.
 | ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
 | FS         | Read-write; extends ReadFS with Create, MkdirAll                             |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
+| ChtimesFS  | Optional; sets access/modification times in place (used by Chtimes)          |
 
 ### Factory
 
@@ -140,7 +141,7 @@ code with no `ufs` dependency goes in `internal/`.
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
-| op.go                 | High-level ops — Rsync copies files between FSes                    |
+| op.go                 | High-level ops — Rsync copies files between FSes; Chtimes sets times via ChtimesFS or a rewrite |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |

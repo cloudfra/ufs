@@ -29,7 +29,10 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ WriteFS = (*faultFS)(nil)
+var (
+	_ WriteFS   = (*faultFS)(nil)
+	_ ChtimesFS = (*faultFS)(nil)
+)
 
 // faultErrors is a set of realistic errors that applications commonly
 // encounter from file system operations.
@@ -209,6 +212,15 @@ func (fsys *faultFS) Create(name string) (File, error) {
 		return nil, err
 	}
 	return fsys.inner.Create(name)
+}
+
+// Chtimes may inject a fault, then forwards to [Chtimes] on the inner file
+// system.
+func (fsys *faultFS) Chtimes(name string, atime, mtime time.Time) error {
+	if err := fsys.maybeInjectFault("chtimes", name); err != nil {
+		return err
+	}
+	return Chtimes(fsys.inner, name, atime, mtime)
 }
 
 func (fsys *faultFS) MkdirAll(name string, perm fs.FileMode) error {

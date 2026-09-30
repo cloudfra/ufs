@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -37,6 +38,7 @@ const (
 var (
 	_ File             = (*os.File)(nil)
 	_ localFSInterface = (*localFS)(nil)
+	_ ChtimesFS        = (*localFS)(nil)
 )
 
 func init() {
@@ -85,6 +87,15 @@ func (fsys *localFS) Create(name string) (File, error) {
 		return nil, err
 	}
 	return fsys.osFS.Create(name)
+}
+
+// Chtimes changes the access and modification times of name through
+// [os.Root.Chtimes].
+func (fsys *localFS) Chtimes(name string, atime, mtime time.Time) error {
+	if err := validLocalPath("chtimes", name); err != nil {
+		return err
+	}
+	return fsys.osFS.Chtimes(name, atime, mtime)
 }
 
 func (fsys *localFS) MkdirAll(name string, perm fs.FileMode) error {

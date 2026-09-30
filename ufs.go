@@ -52,6 +52,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"time"
 )
 
 // FileInfo provides file metadata. It currently mirrors [fs.FileInfo] and is
@@ -245,6 +246,16 @@ type ForEachFileInfoIter interface {
 	// ForEachFileInfo calls f for each file (not directory) under dir. If f
 	// returns a non-nil error the walk stops and that error is returned.
 	ForEachFileInfo(dir string, f func(fs.FileInfo) error) error
+}
+
+// ChtimesFS is an optional interface for file systems that can change a
+// file's access and modification times in place. [Chtimes] uses it when the
+// file system implements it.
+type ChtimesFS interface {
+	// Chtimes changes the access and modification times of the file or
+	// directory name, like [os.Chtimes]. A zero [time.Time] leaves that time
+	// unchanged. A file system that does not track access times ignores atime.
+	Chtimes(name string, atime, mtime time.Time) error
 }
 
 // ForEachFilenameIter is an optional interface for streaming file names without

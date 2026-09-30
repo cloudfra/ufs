@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -52,6 +53,7 @@ var (
 	_ FS               = (*nestFS)(nil)
 	_ fs.GlobFS        = (*nestFS)(nil)
 	_ realAbsPathGet   = (*nestFS)(nil)
+	_ ChtimesFS        = (*nestFS)(nil)
 	_ DeviceInfoGetter = (*mountMap)(nil)
 )
 
@@ -470,6 +472,19 @@ func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
 	}
 
 	return mountFS.fsys.MkdirAll(subName, perm)
+}
+
+// Chtimes forwards to [Chtimes] on the file system mounted at name, so the
+// mounted file system's native [ChtimesFS] is used when it has one.
+func (fsys *nestFS) Chtimes(name string, atime, mtime time.Time) error {
+	if err := fsys.validPath("chtimes", name); err != nil {
+		return err
+	}
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return err
+	}
+	return Chtimes(mountFS.fsys, subName, atime, mtime)
 }
 
 func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {

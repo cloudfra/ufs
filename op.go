@@ -15,11 +15,13 @@
 package ufs
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
 	"path"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -73,6 +75,51 @@ func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error
 		return err
 	}
 	return nil
+}
+
+// Chtimes changes the access and modification times of the file or directory
+// name in fsys, like [os.Chtimes]. A zero [time.Time] leaves that time
+// unchanged.
+//
+// If fsys implements [ChtimesFS], Chtimes calls it. Otherwise it falls back to
+// rewriting the file's content through fsys (ReadFile, then Create, Write and
+// Close), which works on any writable file system but has two limits: the
+// file system's own Create stamps the new modification time, so the file ends
+// up with the current time rather than mtime, and the rewrite reads and writes
+// the whole file and is not atomic. The fallback ignores atime, does nothing
+// when mtime is zero, and returns an error wrapping [errors.ErrUnsupported] for
+// a directory.
+//
+// A missing file returns an error wrapping [fs.ErrNotExist].
+func Chtimes(fsys WriteFS, name string, atime, mtime time.Time) error {
+	if err := pathutil.Validate("chtimes", name); err != nil {
+		return err
+	}
+	if cfs, ok := fsys.(ChtimesFS); ok {
+		return cfs.Chtimes(name, atime, mtime)
+	}
+	info, err := fsys.Stat(name)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return ufserrors.NewPathError("chtimes", name, fmt.Errorf("is a directory: %w", errors.ErrUnsupported))
+	}
+	if mtime.IsZero() {
+		return nil
+	}
+	content, err := fsys.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	f, err := fsys.Create(name)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(content); err != nil {
+		return ufserrors.Join(err, f.Close())
+	}
+	return f.Close()
 }
 
 // ForEachFilename calls f for each file path (not directory) under dir,

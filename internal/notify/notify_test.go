@@ -270,3 +270,31 @@ func TestConcurrentCloseIsSafe(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestPublishConcurrentWithSubscriptionClose guards against Publish reading
+// the subscription list while a closing subscription rewrites it. It only
+// fails under the race detector.
+func TestPublishConcurrentWithSubscriptionClose(t *testing.T) {
+	t.Parallel()
+	b := New()
+	defer ufsTesting.ValidateClose(t, b)()
+
+	const workers, iterations = 4, 200
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for range iterations {
+				sub := b.Subscribe(t.Context(), ".", func(Op, string) {})
+				if err := sub.Close(); err != nil {
+					t.Errorf("Close() = %v, want nil", err)
+				}
+			}
+		})
+		wg.Go(func() {
+			for range iterations {
+				b.Publish(opCreate, "a.txt")
+			}
+		})
+	}
+	wg.Wait()
+}

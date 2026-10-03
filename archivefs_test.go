@@ -21,7 +21,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -612,5 +614,49 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// TestArchiveConcurrentFirstAccess opens a directory that holds an archive and
+// has many goroutines reach into the archive at once, before it is mounted or
+// indexed. Every one of them must see the archive's contents; the data races
+// this guards against only fail under the race detector.
+func TestArchiveConcurrentFirstAccess(t *testing.T) {
+	t.Parallel()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const (
+		archiveDir = "single-testassets.zip" + archiveDirExt
+		workers    = 8
+	)
+	for range 10 {
+		fsys, err := New(t.Context(), filepath.Join(wd, testAssetsArchivesDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		for i := range workers {
+			wg.Go(func() {
+				if i%2 == 0 {
+					if _, err := fsys.Stat(archiveDir + "/index.html"); err != nil {
+						t.Errorf("Stat() = %v, want nil", err)
+					}
+					return
+				}
+				entries, err := fsys.ReadDir(archiveDir)
+				if err != nil {
+					t.Errorf("ReadDir() = %v, want nil", err)
+				}
+				if len(entries) == 0 {
+					t.Error("ReadDir() returned no entries, want the archive's contents")
+				}
+			})
+		}
+		wg.Wait()
+		if err := fsys.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

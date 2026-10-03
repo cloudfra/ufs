@@ -49,22 +49,6 @@ var (
 			wantString: "file://" + pathutil.TempDir(),
 		},
 		{
-			name: "tempMountFS",
-			createFS: func(tb testing.TB) FS {
-				fsys, err := newTempMountFS(tb.Context(), "test://", func(string) error { return nil })
-				if err != nil {
-					tb.Fatalf("cannot create tempMountFS file system, %s", err)
-				}
-				tb.Cleanup(func() {
-					if err := fsys.Close(); err != nil {
-						tb.Errorf("Close() = %v", err)
-					}
-				})
-				return fsys
-			},
-			wantString: "test:",
-		},
-		{
 			name: "memFS",
 			createFS: func(tb testing.TB) FS {
 				fsys := makeMemFS(memFSPrefix)

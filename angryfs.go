@@ -27,6 +27,8 @@ import (
 
 const (
 	angryFSPrefix = "angry:"
+	// AngryFSPrefix is the URI prefix for the angry file system.
+	AngryFSPrefix = angryFSPrefix
 )
 
 var (
@@ -164,5 +166,5 @@ func makeAngryFS(name string) *angryFS {
 }
 
 func isAngryFSUri(name string) bool {
-	return strings.HasPrefix(name, angryFSPrefix)
+	return strings.HasPrefix(name, AngryFSPrefix)
 }

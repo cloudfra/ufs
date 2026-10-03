@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"net/url"
 	"testing"
 	"testing/fstest"
 
@@ -224,5 +225,39 @@ func TestFromFSEmbedFS(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Error("ReadFile() returned empty data, want non-empty")
+	}
+}
+
+// uriFS is an fs.FS that reports a fixed URI, which may be nil.
+type uriFS struct {
+	fstest.MapFS
+	uri *url.URL
+}
+
+func (fsys uriFS) URI() (*url.URL, error) {
+	return fsys.uri, nil
+}
+
+func TestURIOfWrappedFSWithoutURI(t *testing.T) {
+	got, err := FromFS(uriFS{}).URI()
+	if err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("URI() = %v, want nil", got)
+	}
+}
+
+func TestURIDoesNotModifyWrappedURI(t *testing.T) {
+	inner := &url.URL{Scheme: "memory"}
+	got, err := FromFS(uriFS{uri: inner}).URI()
+	if err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	if want := "memory:?ro=true"; got.String() != want {
+		t.Errorf("URI() = %q, want %q", got, want)
+	}
+	if inner.RawQuery != "" {
+		t.Errorf("wrapped URI query = %q, want it left empty", inner.RawQuery)
 	}
 }

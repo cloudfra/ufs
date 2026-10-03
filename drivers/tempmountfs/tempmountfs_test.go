@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package tempmountfs
 
 import (
 	"errors"
@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -46,7 +47,7 @@ func TestTempMountFSCleanup(t *testing.T) {
 
 func TestTempMountFSCloseError(t *testing.T) {
 	// Use an angry FS so that lfs.Close() returns an error.
-	angry := makeAngryFS(angryFSPrefix)
+	angry := ufs.MakeAngryFS(ufs.AngryFSPrefix)
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error { return nil })
 	err := tfs.Close()
 	if err == nil {

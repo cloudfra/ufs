@@ -36,17 +36,17 @@ const (
 
 var (
 	_ File             = (*os.File)(nil)
-	_ localFSInterface = (*localFS)(nil)
+	_ LocalFSInterface = (*localFS)(nil)
 )
 
 func init() {
 	Register(NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
 }
 
-type localFSInterface interface {
+type LocalFSInterface interface {
 	WriteFS
 	fs.GlobFS
-	realAbsPathGet
+	AbsPathGet
 }
 
 type localFS struct {
@@ -61,7 +61,7 @@ func (fsys *localFS) String() string {
 	return fmt.Sprintf("localFS(%s)", URIOrDefault(fsys, fsys.osFS.Name()))
 }
 
-func (fsys *localFS) getAbsPath(name string) (string, error) {
+func (fsys *localFS) GetAbsPath(name string) (string, error) {
 	return filepath.Abs(filepath.Join(fsys.osFS.Name(), name))
 }
 
@@ -192,6 +192,14 @@ func makeLocalFS(name string) (*localFS, error) {
 	return &localFS{
 		osFS: osFS,
 	}, nil
+}
+
+// NewLocalFS creates a new local disk file system rooted at the file:// URI name.
+//
+// Deprecated: NewLocalFS exists only to support the shared driver tests in
+// drivers/testing and will be removed soon. Use New instead.
+func NewLocalFS(ctx context.Context, name string) (FS, error) {
+	return newLocalFS(ctx, name)
 }
 
 func newLocalFS(ctx context.Context, name string) (FS, error) {

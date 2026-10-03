@@ -17,70 +17,17 @@ package ufs
 import (
 	"bytes"
 	"io/fs"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/httputil"
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-func TestNewRemoteArchive(t *testing.T) {
-	fsys, err := New(t.Context(), "https://github.com/mholt/archives/archive/refs/heads/main.zip")
-	if err != nil {
-		t.Error(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	if files, err := fsys.ReadDir(pathutil.CwdPath); files != nil {
-		t.Logf("files: %v, err: %s", files, err)
-	}
-	if files, err := fsys.ReadDir("archives-main"); files != nil {
-		t.Logf("files: %v, err: %s", files, err)
-	}
-}
-
 func testArchiveServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	zipPath := createZipFromDir(t, testAssetsFilesDir)
-	zipData, err := osutil.ReadFile(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/testassets.zip", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/zip")
-		if _, err := w.Write(zipData); err != nil {
-			t.Errorf("failed to write to response: %v", err)
-		}
-	})
-	mux.HandleFunc("/404.zip", func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "not found", http.StatusNotFound)
-	})
-	mux.HandleFunc("/500.zip", func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "server error", http.StatusInternalServerError)
-	})
-	mux.HandleFunc("/redirect-to-archive", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/testassets.zip", http.StatusFound)
-	})
-	mux.HandleFunc("/trailing-slash/", func(w http.ResponseWriter, _ *http.Request) {
-		if _, err := w.Write([]byte("bad")); err != nil {
-			t.Errorf("failed to write to response: %v", err)
-		}
-	})
-	mux.HandleFunc("/redirect-to-traversal", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/../../etc/passwd", http.StatusFound)
-	})
-	mux.HandleFunc("/../../etc/passwd", func(w http.ResponseWriter, _ *http.Request) {
-		if _, err := w.Write([]byte("root:x:0:0")); err != nil {
-			t.Errorf("failed to write to response: %v", err)
-		}
-	})
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
-	return ts
+	return ufsTesting.CreateHTTPServer(t)
 }
 
 func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) FS {

@@ -51,7 +51,7 @@ type FSArgs struct {
 var (
 	_ FS               = (*nestFS)(nil)
 	_ fs.GlobFS        = (*nestFS)(nil)
-	_ realAbsPathGet   = (*nestFS)(nil)
+	_ AbsPathGet       = (*nestFS)(nil)
 	_ DeviceInfoGetter = (*mountMap)(nil)
 )
 
@@ -219,9 +219,9 @@ type nestFS struct {
 	args   FSArgs
 }
 
-func (fsys *nestFS) getAbsPath(name string) (string, error) {
+func (fsys *nestFS) GetAbsPath(name string) (string, error) {
 	if rfs, ok := fsys.fsys.(*localFS); ok {
-		return rfs.getAbsPath(name)
+		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
 }
@@ -347,7 +347,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	lfs, ok := fsys.fsys.(*localFS)
 	var newFS *archiveFS
 	if ok {
-		absName, err := lfs.getAbsPath(name)
+		absName, err := lfs.GetAbsPath(name)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}

@@ -142,43 +142,6 @@ func TestNestFSCloseClosesBaseWhenMountsFail(t *testing.T) {
 	}
 }
 
-func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
-	t.Parallel()
-
-	var cleanupCalled atomic.Int32
-	angry := makeAngryFS(angryFSPrefix)
-	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
-		cleanupCalled.Add(1)
-		return nil
-	})
-
-	err := tfs.Close()
-	if err == nil {
-		t.Fatal("Close() should return error from angry lfs")
-	}
-	if cleanupCalled.Load() < 1 {
-		t.Error("cleanup function was not called when inner FS Close failed")
-	}
-}
-
-func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
-	t.Parallel()
-
-	angry := makeAngryFS(angryFSPrefix)
-	cleanupErr := errors.New("cleanup boom")
-	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
-		return cleanupErr
-	})
-
-	err := tfs.Close()
-	if err == nil {
-		t.Fatal("Close() should return error")
-	}
-	if !errors.Is(err, cleanupErr) {
-		t.Errorf("Close() error should contain cleanup error, got: %v", err)
-	}
-}
-
 func TestArchiveFSCloseClosesUnderlyingFile(t *testing.T) {
 	t.Parallel()
 

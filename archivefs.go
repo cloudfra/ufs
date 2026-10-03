@@ -29,7 +29,6 @@ import (
 
 	"github.com/mholt/archives"
 
-	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -53,7 +52,6 @@ func init() {
 	Register(NewDriver("archive", func(ctx context.Context, name string) (FS, error) {
 		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
 	}, isArchiveFSUri, 1, true, false))
-	Register(NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 
 func isArchiveFSUri(name string) bool {
@@ -235,6 +233,10 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 	return ufserrors.NewPathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
+func NewArchiveFSFromLocalFS(ctx context.Context, name string) (WriteFS, error) {
+	return newArchiveFSFromLocalFS(ctx, name)
+}
+
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
 	info, err := osutil.Stat(name)
 	if err != nil {
@@ -288,29 +290,4 @@ func makeArchiveFS(fsys fs.FS, name string, closer io.Closer) *archiveFS {
 		name:   name,
 		closer: closer,
 	}
-}
-
-func isTempMountRemoteArchiveURI(name string) bool {
-	return strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://")
-}
-
-func newTempMountRemoteArchiveFS(ctx context.Context, name string) (FS, error) {
-	tempDir, cleanup, err := osutil.CreateTempDirectory()
-	if err != nil {
-		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create temp directory, %w", ufserrors.Join(err, cleanupErr))
-	}
-
-	filename, err := httputil.DownloadFile(ctx, tempDir, name)
-	if err != nil {
-		cleanupErr := cleanup()
-		return nil, ufserrors.Join(err, cleanupErr)
-	}
-
-	fsys, err := newArchiveFSFromLocalFS(ctx, filename)
-	if err != nil {
-		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create archive FS from local file, %w", ufserrors.Join(err, cleanupErr))
-	}
-	return makeTempMountFS(fsys, name, tempDir, cleanup), nil
 }

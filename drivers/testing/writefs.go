@@ -530,7 +530,7 @@ func Close(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
 	})
 }
 
-func mustWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (ufs.WriteFS, error), name string) ufs.FS {
+func mustWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (ufs.WriteFS, error), name string) ufs.WriteFS {
 	tb.Helper()
 
 	fsys, err := newFSFunc(tb.Context(), name)
@@ -544,7 +544,7 @@ func mustWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (ufs.Wri
 	return fsys
 }
 
-func mkdirForTest(tb testing.TB, fsys ufs.FS, dirs ...string) {
+func mkdirForTest(tb testing.TB, fsys ufs.WriteFS, dirs ...string) {
 	tb.Helper()
 	dir := path.Join(dirs...)
 	if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {

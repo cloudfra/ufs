@@ -25,13 +25,13 @@ import (
 
 // closeCounter tracks how many times Close was called on a FS.
 type closeCounter struct {
-	FS
+	WriteFS
 	count atomic.Int32
 }
 
 func (c *closeCounter) Close() error {
 	c.count.Add(1)
-	return c.FS.Close()
+	return c.WriteFS.Close()
 }
 
 func (c *closeCounter) closed() int {
@@ -40,7 +40,7 @@ func (c *closeCounter) closed() int {
 
 // failCloser wraps a FS so that Close always returns an error.
 type failCloser struct {
-	FS
+	WriteFS
 	count atomic.Int32
 }
 
@@ -77,8 +77,8 @@ func TestBuildClosesBaseOnMountError(t *testing.T) {
 
 func TestBuildClosesBaseOnConflictingMountError(t *testing.T) {
 	t.Parallel()
-	base := &closeCounter{FS: makeMemFS("memory://")}
-	mount := &closeCounter{FS: makeMemFS("memory://")}
+	base := &closeCounter{WriteFS: makeMemFS("memory://")}
+	mount := &closeCounter{WriteFS: makeMemFS("memory://")}
 
 	b := NewFSBuilder("null://").MountFS("a", base).MountFS("a", mount)
 	_, err := b.Build(t.Context())
@@ -95,9 +95,9 @@ func TestMountMapCloseClosesAllMountsOnError(t *testing.T) {
 	ctx := t.Context()
 	mm := makeMountMap("test")
 
-	good1 := &closeCounter{FS: makeMemFS("memory://1")}
-	bad := &failCloser{FS: makeMemFS("memory://bad")}
-	good2 := &closeCounter{FS: makeMemFS("memory://2")}
+	good1 := &closeCounter{WriteFS: makeMemFS("memory://1")}
+	bad := &failCloser{WriteFS: makeMemFS("memory://bad")}
+	good2 := &closeCounter{WriteFS: makeMemFS("memory://2")}
 
 	ufsTesting.Must(t, mm.put("a", makeNestFS(ctx, good1)))
 	ufsTesting.Must(t, mm.put("b", makeNestFS(ctx, bad)))
@@ -123,8 +123,8 @@ func TestNestFSCloseClosesBaseWhenMountsFail(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	base := &closeCounter{FS: makeMemFS("memory://base")}
-	bad := &failCloser{FS: makeMemFS("memory://bad")}
+	base := &closeCounter{WriteFS: makeMemFS("memory://base")}
+	bad := &failCloser{WriteFS: makeMemFS("memory://bad")}
 
 	nfs := makeNestFS(ctx, base)
 	ufsTesting.Must(t, nfs.addMount("failing", makeNestFS(ctx, bad)))

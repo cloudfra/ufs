@@ -387,7 +387,7 @@ func TestGCSFSRemoveAll(t *testing.T) {
 			t.Fatalf("ReadDir after RemoveAll('.') = %v, want nil", err)
 		}
 		if len(entries) != 0 {
-			t.Errorf("after RemoveAll('.'), expected empty FS, got %d entries", len(entries))
+			t.Errorf("after RemoveAll('.'), expected empty WriteFS, got %d entries", len(entries))
 		}
 	})
 }

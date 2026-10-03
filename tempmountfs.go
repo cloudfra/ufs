@@ -29,7 +29,7 @@ import (
 var _ localFSInterface = (*tempMountFS)(nil)
 
 type tempMountFS struct {
-	lfs    FS
+	lfs    WriteFS
 	uri    string
 	name   string
 	closer func() error
@@ -103,11 +103,11 @@ func (fsys *tempMountFS) RemoveAll(name string) error {
 
 // NewTempMountFS returns a file system for uri backed by a temporary local
 // directory; prepare is called with the directory path to populate it.
-func NewTempMountFS(ctx context.Context, uri string, prepare func(string) error) (FS, error) {
+func NewTempMountFS(ctx context.Context, uri string, prepare func(string) error) (WriteFS, error) {
 	return newTempMountFS(ctx, uri, prepare)
 }
 
-func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (FS, error) {
+func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (WriteFS, error) {
 	tempDir, cleanup, err := osutil.CreateTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
@@ -125,10 +125,10 @@ func newTempMountFS(ctx context.Context, uri string, prepare func(string) error)
 		return nil, ufserrors.Join(fmt.Errorf("cannot create local fs for temp directory %s, %w", uri, err), cleanupErr)
 	}
 
-	return makeTempMountFS(lfs.(*localFS), uri, tempDir, cleanup), nil
+	return makeTempMountFS(lfs, uri, tempDir, cleanup), nil
 }
 
-func makeTempMountFS(lfs FS, uri string, name string, closer func() error) *tempMountFS {
+func makeTempMountFS(lfs WriteFS, uri string, name string, closer func() error) *tempMountFS {
 	return &tempMountFS{
 		lfs:    lfs,
 		uri:    uri,

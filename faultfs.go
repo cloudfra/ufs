@@ -91,7 +91,7 @@ func newCryptoRand() (*rand.Rand, error) {
 }
 
 type faultFS struct {
-	inner     FS
+	inner     WriteFS
 	cfg       FaultConfig
 	errorRate float64
 	// mu guards rng, which is not safe for concurrent use.
@@ -99,9 +99,9 @@ type faultFS struct {
 	rng *rand.Rand
 }
 
-// FaultInjector wraps inner as an [FS] that injects configurable latency and
+// FaultInjector wraps inner as an [WriteFS] that injects configurable latency and
 // errors. Close always delegates to inner without fault injection.
-func newFaultFS(inner FS, cfg FaultConfig) (FS, error) {
+func newFaultFS(inner WriteFS, cfg FaultConfig) (WriteFS, error) {
 	rng, err := newCryptoRand()
 	if err != nil {
 		return nil, fmt.Errorf("cannot create faultFS, %w", err)

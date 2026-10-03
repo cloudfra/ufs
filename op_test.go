@@ -105,7 +105,7 @@ func TestRsyncNull(t *testing.T) {
 }
 
 // setupListFS creates a memFS with: a.txt, dir/b.txt, dir/c.txt.
-func setupListFS(t *testing.T) FS {
+func setupListFS(t *testing.T) WriteFS {
 	t.Helper()
 	fsys, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {
@@ -288,7 +288,7 @@ func TestListFiles(t *testing.T) {
 
 // listFilenamesFS implements the optional ListFilenames interface.
 type listFilenamesFS struct {
-	FS
+	WriteFS
 	files []string
 }
 
@@ -308,7 +308,7 @@ func TestListFilesInterface(t *testing.T) {
 	}()
 
 	want := []string{"fast.txt", "path.txt"}
-	fsys := &listFilenamesFS{FS: inner, files: want}
+	fsys := &listFilenamesFS{WriteFS: inner, files: want}
 
 	got, err := ListFiles(fsys, pathutil.CwdPath)
 	if err != nil {
@@ -340,7 +340,7 @@ func TestForEachFilename(t *testing.T) {
 
 // forEachFilenameFS implements the optional ForEachFilenameIter interface.
 type forEachFilenameFS struct {
-	FS
+	WriteFS
 	files []string
 }
 
@@ -365,7 +365,7 @@ func TestForEachFilenameInterface(t *testing.T) {
 	}()
 
 	want := []string{"fast.txt", "path.txt"}
-	fsys := &forEachFilenameFS{FS: inner, files: want}
+	fsys := &forEachFilenameFS{WriteFS: inner, files: want}
 
 	var got []string
 
@@ -419,7 +419,7 @@ func TestForEachFileInfo(t *testing.T) {
 
 // forEachFileInfoFS implements the optional ForEachFileInfoIter interface.
 type forEachFileInfoFS struct {
-	FS
+	WriteFS
 	infos []fs.FileInfo
 }
 
@@ -447,7 +447,7 @@ func TestForEachFileInfoInterface(t *testing.T) {
 		&fsInfo{name: "fast.txt", size: 10, mode: fs.ModePerm},
 		&fsInfo{name: "path.txt", size: 20, mode: fs.ModePerm},
 	}
-	fsys := &forEachFileInfoFS{FS: inner, infos: wantInfos}
+	fsys := &forEachFileInfoFS{WriteFS: inner, infos: wantInfos}
 
 	var gotNames []string
 	if err := ForEachFileInfo(fsys, pathutil.CwdPath, func(info fs.FileInfo) error {
@@ -481,7 +481,7 @@ func TestForEachFileInfoCallbackError(t *testing.T) {
 
 // setupNestFSWithArchive creates a temp directory containing a regular file
 // and a zip archive with one entry, then wraps it as a nestFS for Scan tests.
-func setupNestFSWithArchive(t *testing.T) FS {
+func setupNestFSWithArchive(t *testing.T) WriteFS {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -753,7 +753,7 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 
 // --- Remove ---
 
-func setupRemoveFS(t *testing.T) FS {
+func setupRemoveFS(t *testing.T) WriteFS {
 	t.Helper()
 	fsys, err := newMemFS(t.Context(), "memory://test")
 	if err != nil {

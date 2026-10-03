@@ -622,7 +622,7 @@ func (fsys *memFS) RemoveAll(name string) error {
 	return nil
 }
 
-func newMemFS(_ context.Context, name string) (FS, error) {
+func newMemFS(_ context.Context, name string) (WriteFS, error) {
 	return MakeMemFS(name), nil
 }
 
@@ -630,7 +630,7 @@ func newMemFS(_ context.Context, name string) (FS, error) {
 //
 // Deprecated: MakeMemFS exists only to support the shared driver tests in
 // drivers/testing and will be removed soon. Use New instead.
-func MakeMemFS(name string) FS {
+func MakeMemFS(name string) WriteFS {
 	return makeMemFS(name)
 }
 

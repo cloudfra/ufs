@@ -224,6 +224,7 @@ type WriteFS interface {
 type FS interface {
 	WriteFS
 
+	// Copy copies the file at srcPath to dstPath.
 	// Copy(srcPath, dstPath string) error
 	// TODO: Implement RenameFS
 }

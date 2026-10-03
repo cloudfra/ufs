@@ -989,7 +989,7 @@ func TestMemFSRemoveAll(t *testing.T) {
 func TestMemFSDirFileConflictErrors(t *testing.T) {
 	for _, tc := range dirFileConflictCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fsys := newDirFileConflictFS(t, func(testing.TB) FS { return makeMemFS("memory:") })
+			fsys := newDirFileConflictFS(t, func(testing.TB) WriteFS { return makeMemFS("memory:") })
 			err := tc.op(fsys)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("err = %v, want %v", err, tc.wantErr)

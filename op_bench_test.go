@@ -28,7 +28,7 @@ import (
 
 // buildTree creates a localFS-backed directory tree with nFiles files of fileBytes bytes each,
 // spread across ~depth directory levels. Returns (localFS, tempDir) so caller can use it directly.
-func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
+func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) WriteFS {
 	t.Helper()
 	dir := t.TempDir()
 	lfs, err := newLocalFS(t.Context(), dir)
@@ -56,7 +56,7 @@ func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) FS {
 }
 
 // mustMemFS creates a memFS and attaches t.Cleanup to close it.
-func mustMemFS(tb testing.TB, name string) FS {
+func mustMemFS(tb testing.TB, name string) WriteFS {
 	fsys, err := newMemFS(tb.Context(), name)
 	if err != nil {
 		tb.Fatal(err)

@@ -24,7 +24,7 @@ import (
 	"testing"
 )
 
-func nopCreate(context.Context, string) (FS, error) {
+func nopCreate(context.Context, string) (WriteFS, error) {
 	return nil, nil
 }
 
@@ -248,7 +248,7 @@ func TestRegistrarCreate(t *testing.T) {
 		driver := Driver{
 			Name:      "err-driver",
 			MatchFunc: alwaysMatch,
-			CreateFunc: func(context.Context, string) (FS, error) {
+			CreateFunc: func(context.Context, string) (WriteFS, error) {
 				return nil, wantErr
 			},
 		}
@@ -271,7 +271,7 @@ func TestRegistrarCreate(t *testing.T) {
 		driver := Driver{
 			Name:      "capture-driver",
 			MatchFunc: alwaysMatch,
-			CreateFunc: func(ctx context.Context, name string) (FS, error) {
+			CreateFunc: func(ctx context.Context, name string) (WriteFS, error) {
 				gotCtx = ctx
 				gotName = name
 				return nil, nil

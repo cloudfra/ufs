@@ -37,7 +37,7 @@ type Driver struct {
 	Name string
 
 	// CreateFunc is invoked when creating an instance of the file system driver.
-	CreateFunc func(context.Context, string) (FS, error)
+	CreateFunc func(context.Context, string) (WriteFS, error)
 
 	// MatchFunc returns true if the URI in the string matches a pattern that the driver can handle.
 	MatchFunc func(string) bool
@@ -54,7 +54,7 @@ type Driver struct {
 }
 
 // NewDriver builds a Driver configuration for a file system driver, to be passed to Register.
-func NewDriver(name string, createFunc func(context.Context, string) (FS, error), matchFunc func(string) bool, priority int, standard bool, readWrite bool) Driver {
+func NewDriver(name string, createFunc func(context.Context, string) (WriteFS, error), matchFunc func(string) bool, priority int, standard bool, readWrite bool) Driver {
 	return Driver{
 		Name:       name,
 		CreateFunc: createFunc,
@@ -128,7 +128,7 @@ func (r *registrar) match(name string) (Driver, error) {
 	return result, nil
 }
 
-func (r *registrar) create(ctx context.Context, name string) (FS, error) {
+func (r *registrar) create(ctx context.Context, name string) (WriteFS, error) {
 	reg, err := r.match(name)
 	if err != nil {
 		return nil, err

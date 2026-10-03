@@ -194,7 +194,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	}, nil
 }
 
-func newLocalFS(ctx context.Context, name string) (FS, error) {
+func newLocalFS(ctx context.Context, name string) (WriteFS, error) {
 	if isMountableArchivePath(name) {
 		return newArchiveFSFromLocalFS(ctx, name)
 	}

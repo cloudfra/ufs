@@ -12,20 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package readonlyfs
 
 import (
 	"errors"
 	"io/fs"
 	"strings"
 	"testing"
+
+	"github.com/cloudfra/ufs"
+)
+
+const (
+	nullFSPrefix = "null://test"
 )
 
 func TestReadOnlyWriteOperationsReturnPermissionDenied(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys := ReadOnly(inner)
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys := New(inner)
 
 	tests := []struct {
 		name string
@@ -50,8 +56,8 @@ func TestReadOnlyWriteOperationsReturnPermissionDenied(t *testing.T) {
 func TestReadOnlyWriteOperationsInvalidPath(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys := ReadOnly(inner)
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys := New(inner)
 
 	for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
 		t.Run(badPath, func(t *testing.T) {
@@ -75,8 +81,8 @@ func TestReadOnlyWriteOperationsInvalidPath(t *testing.T) {
 func TestReadOnlyDelegatesReadsToInner(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys := ReadOnly(inner)
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys := New(inner)
 
 	if _, err := fsys.Open("."); err != nil {
 		t.Errorf("Open(.) = %v, want nil", err)
@@ -95,8 +101,8 @@ func TestReadOnlyDelegatesReadsToInner(t *testing.T) {
 func TestReadOnlyString(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys := ReadOnly(inner)
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys := New(inner)
 
 	if got := fsys.String(); !strings.Contains(got, nullFSPrefix) {
 		t.Errorf("String() should contain %q, got: %q", nullFSPrefix, got)

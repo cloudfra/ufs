@@ -12,29 +12,53 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package readonlyfs
 
 import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ WriteFS = (*readOnlyFS)(nil)
+var _ ufs.WriteFS = (*readOnlyFS)(nil)
+
+const (
+	optionName = "readonly"
+)
+
+type Options struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+func init() {
+	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
+}
+
+func wrap(inner ufs.WriteFS, options any) (ufs.WriteFS, error) {
+	opts, ok := options.(Options)
+	if !ok {
+		return nil, ufserrors.NewOptionTypeError(optionName, options, Options{})
+	}
+	if !opts.Enabled {
+		return inner, nil
+	}
+	return New(inner, opts), nil
+}
 
 // readOnlyFS wraps a [ReadFS] and satisfies [FS] by returning
 // [fs.ErrPermission] for all write operations.
 type readOnlyFS struct {
-	ReadFS
+	ufs.ReadFS
 }
 
-// ReadOnly wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
+// New wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
 // Remove, RemoveAll) always return [fs.ErrPermission]. All read operations
 // delegate to inner unchanged.
-func ReadOnly(inner ReadFS) WriteFS {
+func New(inner ufs.ReadFS, options Options) ufs.WriteFS {
 	return &readOnlyFS{
 		ReadFS: inner,
 	}
@@ -55,7 +79,7 @@ func (fsys *readOnlyFS) String() string {
 	return fsutil.String(fsys.ReadFS)
 }
 
-func (fsys *readOnlyFS) Create(name string) (File, error) {
+func (fsys *readOnlyFS) Create(name string) (ufs.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

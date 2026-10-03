@@ -285,7 +285,7 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("embed:// file systems must be created with drivers/embedfs.New, not New(): %w", fs.ErrInvalid))
 	}
 	r := getRegistrar()
-	driver, err := r.match(name)
+	driver, err := r.matchDriver(name)
 	if err != nil {
 		// Drivers outside this package (drivers/...) register their scheme only
 		// when imported, so a missing blank import looks like an unknown path.
@@ -301,17 +301,10 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 // MountSpec describes a single mount entry with a source URI, a mount point,
 // and mount options.
 type MountSpec struct {
-	Source     string           `yaml:"source"`
-	MountPoint string           `yaml:"mountPoint"`
-	Options    MountSpecOptions `yaml:"options"`
-}
-
-// MountSpecOptions holds options that apply to a [MountSpec] entry.
-// Each wrapper is represented by a typed pointer field; nil means the
-// wrapper is not applied.
-type MountSpecOptions struct {
-	ReadOnly bool         `yaml:"readOnly"`
-	Fault    *FaultConfig `yaml:"fault,omitempty"`
+	Source     string `yaml:"source"`
+	MountPoint string `yaml:"mountPoint"`
+	// TODO: MountSpecOptions should be a map[string]any to allow arbitrary options to be passed to decorators. The current struct is a placeholder for future expansion.
+	Options map[string]any `yaml:"options"`
 }
 
 func parseMountSpec(input string) []MountSpec {
@@ -360,8 +353,8 @@ func parseFstabMountSpec(input string) ([]MountSpec, error) {
 		specs = append(specs, MountSpec{
 			Source:     fields[0],
 			MountPoint: normalizeMountPoint(fields[1]),
-			Options: MountSpecOptions{
-				ReadOnly: hasFstabOption(options, "ro"),
+			Options: map[string]any{
+				"readOnly": hasFstabOption(options, "ro"),
 			},
 		})
 	}
@@ -402,18 +395,15 @@ func normalizeMountPoint(mp string) string {
 var defaultRootSpec = MountSpec{
 	Source:     nullFSPrefix,
 	MountPoint: pathutil.CwdPath,
-	Options:    MountSpecOptions{ReadOnly: true},
+	Options:    map[string]any{"readOnly": map[string]string{"enabled": "true"}},
 }
 
 // applyWrappers applies the configured wrapper layers from opts to fsys.
 // Wrappers are applied in a fixed order: ReadOnly first, then FaultInjector.
-func applyWrappers(fsys WriteFS, opts MountSpecOptions) (WriteFS, error) {
+func applyWrappers(ctx context.Context, fsys WriteFS, opts map[string]any) (WriteFS, error) {
 	var err error
-	if opts.ReadOnly {
-		fsys = ReadOnly(fsys)
-	}
-	if !opts.Fault.isZero() {
-		fsys, err = newFaultFS(fsys, *opts.Fault)
+	for optionName, config := range opts {
+		fsys, err = getRegistrar().decorate(ctx, fsys, optionName, config)
 		if err != nil {
 			return nil, err
 		}
@@ -439,7 +429,7 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (WriteFS, error) {
 	if err != nil {
 		return nil, err
 	}
-	rootFS, err := applyWrappers(baseFS, root.Options)
+	rootFS, err := applyWrappers(ctx, baseFS, root.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +440,7 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (WriteFS, error) {
 		if err != nil {
 			return nil, ufserrors.Join(err, nFS.Close())
 		}
-		mountFS, err := applyWrappers(mountBaseFS, m.Options)
+		mountFS, err := applyWrappers(ctx, mountBaseFS, m.Options)
 		if err != nil {
 			return nil, err
 		}

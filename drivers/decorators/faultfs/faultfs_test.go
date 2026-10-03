@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package faultfs
 
 import (
 	"errors"
@@ -22,7 +22,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs"
 	ufsTesting "github.com/cloudfra/ufs/testing"
+)
+
+const (
+	nullFSPrefix = "null://test"
 )
 
 func TestNewCryptoRand(t *testing.T) {
@@ -66,8 +71,8 @@ func TestNewCryptoRand_MultipleInstances(t *testing.T) {
 func TestFaultInjectorDelegatesWhenNoFaults(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{})
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +107,8 @@ func TestFaultInjectorDelegatesWhenNoFaults(t *testing.T) {
 func TestFaultInjectorAlwaysErrors(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{
 		ErrorRate: 1.0,
 	})
 	if err != nil {
@@ -140,8 +145,8 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 func TestFaultInjectorReturnsRealisticErrors(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{
 		ErrorRate: 1.0,
 	})
 	if err != nil {
@@ -170,8 +175,8 @@ func TestFaultInjectorReturnsRealisticErrors(t *testing.T) {
 func TestFaultInjectorErrorRate(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{
 		ErrorRate: 0.5,
 	})
 	if err != nil {
@@ -200,11 +205,11 @@ func TestFaultInjectorErrorRate(t *testing.T) {
 func TestFaultInjectorErrorRateClamping(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
+	inner := ufs.MakeNullFS(nullFSPrefix)
 
 	t.Run("above_one", func(t *testing.T) {
 		t.Parallel()
-		fsys, err := newFaultFS(inner, FaultConfig{
+		fsys, err := newFaultFS(inner, Options{
 			ErrorRate: 5.0,
 		})
 		if err != nil {
@@ -220,7 +225,7 @@ func TestFaultInjectorErrorRateClamping(t *testing.T) {
 
 	t.Run("negative", func(t *testing.T) {
 		t.Parallel()
-		fsys, err := newFaultFS(inner, FaultConfig{
+		fsys, err := newFaultFS(inner, Options{
 			ErrorRate: -1.0,
 		})
 		if err != nil {
@@ -238,9 +243,9 @@ func TestFaultInjectorErrorRateClamping(t *testing.T) {
 func TestFaultInjectorLatency(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
+	inner := ufs.MakeNullFS(nullFSPrefix)
 	latency := 50 * time.Millisecond
-	fsys, err := newFaultFS(inner, FaultConfig{
+	fsys, err := newFaultFS(inner, Options{
 		Latency: latency,
 	})
 	if err != nil {
@@ -265,8 +270,8 @@ func TestFaultInjectorLatencyJitter(t *testing.T) {
 	}
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{
 		LatencyJitter: 100 * time.Millisecond,
 	})
 	if err != nil {
@@ -288,8 +293,8 @@ func TestFaultInjectorLatencyJitter(t *testing.T) {
 func TestFaultInjectorCloseAlwaysDelegates(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{
 		ErrorRate: 1.0,
 	})
 	if err != nil {
@@ -304,8 +309,8 @@ func TestFaultInjectorCloseAlwaysDelegates(t *testing.T) {
 func TestFaultInjectorInvalidPaths(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{})
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,8 +356,8 @@ func TestFaultInjectorInvalidPaths(t *testing.T) {
 func TestFaultInjectorString(t *testing.T) {
 	t.Parallel()
 
-	inner := makeNullFS(nullFSPrefix)
-	fsys, err := newFaultFS(inner, FaultConfig{})
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	fsys, err := newFaultFS(inner, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,31 +373,31 @@ func TestFaultInjectorString(t *testing.T) {
 
 func TestFaultInjectorZeroValueConfig(t *testing.T) {
 	t.Parallel()
-
-	inner := makeNullFS(nullFSPrefix)
-	cfg := FaultConfig{}
+	ctx := t.Context()
+	inner := ufs.MakeNullFS(nullFSPrefix)
+	cfg := Options{}
 	if !cfg.isZero() {
-		t.Error("zero-value FaultConfig.isZero() = false, want true")
+		t.Error("zero-value Options.isZero() = false, want true")
 	}
 
-	nonZero := FaultConfig{ErrorRate: 0.1}
+	nonZero := Options{ErrorRate: 0.1}
 	if nonZero.isZero() {
-		t.Error("non-zero FaultConfig.isZero() = true, want false")
+		t.Error("non-zero Options.isZero() = true, want false")
 	}
 
-	fsys, err := applyWrappers(inner, MountSpecOptions{Fault: &cfg})
+	fsys, err := wrap(ctx, inner, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := fsys.(*faultFS); ok {
-		t.Error("applyWrappers with zero-value FaultConfig should not wrap in faultFS")
+		t.Error("applyWrappers with zero-value Options should not wrap in faultFS")
 	}
 
-	fsys, err = applyWrappers(inner, MountSpecOptions{Fault: &nonZero})
+	fsys, err = wrap(ctx, inner, nonZero)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := fsys.(*faultFS); !ok {
-		t.Error("applyWrappers with non-zero FaultConfig should wrap in faultFS")
+		t.Error("applyWrappers with non-zero Options should wrap in faultFS")
 	}
 }

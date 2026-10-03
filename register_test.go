@@ -90,7 +90,7 @@ func TestRegistrarRegister(t *testing.T) {
 		t.Run(fmt.Sprintf("create(%s)", tc.name), func(t *testing.T) {
 			t.Parallel()
 			r := newRegistrar()
-			err := r.register(tc.driver)
+			err := r.registerDriver(tc.driver)
 			if tc.wantError == "" {
 				if err != nil {
 					t.Errorf("got: %q, want: nil", err)
@@ -113,12 +113,12 @@ func TestRegistrarRegisterDuplicate(t *testing.T) {
 		MatchFunc:  neverMatch,
 		CreateFunc: nopCreate,
 	}
-	if err := r.register(driver); err != nil {
-		t.Fatalf("first register() = %v, want nil", err)
+	if err := r.registerDriver(driver); err != nil {
+		t.Fatalf("first registerDriver() = %v, want nil", err)
 	}
-	err := r.register(driver)
+	err := r.registerDriver(driver)
 	if err == nil {
-		t.Fatal("second register() = nil error, want error")
+		t.Fatal("second registerDriver() = nil error, want error")
 	}
 	if !strings.Contains(err.Error(), "already registered") {
 		t.Errorf("got: %q, want substring %q", err, "already registered")
@@ -134,7 +134,7 @@ func TestRegistrarConcurrentRegister(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			errs[i] = r.register(Driver{
+			errs[i] = r.registerDriver(Driver{
 				Name:       fmt.Sprintf("concurrent-%d", i),
 				MatchFunc:  neverMatch,
 				CreateFunc: nopCreate,
@@ -144,10 +144,10 @@ func TestRegistrarConcurrentRegister(t *testing.T) {
 	wg.Wait()
 	for i, err := range errs {
 		if err != nil {
-			t.Errorf("register(%d) = %v, want nil", i, err)
+			t.Errorf("registerDriver(%d) = %v, want nil", i, err)
 		}
 	}
-	if got := len(r.m); got != n {
+	if got := len(r.driverMap); got != n {
 		t.Errorf("registrar has %d entries, want %d", got, n)
 	}
 }
@@ -155,9 +155,9 @@ func TestRegistrarConcurrentRegister(t *testing.T) {
 func TestRegistrarMatch(t *testing.T) {
 	t.Run("empty registrar", func(t *testing.T) {
 		r := newRegistrar()
-		_, err := r.match("anything")
+		_, err := r.matchDriver("anything")
 		if err == nil {
-			t.Fatal("match() = nil error, want error")
+			t.Fatal("matchDriver() = nil error, want error")
 		}
 		if !strings.Contains(err.Error(), "cannot find a ufs file system driver") {
 			t.Errorf("got: %q, want substring %q", err, "cannot find a ufs file system driver")
@@ -166,12 +166,12 @@ func TestRegistrarMatch(t *testing.T) {
 
 	t.Run("no matching driver", func(t *testing.T) {
 		r := newRegistrar()
-		if err := r.register(Driver{Name: "non-matcher", MatchFunc: neverMatch, CreateFunc: nopCreate}); err != nil {
+		if err := r.registerDriver(Driver{Name: "non-matcher", MatchFunc: neverMatch, CreateFunc: nopCreate}); err != nil {
 			t.Fatal(err)
 		}
-		_, err := r.match("anything")
+		_, err := r.matchDriver("anything")
 		if err == nil {
-			t.Fatal("match() = nil error, want error")
+			t.Fatal("matchDriver() = nil error, want error")
 		}
 	})
 
@@ -182,15 +182,15 @@ func TestRegistrarMatch(t *testing.T) {
 			MatchFunc:  func(s string) bool { return s == "match-me" },
 			CreateFunc: nopCreate,
 		}
-		if err := r.register(driver); err != nil {
+		if err := r.registerDriver(driver); err != nil {
 			t.Fatal(err)
 		}
-		got, err := r.match("match-me")
+		got, err := r.matchDriver("match-me")
 		if err != nil {
-			t.Fatalf("match() = %v, want nil", err)
+			t.Fatalf("matchDriver() = %v, want nil", err)
 		}
 		if got.Name != driver.Name {
-			t.Errorf("match() = %q, want %q", got.Name, driver.Name)
+			t.Errorf("matchDriver() = %q, want %q", got.Name, driver.Name)
 		}
 	})
 
@@ -198,18 +198,18 @@ func TestRegistrarMatch(t *testing.T) {
 		r := newRegistrar()
 		low := Driver{Name: "low", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1}
 		high := Driver{Name: "high", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5}
-		if err := r.register(low); err != nil {
+		if err := r.registerDriver(low); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.register(high); err != nil {
+		if err := r.registerDriver(high); err != nil {
 			t.Fatal(err)
 		}
-		got, err := r.match("anything")
+		got, err := r.matchDriver("anything")
 		if err != nil {
-			t.Fatalf("match() = %v, want nil", err)
+			t.Fatalf("matchDriver() = %v, want nil", err)
 		}
 		if got.Name != low.Name {
-			t.Errorf("match() = %q, want %q (lower Priority value should win)", got.Name, low.Name)
+			t.Errorf("matchDriver() = %q, want %q (lower Priority value should win)", got.Name, low.Name)
 		}
 	})
 
@@ -217,15 +217,15 @@ func TestRegistrarMatch(t *testing.T) {
 		r := newRegistrar()
 		a := Driver{Name: "a", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1}
 		b := Driver{Name: "b", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1}
-		if err := r.register(a); err != nil {
+		if err := r.registerDriver(a); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.register(b); err != nil {
+		if err := r.registerDriver(b); err != nil {
 			t.Fatal(err)
 		}
-		_, err := r.match("anything")
+		_, err := r.matchDriver("anything")
 		if err == nil {
-			t.Fatal("match() = nil error, want ambiguous error")
+			t.Fatal("matchDriver() = nil error, want ambiguous error")
 		}
 		if !strings.Contains(err.Error(), "ambiguous") {
 			t.Errorf("got: %q, want substring %q", err, "ambiguous")
@@ -252,7 +252,7 @@ func TestRegistrarCreate(t *testing.T) {
 				return nil, wantErr
 			},
 		}
-		if err := r.register(driver); err != nil {
+		if err := r.registerDriver(driver); err != nil {
 			t.Fatal(err)
 		}
 		_, err := r.create(t.Context(), "whatever")
@@ -277,7 +277,7 @@ func TestRegistrarCreate(t *testing.T) {
 				return nil, nil
 			},
 		}
-		if err := r.register(driver); err != nil {
+		if err := r.registerDriver(driver); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.create(wantCtx, wantName); err != nil {
@@ -292,10 +292,10 @@ func TestRegistrarCreate(t *testing.T) {
 	})
 
 	t.Run("registrar entry missing CreateFunc", func(t *testing.T) {
-		// register() rejects a nil CreateFunc, so reach this defensive branch
+		// registerDriver() rejects a nil CreateFunc, so reach this defensive branch
 		// by inserting directly into the map.
 		r := newRegistrar()
-		r.m["broken"] = Driver{
+		r.driverMap["broken"] = Driver{
 			Name:      "broken",
 			MatchFunc: alwaysMatch,
 		}
@@ -316,7 +316,7 @@ func TestRegisterSuccess(t *testing.T) {
 		MatchFunc:  neverMatch,
 		CreateFunc: nopCreate,
 	})
-	if _, ok := globalDriverRegistrar.m[name]; !ok {
+	if _, ok := globalDriverRegistrar.driverMap[name]; !ok {
 		t.Errorf("Register() did not add driver %q to the global registrar", name)
 	}
 }

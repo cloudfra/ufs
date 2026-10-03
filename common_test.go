@@ -25,7 +25,7 @@ import (
 
 type fsTestCase struct {
 	name       string
-	createFS   func(tb testing.TB) FS
+	createFS   func(tb testing.TB) WriteFS
 	wantString string
 }
 
@@ -33,7 +33,7 @@ var (
 	readWriteFSTestCaseList = []fsTestCase{
 		{
 			name: "localFS",
-			createFS: func(tb testing.TB) FS {
+			createFS: func(tb testing.TB) WriteFS {
 				dir := tb.TempDir()
 				fsys, err := newLocalFS(tb.Context(), dir)
 				if err != nil {
@@ -50,7 +50,7 @@ var (
 		},
 		{
 			name: "tempMountFS",
-			createFS: func(tb testing.TB) FS {
+			createFS: func(tb testing.TB) WriteFS {
 				fsys, err := newTempMountFS(tb.Context(), "test://", func(string) error { return nil })
 				if err != nil {
 					tb.Fatalf("cannot create tempMountFS file system, %s", err)
@@ -66,7 +66,7 @@ var (
 		},
 		{
 			name: "memFS",
-			createFS: func(tb testing.TB) FS {
+			createFS: func(tb testing.TB) WriteFS {
 				fsys := makeMemFS(memFSPrefix)
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
@@ -82,7 +82,7 @@ var (
 	readOnlyFSTestCaseList = []fsTestCase{
 		{
 			name: "nullFS",
-			createFS: func(tb testing.TB) FS {
+			createFS: func(tb testing.TB) WriteFS {
 				fsys := makeNullFS(nullFSPrefix)
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
@@ -125,7 +125,7 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 		result[idx*2] = tc
 		result[idx*2+1] = fsTestCase{
 			name: "nestFS." + tc.name,
-			createFS: func(tb testing.TB) FS {
+			createFS: func(tb testing.TB) WriteFS {
 				return makeNestFS(ctx, tc.createFS(tb))
 			},
 		}
@@ -133,7 +133,7 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 	return result
 }
 
-func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), name string) FS {
+func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, error), name string) WriteFS {
 	tb.Helper()
 
 	fsys, err := newFSFunc(tb.Context(), name)
@@ -154,21 +154,21 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (FS, error), 
 // example localFS surfaces the OS's ENOTDIR/EISDIR).
 var dirFileConflictCases = []struct {
 	name    string
-	op      func(fsys FS) error
+	op      func(fsys WriteFS) error
 	wantErr error
 	wantOp  string
 }{
-	{name: "create_on_dir", op: func(fsys FS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_on_root", op: func(fsys FS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "create_deep_under_file", op: func(fsys FS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "mkdirall_on_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-	{name: "mkdirall_under_file", op: func(fsys FS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "create_on_dir", op: func(fsys WriteFS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_on_root", op: func(fsys WriteFS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_under_file", op: func(fsys WriteFS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "create_deep_under_file", op: func(fsys WriteFS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "mkdirall_on_file", op: func(fsys WriteFS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "mkdirall_under_file", op: func(fsys WriteFS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
 }
 
 // newDirFileConflictFS returns a file system from createFS containing the
 // directories dir and dir/sub and the regular file dir/file.
-func newDirFileConflictFS(t *testing.T, createFS func(testing.TB) FS) FS {
+func newDirFileConflictFS(t *testing.T, createFS func(testing.TB) WriteFS) WriteFS {
 	t.Helper()
 	fsys := createFS(t)
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))

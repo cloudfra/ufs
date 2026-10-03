@@ -144,7 +144,7 @@ func (fsys *angryFS) RemoveAll(name string) error {
 	return ufserrors.NewPathError("removeall", name, errAngry)
 }
 
-func newAngryFS(_ context.Context, name string) (FS, error) {
+func newAngryFS(_ context.Context, name string) (WriteFS, error) {
 	return makeAngryFS(name), nil
 }
 

@@ -512,7 +512,7 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 // New returns a file system for the gs://bucket/dir URI name, authenticating
 // with the default Google Cloud credentials. When no credentials are available
 // it falls back to unauthenticated access, which works for public buckets.
-func New(ctx context.Context, name string) (ufs.FS, error) {
+func New(ctx context.Context, name string) (ufs.WriteFS, error) {
 	return makeGCSFS(ctx, name)
 }
 
@@ -536,7 +536,7 @@ func makeGCSFS(ctx context.Context, name string) (*gcsFS, error) {
 // NewWithClient returns a file system for the gs://bucket/dir URI name that
 // uses gcsClient for every request, for callers that need custom credentials,
 // endpoints, or options.
-func NewWithClient(ctx context.Context, gcsClient *storage.Client, name string) (ufs.FS, error) {
+func NewWithClient(ctx context.Context, gcsClient *storage.Client, name string) (ufs.WriteFS, error) {
 	return makeGCSFSWithClient(ctx, gcsClient, name)
 }
 

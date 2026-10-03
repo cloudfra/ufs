@@ -42,17 +42,17 @@ func TestAssets(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		createFS func(tb testing.TB) (FS, error)
+		createFS func(tb testing.TB) (WriteFS, error)
 	}{
 		{
 			name: "localFS",
-			createFS: func(tb testing.TB) (FS, error) {
+			createFS: func(tb testing.TB) (WriteFS, error) {
 				return newLocalFS(tb.Context(), testAssetsFilesDir)
 			},
 		},
 		{
 			name: "memFS",
-			createFS: func(tb testing.TB) (FS, error) {
+			createFS: func(tb testing.TB) (WriteFS, error) {
 				fsys, err := newMemFS(tb.Context(), "memory://")
 				if err != nil {
 					return nil, err
@@ -68,7 +68,7 @@ func TestAssets(t *testing.T) {
 		},
 		{
 			name: "archiveFS",
-			createFS: func(tb testing.TB) (FS, error) {
+			createFS: func(tb testing.TB) (WriteFS, error) {
 				zipPath := createZipFromDir(tb, testAssetsFilesDir)
 				return newArchiveFSFromLocalFS(context.Background(), zipPath)
 			},
@@ -122,7 +122,7 @@ func loadTestAssets(tb testing.TB) map[string][]byte {
 }
 
 // copyFSToFS copies all files and directories from src into dst.
-func copyFSToFS(src fs.FS, dst FS) error {
+func copyFSToFS(src fs.FS, dst WriteFS) error {
 	return fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || p == pathutil.CwdPath {
 			return err

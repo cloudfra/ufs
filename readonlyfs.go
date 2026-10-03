@@ -31,10 +31,10 @@ type readOnlyFS struct {
 	ReadFS
 }
 
-// ReadOnly wraps inner as an [FS] whose write operations (Create, MkdirAll,
+// ReadOnly wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
 // Remove, RemoveAll) always return [fs.ErrPermission]. All read operations
 // delegate to inner unchanged.
-func ReadOnly(inner ReadFS) FS {
+func ReadOnly(inner ReadFS) WriteFS {
 	return &readOnlyFS{
 		ReadFS: inner,
 	}

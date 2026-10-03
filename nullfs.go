@@ -245,7 +245,7 @@ func (fsys *nullFS) RemoveAll(name string) error {
 	return nil
 }
 
-func newNullFS(_ context.Context, name string) (FS, error) {
+func newNullFS(_ context.Context, name string) (WriteFS, error) {
 	return makeNullFS(name), nil
 }
 
@@ -253,7 +253,7 @@ func newNullFS(_ context.Context, name string) (FS, error) {
 //
 // Deprecated: MakeNullFS exists only to support the shared driver tests in
 // drivers/testing and will be removed soon. Use New instead.
-func MakeNullFS(name string) FS {
+func MakeNullFS(name string) WriteFS {
 	return makeNullFS(name)
 }
 

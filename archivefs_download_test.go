@@ -83,7 +83,7 @@ func testArchiveServer(t *testing.T) *httptest.Server {
 	return ts
 }
 
-func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) FS {
+func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) WriteFS {
 	t.Helper()
 	ctx := t.Context()
 	client := ts.Client()

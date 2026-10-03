@@ -213,7 +213,7 @@ func makeMountMap(baseName string) *mountMap {
 // nestFS is a wrapper for a base FS that supports automatic mounting of archives.
 // This means that any archive can opened and read automatically. Archives are revealed via $filename.d name pattern.
 type nestFS struct {
-	fsys   FS
+	fsys   WriteFS
 	ctx    context.Context
 	mounts *mountMap
 	args   FSArgs

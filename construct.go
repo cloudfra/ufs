@@ -156,7 +156,7 @@ func nameToURI(name string) (*url.URL, error) {
 // contents. No explicit configuration is required.
 //
 // Use [CreateURI] to pre-configure additional mount points before calling New.
-func New(ctx context.Context, name string) (FS, error) {
+func New(ctx context.Context, name string) (WriteFS, error) {
 	if specs := parseMountSpec(name); specs != nil {
 		return newFromMountSpec(ctx, specs)
 	}
@@ -208,8 +208,8 @@ type FSBuilder struct {
 
 type fsBuildMount struct {
 	path string
-	uri  string // non-empty for URI mounts
-	fsys FS     // non-nil for FS mounts
+	uri  string  // non-empty for URI mounts
+	fsys WriteFS // non-nil for FS mounts
 }
 
 // NewFSBuilder creates a builder rooted at the given URI string. An empty
@@ -227,7 +227,7 @@ func (b *FSBuilder) Mount(path, uri string) *FSBuilder {
 
 // MountFS adds a pre-built [FS] as a mount at path. It returns the builder
 // for chaining. Pre-built mounts cannot be serialized by [FSBuilder.BuildURI].
-func (b *FSBuilder) MountFS(path string, fsys FS) *FSBuilder {
+func (b *FSBuilder) MountFS(path string, fsys WriteFS) *FSBuilder {
 	b.mounts = append(b.mounts, fsBuildMount{path: path, fsys: fsys})
 	return b
 }
@@ -278,7 +278,7 @@ func (b *FSBuilder) BuildURI() (string, error) {
 	return CreateURI(rootName, nested)
 }
 
-func newBaseFS(ctx context.Context, name string) (FS, error) {
+func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 	// drivers/embedfs wraps a Go embed.FS directly and has no URI-based
 	// constructor; give a clear error instead of an unhelpful "not found".
 	if strings.HasPrefix(name, "embed://") {
@@ -407,7 +407,7 @@ var defaultRootSpec = MountSpec{
 
 // applyWrappers applies the configured wrapper layers from opts to fsys.
 // Wrappers are applied in a fixed order: ReadOnly first, then FaultInjector.
-func applyWrappers(fsys FS, opts MountSpecOptions) (FS, error) {
+func applyWrappers(fsys WriteFS, opts MountSpecOptions) (WriteFS, error) {
 	var err error
 	if opts.ReadOnly {
 		fsys = ReadOnly(fsys)
@@ -421,7 +421,7 @@ func applyWrappers(fsys FS, opts MountSpecOptions) (FS, error) {
 	return fsys, nil
 }
 
-func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
+func newFromMountSpec(ctx context.Context, specs []MountSpec) (WriteFS, error) {
 	var root *MountSpec
 	var mounts []MountSpec
 	for i := range specs {

@@ -31,7 +31,7 @@ import (
 // is not atomic: if an error occurs mid-walk, destFS may be partially written.
 //
 // dir must satisfy [fs.ValidPath]; use "." to copy the entire file system.
-func Rsync(srcFS fs.FS, destFS FS, dir string) error {
+func Rsync(srcFS fs.FS, destFS WriteFS, dir string) error {
 	// TODO: Prevent archive traversal.
 	return ForEachFilename(srcFS, dir, func(name string) error {
 		dir, _ := path.Split(name)
@@ -48,8 +48,8 @@ func Rsync(srcFS fs.FS, destFS FS, dir string) error {
 
 // Copy copies the single file at srcFilename in srcFS to destFilename in destFS.
 // The parent directory of destFilename must already exist. The destination file
-// is created (or truncated) via [FS.Create].
-func Copy(srcFS fs.FS, srcFilename string, destFS FS, destFilename string) error {
+// is created (or truncated) via [WriteFS.Create].
+func Copy(srcFS fs.FS, srcFilename string, destFS WriteFS, destFilename string) error {
 	sfp, err := srcFS.Open(srcFilename)
 	if err != nil {
 		return err

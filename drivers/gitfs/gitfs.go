@@ -61,7 +61,7 @@ func prepareGitDirectory(name string, gitURL string) error {
 // New returns a file system with the contents of the git repository name,
 // which must end in ".git". The repository is cloned into a temporary
 // directory that is removed when the file system is closed.
-func New(ctx context.Context, name string) (ufs.FS, error) {
+func New(ctx context.Context, name string) (ufs.WriteFS, error) {
 	if !isGitFSUri(name) {
 		return nil, fmt.Errorf("%q is not a valid git repository", name)
 	}

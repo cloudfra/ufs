@@ -29,6 +29,31 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	// readOnlyOption is the [MountSpec] option that the fstab "ro" option and
+	// the implicit root map to. It is served by drivers/decorators/readonlyfs.
+	readOnlyOption = "readOnly"
+
+	// roQueryParam is the URI query parameter that marks a read-only file
+	// system; it is not a mount point.
+	roQueryParam = "ro"
+
+	// embedFSPrefix is the scheme of drivers/embedfs, which has no URI-based
+	// constructor.
+	embedFSPrefix = "embed://"
+
+	// mountOp is the operation reported in errors from mounting a file system.
+	mountOp = "mount"
+
+	// fstab mount options.
+	fstabReadOnly  = "ro"
+	fstabReadWrite = "rw"
+	fstabDefaults  = "defaults"
+
+	// fstabNoMountPoint is the fstab mount point that designates the root.
+	fstabNoMountPoint = "none"
+)
+
 // CreateURI constructs a URI understood by [New] that layers additional file
 // systems at specific mount paths inside the base file system. The nested map
 // maps mount-point paths (e.g. "cache", "data/scratch") to the URI of the file
@@ -148,7 +173,8 @@ func nameToURI(name string) (*url.URL, error) {
 //     fault:
 //     errorRate: 0.1
 //
-// Each section under options names a [Decorator] and holds its configuration.
+// Each section under options is the case-sensitive name of a [Decorator] and
+// holds its configuration.
 // Decorators register themselves when their package is imported, e.g.
 // github.com/cloudfra/ufs/drivers/decorators/readonlyfs (readOnly) and
 // github.com/cloudfra/ufs/drivers/decorators/faultfs (fault). A section that
@@ -177,7 +203,7 @@ func New(ctx context.Context, name string) (WriteFS, error) {
 		nFS, err := openNestFS(ctx, baseURI.String())
 		if err == nil {
 			for mountPath, mountURI := range u.Query() {
-				if mountPath == "ro" {
+				if mountPath == roQueryParam {
 					continue
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])
@@ -290,15 +316,15 @@ func (b *FSBuilder) BuildURI() (string, error) {
 func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 	// drivers/embedfs wraps a Go embed.FS directly and has no URI-based
 	// constructor; give a clear error instead of an unhelpful "not found".
-	if strings.HasPrefix(name, "embed://") {
-		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("embed:// file systems must be created with drivers/embedfs.New, not New(): %w", fs.ErrInvalid))
+	if strings.HasPrefix(name, embedFSPrefix) {
+		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("embed:// file systems must be created with drivers/embedfs.New, not New(): %w", fs.ErrInvalid))
 	}
 	r := getRegistrar()
 	driver, err := r.matchDriver(name)
 	if err != nil {
 		// Drivers outside this package (drivers/...) register their scheme only
 		// when imported, so a missing blank import looks like an unknown path.
-		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
+		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
 	}
 	fsys, err := r.create(ctx, name)
 	if err != nil {
@@ -365,7 +391,7 @@ func parseFstabMountSpec(input string) ([]MountSpec, error) {
 			Source:     fields[0],
 			MountPoint: normalizeMountPoint(fields[1]),
 		}
-		if hasFstabOption(options, "ro") {
+		if hasFstabOption(options, fstabReadOnly) {
 			spec.Options = map[string]any{readOnlyOption: true}
 		}
 		specs = append(specs, spec)
@@ -379,7 +405,7 @@ func parseFstabMountSpec(input string) ([]MountSpec, error) {
 func isFstabOptions(s string) bool {
 	for opt := range strings.SplitSeq(s, ",") {
 		switch opt {
-		case "ro", "rw", "defaults":
+		case fstabReadOnly, fstabReadWrite, fstabDefaults:
 			return true
 		}
 	}
@@ -397,7 +423,7 @@ func hasFstabOption(s, option string) bool {
 
 func normalizeMountPoint(mp string) string {
 	mp = strings.TrimPrefix(mp, "/")
-	if mp == "" || mp == "none" {
+	if mp == "" || mp == fstabNoMountPoint {
 		return pathutil.CwdPath
 	}
 	return mp
@@ -410,10 +436,6 @@ var defaultRootSpec = MountSpec{
 	Options:    map[string]any{readOnlyOption: true},
 }
 
-// readOnlyOption is the [MountSpec] option that the fstab "ro" option and the
-// implicit root map to. It is served by drivers/decorators/readonlyfs.
-const readOnlyOption = "readOnly"
-
 // newDecoratedFS opens name via newBaseFS and wraps it with the decorators
 // configured in opts.
 func newDecoratedFS(ctx context.Context, name string, opts map[string]any) (WriteFS, error) {
@@ -423,7 +445,7 @@ func newDecoratedFS(ctx context.Context, name string, opts map[string]any) (Writ
 	}
 	fsys, err := getRegistrar().decorate(ctx, baseFS, opts)
 	if err != nil {
-		return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), baseFS.Close())
+		return nil, ufserrors.Join(ufserrors.NewPathError(mountOp, name, err), baseFS.Close())
 	}
 	return fsys, nil
 }

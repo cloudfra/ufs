@@ -17,8 +17,10 @@ package ufs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -39,8 +41,8 @@ type tagOptions struct {
 
 var errTagDecorator = errors.New("tag decorator failed")
 
-func tagDecorator(name string, priority int) Decorator {
-	return NewDecorator(name, priority, func(_ context.Context, inner WriteFS, opts tagOptions) (WriteFS, error) {
+func tagDecorator(name string) Decorator {
+	return NewDecorator(name, func(_ context.Context, inner WriteFS, opts tagOptions) (WriteFS, error) {
 		if opts.Fail {
 			return nil, errTagDecorator
 		}
@@ -79,12 +81,32 @@ func TestRegistrarRegisterDecorator(t *testing.T) {
 		},
 		{
 			name:      "nil CreateFunc",
-			decorator: Decorator{Name: "test-decorator"},
+			decorator: Decorator{Name: "testDecorator"},
 			wantError: "empty CreateFunc",
 		},
 		{
-			name:      "valid",
+			name:      "upper camel case name",
+			decorator: Decorator{Name: "TestDecorator", CreateFunc: nopDecorate},
+			wantError: "must be lower camelCase",
+		},
+		{
+			name:      "kebab case name",
 			decorator: Decorator{Name: "test-decorator", CreateFunc: nopDecorate},
+			wantError: "must be lower camelCase",
+		},
+		{
+			name:      "snake case name",
+			decorator: Decorator{Name: "test_decorator", CreateFunc: nopDecorate},
+			wantError: "must be lower camelCase",
+		},
+		{
+			name:      "name starts with a digit",
+			decorator: Decorator{Name: "2fast", CreateFunc: nopDecorate},
+			wantError: "must be lower camelCase",
+		},
+		{
+			name:      "valid",
+			decorator: Decorator{Name: "testDecorator2", CreateFunc: nopDecorate},
 		},
 	}
 	for _, tc := range tests {
@@ -111,37 +133,39 @@ func TestRegistrarRegisterDecoratorDuplicate(t *testing.T) {
 	if err := r.registerDecorator(Decorator{Name: "dupDecorator", CreateFunc: nopDecorate}); err != nil {
 		t.Fatalf("first registerDecorator() = %v, want nil", err)
 	}
-	// Names are matched case-insensitively, so they must also collide that way.
-	for _, name := range []string{"dupDecorator", "DUPDECORATOR"} {
-		err := r.registerDecorator(Decorator{Name: name, CreateFunc: nopDecorate})
-		if err == nil || !strings.Contains(err.Error(), "already registered") {
-			t.Errorf("registerDecorator(%q) = %v, want substring %q", name, err, "already registered")
-		}
+	err := r.registerDecorator(Decorator{Name: "dupDecorator", CreateFunc: nopDecorate})
+	if err == nil || !strings.Contains(err.Error(), "already registered") {
+		t.Errorf("second registerDecorator() = %v, want substring %q", err, "already registered")
+	}
+	// Names are case sensitive, so a different casing is a different decorator.
+	if err := r.registerDecorator(Decorator{Name: "dupdecorator", CreateFunc: nopDecorate}); err != nil {
+		t.Errorf("registerDecorator(dupdecorator) = %v, want nil", err)
 	}
 }
 
 func TestRegistrarMatchDecorator(t *testing.T) {
 	t.Parallel()
 	r := newRegistrar()
-	if err := r.registerDecorator(tagDecorator("camelCase", 0)); err != nil {
+	if err := r.registerDecorator(tagDecorator("camelCase")); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"camelCase", "camelcase", "CAMELCASE"} {
-		got, err := r.matchDecorator(name)
-		if err != nil {
-			t.Fatalf("matchDecorator(%q) = %v, want nil", name, err)
-		}
-		if got.Name != "camelCase" {
-			t.Errorf("matchDecorator(%q) = %q, want %q", name, got.Name, "camelCase")
-		}
+	got, err := r.matchDecorator("camelCase")
+	if err != nil {
+		t.Fatalf("matchDecorator(camelCase) = %v, want nil", err)
 	}
-	_, err := r.matchDecorator("missing")
-	if err == nil {
-		t.Fatal("matchDecorator(missing) = nil error, want error")
+	if got.Name != "camelCase" {
+		t.Errorf("matchDecorator(camelCase) = %q, want %q", got.Name, "camelCase")
 	}
-	for _, want := range []string{"cannot find a ufs file system decorator", `"missing"`, "is imported"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("matchDecorator(missing) = %q, want substring %q", err, want)
+	// The match is strict: a different casing is not the same option.
+	for _, name := range []string{"camelcase", "CamelCase", "CAMELCASE", "missing", ""} {
+		_, err := r.matchDecorator(name)
+		if err == nil {
+			t.Fatalf("matchDecorator(%q) = nil error, want error", name)
+		}
+		for _, want := range []string{"cannot find a ufs file system decorator", "case sensitive", "is imported"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("matchDecorator(%q) = %q, want substring %q", name, err, want)
+			}
 		}
 	}
 }
@@ -149,12 +173,12 @@ func TestRegistrarMatchDecorator(t *testing.T) {
 func TestRegistrarDecorate(t *testing.T) {
 	t.Parallel()
 	r := newRegistrar()
-	for _, d := range []Decorator{
-		tagDecorator("inner", 0),
-		tagDecorator("outer", 10),
-		tagDecorator("tieB", 5),
-		tagDecorator("tieA", 5),
-	} {
+	var created atomic.Int64
+	counting := NewDecorator("counting", func(_ context.Context, inner WriteFS, _ tagOptions) (WriteFS, error) {
+		created.Add(1)
+		return inner, nil
+	})
+	for _, d := range []Decorator{tagDecorator("alpha"), tagDecorator("beta"), tagDecorator("gamma"), counting} {
 		if err := r.registerDecorator(d); err != nil {
 			t.Fatal(err)
 		}
@@ -171,56 +195,54 @@ func TestRegistrarDecorate(t *testing.T) {
 		{name: "empty options", opts: map[string]any{}},
 		{
 			name: "single section",
-			opts: map[string]any{"inner": map[string]any{"label": "a"}},
-			want: []string{"inner=a"},
+			opts: map[string]any{"alpha": map[string]any{"label": "a"}},
+			want: []string{"alpha=a"},
 		},
 		{
 			name: "nil section uses zero options",
-			opts: map[string]any{"inner": nil},
-			want: []string{"inner="},
+			opts: map[string]any{"alpha": nil},
+			want: []string{"alpha="},
 		},
 		{
-			name: "applied in priority order, ties by name",
+			name: "applied in name order",
 			opts: map[string]any{
-				"outer": map[string]any{"label": "o"},
-				"tieB":  map[string]any{"label": "b"},
-				"inner": map[string]any{"label": "i"},
-				"tieA":  map[string]any{"label": "a"},
+				"gamma": map[string]any{"label": "g"},
+				"alpha": map[string]any{"label": "a"},
+				"beta":  map[string]any{"label": "b"},
 			},
-			want: []string{"outer=o", "tieB=b", "tieA=a", "inner=i"},
+			want: []string{"gamma=g", "beta=b", "alpha=a"},
 		},
 		{
 			name: "typed options",
 			opts: map[string]any{
-				"inner": tagOptions{Label: "value"},
-				"outer": &tagOptions{Label: "pointer"},
+				"alpha": tagOptions{Label: "value"},
+				"beta":  &tagOptions{Label: "pointer"},
 			},
-			want: []string{"outer=pointer", "inner=value"},
+			want: []string{"beta=pointer", "alpha=value"},
 		},
 		{
 			name:      "unknown section",
-			opts:      map[string]any{"inner": nil, "missing": true},
+			opts:      map[string]any{"counting": nil, "missing": true},
 			wantError: "cannot find a ufs file system decorator",
 		},
 		{
-			name:      "section configured twice",
-			opts:      map[string]any{"inner": nil, "INNER": nil},
-			wantError: "configured more than once",
+			name:      "section name with the wrong case",
+			opts:      map[string]any{"counting": nil, "Alpha": nil},
+			wantError: "cannot find a ufs file system decorator",
 		},
 		{
 			name:      "options of the wrong shape",
-			opts:      map[string]any{"inner": "not a mapping"},
-			wantError: `invalid options for file system decorator "inner"`,
+			opts:      map[string]any{"alpha": "not a mapping"},
+			wantError: `invalid options for file system decorator "alpha"`,
 		},
 		{
 			name:      "decorator fails",
-			opts:      map[string]any{"inner": map[string]any{"fail": true}},
+			opts:      map[string]any{"alpha": map[string]any{"fail": true}},
 			wantError: errTagDecorator.Error(),
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			base := makeNullFS(nullFSPrefix)
 			got, err := r.decorate(t.Context(), base, tc.opts)
 			if tc.wantError != "" {
@@ -242,6 +264,10 @@ func TestRegistrarDecorate(t *testing.T) {
 				t.Errorf("decorate() = %v, want the undecorated base", got)
 			}
 		})
+	}
+	// An unmatched section must fail before any decorator is created.
+	if got := created.Load(); got != 0 {
+		t.Errorf("decorators created alongside an unknown section = %d, want 0", got)
 	}
 }
 
@@ -312,8 +338,8 @@ func TestDecodeOptions(t *testing.T) {
 }
 
 func TestRegisterDecorator(t *testing.T) {
-	name := uniqueDriverName("register-test-decorator")
-	decorator := tagDecorator(name, 0)
+	name := fmt.Sprintf("registerTestDecorator%d", registerTestCounter.Add(1))
+	decorator := tagDecorator(name)
 	RegisterDecorator(decorator)
 
 	fsys, err := New(t.Context(), "- source: \"memory://\"\n  options:\n    "+name+":\n      label: global")

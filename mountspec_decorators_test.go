@@ -211,25 +211,66 @@ func TestNewFromYAMLDecoratorOptionForms(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name         string
-		options      string
+		input        string
 		wantReadOnly bool
 	}{
-		{"bare bool", "readOnly: true", true},
-		{"bare bool disabled", "readOnly: false", false},
-		{"mapping", "readOnly:\n      enabled: true", true},
-		{"mapping disabled", "readOnly:\n      enabled: false", false},
-		{"empty section", "readOnly:", false},
-		{"name is case-insensitive", "readonly: true", true},
-		{"zero fault section", "fault: {}", false},
-		{"fault below read-only", "fault:\n      latency: 1ms\n    readOnly:\n      enabled: true", true},
+		{
+			name: "bare bool",
+			input: `- source: "memory://"
+  options:
+    readOnly: true`,
+			wantReadOnly: true,
+		},
+		{
+			name: "bare bool disabled",
+			input: `- source: "memory://"
+  options:
+    readOnly: false`,
+		},
+		{
+			name: "mapping",
+			input: `- source: "memory://"
+  options:
+    readOnly:
+      enabled: true`,
+			wantReadOnly: true,
+		},
+		{
+			name: "mapping disabled",
+			input: `- source: "memory://"
+  options:
+    readOnly:
+      enabled: false`,
+		},
+		{
+			name: "empty section",
+			input: `- source: "memory://"
+  options:
+    readOnly:`,
+		},
+		{
+			name: "zero fault section",
+			input: `- source: "memory://"
+  options:
+    fault: {}`,
+		},
+		{
+			name: "fault with read-only",
+			input: `- source: "memory://"
+  options:
+    fault:
+      latency: 1ms
+    readOnly:
+      enabled: true`,
+			wantReadOnly: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			input := "- source: \"memory://\"\n  options:\n    " + tc.options
-			fsys, err := ufs.New(t.Context(), input)
+			fsys, err := ufs.New(t.Context(), tc.input)
 			if err != nil {
-				t.Fatalf("New(%q) = %v, want nil", input, err)
+				t.Fatalf("New(%q) = %v, want nil", tc.input, err)
 			}
 			defer ufsTesting.ValidateClose(t, fsys)()
 
@@ -304,12 +345,25 @@ func TestNewFromYAMLDecoratorOptionErrors(t *testing.T) {
 			wantErr: `invalid options for file system decorator "fault"`,
 		},
 		{
-			name: "same decorator twice",
+			name: "option name with the wrong case",
 			input: `- source: "memory://"
   options:
-    readOnly: true
     readonly: true`,
-			wantErr: "configured more than once",
+			wantErr: "cannot find a ufs file system decorator",
+		},
+		{
+			name: "source cannot be mounted",
+			input: `- source: "embed://assets"
+  options:
+    readOnly: true`,
+			wantErr: "embed:// file systems must be created with drivers/embedfs.New",
+		},
+		{
+			name: "mount source cannot be mounted",
+			input: `- source: "memory://"
+- source: "embed://assets"
+  mountPoint: "data"`,
+			wantErr: "embed:// file systems must be created with drivers/embedfs.New",
 		},
 	}
 	for _, tc := range tests {

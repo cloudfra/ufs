@@ -33,9 +33,6 @@ var _ ufs.WriteFS = (*readOnlyFS)(nil)
 
 const (
 	optionName = "readOnly"
-	// priority places the read-only wrapper closest to the decorated file
-	// system, beneath every other decorator.
-	priority = 0
 )
 
 // Options configures the readOnly decorator. In a mount spec it is written
@@ -62,7 +59,7 @@ func (o *Options) UnmarshalYAML(node *yaml.Node) error {
 }
 
 func init() {
-	ufs.RegisterDecorator(ufs.NewDecorator(optionName, priority, wrap))
+	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
 }
 
 func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, error) {

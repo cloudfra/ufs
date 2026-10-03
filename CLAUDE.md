@@ -90,24 +90,25 @@ themselves in `init()` via `ufs.RegisterDecorator`; callers blank-import the
 package to enable its option.
 
 ```go
-func NewDecorator[T any](name string, priority int, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator
+func NewDecorator[T any](name string, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator
 func DecodeOptions[T any](raw any) (T, error)
 ```
 
 `MountSpec.Options` is a `map[string]any`; each section is keyed by a decorator
-name (matched case-insensitively) and holds that decorator's configuration.
-`registrar.decorate()` (register.go) traverses every section, fails on a
-section with no registered decorator, decodes the section into the decorator's
-options type `T` via `DecodeOptions` (YAML struct tags; `T` may implement
-`yaml.Unmarshaler` to accept several shapes), and applies the decorators in
-ascending `Priority` order (ties by name), lowest closest to the wrapped FS.
+name and holds that decorator's configuration. Names are lower camelCase,
+validated and checked for collisions at register time, and matched by an exact
+(case-sensitive) map lookup. `registrar.decorate()` (register.go) traverses
+every section, fails on a section with no registered decorator, decodes the
+section into the decorator's options type `T` via `DecodeOptions` (YAML struct
+tags; `T` may implement `yaml.Unmarshaler` to accept several shapes), and
+applies the decorators in ascending name order so layering is deterministic.
 The fstab `ro` option and the implicit read-only null root both map to the
 `readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
 
-| Option    | Package                        | Options type         | Priority | Behavior                                       |
-|:----------|:-------------------------------|:---------------------|:---------|:-----------------------------------------------|
-| readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`) | 0 | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner) |
-| fault     | drivers/decorators/faultfs     | faultfs.Options      | 100      | Injects configurable latency and random errors |
+| Option    | Package                        | Options type         | Behavior                                       |
+|:----------|:-------------------------------|:---------------------|:-----------------------------------------------|
+| readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`) | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner) |
+| fault     | drivers/decorators/faultfs     | faultfs.Options      | Injects configurable latency and random errors |
 
 ### Host mount (`host` subpackage)
 

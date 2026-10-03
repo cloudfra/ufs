@@ -38,9 +38,6 @@ var _ ufs.WriteFS = (*faultFS)(nil)
 
 const (
 	optionName = "fault"
-	// priority places fault injection outside the readOnly decorator, so
-	// faults are injected before a write is rejected.
-	priority = 100
 )
 
 // Options controls fault injection behavior for a [faultFS] wrapper. In a
@@ -84,7 +81,7 @@ func (c Options) clampedErrorRate() float64 {
 }
 
 func init() {
-	ufs.RegisterDecorator(ufs.NewDecorator(optionName, priority, wrap))
+	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
 }
 
 func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, error) {

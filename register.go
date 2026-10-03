@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -42,17 +41,13 @@ type registrar struct {
 // the name of a section under a [MountSpec]'s Options.
 type Decorator struct {
 	// Name of the file system decorator. It is the key of the decorator's
-	// section under a [MountSpec]'s Options and is matched case-insensitively.
+	// section under a [MountSpec]'s Options. It is matched exactly (case
+	// sensitive) and must be lower camelCase, e.g. "readOnly".
 	Name string
 
 	// CreateFunc wraps the given file system. The last argument is the raw
 	// value of the decorator's Options section, see [DecodeOptions].
 	CreateFunc func(context.Context, WriteFS, any) (WriteFS, error)
-
-	// Priority orders the decorators of a single mount. Decorators with a
-	// lower value are applied first, so they sit closer to the wrapped file
-	// system. Ties are broken by Name.
-	Priority int
 }
 
 // Driver is the driver configuration for a file system driver.
@@ -93,10 +88,9 @@ func NewDriver(name string, createFunc func(context.Context, string) (WriteFS, e
 // to be passed to RegisterDecorator. T is the decorator's options type; the
 // decorator's Options section is decoded into it with [DecodeOptions] before
 // createFunc is invoked.
-func NewDecorator[T any](name string, priority int, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator {
+func NewDecorator[T any](name string, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator {
 	return Decorator{
-		Name:     name,
-		Priority: priority,
+		Name: name,
 		CreateFunc: func(ctx context.Context, inner WriteFS, raw any) (WriteFS, error) {
 			opts, err := DecodeOptions[T](raw)
 			if err != nil {
@@ -202,16 +196,33 @@ func (r *registrar) registerDecorator(reg Decorator) error {
 	if reg.CreateFunc == nil {
 		return fmt.Errorf("file system decorator %q cannot have an empty CreateFunc", reg.Name)
 	}
-	key := strings.ToLower(reg.Name)
+	if !isLowerCamelCase(reg.Name) {
+		return fmt.Errorf("file system decorator name %q must be lower camelCase", reg.Name)
+	}
 	var err error
 	r.Lock()
-	if _, ok := r.decoratorMap[key]; !ok {
-		r.decoratorMap[key] = reg
+	if _, ok := r.decoratorMap[reg.Name]; !ok {
+		r.decoratorMap[reg.Name] = reg
 	} else {
 		err = fmt.Errorf("file system decorator %q is already registered", reg.Name)
 	}
 	r.Unlock()
 	return err
+}
+
+// isLowerCamelCase reports whether name is a non-empty run of ASCII letters and
+// digits that starts with a lower case letter.
+func isLowerCamelCase(name string) bool {
+	if name == "" || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *registrar) matchDriver(name string) (Driver, error) {
@@ -239,13 +250,13 @@ func (r *registrar) matchDriver(name string) (Driver, error) {
 
 func (r *registrar) matchDecorator(name string) (Decorator, error) {
 	r.RLock()
-	decorator, ok := r.decoratorMap[strings.ToLower(name)]
+	decorator, ok := r.decoratorMap[name]
 	r.RUnlock()
 	if !ok {
 		// Decorators outside this package (drivers/decorators/...) register
 		// only when imported, so a missing blank import looks like an unknown
 		// option.
-		return emptyDecoratorRegistration, fmt.Errorf("cannot find a ufs file system decorator for option %q; if it needs a decorator from github.com/cloudfra/ufs/drivers/decorators, check that the decorator package is imported", name)
+		return emptyDecoratorRegistration, fmt.Errorf("cannot find a ufs file system decorator for option %q, option names are case sensitive; if it needs a decorator from github.com/cloudfra/ufs/drivers/decorators, check that the decorator package is imported", name)
 	}
 	return decorator, nil
 }
@@ -265,41 +276,33 @@ func (r *registrar) create(ctx context.Context, name string) (WriteFS, error) {
 }
 
 // decorate wraps inner with the decorator of every section in opts, which
-// maps a decorator name to its raw options. Every section must match a
-// registered decorator. Decorators are applied in ascending Priority order,
-// then by Name, so the result does not depend on map iteration order. On error
-// inner is left open; closing it is up to the caller.
+// maps a decorator name to its raw options. Every section must exactly match
+// the name of a registered decorator. Decorators are applied in ascending name
+// order, so the result does not depend on map iteration order. On error inner
+// is left open; closing it is up to the caller.
 func (r *registrar) decorate(ctx context.Context, inner WriteFS, opts map[string]any) (WriteFS, error) {
 	if len(opts) == 0 {
 		return inner, nil
 	}
-	type section struct {
-		reg  Decorator
-		args any
+	names := make([]string, 0, len(opts))
+	for name := range opts {
+		names = append(names, name)
 	}
-	sections := make([]section, 0, len(opts))
-	for name, args := range opts {
+	sort.Strings(names)
+	// Match every section before wrapping anything, so an unknown section
+	// fails without creating any decorator.
+	regs := make([]Decorator, len(names))
+	for i, name := range names {
 		reg, err := r.matchDecorator(name)
 		if err != nil {
 			return nil, err
 		}
-		for _, s := range sections {
-			if s.reg.Name == reg.Name {
-				return nil, fmt.Errorf("file system decorator %q is configured more than once", reg.Name)
-			}
-		}
-		sections = append(sections, section{reg: reg, args: args})
+		regs[i] = reg
 	}
-	sort.Slice(sections, func(i, j int) bool {
-		if sections[i].reg.Priority != sections[j].reg.Priority {
-			return sections[i].reg.Priority < sections[j].reg.Priority
-		}
-		return sections[i].reg.Name < sections[j].reg.Name
-	})
 	fsys := inner
-	for _, s := range sections {
+	for i, reg := range regs {
 		var err error
-		fsys, err = s.reg.CreateFunc(ctx, fsys, s.args)
+		fsys, err = reg.CreateFunc(ctx, fsys, opts[names[i]])
 		if err != nil {
 			return nil, err
 		}

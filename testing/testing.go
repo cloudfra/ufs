@@ -33,12 +33,22 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-//go:embed testassets/files
-var embedTestFiles embed.FS
+var (
+	//go:embed testassets/files
+	embedTestFiles embed.FS
+
+	//go:embed testassets/archives
+	embedTestArchives embed.FS
+)
 
 // TestAssetsFS returns an [embed.FS] with all the test assets of ufs.
 func TestAssetsFS() embed.FS {
 	return embedTestFiles
+}
+
+// TestAssetsArchivesFS returns an [embed.FS] with all the test archive assets of ufs.
+func TestAssetsArchivesFS() embed.FS {
+	return embedTestArchives
 }
 
 // ValidateClose returns a deferred-cleanup function that closes closer (e.g.

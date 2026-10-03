@@ -186,58 +186,72 @@ func TestRegistrarDecorate(t *testing.T) {
 
 	tests := []struct {
 		name string
-		opts map[string]any
+		opts []MountOption
 		// want lists the applied decorators from the outermost inwards.
 		want      []string
 		wantError string
 	}{
 		{name: "nil options", opts: nil},
-		{name: "empty options", opts: map[string]any{}},
+		{name: "empty options", opts: []MountOption{}},
 		{
-			name: "single section",
-			opts: map[string]any{"alpha": map[string]any{"label": "a"}},
+			name: "single entry",
+			opts: []MountOption{{Name: "alpha", Config: map[string]any{"label": "a"}}},
 			want: []string{"alpha=a"},
 		},
 		{
-			name: "nil section uses zero options",
-			opts: map[string]any{"alpha": nil},
+			name: "nil config uses zero options",
+			opts: []MountOption{{Name: "alpha"}},
 			want: []string{"alpha="},
 		},
 		{
-			name: "applied in name order",
-			opts: map[string]any{
-				"gamma": map[string]any{"label": "g"},
-				"alpha": map[string]any{"label": "a"},
-				"beta":  map[string]any{"label": "b"},
+			name: "applied in list order",
+			opts: []MountOption{
+				{Name: "gamma", Config: map[string]any{"label": "g"}},
+				{Name: "alpha", Config: map[string]any{"label": "a"}},
+				{Name: "beta", Config: map[string]any{"label": "b"}},
 			},
-			want: []string{"gamma=g", "beta=b", "alpha=a"},
+			want: []string{"beta=b", "alpha=a", "gamma=g"},
+		},
+		{
+			name: "reversed list reverses the layers",
+			opts: []MountOption{
+				{Name: "beta", Config: map[string]any{"label": "b"}},
+				{Name: "alpha", Config: map[string]any{"label": "a"}},
+				{Name: "gamma", Config: map[string]any{"label": "g"}},
+			},
+			want: []string{"gamma=g", "alpha=a", "beta=b"},
 		},
 		{
 			name: "typed options",
-			opts: map[string]any{
-				"alpha": tagOptions{Label: "value"},
-				"beta":  &tagOptions{Label: "pointer"},
+			opts: []MountOption{
+				{Name: "alpha", Config: tagOptions{Label: "value"}},
+				{Name: "beta", Config: &tagOptions{Label: "pointer"}},
 			},
 			want: []string{"beta=pointer", "alpha=value"},
 		},
 		{
-			name:      "unknown section",
-			opts:      map[string]any{"counting": nil, "missing": true},
+			name:      "unknown entry",
+			opts:      []MountOption{{Name: "counting"}, {Name: "missing", Config: true}},
 			wantError: "cannot find a ufs file system decorator",
 		},
 		{
-			name:      "section name with the wrong case",
-			opts:      map[string]any{"counting": nil, "Alpha": nil},
+			name:      "entry name with the wrong case",
+			opts:      []MountOption{{Name: "counting"}, {Name: "Alpha"}},
 			wantError: "cannot find a ufs file system decorator",
+		},
+		{
+			name:      "entry listed twice",
+			opts:      []MountOption{{Name: "counting"}, {Name: "alpha"}, {Name: "counting"}},
+			wantError: "listed more than once",
 		},
 		{
 			name:      "options of the wrong shape",
-			opts:      map[string]any{"alpha": "not a mapping"},
+			opts:      []MountOption{{Name: "alpha", Config: "not a mapping"}},
 			wantError: `invalid options for file system decorator "alpha"`,
 		},
 		{
 			name:      "decorator fails",
-			opts:      map[string]any{"alpha": map[string]any{"fail": true}},
+			opts:      []MountOption{{Name: "alpha", Config: map[string]any{"fail": true}}},
 			wantError: errTagDecorator.Error(),
 		},
 	}
@@ -265,9 +279,9 @@ func TestRegistrarDecorate(t *testing.T) {
 			}
 		})
 	}
-	// An unmatched section must fail before any decorator is created.
+	// A rejected list must fail before any decorator is created.
 	if got := created.Load(); got != 0 {
-		t.Errorf("decorators created alongside an unknown section = %d, want 0", got)
+		t.Errorf("decorators created from a rejected list = %d, want 0", got)
 	}
 }
 
@@ -342,7 +356,7 @@ func TestRegisterDecorator(t *testing.T) {
 	decorator := tagDecorator(name)
 	RegisterDecorator(decorator)
 
-	fsys, err := New(t.Context(), "- source: \"memory://\"\n  options:\n    "+name+":\n      label: global")
+	fsys, err := New(t.Context(), "- source: \"memory://\"\n  options:\n    - "+name+":\n        label: global")
 	if err != nil {
 		t.Fatalf("New() = %v, want nil", err)
 	}
@@ -390,7 +404,7 @@ func TestNewFromMountSpecClosesOnDecoratorError(t *testing.T) {
 		},
 	})
 
-	_, err := New(t.Context(), "- source: \""+scheme+":root\"\n- source: \""+scheme+":mount\"\n  mountPoint: \"data\"\n  options:\n    noSuchDecorator: true")
+	_, err := New(t.Context(), "- source: \""+scheme+":root\"\n- source: \""+scheme+":mount\"\n  mountPoint: \"data\"\n  options:\n    - noSuchDecorator: true")
 	if err == nil || !strings.Contains(err.Error(), "cannot find a ufs file system decorator") {
 		t.Fatalf("New() = %v, want an unknown decorator error", err)
 	}

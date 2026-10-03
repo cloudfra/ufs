@@ -92,16 +92,33 @@ package to enable its option.
 ```go
 func NewDecorator[T any](name string, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator
 func DecodeOptions[T any](raw any) (T, error)
+func AppendURIOption(u *url.URL, name string, options any) (*url.URL, error)
 ```
 
-`MountSpec.Options` is a `map[string]any`; each section is keyed by a decorator
-name and holds that decorator's configuration. Names are lower camelCase,
-validated and checked for collisions at register time, and matched by an exact
-(case-sensitive) map lookup. `registrar.decorate()` (register.go) traverses
-every section, fails on a section with no registered decorator, decodes the
-section into the decorator's options type `T` via `DecodeOptions` (YAML struct
-tags; `T` may implement `yaml.Unmarshaler` to accept several shapes), and
-applies the decorators in ascending name order so layering is deterministic.
+`MountSpec.Options` is an ordered list (`[]MountOption`); each entry is a
+single-key mapping of a decorator name to that decorator's configuration:
+
+```yaml
+options:
+  - readOnly: true
+  - fault:
+      errorRate: 0.25
+```
+
+Names are lower camelCase, validated and checked for collisions at register
+time, and matched by an exact (case-sensitive) map lookup. `registrar.decorate()`
+(register.go) fails on an entry with no registered decorator or one listed
+twice, decodes each entry into the decorator's options type `T` via
+`DecodeOptions` (YAML struct tags; `T` may implement `yaml.Unmarshaler` to
+accept several shapes), and applies the decorators in list order: the first
+wraps the source, the last is the outermost layer.
+
+A decorator's `URI()` must call `AppendURIOption` on the URI of the FS it
+wraps. That records the decorator in the reserved `options` query parameter
+(the same list in YAML flow form, e.g. `options=[{readOnly: true}]`), which
+`New` reads back to re-apply the decorators in order, so the URI round-trips.
+`options`, like `ro`, is therefore not usable as a mount point in a URI.
+
 The fstab `ro` option and the implicit read-only null root both map to the
 `readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
 

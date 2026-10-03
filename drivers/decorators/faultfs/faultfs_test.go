@@ -17,6 +17,7 @@ package faultfs
 import (
 	"errors"
 	"io/fs"
+	"net/url"
 	"strings"
 	"syscall"
 	"testing"
@@ -436,4 +437,59 @@ func TestOptionsDecode(t *testing.T) {
 	if _, err := ufs.DecodeOptions[Options](map[string]any{"latency": "soon"}); err == nil {
 		t.Error("DecodeOptions() with an invalid latency = nil error, want error")
 	}
+}
+
+// uriFS overrides the URI reported by the file system it embeds.
+type uriFS struct {
+	ufs.WriteFS
+	u   *url.URL
+	err error
+}
+
+func (fsys *uriFS) URI() (*url.URL, error) {
+	return fsys.u, fsys.err
+}
+
+func TestFaultInjectorURI(t *testing.T) {
+	t.Parallel()
+	opts := Options{Latency: 100 * time.Millisecond, ErrorRate: 0.25}
+
+	t.Run("records the decorator", func(t *testing.T) {
+		t.Parallel()
+		inner := &uriFS{WriteFS: newInner(t), u: &url.URL{Scheme: "memory", Host: "test"}}
+		fsys, err := newFaultFS(inner, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, err := fsys.URI()
+		if err != nil {
+			t.Fatalf("URI() = %v, want nil", err)
+		}
+		if got, want := u.Query().Get("options"), "[{fault: {latency: 100ms, errorRate: 0.25}}]"; got != want {
+			t.Errorf("URI() options = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("inner has no URI", func(t *testing.T) {
+		t.Parallel()
+		fsys, err := newFaultFS(&uriFS{WriteFS: newInner(t)}, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u, err := fsys.URI(); u != nil || err != nil {
+			t.Errorf("URI() = %v, %v, want nil, nil", u, err)
+		}
+	})
+
+	t.Run("inner URI fails", func(t *testing.T) {
+		t.Parallel()
+		wantErr := errors.New("no uri")
+		fsys, err := newFaultFS(&uriFS{WriteFS: newInner(t), err: wantErr}, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fsys.URI(); !errors.Is(err, wantErr) {
+			t.Errorf("URI() = %v, want %v", err, wantErr)
+		}
+	})
 }

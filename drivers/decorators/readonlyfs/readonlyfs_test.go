@@ -17,6 +17,7 @@ package readonlyfs
 import (
 	"errors"
 	"io/fs"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -177,4 +178,48 @@ func TestWrap(t *testing.T) {
 	if _, ok := fsys.(*readOnlyFS); !ok {
 		t.Errorf("wrap with Enabled=true = %T, want *readOnlyFS", fsys)
 	}
+}
+
+// uriFS overrides the URI reported by the file system it embeds.
+type uriFS struct {
+	ufs.WriteFS
+	u   *url.URL
+	err error
+}
+
+func (fsys *uriFS) URI() (*url.URL, error) {
+	return fsys.u, fsys.err
+}
+
+func TestReadOnlyURI(t *testing.T) {
+	t.Parallel()
+
+	t.Run("records the decorator", func(t *testing.T) {
+		t.Parallel()
+		fsys := New(&uriFS{WriteFS: newInner(t), u: &url.URL{Scheme: "memory", Host: "test", RawQuery: "cache=null%3A"}})
+		u, err := fsys.URI()
+		if err != nil {
+			t.Fatalf("URI() = %v, want nil", err)
+		}
+		if got, want := u.String(), "memory://test?cache=null%3A&options=%5B%7BreadOnly%3A+true%7D%5D&ro=true"; got != want {
+			t.Errorf("URI() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("inner has no URI", func(t *testing.T) {
+		t.Parallel()
+		fsys := New(&uriFS{WriteFS: newInner(t)})
+		if u, err := fsys.URI(); u != nil || err != nil {
+			t.Errorf("URI() = %v, %v, want nil, nil", u, err)
+		}
+	})
+
+	t.Run("inner URI fails", func(t *testing.T) {
+		t.Parallel()
+		wantErr := errors.New("no uri")
+		fsys := New(&uriFS{WriteFS: newInner(t), err: wantErr})
+		if _, err := fsys.URI(); !errors.Is(err, wantErr) {
+			t.Errorf("URI() = %v, want %v", err, wantErr)
+		}
+	})
 }

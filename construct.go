@@ -38,6 +38,11 @@ const (
 	// system; it is not a mount point.
 	roQueryParam = "ro"
 
+	// optionsQueryParam is the URI query parameter that holds the decorators
+	// of a file system, in the order they are applied; it is not a mount
+	// point. Its value is the options list of a [MountSpec] in YAML flow form.
+	optionsQueryParam = "options"
+
 	// embedFSPrefix is the scheme of drivers/embedfs, which has no URI-based
 	// constructor.
 	embedFSPrefix = "embed://"
@@ -169,12 +174,14 @@ func nameToURI(name string) (*url.URL, error) {
 //   - source: "null://"
 //     mountPoint: "cache"
 //     options:
-//     readOnly: true
-//     fault:
+//   - readOnly: true
+//   - fault:
 //     errorRate: 0.1
 //
-// Each section under options is the case-sensitive name of a [Decorator] and
-// holds its configuration.
+// options is a list. Each entry is the case-sensitive name of a [Decorator]
+// and its configuration. Decorators are applied in the order listed: the first
+// wraps the source and each later one wraps the one before it, so the last
+// entry is the outermost layer.
 // Decorators register themselves when their package is imported, e.g.
 // github.com/cloudfra/ufs/drivers/decorators/readonlyfs (readOnly) and
 // github.com/cloudfra/ufs/drivers/decorators/faultfs (fault). A section that
@@ -197,13 +204,19 @@ func New(ctx context.Context, name string) (WriteFS, error) {
 	}
 	u, err := url.Parse(name)
 	if err == nil {
+		query := u.Query()
 		baseURI := *u
 		baseURI.RawQuery = ""
 		baseURI.Fragment = ""
+		// The decorators of the base travel with it; every other query
+		// parameter is a mount point.
+		if opts, ok := query[optionsQueryParam]; ok {
+			baseURI.RawQuery = url.Values{optionsQueryParam: opts}.Encode()
+		}
 		nFS, err := openNestFS(ctx, baseURI.String())
 		if err == nil {
-			for mountPath, mountURI := range u.Query() {
-				if mountPath == roQueryParam {
+			for mountPath, mountURI := range query {
+				if mountPath == roQueryParam || mountPath == optionsQueryParam {
 					continue
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])
@@ -220,10 +233,11 @@ func New(ctx context.Context, name string) (WriteFS, error) {
 	return openNestFS(ctx, name)
 }
 
-// openNestFS opens name via newBaseFS and wraps the result in a nestFS layer.
-// It returns the concrete *nestFS so callers can add mounts via addMount.
+// openNestFS opens name via newDecoratedFS and wraps the result in a nestFS
+// layer. It returns the concrete *nestFS so callers can add mounts via
+// addMount.
 func openNestFS(ctx context.Context, name string) (*nestFS, error) {
-	fsys, err := newBaseFS(ctx, name)
+	fsys, err := newDecoratedFS(ctx, name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -338,10 +352,41 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 type MountSpec struct {
 	Source     string `yaml:"source"`
 	MountPoint string `yaml:"mountPoint"`
-	// Options configures the decorators wrapped around the mounted file
-	// system. Each section is keyed by the name of a registered [Decorator]
-	// and holds that decorator's options, see [RegisterDecorator].
-	Options map[string]any `yaml:"options"`
+	// Options lists the decorators wrapped around the mounted file system,
+	// in the order they are applied: the first wraps the source and the last
+	// is the outermost layer.
+	Options []MountOption `yaml:"options"`
+}
+
+// MountOption configures one decorator of a [MountSpec]. In YAML it is a
+// mapping with a single key, the decorator's name, whose value is the
+// decorator's configuration:
+//
+//   - readOnly: true
+//   - fault:
+//     errorRate: 0.1
+type MountOption struct {
+	// Name is the name of a registered [Decorator], see [RegisterDecorator].
+	Name string
+
+	// Config is the decorator's raw configuration, see [DecodeOptions].
+	Config any
+}
+
+// UnmarshalYAML reads the single-key mapping form of a [MountOption].
+func (o *MountOption) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode || len(node.Content) != 2 {
+		return fmt.Errorf("line %d: a mount option must be a mapping with a single decorator name", node.Line)
+	}
+	if err := node.Content[0].Decode(&o.Name); err != nil {
+		return err
+	}
+	return node.Content[1].Decode(&o.Config)
+}
+
+// MarshalYAML writes the single-key mapping form of a [MountOption].
+func (o MountOption) MarshalYAML() (any, error) {
+	return map[string]any{o.Name: o.Config}, nil
 }
 
 func parseMountSpec(input string) []MountSpec {
@@ -392,7 +437,7 @@ func parseFstabMountSpec(input string) ([]MountSpec, error) {
 			MountPoint: normalizeMountPoint(fields[1]),
 		}
 		if hasFstabOption(options, fstabReadOnly) {
-			spec.Options = map[string]any{readOnlyOption: true}
+			spec.Options = []MountOption{{Name: readOnlyOption, Config: true}}
 		}
 		specs = append(specs, spec)
 	}
@@ -433,12 +478,19 @@ func normalizeMountPoint(mp string) string {
 var defaultRootSpec = MountSpec{
 	Source:     nullFSPrefix,
 	MountPoint: pathutil.CwdPath,
-	Options:    map[string]any{readOnlyOption: true},
+	Options:    []MountOption{{Name: readOnlyOption, Config: true}},
 }
 
-// newDecoratedFS opens name via newBaseFS and wraps it with the decorators
-// configured in opts.
-func newDecoratedFS(ctx context.Context, name string, opts map[string]any) (WriteFS, error) {
+// newDecoratedFS opens name via newBaseFS and wraps it with the decorators in
+// the options query parameter of name, if any, followed by those in opts.
+func newDecoratedFS(ctx context.Context, name string, opts []MountOption) (WriteFS, error) {
+	name, uriOpts, err := splitURIOptions(name)
+	if err != nil {
+		return nil, ufserrors.NewPathError(mountOp, name, err)
+	}
+	if len(uriOpts) > 0 {
+		opts = append(uriOpts, opts...)
+	}
 	baseFS, err := newBaseFS(ctx, name)
 	if err != nil {
 		return nil, err

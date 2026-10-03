@@ -44,9 +44,9 @@ const (
 // mount spec it is the "fault" section under options:
 //
 //	options:
-//	  fault:
-//	    latency: 100ms
-//	    errorRate: 0.25
+//	  - fault:
+//	      latency: 100ms
+//	      errorRate: 0.25
 type Options struct {
 	// Latency is a fixed delay added before each operation.
 	Latency time.Duration `yaml:"latency,omitempty"`
@@ -145,7 +145,11 @@ func (fsys *faultFS) GetDeviceInfo() ufs.DeviceMap {
 }
 
 func (fsys *faultFS) URI() (*url.URL, error) {
-	return fsys.inner.URI()
+	u, err := fsys.inner.URI()
+	if err != nil {
+		return nil, err
+	}
+	return ufs.AppendURIOption(u, optionName, fsys.cfg)
 }
 
 func (fsys *faultFS) String() string {

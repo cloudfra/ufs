@@ -32,7 +32,7 @@ func TestNewFromYAMLReadOnly(t *testing.T) {
 	t.Parallel()
 	input := `- source: "memory://"
   options:
-    readOnly: true`
+    - readOnly: true`
 	fsys, err := ufs.New(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestNewFromYAMLReadOnlyMount(t *testing.T) {
 - source: "memory://"
   mountPoint: "ro-data"
   options:
-    readOnly: true`
+    - readOnly: true`
 	fsys, err := ufs.New(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -147,9 +147,9 @@ func TestNewFromYAMLFaultInjector(t *testing.T) {
 	input := `- source: "memory://"
   mountPoint: "."
   options:
-    fault:
-      errorRate: 1.0
-      errorMessage: "disk on fire"`
+    - fault:
+        errorRate: 1.0
+        errorMessage: "disk on fire"`
 	fsys, err := ufs.New(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -169,8 +169,8 @@ func TestNewFromYAMLFaultInjectorMount(t *testing.T) {
 - source: "memory://"
   mountPoint: "unstable"
   options:
-    fault:
-      errorRate: 1.0`
+    - fault:
+        errorRate: 1.0`
 	fsys, err := ufs.New(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -192,9 +192,9 @@ func TestNewFromYAMLFaultAndReadOnly(t *testing.T) {
 	input := `- source: "memory://"
   mountPoint: "."
   options:
-    readOnly: true
-    fault:
-      latency: 1ms`
+    - readOnly: true
+    - fault:
+        latency: 1ms`
 	fsys, err := ufs.New(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
@@ -218,50 +218,50 @@ func TestNewFromYAMLDecoratorOptionForms(t *testing.T) {
 			name: "bare bool",
 			input: `- source: "memory://"
   options:
-    readOnly: true`,
+    - readOnly: true`,
 			wantReadOnly: true,
 		},
 		{
 			name: "bare bool disabled",
 			input: `- source: "memory://"
   options:
-    readOnly: false`,
+    - readOnly: false`,
 		},
 		{
 			name: "mapping",
 			input: `- source: "memory://"
   options:
-    readOnly:
-      enabled: true`,
+    - readOnly:
+        enabled: true`,
 			wantReadOnly: true,
 		},
 		{
 			name: "mapping disabled",
 			input: `- source: "memory://"
   options:
-    readOnly:
-      enabled: false`,
+    - readOnly:
+        enabled: false`,
 		},
 		{
 			name: "empty section",
 			input: `- source: "memory://"
   options:
-    readOnly:`,
+    - readOnly:`,
 		},
 		{
 			name: "zero fault section",
 			input: `- source: "memory://"
   options:
-    fault: {}`,
+    - fault: {}`,
 		},
 		{
 			name: "fault with read-only",
 			input: `- source: "memory://"
   options:
-    fault:
-      latency: 1ms
-    readOnly:
-      enabled: true`,
+    - fault:
+        latency: 1ms
+    - readOnly:
+        enabled: true`,
 			wantReadOnly: true,
 		},
 	}
@@ -302,7 +302,7 @@ func TestNewFromYAMLDecoratorOptionErrors(t *testing.T) {
 			name: "unknown root option",
 			input: `- source: "memory://"
   options:
-    noSuchDecorator: true`,
+    - noSuchDecorator: true`,
 			wantErr: "cannot find a ufs file system decorator",
 		},
 		{
@@ -311,51 +311,69 @@ func TestNewFromYAMLDecoratorOptionErrors(t *testing.T) {
 - source: "memory://"
   mountPoint: "data"
   options:
-    noSuchDecorator: true`,
+    - noSuchDecorator: true`,
 			wantErr: "cannot find a ufs file system decorator",
 		},
 		{
 			name: "readOnly is not a bool",
 			input: `- source: "memory://"
   options:
-    readOnly: sometimes`,
+    - readOnly: sometimes`,
 			wantErr: `invalid options for file system decorator "readOnly"`,
 		},
 		{
 			name: "readOnly mapping has the wrong type",
 			input: `- source: "memory://"
   options:
-    readOnly:
-      enabled: [1, 2]`,
+    - readOnly:
+        enabled: [1, 2]`,
 			wantErr: `invalid options for file system decorator "readOnly"`,
 		},
 		{
 			name: "fault latency is not a duration",
 			input: `- source: "memory://"
   options:
-    fault:
-      latency: soon`,
+    - fault:
+        latency: soon`,
 			wantErr: `invalid options for file system decorator "fault"`,
 		},
 		{
 			name: "fault is not a mapping",
 			input: `- source: "memory://"
   options:
-    fault: true`,
+    - fault: true`,
 			wantErr: `invalid options for file system decorator "fault"`,
+		},
+		{
+			name: "decorator listed twice",
+			input: `- source: "memory://"
+  options:
+    - readOnly: true
+    - readOnly: true`,
+			wantErr: "listed more than once",
+		},
+		{
+			name:    "invalid options in a URI",
+			input:   "memory://?options=%5Bnot",
+			wantErr: "invalid options query parameter",
+		},
+		{
+			name:    "unknown decorator in a URI",
+			input:   "memory://?options=%5B%7BnoSuchDecorator%3A+true%7D%5D",
+			wantErr: "cannot find a ufs file system decorator",
 		},
 		{
 			name: "option name with the wrong case",
 			input: `- source: "memory://"
   options:
-    readonly: true`,
+    - readonly: true`,
 			wantErr: "cannot find a ufs file system decorator",
 		},
 		{
 			name: "source cannot be mounted",
 			input: `- source: "embed://assets"
   options:
-    readOnly: true`,
+    - readOnly: true`,
 			wantErr: "embed:// file systems must be created with drivers/embedfs.New",
 		},
 		{
@@ -376,6 +394,150 @@ func TestNewFromYAMLDecoratorOptionErrors(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("New(%q) = %q, want substring %q", tc.input, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// optionsOf returns the decoded options query parameter of fsys's URI.
+func optionsOf(t *testing.T, fsys ufs.WriteFS) string {
+	t.Helper()
+	u, err := fsys.URI()
+	if err != nil || u == nil {
+		t.Fatalf("URI() = %v, %v, want a URL", u, err)
+	}
+	return u.Query().Get("options")
+}
+
+func TestDecoratorsApplyInListOrder(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "readOnly then fault",
+			input: `- source: "memory://"
+  options:
+    - readOnly: true
+    - fault:
+        latency: 1ms`,
+			want: "[{readOnly: true}, {fault: {latency: 1ms}}]",
+		},
+		{
+			name: "fault then readOnly",
+			input: `- source: "memory://"
+  options:
+    - fault:
+        latency: 1ms
+    - readOnly: true`,
+			want: "[{fault: {latency: 1ms}}, {readOnly: true}]",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys, err := ufs.New(t.Context(), tc.input)
+			if err != nil {
+				t.Fatalf("New(%q) = %v, want nil", tc.input, err)
+			}
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if got := optionsOf(t, fsys); got != tc.want {
+				t.Errorf("URI() options = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDecoratedURIRoundTrip(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		// wantOptions is the options query parameter of the root.
+		wantOptions string
+		// readOnly and writable list paths whose Create must fail with
+		// fs.ErrPermission or succeed.
+		readOnly []string
+		writable []string
+	}{
+		{
+			name: "read-only root",
+			input: `- source: "memory://"
+  options:
+    - readOnly: true`,
+			wantOptions: "[{readOnly: true}]",
+			readOnly:    []string{"file.txt"},
+		},
+		{
+			name: "fault then read-only root",
+			input: `- source: "memory://"
+  options:
+    - fault:
+        latency: 1ms
+        latencyJitter: 1ms
+        log: true
+    - readOnly: true`,
+			wantOptions: "[{fault: {latency: 1ms, latencyJitter: 1ms, log: true}}, {readOnly: true}]",
+			readOnly:    []string{"file.txt"},
+		},
+		{
+			name: "read-only mount",
+			input: `- source: "memory://"
+- source: "memory://"
+  mountPoint: "data"
+  options:
+    - readOnly: true`,
+			readOnly: []string{"data/file.txt"},
+			writable: []string{"file.txt"},
+		},
+		{
+			name:        "fstab read-only root with writable mount",
+			input:       "memory:// . auto ro 0 0\nmemory:// /data auto rw 0 0",
+			wantOptions: "[{readOnly: true}]",
+			readOnly:    []string{"file.txt"},
+			writable:    []string{"data/file.txt"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			original, err := ufs.New(t.Context(), tc.input)
+			if err != nil {
+				t.Fatalf("New(%q) = %v, want nil", tc.input, err)
+			}
+			defer ufsTesting.ValidateClose(t, original)()
+			if got := optionsOf(t, original); got != tc.wantOptions {
+				t.Errorf("URI() options = %q, want %q", got, tc.wantOptions)
+			}
+			uri := ufs.URIOrDefault(original, "")
+
+			rebuilt, err := ufs.New(t.Context(), uri)
+			if err != nil {
+				t.Fatalf("New(%q) = %v, want nil", uri, err)
+			}
+			defer ufsTesting.ValidateClose(t, rebuilt)()
+			if got := ufs.URIOrDefault(rebuilt, ""); got != uri {
+				t.Errorf("rebuilt URI() = %q, want %q", got, uri)
+			}
+
+			for _, fsys := range []ufs.WriteFS{original, rebuilt} {
+				for _, name := range tc.readOnly {
+					if _, err := fsys.Create(name); !errors.Is(err, fs.ErrPermission) {
+						t.Errorf("Create(%q) = %v, want fs.ErrPermission", name, err)
+					}
+				}
+				for _, name := range tc.writable {
+					f, err := fsys.Create(name)
+					if err != nil {
+						t.Errorf("Create(%q) = %v, want nil", name, err)
+						continue
+					}
+					if err := f.Close(); err != nil {
+						t.Errorf("Close(%q) = %v, want nil", name, err)
+					}
+				}
 			}
 		})
 	}

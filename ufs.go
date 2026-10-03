@@ -133,6 +133,9 @@ type RenameFileFS interface {
 //
 // Read-only backends commonly include the query parameter ro=true to indicate
 // the underlying scheme is read-only.
+//
+// Decorators record themselves, in the order they were applied, in the options
+// query parameter via [AppendURIOption] so that [New] applies them again.
 type URIGet interface {
 	// URI returns the canonical identifier for this file system as a [*url.URL].
 	//

@@ -41,7 +41,7 @@ func TestParseYAMLMountSpec(t *testing.T) {
 			name: "root read-only",
 			input: `- source: "memory://"
   options:
-    readOnly: true`,
+    - readOnly: true`,
 			wantCount: 1,
 		},
 		{
@@ -51,7 +51,7 @@ func TestParseYAMLMountSpec(t *testing.T) {
 - source: "null://"
   mountPoint: "cache"
   options:
-    readOnly: true
+    - readOnly: true
 - source: "memory://"
   mountPoint: "data"`,
 			wantCount: 3,
@@ -102,11 +102,11 @@ func TestParseYAMLMountSpecOptionSections(t *testing.T) {
 	input := `- source: "memory://"
   mountPoint: "."
   options:
-    readOnly: true
-    fault:
-      latency: 100ms
-      errorRate: 0.25
-      log: true`
+    - readOnly: true
+    - fault:
+        latency: 100ms
+        errorRate: 0.25
+        log: true`
 	specs, err := parseYAMLMountSpec(input)
 	if err != nil {
 		t.Fatalf("parseYAMLMountSpec() error: %v", err)
@@ -114,13 +114,14 @@ func TestParseYAMLMountSpecOptionSections(t *testing.T) {
 	if len(specs) != 1 {
 		t.Fatalf("len(specs) = %d, want 1", len(specs))
 	}
-	want := map[string]any{
-		"readOnly": true,
-		"fault": map[string]any{
+	// Options keep the order they are listed in.
+	want := []MountOption{
+		{Name: "readOnly", Config: true},
+		{Name: "fault", Config: map[string]any{
 			"latency":   "100ms",
 			"errorRate": 0.25,
 			"log":       true,
-		},
+		}},
 	}
 	if got := specs[0].Options; !reflect.DeepEqual(got, want) {
 		t.Errorf("Options = %#v, want %#v", got, want)
@@ -136,7 +137,7 @@ func TestParseYAMLMountSpecEntries(t *testing.T) {
 - source: "memory://"
   mountPoint: "/data/files"
   options:
-    readOnly: true`
+    - readOnly: true`
 	specs, err := parseYAMLMountSpec(input)
 	if err != nil {
 		t.Fatalf("parseYAMLMountSpec() error: %v", err)
@@ -165,8 +166,8 @@ func TestParseYAMLMountSpecEntries(t *testing.T) {
 	if specs[2].MountPoint != "data/files" {
 		t.Errorf("specs[2].MountPoint = %q, want %q (leading slash stripped)", specs[2].MountPoint, "data/files")
 	}
-	if got := specs[2].Options[readOnlyOption]; got != true {
-		t.Errorf("specs[2].Options[%q] = %v, want true", readOnlyOption, got)
+	if got, want := specs[2].Options, []MountOption{{Name: readOnlyOption, Config: true}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("specs[2].Options = %v, want %v", got, want)
 	}
 }
 
@@ -298,8 +299,8 @@ func TestParseFstabMountSpecFields(t *testing.T) {
 	if specs[1].MountPoint != "data/cache" {
 		t.Errorf("specs[1].MountPoint = %q, want %q (leading slash stripped)", specs[1].MountPoint, "data/cache")
 	}
-	if got := specs[1].Options[readOnlyOption]; got != true {
-		t.Errorf("specs[1].Options[%q] = %v, want true", readOnlyOption, got)
+	if got, want := specs[1].Options, []MountOption{{Name: readOnlyOption, Config: true}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("specs[1].Options = %v, want %v", got, want)
 	}
 }
 

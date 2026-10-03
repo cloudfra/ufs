@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -41,7 +40,7 @@ type registrar struct {
 // the name of a section under a [MountSpec]'s Options.
 type Decorator struct {
 	// Name of the file system decorator. It is the key of the decorator's
-	// section under a [MountSpec]'s Options. It is matched exactly (case
+	// entry in a [MountSpec]'s Options. It is matched exactly (case
 	// sensitive) and must be lower camelCase, e.g. "readOnly".
 	Name string
 
@@ -275,34 +274,34 @@ func (r *registrar) create(ctx context.Context, name string) (WriteFS, error) {
 	return reg.CreateFunc(ctx, name)
 }
 
-// decorate wraps inner with the decorator of every section in opts, which
-// maps a decorator name to its raw options. Every section must exactly match
-// the name of a registered decorator. Decorators are applied in ascending name
-// order, so the result does not depend on map iteration order. On error inner
-// is left open; closing it is up to the caller.
-func (r *registrar) decorate(ctx context.Context, inner WriteFS, opts map[string]any) (WriteFS, error) {
+// decorate wraps inner with the decorators listed in opts, in order: the
+// first wraps inner and each later one wraps the one before it. Every entry
+// must exactly match the name of a registered decorator, and a decorator may
+// be listed only once. On error inner is left open; closing it is up to the
+// caller.
+func (r *registrar) decorate(ctx context.Context, inner WriteFS, opts []MountOption) (WriteFS, error) {
 	if len(opts) == 0 {
 		return inner, nil
 	}
-	names := make([]string, 0, len(opts))
-	for name := range opts {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	// Match every section before wrapping anything, so an unknown section
-	// fails without creating any decorator.
-	regs := make([]Decorator, len(names))
-	for i, name := range names {
-		reg, err := r.matchDecorator(name)
+	// Match every entry before wrapping anything, so an unknown entry fails
+	// without creating any decorator.
+	regs := make([]Decorator, len(opts))
+	for i, opt := range opts {
+		reg, err := r.matchDecorator(opt.Name)
 		if err != nil {
 			return nil, err
+		}
+		for _, prev := range opts[:i] {
+			if prev.Name == opt.Name {
+				return nil, fmt.Errorf("file system decorator %q is listed more than once", opt.Name)
+			}
 		}
 		regs[i] = reg
 	}
 	fsys := inner
 	for i, reg := range regs {
 		var err error
-		fsys, err = reg.CreateFunc(ctx, fsys, opts[names[i]])
+		fsys, err = reg.CreateFunc(ctx, fsys, opts[i].Config)
 		if err != nil {
 			return nil, err
 		}

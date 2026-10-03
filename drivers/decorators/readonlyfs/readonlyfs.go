@@ -39,11 +39,11 @@ const (
 // either as a bare bool or as a mapping:
 //
 //	options:
-//	  readOnly: true
+//	  - readOnly: true
 //
 //	options:
-//	  readOnly:
-//	    enabled: true
+//	  - readOnly:
+//	      enabled: true
 type Options struct {
 	// Enabled makes the file system read-only.
 	Enabled bool `yaml:"enabled"`
@@ -56,6 +56,11 @@ func (o *Options) UnmarshalYAML(node *yaml.Node) error {
 	}
 	type plain Options
 	return node.Decode((*plain)(o))
+}
+
+// MarshalYAML writes [Options] in its bare bool form.
+func (o Options) MarshalYAML() (any, error) {
+	return o.Enabled, nil
 }
 
 func init() {
@@ -89,10 +94,13 @@ func (fsys *readOnlyFS) URI() (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
+	if u == nil {
+		return nil, nil
+	}
 	v := u.Query()
 	v.Set("ro", "true")
 	u.RawQuery = v.Encode()
-	return u, nil
+	return ufs.AppendURIOption(u, optionName, Options{Enabled: true})
 }
 
 func (fsys *readOnlyFS) String() string {

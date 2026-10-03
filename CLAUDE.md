@@ -82,17 +82,32 @@ prefix.
 A temporary local-mount wrapper (tempMountFS in tempmountfs.go) provides writable
 scratch space on top of any read-only FS for implementations that need it.
 
-### Addon wrappers
+### Decorators (`drivers/decorators/` subpackages)
 
-Wrappers modify the behavior of an existing FS. They are configured via
-`MountSpecOptions` fields (YAML mount specs) or applied programmatically.
-Wrappers are applied in a fixed order by `applyWrappers()` in construct.go:
-ReadOnly → FaultInjector → (future wrappers).
+Decorators wrap an existing FS to change its behavior. Like drivers, they live
+outside the base package, import `ufs` (never the reverse) and register
+themselves in `init()` via `ufs.RegisterDecorator`; callers blank-import the
+package to enable its option.
 
-| Wrapper        | File           | Constructor       | Config type   | Behavior                                          |
-|:---------------|:---------------|:------------------|:--------------|:--------------------------------------------------|
-| ReadOnly       | readonlyfs.go  | ReadOnly(inner)   | bool          | Returns fs.ErrPermission for all write ops        |
-| FaultInjector  | faultfs.go     | FaultInjector()   | FaultConfig   | Injects configurable latency and random errors    |
+```go
+func NewDecorator[T any](name string, priority int, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator
+func DecodeOptions[T any](raw any) (T, error)
+```
+
+`MountSpec.Options` is a `map[string]any`; each section is keyed by a decorator
+name (matched case-insensitively) and holds that decorator's configuration.
+`registrar.decorate()` (register.go) traverses every section, fails on a
+section with no registered decorator, decodes the section into the decorator's
+options type `T` via `DecodeOptions` (YAML struct tags; `T` may implement
+`yaml.Unmarshaler` to accept several shapes), and applies the decorators in
+ascending `Priority` order (ties by name), lowest closest to the wrapped FS.
+The fstab `ro` option and the implicit read-only null root both map to the
+`readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
+
+| Option    | Package                        | Options type         | Priority | Behavior                                       |
+|:----------|:-------------------------------|:---------------------|:---------|:-----------------------------------------------|
+| readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`) | 0 | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner) |
+| fault     | drivers/decorators/faultfs     | faultfs.Options      | 100      | Injects configurable latency and random errors |
 
 ### Host mount (`host` subpackage)
 

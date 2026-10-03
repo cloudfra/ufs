@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package readonlyfs provides the "readOnly" file system decorator, which
+// rejects every write to the file system it wraps. Importing the package
+// registers the decorator.
 package readonlyfs
 
 import (
+	"context"
 	"io/fs"
 	"net/url"
 
@@ -22,31 +26,50 @@ import (
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
+	"gopkg.in/yaml.v3"
 )
 
 var _ ufs.WriteFS = (*readOnlyFS)(nil)
 
 const (
-	optionName = "readonly"
+	optionName = "readOnly"
+	// priority places the read-only wrapper closest to the decorated file
+	// system, beneath every other decorator.
+	priority = 0
 )
 
+// Options configures the readOnly decorator. In a mount spec it is written
+// either as a bare bool or as a mapping:
+//
+//	options:
+//	  readOnly: true
+//
+//	options:
+//	  readOnly:
+//	    enabled: true
 type Options struct {
+	// Enabled makes the file system read-only.
 	Enabled bool `yaml:"enabled"`
 }
 
-func init() {
-	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
+// UnmarshalYAML accepts both the bare bool and the mapping form of [Options].
+func (o *Options) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		return node.Decode(&o.Enabled)
+	}
+	type plain Options
+	return node.Decode((*plain)(o))
 }
 
-func wrap(inner ufs.WriteFS, options any) (ufs.WriteFS, error) {
-	opts, ok := options.(Options)
-	if !ok {
-		return nil, ufserrors.NewOptionTypeError(optionName, options, Options{})
-	}
+func init() {
+	ufs.RegisterDecorator(ufs.NewDecorator(optionName, priority, wrap))
+}
+
+func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, error) {
 	if !opts.Enabled {
 		return inner, nil
 	}
-	return New(inner, opts), nil
+	return New(inner), nil
 }
 
 // readOnlyFS wraps a [ReadFS] and satisfies [FS] by returning
@@ -58,7 +81,7 @@ type readOnlyFS struct {
 // New wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
 // Remove, RemoveAll) always return [fs.ErrPermission]. All read operations
 // delegate to inner unchanged.
-func New(inner ufs.ReadFS, options Options) ufs.WriteFS {
+func New(inner ufs.ReadFS) ufs.WriteFS {
 	return &readOnlyFS{
 		ReadFS: inner,
 	}

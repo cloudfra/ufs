@@ -23,9 +23,11 @@ import (
 	"os"
 
 	"github.com/cloudfra/ufs"
-	_ "github.com/cloudfra/ufs/drivers/boltfs" // registers bolt:
-	_ "github.com/cloudfra/ufs/drivers/gcsfs"  // registers gs://
-	_ "github.com/cloudfra/ufs/drivers/gitfs"  // registers git repository URIs
+	_ "github.com/cloudfra/ufs/drivers/boltfs"                // registers bolt:
+	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"    // registers the fault mount option
+	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
+	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://
+	_ "github.com/cloudfra/ufs/drivers/gitfs"                 // registers git repository URIs
 )
 
 var pathFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")

@@ -27,10 +27,20 @@ const (
 	nullFSPrefix = "null://test"
 )
 
+// newInner returns the file system that the tests decorate.
+func newInner(t *testing.T) ufs.WriteFS {
+	t.Helper()
+	fsys, err := ufs.New(t.Context(), nullFSPrefix)
+	if err != nil {
+		t.Fatalf("New(%q) = %v, want nil", nullFSPrefix, err)
+	}
+	return fsys
+}
+
 func TestReadOnlyWriteOperationsReturnPermissionDenied(t *testing.T) {
 	t.Parallel()
 
-	inner := ufs.MakeNullFS(nullFSPrefix)
+	inner := newInner(t)
 	fsys := New(inner)
 
 	tests := []struct {
@@ -56,7 +66,7 @@ func TestReadOnlyWriteOperationsReturnPermissionDenied(t *testing.T) {
 func TestReadOnlyWriteOperationsInvalidPath(t *testing.T) {
 	t.Parallel()
 
-	inner := ufs.MakeNullFS(nullFSPrefix)
+	inner := newInner(t)
 	fsys := New(inner)
 
 	for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
@@ -81,7 +91,7 @@ func TestReadOnlyWriteOperationsInvalidPath(t *testing.T) {
 func TestReadOnlyDelegatesReadsToInner(t *testing.T) {
 	t.Parallel()
 
-	inner := ufs.MakeNullFS(nullFSPrefix)
+	inner := newInner(t)
 	fsys := New(inner)
 
 	if _, err := fsys.Open("."); err != nil {
@@ -101,10 +111,70 @@ func TestReadOnlyDelegatesReadsToInner(t *testing.T) {
 func TestReadOnlyString(t *testing.T) {
 	t.Parallel()
 
-	inner := ufs.MakeNullFS(nullFSPrefix)
+	inner := newInner(t)
 	fsys := New(inner)
 
 	if got := fsys.String(); !strings.Contains(got, nullFSPrefix) {
 		t.Errorf("String() should contain %q, got: %q", nullFSPrefix, got)
+	}
+}
+
+func TestOptionsDecode(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		raw     any
+		want    Options
+		wantErr bool
+	}{
+		{name: "nil", raw: nil, want: Options{}},
+		{name: "bare true", raw: true, want: Options{Enabled: true}},
+		{name: "bare false", raw: false, want: Options{}},
+		{name: "mapping enabled", raw: map[string]any{"enabled": true}, want: Options{Enabled: true}},
+		{name: "mapping disabled", raw: map[string]any{"enabled": false}, want: Options{}},
+		{name: "empty mapping", raw: map[string]any{}, want: Options{}},
+		{name: "typed", raw: Options{Enabled: true}, want: Options{Enabled: true}},
+		{name: "bare non-bool", raw: "sometimes", wantErr: true},
+		{name: "mapping non-bool", raw: map[string]any{"enabled": []int{1}}, wantErr: true},
+		{name: "sequence", raw: []bool{true}, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ufs.DecodeOptions[Options](tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("DecodeOptions(%#v) = %+v, want error", tc.raw, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DecodeOptions(%#v) = %v, want nil", tc.raw, err)
+			}
+			if got != tc.want {
+				t.Errorf("DecodeOptions(%#v) = %+v, want %+v", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWrap(t *testing.T) {
+	t.Parallel()
+	inner := newInner(t)
+
+	fsys, err := wrap(t.Context(), inner, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fsys != inner {
+		t.Errorf("wrap with Enabled=false = %v, want the inner FS unchanged", fsys)
+	}
+
+	fsys, err = wrap(t.Context(), inner, Options{Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fsys.(*readOnlyFS); !ok {
+		t.Errorf("wrap with Enabled=true = %T, want *readOnlyFS", fsys)
 	}
 }

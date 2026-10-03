@@ -132,8 +132,9 @@ func nameToURI(name string) (*url.URL, error) {
 //	null://     cache  auto  ro  0  0
 //
 // The mount point ".", "/", or "none" designates the root filesystem. Leading
-// slashes on other mount points are stripped. The "ro" option wraps the FS with
-// [ReadOnly]; "rw" and "defaults" are recognized but leave the FS writable.
+// slashes on other mount points are stripped. The "ro" option is shorthand for
+// the readOnly decorator; "rw" and "defaults" are recognized but leave the FS
+// writable.
 // Comment lines (starting with #) and blank lines are ignored.
 //
 // YAML (flat list of [MountSpec] entries):
@@ -144,9 +145,17 @@ func nameToURI(name string) (*url.URL, error) {
 //     mountPoint: "cache"
 //     options:
 //     readOnly: true
+//     fault:
+//     errorRate: 0.1
+//
+// Each section under options names a [Decorator] and holds its configuration.
+// Decorators register themselves when their package is imported, e.g.
+// github.com/cloudfra/ufs/drivers/decorators/readonlyfs (readOnly) and
+// github.com/cloudfra/ufs/drivers/decorators/faultfs (fault). A section that
+// matches no registered decorator is an error.
 //
 // If no entry has a root mount point (".", "/", "none", or empty), a read-only
-// null:// filesystem is used as the root.
+// null:// filesystem is used as the root, which needs the readOnly decorator.
 //
 // # Nested mounts and archive auto-mounting
 //
@@ -303,7 +312,9 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 type MountSpec struct {
 	Source     string `yaml:"source"`
 	MountPoint string `yaml:"mountPoint"`
-	// TODO: MountSpecOptions should be a map[string]any to allow arbitrary options to be passed to decorators. The current struct is a placeholder for future expansion.
+	// Options configures the decorators wrapped around the mounted file
+	// system. Each section is keyed by the name of a registered [Decorator]
+	// and holds that decorator's options, see [RegisterDecorator].
 	Options map[string]any `yaml:"options"`
 }
 
@@ -350,13 +361,14 @@ func parseFstabMountSpec(input string) ([]MountSpec, error) {
 			return nil, fmt.Errorf("fstab: line %d has unrecognized options %q", i+1, options)
 		}
 
-		specs = append(specs, MountSpec{
+		spec := MountSpec{
 			Source:     fields[0],
 			MountPoint: normalizeMountPoint(fields[1]),
-			Options: map[string]any{
-				"readOnly": hasFstabOption(options, "ro"),
-			},
-		})
+		}
+		if hasFstabOption(options, "ro") {
+			spec.Options = map[string]any{readOnlyOption: true}
+		}
+		specs = append(specs, spec)
 	}
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("fstab: no mount entries")
@@ -395,18 +407,23 @@ func normalizeMountPoint(mp string) string {
 var defaultRootSpec = MountSpec{
 	Source:     nullFSPrefix,
 	MountPoint: pathutil.CwdPath,
-	Options:    map[string]any{"readOnly": map[string]string{"enabled": "true"}},
+	Options:    map[string]any{readOnlyOption: true},
 }
 
-// applyWrappers applies the configured wrapper layers from opts to fsys.
-// Wrappers are applied in a fixed order: ReadOnly first, then FaultInjector.
-func applyWrappers(ctx context.Context, fsys WriteFS, opts map[string]any) (WriteFS, error) {
-	var err error
-	for optionName, config := range opts {
-		fsys, err = getRegistrar().decorate(ctx, fsys, optionName, config)
-		if err != nil {
-			return nil, err
-		}
+// readOnlyOption is the [MountSpec] option that the fstab "ro" option and the
+// implicit root map to. It is served by drivers/decorators/readonlyfs.
+const readOnlyOption = "readOnly"
+
+// newDecoratedFS opens name via newBaseFS and wraps it with the decorators
+// configured in opts.
+func newDecoratedFS(ctx context.Context, name string, opts map[string]any) (WriteFS, error) {
+	baseFS, err := newBaseFS(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	fsys, err := getRegistrar().decorate(ctx, baseFS, opts)
+	if err != nil {
+		return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), baseFS.Close())
 	}
 	return fsys, nil
 }
@@ -425,24 +442,16 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (WriteFS, error) {
 		root = &defaultRootSpec
 	}
 
-	baseFS, err := newBaseFS(ctx, root.Source)
-	if err != nil {
-		return nil, err
-	}
-	rootFS, err := applyWrappers(ctx, baseFS, root.Options)
+	rootFS, err := newDecoratedFS(ctx, root.Source, root.Options)
 	if err != nil {
 		return nil, err
 	}
 	nFS := makeNestFS(ctx, rootFS)
 
 	for _, m := range mounts {
-		mountBaseFS, err := newBaseFS(ctx, m.Source)
+		mountFS, err := newDecoratedFS(ctx, m.Source, m.Options)
 		if err != nil {
 			return nil, ufserrors.Join(err, nFS.Close())
-		}
-		mountFS, err := applyWrappers(ctx, mountBaseFS, m.Options)
-		if err != nil {
-			return nil, err
 		}
 		mountNestFS := makeNestFS(ctx, mountFS)
 		if err := nFS.addMount(m.MountPoint, mountNestFS); err != nil {

@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package faultfs provides the "fault" file system decorator, which injects
+// configurable latency and errors into the file system it wraps. Importing the
+// package registers the decorator.
 package faultfs
 
 import (
@@ -35,9 +38,18 @@ var _ ufs.WriteFS = (*faultFS)(nil)
 
 const (
 	optionName = "fault"
+	// priority places fault injection outside the readOnly decorator, so
+	// faults are injected before a write is rejected.
+	priority = 100
 )
 
-// Options controls fault injection behavior for a [faultFS] wrapper.
+// Options controls fault injection behavior for a [faultFS] wrapper. In a
+// mount spec it is the "fault" section under options:
+//
+//	options:
+//	  fault:
+//	    latency: 100ms
+//	    errorRate: 0.25
 type Options struct {
 	// Latency is a fixed delay added before each operation.
 	Latency time.Duration `yaml:"latency,omitempty"`
@@ -72,13 +84,12 @@ func (c Options) clampedErrorRate() float64 {
 }
 
 func init() {
-	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
+	ufs.RegisterDecorator(ufs.NewDecorator(optionName, priority, wrap))
 }
 
-func wrap(_ context.Context, inner ufs.WriteFS, options any) (ufs.WriteFS, error) {
-	opts, ok := options.(Options)
-	if !ok {
-		return nil, ufserrors.NewOptionTypeError(optionName, options, Options{})
+func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, error) {
+	if opts.isZero() {
+		return inner, nil
 	}
 	return newFaultFS(inner, opts)
 }
@@ -86,7 +97,7 @@ func wrap(_ context.Context, inner ufs.WriteFS, options any) (ufs.WriteFS, error
 // faultErrors is a set of realistic errors that applications commonly
 // encounter from file system operations.
 //
-// TODO: allow callers to supply a custom error set via FaultConfig.
+// TODO: allow callers to supply a custom error set via Options.
 var faultErrors = []error{
 	syscall.EIO,
 	syscall.ENOSPC,
@@ -117,7 +128,7 @@ type faultFS struct {
 	rng *rand.Rand
 }
 
-// FaultInjector wraps inner as an [WriteFS] that injects configurable latency and
+// newFaultFS wraps inner as a [ufs.WriteFS] that injects configurable latency and
 // errors. Close always delegates to inner without fault injection.
 func newFaultFS(inner ufs.WriteFS, cfg Options) (ufs.WriteFS, error) {
 	rng, err := newCryptoRand()

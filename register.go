@@ -18,8 +18,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
+
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -34,13 +37,22 @@ type registrar struct {
 	decoratorMap map[string]Decorator
 }
 
-// Decorator is the driver configuration for a file system decorator.
+// Decorator is the configuration for a file system decorator: a wrapper that
+// changes the behavior of an existing file system. A decorator is selected by
+// the name of a section under a [MountSpec]'s Options.
 type Decorator struct {
-	// Name of the file system decorator.
+	// Name of the file system decorator. It is the key of the decorator's
+	// section under a [MountSpec]'s Options and is matched case-insensitively.
 	Name string
 
-	// CreateFunc is invoked when creating an instance of the file system driver.
+	// CreateFunc wraps the given file system. The last argument is the raw
+	// value of the decorator's Options section, see [DecodeOptions].
 	CreateFunc func(context.Context, WriteFS, any) (WriteFS, error)
+
+	// Priority orders the decorators of a single mount. Decorators with a
+	// lower value are applied first, so they sit closer to the wrapped file
+	// system. Ties are broken by Name.
+	Priority int
 }
 
 // Driver is the driver configuration for a file system driver.
@@ -77,12 +89,60 @@ func NewDriver(name string, createFunc func(context.Context, string) (WriteFS, e
 	}
 }
 
-// NewDecorator builds a Decorator configuration for a file system decorator, to be passed to RegisterDecorator.
-func NewDecorator(name string, createFunc func(context.Context, WriteFS, any) (WriteFS, error)) Decorator {
+// NewDecorator builds a Decorator configuration for a file system decorator,
+// to be passed to RegisterDecorator. T is the decorator's options type; the
+// decorator's Options section is decoded into it with [DecodeOptions] before
+// createFunc is invoked.
+func NewDecorator[T any](name string, priority int, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator {
 	return Decorator{
-		Name:       name,
-		CreateFunc: createFunc,
+		Name:     name,
+		Priority: priority,
+		CreateFunc: func(ctx context.Context, inner WriteFS, raw any) (WriteFS, error) {
+			opts, err := DecodeOptions[T](raw)
+			if err != nil {
+				return nil, fmt.Errorf("invalid options for file system decorator %q, %w", name, err)
+			}
+			return createFunc(ctx, inner, opts)
+		},
 	}
+}
+
+// DecodeOptions converts the raw value of a decorator's Options section into
+// the decorator's options type T. A T or non-nil *T is used as is. Any other
+// value, such as the map[string]any or scalar produced by parsing a YAML mount
+// spec, is decoded using T's yaml struct tags, so T may implement
+// [yaml.Unmarshaler] to accept more than one shape (e.g. a bare bool as well
+// as a mapping). A nil value yields the zero T.
+func DecodeOptions[T any](raw any) (T, error) {
+	var opts T
+	switch v := raw.(type) {
+	case *T:
+		if v != nil {
+			return *v, nil
+		}
+		return opts, nil
+	case T:
+		return v, nil
+	}
+	data, err := encodeOptions(raw)
+	if err != nil {
+		return opts, fmt.Errorf("cannot encode %T, %w", raw, err)
+	}
+	if err := yaml.Unmarshal(data, &opts); err != nil {
+		return opts, fmt.Errorf("cannot decode %T as %T, %w", raw, opts, err)
+	}
+	return opts, nil
+}
+
+// encodeOptions marshals raw to YAML. yaml.Marshal panics on values it cannot
+// represent (e.g. channels and funcs), which is reported as an error instead.
+func encodeOptions(raw any) (data []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	return yaml.Marshal(raw)
 }
 
 func newRegistrar() *registrar {
@@ -137,15 +197,16 @@ func (r *registrar) registerDriver(reg Driver) error {
 
 func (r *registrar) registerDecorator(reg Decorator) error {
 	if reg.Name == "" {
-		return errors.New("cannot register a file system driver with an empty name")
+		return errors.New("cannot register a file system decorator with an empty name")
 	}
 	if reg.CreateFunc == nil {
-		return fmt.Errorf("file system driver %q cannot have an empty CreateFunc", reg.Name)
+		return fmt.Errorf("file system decorator %q cannot have an empty CreateFunc", reg.Name)
 	}
+	key := strings.ToLower(reg.Name)
 	var err error
 	r.Lock()
-	if _, ok := r.decoratorMap[reg.Name]; !ok {
-		r.decoratorMap[reg.Name] = reg
+	if _, ok := r.decoratorMap[key]; !ok {
+		r.decoratorMap[key] = reg
 	} else {
 		err = fmt.Errorf("file system decorator %q is already registered", reg.Name)
 	}
@@ -181,7 +242,10 @@ func (r *registrar) matchDecorator(name string) (Decorator, error) {
 	decorator, ok := r.decoratorMap[strings.ToLower(name)]
 	r.RUnlock()
 	if !ok {
-		return emptyDecoratorRegistration, fmt.Errorf("cannot find a ufs file system decorator for %q", name)
+		// Decorators outside this package (drivers/decorators/...) register
+		// only when imported, so a missing blank import looks like an unknown
+		// option.
+		return emptyDecoratorRegistration, fmt.Errorf("cannot find a ufs file system decorator for option %q; if it needs a decorator from github.com/cloudfra/ufs/drivers/decorators, check that the decorator package is imported", name)
 	}
 	return decorator, nil
 }
@@ -200,10 +264,45 @@ func (r *registrar) create(ctx context.Context, name string) (WriteFS, error) {
 	return reg.CreateFunc(ctx, name)
 }
 
-func (r *registrar) decorate(ctx context.Context, inner WriteFS, name string, args any) (WriteFS, error) {
-	reg, err := r.matchDecorator(name)
-	if err != nil {
-		return nil, err
+// decorate wraps inner with the decorator of every section in opts, which
+// maps a decorator name to its raw options. Every section must match a
+// registered decorator. Decorators are applied in ascending Priority order,
+// then by Name, so the result does not depend on map iteration order. On error
+// inner is left open; closing it is up to the caller.
+func (r *registrar) decorate(ctx context.Context, inner WriteFS, opts map[string]any) (WriteFS, error) {
+	if len(opts) == 0 {
+		return inner, nil
 	}
-	return reg.CreateFunc(ctx, inner, args)
+	type section struct {
+		reg  Decorator
+		args any
+	}
+	sections := make([]section, 0, len(opts))
+	for name, args := range opts {
+		reg, err := r.matchDecorator(name)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range sections {
+			if s.reg.Name == reg.Name {
+				return nil, fmt.Errorf("file system decorator %q is configured more than once", reg.Name)
+			}
+		}
+		sections = append(sections, section{reg: reg, args: args})
+	}
+	sort.Slice(sections, func(i, j int) bool {
+		if sections[i].reg.Priority != sections[j].reg.Priority {
+			return sections[i].reg.Priority < sections[j].reg.Priority
+		}
+		return sections[i].reg.Name < sections[j].reg.Name
+	})
+	fsys := inner
+	for _, s := range sections {
+		var err error
+		fsys, err = s.reg.CreateFunc(ctx, fsys, s.args)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return fsys, nil
 }

@@ -18,7 +18,6 @@ package ufserrors
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 )
 
@@ -73,11 +72,4 @@ func Join(errs ...error) error {
 	default:
 		return errors.Join(errs...)
 	}
-}
-
-// NewOptionTypeError returns an error indicating that the value of an option
-// is of the wrong type. It is used by drivers and decorators that accept
-// options.
-func NewOptionTypeError(optionName string, actual, expected any) error {
-	return fmt.Errorf("invalid option value for %s: got %T, want %T", optionName, actual, expected)
 }

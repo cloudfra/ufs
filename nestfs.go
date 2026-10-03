@@ -244,7 +244,7 @@ func (fsys *nestFS) URI() (*url.URL, error) {
 		if strings.HasSuffix(p, archiveDirExt) {
 			continue
 		}
-		if mu, err := mfs.URI(); mu != nil && err != nil {
+		if mu, err := mfs.URI(); mu != nil && err == nil {
 			vals.Set(p, mu.String())
 		}
 	}

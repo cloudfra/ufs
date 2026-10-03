@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package faultfs provides the "fault" file system decorator, which injects
+// configurable latency and errors into the file system it wraps. Importing the
+// package registers the decorator.
+package faultfs
 
 import (
+	"context"
 	crand "crypto/rand"
 	"fmt"
 	"io/fs"
@@ -25,26 +29,25 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ WriteFS = (*faultFS)(nil)
+var _ ufs.WriteFS = (*faultFS)(nil)
 
-// faultErrors is a set of realistic errors that applications commonly
-// encounter from file system operations.
+const (
+	optionName = "fault"
+)
+
+// Options controls fault injection behavior for a [faultFS] wrapper. In a
+// mount spec it is the "fault" section under options:
 //
-// TODO: allow callers to supply a custom error set via FaultConfig.
-var faultErrors = []error{
-	syscall.EIO,
-	syscall.ENOSPC,
-	syscall.EACCES,
-	syscall.EDQUOT,
-	syscall.ECONNRESET,
-}
-
-// FaultConfig controls fault injection behavior for a [faultFS] wrapper.
-type FaultConfig struct {
+//	options:
+//	  - fault:
+//	      latency: 100ms
+//	      errorRate: 0.25
+type Options struct {
 	// Latency is a fixed delay added before each operation.
 	Latency time.Duration `yaml:"latency,omitempty"`
 
@@ -62,11 +65,11 @@ type FaultConfig struct {
 	Log bool `yaml:"log,omitempty"`
 }
 
-func (c *FaultConfig) isZero() bool {
-	return c == nil || (c.Latency == 0 && c.LatencyJitter == 0 && c.ErrorRate == 0)
+func (c Options) isZero() bool {
+	return c.Latency == 0 && c.LatencyJitter == 0 && c.ErrorRate == 0
 }
 
-func (c *FaultConfig) clampedErrorRate() float64 {
+func (c Options) clampedErrorRate() float64 {
 	switch {
 	case c.ErrorRate > 1.0:
 		return 1.0
@@ -75,6 +78,29 @@ func (c *FaultConfig) clampedErrorRate() float64 {
 	default:
 		return c.ErrorRate
 	}
+}
+
+func init() {
+	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
+}
+
+func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, error) {
+	if opts.isZero() {
+		return inner, nil
+	}
+	return newFaultFS(inner, opts)
+}
+
+// faultErrors is a set of realistic errors that applications commonly
+// encounter from file system operations.
+//
+// TODO: allow callers to supply a custom error set via Options.
+var faultErrors = []error{
+	syscall.EIO,
+	syscall.ENOSPC,
+	syscall.EACCES,
+	syscall.EDQUOT,
+	syscall.ECONNRESET,
 }
 
 func newCryptoRand() (*rand.Rand, error) {
@@ -91,17 +117,17 @@ func newCryptoRand() (*rand.Rand, error) {
 }
 
 type faultFS struct {
-	inner     WriteFS
-	cfg       FaultConfig
+	inner     ufs.WriteFS
+	cfg       Options
 	errorRate float64
 	// mu guards rng, which is not safe for concurrent use.
 	mu  sync.Mutex
 	rng *rand.Rand
 }
 
-// FaultInjector wraps inner as an [WriteFS] that injects configurable latency and
+// newFaultFS wraps inner as a [ufs.WriteFS] that injects configurable latency and
 // errors. Close always delegates to inner without fault injection.
-func newFaultFS(inner WriteFS, cfg FaultConfig) (WriteFS, error) {
+func newFaultFS(inner ufs.WriteFS, cfg Options) (ufs.WriteFS, error) {
 	rng, err := newCryptoRand()
 	if err != nil {
 		return nil, fmt.Errorf("cannot create faultFS, %w", err)
@@ -114,12 +140,16 @@ func newFaultFS(inner WriteFS, cfg FaultConfig) (WriteFS, error) {
 	}, nil
 }
 
-func (fsys *faultFS) GetDeviceInfo() DeviceMap {
+func (fsys *faultFS) GetDeviceInfo() ufs.DeviceMap {
 	return fsys.inner.GetDeviceInfo()
 }
 
 func (fsys *faultFS) URI() (*url.URL, error) {
-	return fsys.inner.URI()
+	u, err := fsys.inner.URI()
+	if err != nil {
+		return nil, err
+	}
+	return ufs.AppendURIOption(u, optionName, fsys.cfg)
 }
 
 func (fsys *faultFS) String() string {
@@ -204,7 +234,7 @@ func (fsys *faultFS) ReadLink(name string) (string, error) {
 	return fsys.inner.ReadLink(name)
 }
 
-func (fsys *faultFS) Create(name string) (File, error) {
+func (fsys *faultFS) Create(name string) (ufs.File, error) {
 	if err := fsys.maybeInjectFault("create", name); err != nil {
 		return nil, err
 	}

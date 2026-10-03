@@ -82,17 +82,50 @@ prefix.
 A temporary local-mount wrapper (tempMountFS in tempmountfs.go) provides writable
 scratch space on top of any read-only FS for implementations that need it.
 
-### Addon wrappers
+### Decorators (`drivers/decorators/` subpackages)
 
-Wrappers modify the behavior of an existing FS. They are configured via
-`MountSpecOptions` fields (YAML mount specs) or applied programmatically.
-Wrappers are applied in a fixed order by `applyWrappers()` in construct.go:
-ReadOnly → FaultInjector → (future wrappers).
+Decorators wrap an existing FS to change its behavior. Like drivers, they live
+outside the base package, import `ufs` (never the reverse) and register
+themselves in `init()` via `ufs.RegisterDecorator`; callers blank-import the
+package to enable its option.
 
-| Wrapper        | File           | Constructor       | Config type   | Behavior                                          |
-|:---------------|:---------------|:------------------|:--------------|:--------------------------------------------------|
-| ReadOnly       | readonlyfs.go  | ReadOnly(inner)   | bool          | Returns fs.ErrPermission for all write ops        |
-| FaultInjector  | faultfs.go     | FaultInjector()   | FaultConfig   | Injects configurable latency and random errors    |
+```go
+func NewDecorator[T any](name string, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator
+func DecodeOptions[T any](raw any) (T, error)
+func AppendURIOption(u *url.URL, name string, options any) (*url.URL, error)
+```
+
+`MountSpec.Options` is an ordered list (`[]MountOption`); each entry is a
+single-key mapping of a decorator name to that decorator's configuration:
+
+```yaml
+options:
+  - readOnly: true
+  - fault:
+      errorRate: 0.25
+```
+
+Names are lower camelCase, validated and checked for collisions at register
+time, and matched by an exact (case-sensitive) map lookup. `registrar.decorate()`
+(register.go) fails on an entry with no registered decorator or one listed
+twice, decodes each entry into the decorator's options type `T` via
+`DecodeOptions` (YAML struct tags; `T` may implement `yaml.Unmarshaler` to
+accept several shapes), and applies the decorators in list order: the first
+wraps the source, the last is the outermost layer.
+
+A decorator's `URI()` must call `AppendURIOption` on the URI of the FS it
+wraps. That records the decorator in the reserved `options` query parameter
+(the same list in YAML flow form, e.g. `options=[{readOnly: true}]`), which
+`New` reads back to re-apply the decorators in order, so the URI round-trips.
+`options`, like `ro`, is therefore not usable as a mount point in a URI.
+
+The fstab `ro` option and the implicit read-only null root both map to the
+`readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
+
+| Option    | Package                        | Options type         | Behavior                                       |
+|:----------|:-------------------------------|:---------------------|:-----------------------------------------------|
+| readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`) | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner) |
+| fault     | drivers/decorators/faultfs     | faultfs.Options      | Injects configurable latency and random errors |
 
 ### Host mount (`host` subpackage)
 

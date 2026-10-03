@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+package readonlyfs_test
 
 import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 )
 
 func TestReadOnlyFSDriver(t *testing.T) {
 	ufsdriversTesting.ReadFS(t, func(_ *testing.T) ufs.ReadFS {
-		return ufs.ReadOnly(ufs.MakeMemFS("memory://test"))
+		return readonlyfs.New(ufs.MakeMemFS("memory://test"))
 	})
 }

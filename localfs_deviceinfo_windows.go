@@ -31,7 +31,7 @@ func (fsys *localFS) GetDeviceInfo() DeviceMap {
 func windowsDeviceMap(rootPath string) DeviceMap {
 	vol := filepath.VolumeName(rootPath)
 	if vol == "" {
-		return defaultDeviceMap
+		return DefaultDeviceMap
 	}
 	volumeRoot := vol + string(filepath.Separator)
 	// NTFS volume mount points (volumes mounted at arbitrary subdirectories) are not

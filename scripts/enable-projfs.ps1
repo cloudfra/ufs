@@ -1,4 +1,4 @@
-# enable-projfs.ps1 - Enable Windows Projected File System feature.
+# scripts/enable-projfs.ps1 - Enable Windows Projected File System feature.
 # Windows Server uses Install-WindowsFeature (FS-Projectedfs);
 # Windows 10/11 desktop uses Enable-WindowsOptionalFeature (Client-ProjFS).
 

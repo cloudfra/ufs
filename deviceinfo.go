@@ -16,7 +16,6 @@ package ufs
 
 import (
 	"fmt"
-	"io/fs"
 	"maps"
 	"path"
 	"strings"
@@ -32,8 +31,8 @@ var (
 		threadCount: 1,
 	}
 
-	// defaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
-	defaultDeviceMap = DeviceMap{
+	// DefaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
+	DefaultDeviceMap = DeviceMap{
 		".": defaultDeviceInfo,
 	}
 )
@@ -124,11 +123,4 @@ type DeviceInfoGetter interface {
 	//
 	// The root of the FS has the key ".".
 	GetDeviceInfo() DeviceMap
-}
-
-func getDeviceInfoOrDefault(fsys fs.FS) DeviceMap {
-	if diFsys, ok := fsys.(DeviceInfoGetter); ok {
-		return diFsys.GetDeviceInfo()
-	}
-	return defaultDeviceMap
 }

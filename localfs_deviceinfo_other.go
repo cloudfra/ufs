@@ -17,5 +17,5 @@
 package ufs
 
 func (fsys *localFS) GetDeviceInfo() DeviceMap {
-	return defaultDeviceMap
+	return DefaultDeviceMap
 }

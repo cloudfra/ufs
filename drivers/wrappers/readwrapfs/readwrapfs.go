@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package readwrapfs provides a read-only wrapper for standard library [fs.FS] file systems.
+package readwrapfs
 
 import (
 	"fmt"
@@ -20,23 +21,24 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ ReadFS = (*readWrapFS)(nil)
+var _ ufs.ReadFS = (*readWrapFS)(nil)
 
 type readWrapFS struct {
 	fsys fs.FS
 }
 
-func (fsys *readWrapFS) GetDeviceInfo() DeviceMap {
+func (fsys *readWrapFS) GetDeviceInfo() ufs.DeviceMap {
 	return getDeviceInfoOrDefault(fsys.fsys)
 }
 
 func (fsys *readWrapFS) URI() (*url.URL, error) {
-	if ug, ok := fsys.fsys.(URIGet); ok {
+	if ug, ok := fsys.fsys.(ufs.URIGet); ok {
 		u, err := ug.URI()
 		if err != nil {
 			return nil, err
@@ -121,6 +123,13 @@ func (fsys *readWrapFS) ReadLink(name string) (string, error) {
 }
 
 // FromFS wraps a standard library [fs.FS] as a read-only [ReadFS].
-func FromFS(fsys fs.FS) ReadFS {
+func FromFS(fsys fs.FS) ufs.ReadFS {
 	return &readWrapFS{fsys: fsys}
+}
+
+func getDeviceInfoOrDefault(fsys fs.FS) ufs.DeviceMap {
+	if diFsys, ok := fsys.(ufs.DeviceInfoGetter); ok {
+		return diFsys.GetDeviceInfo()
+	}
+	return ufs.DefaultDeviceMap
 }

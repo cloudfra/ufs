@@ -30,3 +30,15 @@ func TestTestAssetsFS(t *testing.T) {
 		t.Errorf("got: %q, want: %q", got, want)
 	}
 }
+
+func TestTestAssetsArchivesFS(t *testing.T) {
+	fsys := TestAssetsArchivesFS()
+	data, err := fsys.ReadFile("testassets/archives/testassets.tar.xz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotFileSize := len(data)
+	if gotFileSize < 1000 {
+		t.Errorf("got: %d, want: > %d", gotFileSize, 1000)
+	}
+}

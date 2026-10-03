@@ -602,10 +602,10 @@ func (fsys *nestFS) RemoveAll(name string) error {
 	return mountFS.fsys.RemoveAll(subName)
 }
 
+// Glob matches pattern against the whole nested tree. It walks this file
+// system's own ReadDir rather than delegating to the base file system's Glob,
+// which knows nothing about mounts or archive directories.
 func (fsys *nestFS) Glob(pattern string) ([]string, error) {
-	if cFsys, ok := fsys.fsys.(fs.GlobFS); ok {
-		return cFsys.Glob(pattern)
-	}
 	return globutil.GlobFS(fsys, pattern)
 }
 

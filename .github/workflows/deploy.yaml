@@ -229,7 +229,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Enable ProjFS
-        run: .github/enable-projfs.ps1
+        run: scripts/enable-projfs.ps1
       - name: Setup Go
         uses: actions/setup-go@v7
         with:

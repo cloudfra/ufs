@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package readwrapfs
 
 import (
 	"errors"
@@ -21,6 +21,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/cloudfra/ufs"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -30,7 +31,7 @@ var testMapFS = fstest.MapFS{
 	"dir/another.txt": {Data: []byte("another file")},
 }
 
-func makeTestStdFS(t *testing.T) ReadFS {
+func makeTestStdFS(t *testing.T) ufs.ReadFS {
 	t.Helper()
 	fsys := FromFS(testMapFS)
 	t.Cleanup(func() {
@@ -191,7 +192,7 @@ func TestFromFSForEachFilename(t *testing.T) {
 	fsys := makeTestStdFS(t)
 
 	var files []string
-	err := ForEachFilename(fsys, ".", func(name string) error {
+	err := ufs.ForEachFilename(fsys, ".", func(name string) error {
 		files = append(files, name)
 		return nil
 	})

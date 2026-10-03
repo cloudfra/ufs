@@ -35,7 +35,7 @@ func (fsys *localFS) GetDeviceInfo() DeviceMap {
 	}
 	f, err := osutil.Open(procMountsPath)
 	if err != nil {
-		return defaultDeviceMap
+		return DefaultDeviceMap
 	}
 	defer func() {
 		if err := f.Close(); err != nil {

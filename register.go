@@ -227,22 +227,30 @@ func isLowerCamelCase(name string) bool {
 func (r *registrar) matchDriver(name string) (Driver, error) {
 	r.RLock()
 	result := emptyDriverRegistration
+	// tied is another driver that matches at result's priority. It only makes
+	// the match ambiguous if no later driver beats them both, so it is
+	// checked after every driver has been considered: map iteration order
+	// must not decide the outcome.
+	tied := ""
 	for _, reg := range r.driverMap {
-		if reg.MatchFunc(name) {
-			switch {
-			case result.Name == emptyDriverRegistration.Name:
-				result = reg
-			case reg.Priority < result.Priority:
-				result = reg
-			case reg.Priority == result.Priority:
-				r.RUnlock()
-				return emptyDriverRegistration, fmt.Errorf("ambiguous driver match for %q, both %q and %q both have a priority %d ", name, reg.Name, result.Name, reg.Priority)
-			}
+		if !reg.MatchFunc(name) {
+			continue
+		}
+		switch {
+		case result.Name == emptyDriverRegistration.Name || reg.Priority < result.Priority:
+			result = reg
+			tied = ""
+		case reg.Priority == result.Priority:
+			tied = reg.Name
 		}
 	}
 	r.RUnlock()
 	if result.Name == emptyDriverRegistration.Name {
 		return emptyDriverRegistration, fmt.Errorf("cannot find a ufs file system driver for %q", name)
+	}
+	if tied != "" {
+		first, second := min(result.Name, tied), max(result.Name, tied)
+		return emptyDriverRegistration, fmt.Errorf("ambiguous driver match for %q, %q and %q both have priority %d", name, first, second, result.Priority)
 	}
 	return result, nil
 }

@@ -194,6 +194,53 @@ func TestRegistrarMatch(t *testing.T) {
 		}
 	})
 
+	t.Run("tie between losing drivers is not ambiguous", func(t *testing.T) {
+		// Map iteration order is random, so repeat to cover every order in
+		// which the three drivers can be visited.
+		for range 50 {
+			r := newRegistrar()
+			for _, driver := range []Driver{
+				{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+				{Name: "loser1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+				{Name: "loser2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+			} {
+				if err := r.registerDriver(driver); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := r.matchDriver("anything")
+			if err != nil {
+				t.Fatalf("matchDriver() = %v, want nil", err)
+			}
+			if got.Name != "winner" {
+				t.Fatalf("matchDriver() = %q, want %q", got.Name, "winner")
+			}
+		}
+	})
+
+	t.Run("tie between winning drivers is ambiguous", func(t *testing.T) {
+		for range 50 {
+			r := newRegistrar()
+			for _, driver := range []Driver{
+				{Name: "winner1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+				{Name: "winner2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+				{Name: "loser", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+			} {
+				if err := r.registerDriver(driver); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := r.matchDriver("anything")
+			if err == nil {
+				t.Fatal("matchDriver() = nil error, want ambiguous match error")
+			}
+			want := `"winner1" and "winner2" both have priority 1`
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("got: %q, want substring %q", err, want)
+			}
+		}
+	})
+
 	t.Run("lower priority value wins", func(t *testing.T) {
 		r := newRegistrar()
 		low := Driver{Name: "low", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1}

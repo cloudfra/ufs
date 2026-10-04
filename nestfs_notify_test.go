@@ -126,3 +126,69 @@ func TestNestFSWatchUnsupportedBackend(t *testing.T) {
 		t.Error("Watch on non-watchable backend should fail")
 	}
 }
+
+func TestNestFSWatchInsideMountReportsRootRelativePaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		watch     string
+		create    string
+		wantEvent string
+	}{
+		{name: "mount point", watch: "cache", create: "cache/a.txt", wantEvent: "cache/a.txt"},
+		{name: "directory below mount point", watch: "cache/sub", create: "cache/sub/b.txt", wantEvent: "cache/sub/b.txt"},
+		{name: "nested mount point", watch: "deep/er", create: "deep/er/c.txt", wantEvent: "deep/er/c.txt"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys, err := New(t.Context(), "memory:?cache=memory:&deep%2Fer=memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if err := fsys.MkdirAll("cache/sub", fs.ModePerm); err != nil {
+				t.Fatal(err)
+			}
+
+			watcher, ok := fsys.(Watcher)
+			if !ok {
+				t.Fatalf("%T does not implement Watcher", fsys)
+			}
+			ec := eventtest.NewEventCollector[NotifyOp]()
+			closer, err := watcher.Watch(t.Context(), tc.watch, ec.Hook)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ufsTesting.ValidateClose(t, closer)()
+
+			f, err := fsys.Create(tc.create)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
+				return ev.Op == NotifyCreate && ev.Path == tc.wantEvent
+			})
+		})
+	}
+}
+
+func TestMountPrefix(t *testing.T) {
+	tests := []struct {
+		name, subName, want string
+	}{
+		{name: ".", subName: ".", want: ""},
+		{name: "a/b", subName: "a/b", want: ""},
+		{name: "cache", subName: ".", want: "cache"},
+		{name: "cache/sub", subName: "sub", want: "cache"},
+		{name: "deep/er/sub/sub", subName: "sub/sub", want: "deep/er"},
+	}
+	for _, tc := range tests {
+		if got := mountPrefix(tc.name, tc.subName); got != tc.want {
+			t.Errorf("mountPrefix(%q, %q) = %q, want %q", tc.name, tc.subName, got, tc.want)
+		}
+	}
+}

@@ -1351,3 +1351,61 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 		}
 	})
 }
+
+// TestNestFSMountParentDirectory covers a directory that exists only because
+// a file system is mounted below it: the base has no "a", but "a/b" is a
+// mount. ReadDir already listed "a"; Stat, Lstat and Open must agree.
+func TestNestFSMountParentDirectory(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:?a%2Fb=memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	info, err := fsys.Stat("a")
+	if err != nil {
+		t.Fatalf("Stat(a) = %v, want nil", err)
+	}
+	if !info.IsDir() || info.Name() != "a" {
+		t.Errorf("Stat(a) = {name: %q, dir: %t}, want {name: \"a\", dir: true}", info.Name(), info.IsDir())
+	}
+	if info, err := fsys.Lstat("a"); err != nil || !info.IsDir() {
+		t.Errorf("Lstat(a) = %v, %v, want a directory", info, err)
+	}
+
+	f, err := fsys.Open("a")
+	if err != nil {
+		t.Fatalf("Open(a) = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, f)()
+	dir, ok := f.(fs.ReadDirFile)
+	if !ok {
+		t.Fatalf("Open(a) returned %T, want an fs.ReadDirFile", f)
+	}
+	entries, err := dir.ReadDir(-1)
+	if err != nil {
+		t.Fatalf("ReadDir() = %v, want nil", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "b" {
+		t.Errorf("ReadDir() = %v, want [b]", entries)
+	}
+}
+
+func TestNestFSMissingDirectory(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:?a%2Fb=memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	for _, name := range []string{"missing", "a/missing", "a/b/missing"} {
+		if _, err := fsys.ReadDir(name); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("ReadDir(%q) = %v, want %v", name, err, fs.ErrNotExist)
+		}
+		if _, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
+		}
+	}
+}

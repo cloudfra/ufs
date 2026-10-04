@@ -51,7 +51,7 @@ func Rsync(srcFS fs.FS, destFS ufs.WriteFS, dir string) error {
 
 // Copy copies the single file at srcFilename in srcFS to destFilename in destFS.
 // The parent directory of destFilename must already exist. The destination file
-// is created (or truncated) via [WriteFS.Create]. An error from closing the
+// is created (or truncated) via [ufs.WriteFS]. An error from closing the
 // destination file is returned, since the copy may not have been persisted.
 func Copy(srcFS fs.FS, srcFilename string, destFS ufs.WriteFS, destFilename string) error {
 	sfp, err := srcFS.Open(srcFilename)
@@ -78,7 +78,7 @@ func Copy(srcFS fs.FS, srcFilename string, destFS ufs.WriteFS, destFilename stri
 
 // ForEachFilename calls f for each file path (not directory) under dir,
 // streaming results without building an intermediate slice. If fsys implements
-// [ForEachFilenameIter], its native implementation is used directly; otherwise
+// [ufs.ForEachFilenameIter], its native implementation is used directly; otherwise
 // the paths are collected via [fs.WalkDir] and iterated. f receives paths
 // relative to dir. The walk stops and returns the first non-nil error from f.
 func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
@@ -96,7 +96,7 @@ func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
 
 // ForEachFileInfo calls f for each file (not directory) under dir, providing
 // its [fs.FileInfo]. It is the typed companion to [ForEachFilename] and prefers
-// a native [ForEachFileInfoIter] implementation when available, falling back to
+// a native [ufs.ForEachFileInfoIter] implementation when available, falling back to
 // [fs.WalkDir]. The walk stops and returns the first non-nil error from f.
 func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
 	lf, ok := fsys.(ufs.ForEachFileInfoIter)
@@ -182,7 +182,7 @@ func List(fsys fs.FS, dir string) ([]string, error) {
 }
 
 // ListFiles returns the paths of all files (excluding directories) under dir in
-// lexical order. If fsys implements [ListFilenames], its native implementation
+// lexical order. If fsys implements [ufs.ListFilenames], its native implementation
 // is used to avoid building intermediate [fs.FileInfo] values.
 //
 // This method may take a long time since it may traverse a large file system and build a large slice of paths in memory.

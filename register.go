@@ -157,7 +157,8 @@ func newRegistrar() *registrar {
 
 // ArchiveDriver opens archive files as file systems. The file system returned
 // by [New] uses the registered ArchiveDriver to expose an archive "name" as the
-// virtual directory "name.d". Without one, archives are plain files.
+// virtual directory "name.d". Without one, archives are plain files and a
+// name ending in ".d" is an ordinary name.
 type ArchiveDriver struct {
 	// MatchFunc reports whether name is the path of an archive that the
 	// driver can open, judged by its name alone.

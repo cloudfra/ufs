@@ -26,8 +26,9 @@ import (
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-// buildTree creates a localFS-backed directory tree with nFiles files of fileBytes bytes each,
-// spread across ~depth directory levels. Returns (localFS, tempDir) so caller can use it directly.
+// buildTree creates a directory tree on local disk with nFiles files of fileBytes bytes each,
+// spread across ~depth directory levels, and returns it opened with ufs.New, so the benchmarks
+// that use it measure through the nested file system that New wraps around localFS.
 func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) ufs.WriteFS {
 	t.Helper()
 	dir := t.TempDir()

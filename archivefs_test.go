@@ -614,3 +614,38 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 		})
 	}
 }
+
+// TestArchiveDriverMatch verifies which driver each name is dispatched to: a
+// local path that names an archive goes to the archive driver, and a name
+// that another driver owns by scheme stays with that driver whatever its
+// extension.
+func TestArchiveDriverMatch(t *testing.T) {
+	testCases := []struct {
+		name string
+		want string
+	}{
+		{name: "a.zip", want: "local-archive"},
+		{name: "A.ZIP", want: "local-archive"},
+		{name: "dir/a.tar.gz", want: "local-archive"},
+		{name: "file:///x/a.zip", want: "local-archive"},
+		{name: "archive:///x/a.zip", want: "archive"},
+		{name: "archive:///x/plain", want: "archive"},
+		{name: "memory:a.zip", want: "memory"},
+		{name: "null:a.tar", want: "null"},
+		{name: "angry:x.7z", want: "angry"},
+		{name: "http://example.com/a.zip", want: "http-archive"},
+		{name: "dir", want: "local"},
+		{name: "file:///x/dir", want: "local"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := getRegistrar().matchDriver(tc.name)
+			if err != nil {
+				t.Fatalf("matchDriver(%q) = %v, want driver %q", tc.name, err, tc.want)
+			}
+			if got.Name != tc.want {
+				t.Errorf("matchDriver(%q) = %q, want %q", tc.name, got.Name, tc.want)
+			}
+		})
+	}
+}

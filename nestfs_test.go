@@ -1351,3 +1351,43 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 		}
 	})
 }
+
+func TestNestFSGlobIncludesMounts(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:?cache=memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	for _, name := range []string{"base.txt", "cache/a.txt", "cache/b.txt"} {
+		f, err := fsys.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	globFS, ok := fsys.(fs.GlobFS)
+	if !ok {
+		t.Fatalf("%T does not implement fs.GlobFS", fsys)
+	}
+
+	tests := []struct {
+		pattern string
+		want    []string
+	}{
+		{pattern: "*", want: []string{"base.txt", "cache"}},
+		{pattern: "cache/*", want: []string{"cache/a.txt", "cache/b.txt"}},
+		{pattern: "*/a.txt", want: []string{"cache/a.txt"}},
+	}
+	for _, tc := range tests {
+		got, err := globFS.Glob(tc.pattern)
+		if err != nil {
+			t.Fatalf("Glob(%q) = %v, want nil", tc.pattern, err)
+		}
+		if diff := cmp.Diff(tc.want, got); diff != "" {
+			t.Errorf("Glob(%q) mismatch (-want +got):\n%s", tc.pattern, diff)
+		}
+	}
+}

@@ -17,6 +17,9 @@ package ufs_test
 import (
 	// Register the backends that the tests of package ufs open by URI.
 	_ "github.com/cloudfra/ufs/drivers/angryfs"
+	_ "github.com/cloudfra/ufs/drivers/archivefs"
+	_ "github.com/cloudfra/ufs/drivers/httparchivefs"
+	_ "github.com/cloudfra/ufs/drivers/localfs"
 	_ "github.com/cloudfra/ufs/drivers/memfs"
 	_ "github.com/cloudfra/ufs/drivers/nullfs"
 )

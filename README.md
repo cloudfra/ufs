@@ -85,11 +85,14 @@ import (
 
 	"github.com/cloudfra/ufs"
 
-	// Each blank import installs a driver. Local disk, memory, archives and
-	// null:// are built in; drop the ones you do not need.
-	_ "github.com/cloudfra/ufs/drivers/boltfs" // installs bolt:
-	_ "github.com/cloudfra/ufs/drivers/gcsfs"  // installs gs://
-	_ "github.com/cloudfra/ufs/drivers/gitfs"  // installs URIs ending in .git
+	// Each blank import installs a driver; ufs.New opens nothing without
+	// one. Drop the ones you do not need.
+	_ "github.com/cloudfra/ufs/drivers/archivefs" // installs archive: and name.zip.d directories
+	_ "github.com/cloudfra/ufs/drivers/boltfs"    // installs bolt:
+	_ "github.com/cloudfra/ufs/drivers/gcsfs"     // installs gs://
+	_ "github.com/cloudfra/ufs/drivers/gitfs"     // installs URIs ending in .git
+	_ "github.com/cloudfra/ufs/drivers/localfs"   // installs file: and bare paths
+	_ "github.com/cloudfra/ufs/drivers/memfs"     // installs memory:
 )
 
 func main() {
@@ -130,11 +133,11 @@ More runnable examples are in [example_test.go](example_test.go) and on
 
 | Backend    | URI                             | Access     | Package          | Notes |
 |:-----------|:--------------------------------|:-----------|:-----------------|:------|
-| Local      | `file:///path` or a bare path   | read-write | built in         | Rooted with `os.OpenRoot`; paths cannot escape the root. |
-| Memory     | `memory:`                       | read-write | built in         | Lost when the file system is closed. |
-| Archive    | a path ending in an archive extension, or `archive:///path` | read-only | built in | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`. |
-| Remote archive | `http://` or `https://` URL | read-only  | built in         | Downloaded to a temporary directory that is removed on `Close`. |
-| Null       | `null://`                       | read-write | built in         | Like `/dev/null`: writes are accepted and discarded, reads return nothing. |
+| Local      | `file:///path` or a bare path   | read-write | `drivers/localfs` | Rooted with `os.OpenRoot`; paths cannot escape the root. |
+| Memory     | `memory:`                       | read-write | `drivers/memfs`  | Lost when the file system is closed. |
+| Archive    | a path ending in an archive extension, or `archive:///path` | read-only | `drivers/archivefs` | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`. |
+| Remote archive | `http://` or `https://` URL | read-only  | `drivers/httparchivefs` | Downloaded to a temporary directory that is removed on `Close`. |
+| Null       | `null://`                       | read-write | `drivers/nullfs` | Like `/dev/null`: writes are accepted and discarded, reads return nothing. |
 | GCS        | `gs://bucket/prefix`            | read-write | `drivers/gcsfs`  | Uses Application Default Credentials and falls back to anonymous access for public buckets. |
 | Git        | any URI ending in `.git`        | read-write | `drivers/gitfs`  | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
 | BoltDB     | `bolt:/path/to/file.db`         | read-write | `drivers/boltfs` | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file. |

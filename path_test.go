@@ -26,10 +26,8 @@ func TestAbsPath(t *testing.T) {
 	t.Parallel()
 
 	supportedFS := map[string]bool{
-		"localFS":            true,
-		"tempMountFS":        true,
-		"nestFS.localFS":     true,
-		"nestFS.tempMountFS": true,
+		"localFS":        true,
+		"nestFS.localFS": true,
 	}
 
 	for _, tc := range getAllExceptAngryTestCaseList() {

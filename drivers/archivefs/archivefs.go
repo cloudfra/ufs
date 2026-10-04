@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package archivefs provides the archive: file system, which reads zip, tar,
+// 7z and rar archives. Import it to register the scheme with ufs.New and to
+// let ufs.New expose every archive "name" as the directory "name.d".
+package archivefs
 
 import (
 	"context"
@@ -29,7 +32,8 @@ import (
 
 	"github.com/mholt/archives"
 
-	"github.com/cloudfra/ufs/internal/httputil"
+	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/localfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -40,26 +44,25 @@ const (
 )
 
 var (
-	_ WriteFS = (*archiveFS)(nil)
+	_ ufs.WriteFS = (*archiveFS)(nil)
 
 	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
-	archiveDeviceInfo    = NewDeviceInfo("archive", "archive", 1, false)
-	archiveDeviceInfoMap = NewDeviceMap(archiveDeviceInfo)
+	archiveDeviceInfo    = ufs.NewDeviceInfo("archive", "archive", 1, false)
+	archiveDeviceInfoMap = ufs.NewDeviceMap(archiveDeviceInfo)
 )
 
 func init() {
-	Register(NewDriver("archive", newArchiveFS, isArchiveFSUri, 1, true, false))
-	RegisterArchiveDriver(ArchiveDriver{
+	ufs.Register(ufs.NewDriver("archive", newArchiveFS, isArchiveFSUri, 1, true, false))
+	ufs.RegisterArchiveDriver(ufs.ArchiveDriver{
 		MatchFunc: hasArchiveExt,
-		OpenPathFunc: func(ctx context.Context, name string) (WriteFS, error) {
+		OpenPathFunc: func(ctx context.Context, name string) (ufs.WriteFS, error) {
 			return newArchiveFSFromLocalFS(ctx, name)
 		},
-		OpenFileFunc: func(ctx context.Context, file fs.File) (WriteFS, error) {
+		OpenFileFunc: func(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
 			return newArchiveFSFromFile(ctx, file)
 		},
 	})
-	Register(NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 
 // isArchiveFSUri reports whether name is an archive: URI or a local path that
@@ -72,12 +75,12 @@ func isArchiveFSUri(name string) bool {
 	return isLocal && hasArchiveExt(name)
 }
 
-func newArchiveFS(ctx context.Context, name string) (WriteFS, error) {
+func newArchiveFS(ctx context.Context, name string) (ufs.WriteFS, error) {
 	if after, ok := strings.CutPrefix(name, "archive://"); ok {
 		return newArchiveFSFromLocalFS(ctx, after)
 	}
 	// The archive is opened by host path, so drop any file: prefix.
-	return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))
+	return newArchiveFSFromLocalFS(ctx, localfs.NormalizePath(name))
 }
 
 func hasArchiveExt(name string) bool {
@@ -105,7 +108,7 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 }
 
-func (fsys *archiveFS) GetDeviceInfo() DeviceMap {
+func (fsys *archiveFS) GetDeviceInfo() ufs.DeviceMap {
 	return archiveDeviceInfoMap
 }
 
@@ -168,7 +171,7 @@ func (fsys *archiveFS) URI() (*url.URL, error) {
 }
 
 func (fsys *archiveFS) String() string {
-	return fmt.Sprintf("archiveFS(%s)", URIOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("archiveFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
@@ -200,7 +203,7 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	return fs.Stat(fsys.fsys, name)
 }
 
-func (fsys *archiveFS) Create(name string) (File, error) {
+func (fsys *archiveFS) Create(name string) (ufs.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -253,6 +256,18 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 		return err
 	}
 	return ufserrors.NewPathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
+}
+
+// New returns a read-only file system over the archive at the host path name.
+func New(ctx context.Context, name string) (ufs.WriteFS, error) {
+	return newArchiveFSFromLocalFS(ctx, name)
+}
+
+// NewFromFile returns a read-only file system over the archive held by file,
+// which must support seeking and random reads. On success the returned file
+// system owns file and closes it.
+func NewFromFile(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
+	return newArchiveFSFromFile(ctx, file)
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
@@ -308,29 +323,4 @@ func makeArchiveFS(fsys fs.FS, name string, closer io.Closer) *archiveFS {
 		name:   name,
 		closer: closer,
 	}
-}
-
-func isTempMountRemoteArchiveURI(name string) bool {
-	return strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://")
-}
-
-func newTempMountRemoteArchiveFS(ctx context.Context, name string) (WriteFS, error) {
-	tempDir, cleanup, err := osutil.CreateTempDirectory()
-	if err != nil {
-		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create temp directory, %w", ufserrors.Join(err, cleanupErr))
-	}
-
-	filename, err := httputil.DownloadFile(ctx, tempDir, name)
-	if err != nil {
-		cleanupErr := cleanup()
-		return nil, ufserrors.Join(err, cleanupErr)
-	}
-
-	fsys, err := newArchiveFSFromLocalFS(ctx, filename)
-	if err != nil {
-		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create archive FS from local file, %w", ufserrors.Join(err, cleanupErr))
-	}
-	return makeTempMountFS(fsys, name, tempDir, cleanup), nil
 }

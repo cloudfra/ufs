@@ -16,7 +16,6 @@ package ufs
 
 import (
 	"errors"
-	"io/fs"
 	"sync/atomic"
 	"testing"
 
@@ -140,110 +139,4 @@ func TestNestFSCloseClosesBaseWhenMountsFail(t *testing.T) {
 	if bad.closed() < 1 {
 		t.Error("failing mount Close was not called")
 	}
-}
-
-func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
-	t.Parallel()
-
-	var cleanupCalled atomic.Int32
-	angry := makeAngryFS(angryFSPrefix)
-	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
-		cleanupCalled.Add(1)
-		return nil
-	})
-
-	err := tfs.Close()
-	if err == nil {
-		t.Fatal("Close() should return error from angry lfs")
-	}
-	if cleanupCalled.Load() < 1 {
-		t.Error("cleanup function was not called when inner FS Close failed")
-	}
-}
-
-func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
-	t.Parallel()
-
-	angry := makeAngryFS(angryFSPrefix)
-	cleanupErr := errors.New("cleanup boom")
-	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
-		return cleanupErr
-	})
-
-	err := tfs.Close()
-	if err == nil {
-		t.Fatal("Close() should return error")
-	}
-	if !errors.Is(err, cleanupErr) {
-		t.Errorf("Close() error should contain cleanup error, got: %v", err)
-	}
-}
-
-func TestArchiveFSCloseClosesUnderlyingFile(t *testing.T) {
-	t.Parallel()
-
-	var closeCalled atomic.Int32
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
-		closeCalled.Add(1)
-		return nil
-	}))
-
-	if err := afs.Close(); err != nil {
-		t.Fatalf("Close() = %v, want nil", err)
-	}
-	if closeCalled.Load() != 1 {
-		t.Error("underlying file closer was not called on archiveFS.Close()")
-	}
-}
-
-func TestArchiveFSCloseWithoutCloserIsNoop(t *testing.T) {
-	t.Parallel()
-
-	afs := makeArchiveFS(emptyFS{}, "test.zip", nil)
-	if err := afs.Close(); err != nil {
-		t.Errorf("Close() = %v, want nil (no closer set)", err)
-	}
-}
-
-func TestArchiveFSCloseReportsCloserError(t *testing.T) {
-	t.Parallel()
-
-	wantErr := errors.New("file close failed")
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
-		return wantErr
-	}))
-
-	err := afs.Close()
-	if !errors.Is(err, wantErr) {
-		t.Errorf("Close() = %v, want %v", err, wantErr)
-	}
-}
-
-func TestArchiveFSCloseIdempotent(t *testing.T) {
-	t.Parallel()
-
-	var closeCalled atomic.Int32
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
-		closeCalled.Add(1)
-		return nil
-	}))
-
-	for range 3 {
-		ufsTesting.ValidateClose(t, afs)()
-	}
-	if closeCalled.Load() != 1 {
-		t.Errorf("closer called %d times, want exactly 1", closeCalled.Load())
-	}
-}
-
-// closerFunc adapts a bare function to io.Closer.
-type closerFunc func() error
-
-func (f closerFunc) Close() error { return f() }
-
-// emptyFS is a minimal fs.FS that contains no files.
-type emptyFS struct{}
-
-func (emptyFS) Open(name string) (fs.File, error) {
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 }

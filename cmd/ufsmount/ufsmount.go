@@ -26,11 +26,14 @@ import (
 	"syscall"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/archivefs"             // registers archive: and name.d archive directories
 	_ "github.com/cloudfra/ufs/drivers/boltfs"                // registers bolt:
 	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"    // registers the fault mount option
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://
 	_ "github.com/cloudfra/ufs/drivers/gitfs"                 // registers git repository URIs
+	_ "github.com/cloudfra/ufs/drivers/httparchivefs"         // registers archives at http: and https: URLs
+	_ "github.com/cloudfra/ufs/drivers/localfs"               // registers file: and bare paths
 	_ "github.com/cloudfra/ufs/drivers/memfs"                 // registers memory:
 	_ "github.com/cloudfra/ufs/drivers/nullfs"                // registers null:
 	"github.com/cloudfra/ufs/host"

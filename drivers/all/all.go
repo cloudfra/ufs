@@ -22,9 +22,12 @@ package all
 import (
 	// Drivers.
 	_ "github.com/cloudfra/ufs/drivers/angryfs"
+	_ "github.com/cloudfra/ufs/drivers/archivefs"
 	_ "github.com/cloudfra/ufs/drivers/boltfs"
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"
 	_ "github.com/cloudfra/ufs/drivers/gitfs"
+	_ "github.com/cloudfra/ufs/drivers/httparchivefs"
+	_ "github.com/cloudfra/ufs/drivers/localfs"
 	_ "github.com/cloudfra/ufs/drivers/memfs"
 	_ "github.com/cloudfra/ufs/drivers/nullfs"
 

@@ -62,3 +62,27 @@ func makeMemFS(name string) WriteFS {
 func newMemFS(ctx context.Context, name string) (WriteFS, error) {
 	return newBaseFS(ctx, name)
 }
+
+func newLocalFS(ctx context.Context, name string) (WriteFS, error) {
+	return newBaseFS(ctx, name)
+}
+
+func newArchiveFSFromLocalFS(ctx context.Context, name string) (WriteFS, error) {
+	return newBaseFS(ctx, "archive://"+name)
+}
+
+// mustArchiveFS opens the test archive and closes it when the test ends.
+func mustArchiveFS(t *testing.T) WriteFS {
+	t.Helper()
+	const testArchive = "testing/testassets/archives/testassets.tar.gz"
+	fsys, err := newArchiveFSFromLocalFS(context.Background(), testArchive)
+	if err != nil {
+		t.Fatalf("newArchiveFSFromLocalFS(%q) = %v, want nil", testArchive, err)
+	}
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("failed to close archive FS: %v", err)
+		}
+	})
+	return fsys
+}

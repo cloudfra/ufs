@@ -27,6 +27,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/memfs"
+	"github.com/cloudfra/ufs/drivers/tempmountfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -64,7 +65,7 @@ func newTestLocalFS(tb testing.TB) ufs.WriteFS {
 
 func newTestTempMountFS(tb testing.TB) ufs.WriteFS {
 	tb.Helper()
-	fsys, err := ufs.NewTempMountFS(tb.Context(), "test://", func(string) error { return nil })
+	fsys, err := tempmountfs.New(tb.Context(), "test://", func(string) error { return nil })
 	if err != nil {
 		tb.Fatalf("cannot create tempMountFS file system, %s", err)
 	}

@@ -70,6 +70,22 @@ func (info DeviceInfo) Name() string {
 	return info.name
 }
 
+// DeviceType returns the type of device that backs the FS.
+func (info DeviceInfo) DeviceType() string {
+	return info.deviceType
+}
+
+// ThreadCount returns the recommended number of threads to access the device.
+func (info DeviceInfo) ThreadCount() int {
+	return info.threadCount
+}
+
+// Remote reports whether the device is located on a remote machine, where
+// frequent IO calls may be slow.
+func (info DeviceInfo) Remote() bool {
+	return info.remote
+}
+
 // String representation of DeviceInfo.
 func (info DeviceInfo) String() string {
 	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d, remote: %t}", info.name, info.deviceType, info.threadCount, info.remote)

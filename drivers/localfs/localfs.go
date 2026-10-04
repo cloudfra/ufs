@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package localfs provides the file: file system, which serves a directory of
+// the local disk through os.Root. Import it to register the scheme, and bare
+// paths, with ufs.New.
+package localfs
 
 import (
 	"context"
@@ -25,6 +28,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -35,18 +39,18 @@ const (
 )
 
 var (
-	_ File             = (*os.File)(nil)
+	_ ufs.File         = (*os.File)(nil)
 	_ localFSInterface = (*localFS)(nil)
 )
 
 func init() {
-	Register(NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
+	ufs.Register(ufs.NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
 }
 
 type localFSInterface interface {
-	WriteFS
+	ufs.WriteFS
 	fs.GlobFS
-	AbsPathGet
+	ufs.AbsPathGet
 }
 
 type localFS struct {
@@ -58,7 +62,7 @@ func (fsys *localFS) URI() (*url.URL, error) {
 }
 
 func (fsys *localFS) String() string {
-	return fmt.Sprintf("localFS(%s)", URIOrDefault(fsys, fsys.osFS.Name()))
+	return fmt.Sprintf("localFS(%s)", ufs.URIOrDefault(fsys, fsys.osFS.Name()))
 }
 
 func (fsys *localFS) GetAbsPath(name string) (string, error) {
@@ -80,7 +84,7 @@ func (fsys *localFS) Close() error {
 	return fsys.osFS.Close()
 }
 
-func (fsys *localFS) Create(name string) (File, error) {
+func (fsys *localFS) Create(name string) (ufs.File, error) {
 	if err := validLocalPath("create", name); err != nil {
 		return nil, err
 	}
@@ -171,12 +175,16 @@ func (fsys *localFS) Glob(pattern string) ([]string, error) {
 	return globutil.GlobFS(fsys, pattern)
 }
 
-// MakeLocalFS returns a local disk file system rooted at the file:// URI name.
-//
-// Deprecated: MakeLocalFS exists only to support the shared driver tests in
-// drivers/testing and will be removed soon. Use New instead.
-func MakeLocalFS(name string) (WriteFS, error) {
+// New returns a local disk file system rooted at name, which is a path or a
+// file: URI.
+func New(name string) (ufs.WriteFS, error) {
 	return makeLocalFS(name)
+}
+
+// NormalizePath returns the host path named by name, which is a path or a
+// file: URI.
+func NormalizePath(name string) string {
+	return localFSNormalizePath(name)
 }
 
 func makeLocalFS(name string) (*localFS, error) {
@@ -194,7 +202,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	}, nil
 }
 
-func newLocalFS(_ context.Context, name string) (WriteFS, error) {
+func newLocalFS(_ context.Context, name string) (ufs.WriteFS, error) {
 	return makeLocalFS(name)
 }
 

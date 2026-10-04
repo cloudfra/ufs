@@ -12,22 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package localfs
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 const (
-	testLocalFSName = "testing/testassets"
+	testLocalFSName = "../../testing/testassets"
 )
 
 func TestLocalFSString(t *testing.T) {
@@ -35,8 +37,10 @@ func TestLocalFSString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fsys.String(); !strings.Contains(got, testLocalFSName) {
-		t.Errorf("String() should contain %q, got: %q", testLocalFSName, got)
+	// String reports the absolute path, so compare without the leading "../..".
+	want := strings.TrimPrefix(testLocalFSName, "../../")
+	if got := fsys.String(); !strings.Contains(got, want) {
+		t.Errorf("String() should contain %q, got: %q", want, got)
 	}
 }
 
@@ -238,4 +242,18 @@ func TestLocalFSReadDirDoesNotContainCwd(t *testing.T) {
 			t.Errorf("entry list contains '.', %v", entries)
 		}
 	}
+}
+
+func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (ufs.WriteFS, error), name string) ufs.WriteFS {
+	tb.Helper()
+
+	fsys, err := newFSFunc(tb.Context(), name)
+	if err != nil {
+		tb.Fatalf("FileSystem %q has an error, %s", name, err)
+	}
+	if fsys == nil {
+		tb.Fatalf("FileSystem %q is nil", name)
+	}
+
+	return fsys
 }

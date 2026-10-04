@@ -12,34 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-
-package ufs
+package tempmountfs_test
 
 import (
-	"io/fs"
-	"os"
-	"strings"
+	"testing"
 
-	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/tempmountfs"
+	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 )
 
-// localFSNormalizePath strips the "file://" or "file:" URI prefix, leaving a plain path.
-func localFSNormalizePath(name string) string {
-	if after, ok := strings.CutPrefix(name, "file://"); ok {
-		return after
-	}
-	return strings.TrimPrefix(name, "file:")
-}
-
-func validLocalPath(op, name string) error {
-	return pathutil.Validate(op, name)
-}
-
-func localFSWrapFile(f *os.File) fs.File {
-	return f
-}
-
-func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
-	return fi
+func TestTempMountFS(t *testing.T) {
+	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+		name := "temp://test"
+		fsys, err := tempmountfs.New(t.Context(), name, func(string) error { return nil })
+		if err != nil {
+			t.Fatalf("cannot create tempMountFS %q, %s", name, err)
+		}
+		return fsys
+	})
 }

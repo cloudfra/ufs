@@ -21,6 +21,7 @@ import (
 	"log/slog"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/memfs" // registers memory:
 	"github.com/cloudfra/ufs/ops"
 )
 

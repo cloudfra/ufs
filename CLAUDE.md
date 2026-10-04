@@ -61,13 +61,19 @@ Dispatches to the appropriate implementation based on URI scheme:
 
 | Scheme        | Implementation   | Struct    | Type     | Status  | Behavior                                                 |
 |:--------------|:-----------------|:----------|:---------|:--------|:---------------------------------------------------------|
-| null://       | nullfs.go        | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
-| memory:       | memfs.go         | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
-| file:///...   | localfs.go       | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
+| null://       | drivers/nullfs/  | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
+| memory:       | drivers/memfs/   | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
+| file:///...   | drivers/localfs/ | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
 | git://...     | drivers/gitfs/   | --        | ro       | Impl.   | Reads from a git repo (clones on first open; blank-import drivers/gitfs) |
-| archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
+| archive://    | drivers/archivefs/ | archiveFS | ro     | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
+| http(s)://    | drivers/httparchivefs/ | --    | ro     | Impl.   | Downloads an archive to a temp dir and mounts it         |
 | bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
+
+The base package holds no backend: every scheme is registered by
+blank-importing its driver package, and `New` fails for a scheme whose driver
+is not imported. The base package must stay light — it may import only the
+standard library, `internal/`, `drivers/polyfill` and yaml.
 
 ### Layering / nesting
 
@@ -77,9 +83,14 @@ func CreateURI(baseName string, nested map[string]string) (string, error)
 
 Creates a URI that mounts additional file systems at specific paths inside a base FS.
 The result is nestFS (nestfs.go) which dispatches reads/writes based on mount path
-prefix.
+prefix. nestFS is the one file system that lives in the base package; it is
+unexported and wraps whatever `New` returns.
 
-A temporary local-mount wrapper (tempMountFS in tempmountfs.go) provides writable
+nestFS exposes an archive `name` as the directory `name.d` through the
+`ArchiveDriver` that drivers/archivefs registers with `RegisterArchiveDriver`.
+Without that import, archives are plain files.
+
+A temporary local-mount wrapper (drivers/tempmountfs) provides writable
 scratch space on top of any read-only FS for implementations that need it.
 
 ### Decorators (`drivers/decorators/` subpackages)
@@ -153,15 +164,26 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 
 Drivers outside the base package import `ufs` (never the reverse) and register
 themselves in `init()` via `ufs.Register`; callers blank-import the package to
-enable its scheme. They may use `internal/` packages.
+enable its scheme. They may use `internal/` packages. The one exception to the
+import direction is `drivers/polyfill`, which the base package imports and
+which therefore must not import `ufs`.
 
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|
+| drivers/all/             | Blank-imports every driver and decorator. For tests only: no non-test file may import it (enforced by its own test) |
+| drivers/angryfs/         | angry: driver whose operations always fail; for testing error paths |
+| drivers/archivefs/       | archive: driver backed by mholt/archives; also registers the ArchiveDriver that nestFS mounts name.d with |
 | drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
 | drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |
+| drivers/httparchivefs/   | http: and https: archives, downloaded into a tempmountfs         |
+| drivers/localfs/         | file: driver over os.Root, with fsnotify Watch and per-OS device info |
+| drivers/memfs/           | memory: driver                                                   |
+| drivers/nullfs/          | null: driver                                                     |
+| drivers/polyfill/        | WrapFile — fills in Seek, ReadAt and Write on a plain fs.File. Must not import ufs: the base package imports it |
+| drivers/tempmountfs/     | File system over a temp directory removed on Close; used by gitfs and httparchivefs |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
@@ -172,6 +194,8 @@ code with no `ufs` dependency goes in `internal/`.
 | File                  | Purpose                                                             |
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
+| nestfs.go             | nestFS — mounts and archive directories over a base FS              |
+| backends_test.go      | Opens drivers through the registry for the base package's own tests, which cannot import them |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
 | remove.go             | Remove and RemoveAll — dispatch to the optional RemoveFileFS        |
 | ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk       |
@@ -181,8 +205,6 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
-| localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
-| testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
 
 ### Conventions
@@ -191,4 +213,4 @@ code with no `ufs` dependency goes in `internal/`.
 * Factory name arg follows a URI scheme: null://, file:///..., memory:, gs://..., git://..., archive://...
 * All path operations call pathutil.Validate first — returns fs.PathError for invalid paths.
 * Packages under internal/ must not import the base ufs package.
-* Each backend has its own file, its own tests, and runs the shared fstest.TestFS harness via testFileSystem.
+* Each backend has its own package under drivers/, its own tests, and runs the shared conformance tests in drivers/testing.

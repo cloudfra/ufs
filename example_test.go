@@ -12,19 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package ufs_test
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/memfs"  // registers memory:
+	_ "github.com/cloudfra/ufs/drivers/nullfs" // registers null:
 )
 
 // ExampleNew_memory demonstrates a volatile in-memory file system. All data is
 // lost when the FS is closed or the process exits.
 func ExampleNew_memory() {
 	ctx := context.Background()
-	fsys, err := New(ctx, "memory://")
+	fsys, err := ufs.New(ctx, "memory://")
 	if err != nil {
 		slog.Error("cannot mount filesystem", "error", err)
 		return
@@ -64,7 +68,7 @@ func ExampleNew_memory() {
 // return empty content. Useful as a write sink in tests.
 func ExampleNew_null() {
 	ctx := context.Background()
-	fsys, err := New(ctx, "null://")
+	fsys, err := ufs.New(ctx, "null://")
 	if err != nil {
 		slog.Error("cannot mount filesystem", "error", err)
 		return
@@ -105,7 +109,7 @@ func ExampleNew_null() {
 func ExampleCreateURI() {
 	ctx := context.Background()
 	// A memory FS with no nested mounts.
-	uri, err := CreateURI("memory://", nil)
+	uri, err := ufs.CreateURI("memory://", nil)
 	if err != nil {
 		slog.Error("failed to create URI", "error", err)
 		return
@@ -113,7 +117,7 @@ func ExampleCreateURI() {
 	fmt.Println(uri)
 
 	// Open it — New accepts URIs produced by CreateURI.
-	fsys, err := New(ctx, uri)
+	fsys, err := ufs.New(ctx, uri)
 	if err != nil {
 		slog.Error("cannot mount filesystem", "error", err)
 		return

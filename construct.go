@@ -133,6 +133,10 @@ func nameToURI(name string) (*url.URL, error) {
 //
 // # URI schemes
 //
+// Each scheme is served by a driver package under
+// github.com/cloudfra/ufs/drivers that registers itself when imported; New
+// fails for a scheme whose driver is not imported.
+//
 //   - memory://   — volatile in-memory file system; all data is lost when the
 //     FS is closed or the process exits. Safe for concurrent use.
 //   - null://     — /dev/null semantics: Create and MkdirAll always succeed,
@@ -199,7 +203,8 @@ func nameToURI(name string) (*url.URL, error) {
 // The returned FS wraps all backends in a nestFS layer. When a directory entry
 // named foo.zip (or any recognized archive extension) exists, the virtual path
 // foo.zip.d is automatically exposed as a read-only mount of that archive's
-// contents. No explicit configuration is required.
+// contents. This needs github.com/cloudfra/ufs/drivers/archivefs imported;
+// without it archives are plain files.
 //
 // Use [CreateURI] to pre-configure additional mount points before calling New.
 func New(ctx context.Context, name string) (WriteFS, error) {

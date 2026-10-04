@@ -12,10 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !linux && !windows
+package localfs_test
 
-package ufs
+import (
+	"testing"
 
-func (fsys *localFS) GetDeviceInfo() DeviceMap {
-	return DefaultDeviceMap
+	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/localfs"
+	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+)
+
+func TestLocalFSDriver(t *testing.T) {
+	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+		dir := t.TempDir()
+		fsys, err := localfs.New(dir)
+		if err != nil {
+			t.Fatalf("cannot create localFS %q, %s", dir, err)
+		}
+		return fsys
+	})
 }

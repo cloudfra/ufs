@@ -274,7 +274,7 @@ func TestRegistrarDecorate(t *testing.T) {
 			if gotTags := tags(got); !reflect.DeepEqual(gotTags, tc.want) {
 				t.Errorf("decorate() applied %v, want %v", gotTags, tc.want)
 			}
-			if len(tc.want) == 0 && got != WriteFS(base) {
+			if len(tc.want) == 0 && got != base {
 				t.Errorf("decorate() = %v, want the undecorated base", got)
 			}
 		})

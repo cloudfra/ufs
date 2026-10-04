@@ -47,22 +47,6 @@ var (
 			wantString: "file://" + pathutil.TempDir(),
 		},
 		{
-			name: "tempMountFS",
-			createFS: func(tb testing.TB) WriteFS {
-				fsys, err := newTempMountFS(tb.Context(), "test://", func(string) error { return nil })
-				if err != nil {
-					tb.Fatalf("cannot create tempMountFS file system, %s", err)
-				}
-				tb.Cleanup(func() {
-					if err := fsys.Close(); err != nil {
-						tb.Errorf("Close() = %v", err)
-					}
-				})
-				return fsys
-			},
-			wantString: "test:",
-		},
-		{
 			name: "memFS",
 			createFS: func(tb testing.TB) WriteFS {
 				fsys := makeMemFS(memFSPrefix)
@@ -111,18 +95,4 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 		}
 	}
 	return result
-}
-
-func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, error), name string) WriteFS {
-	tb.Helper()
-
-	fsys, err := newFSFunc(tb.Context(), name)
-	if err != nil {
-		tb.Fatalf("FileSystem %q has an error, %s", name, err)
-	}
-	if fsys == nil {
-		tb.Fatalf("FileSystem %q is nil", name)
-	}
-
-	return fsys
 }

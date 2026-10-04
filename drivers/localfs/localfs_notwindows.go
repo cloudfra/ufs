@@ -12,22 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+//go:build !windows
+
+package localfs
 
 import (
-	"testing"
+	"io/fs"
+	"os"
+	"strings"
 
-	"github.com/cloudfra/ufs"
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
-func TestLocalFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
-		dir := t.TempDir()
-		fsys, err := ufs.MakeLocalFS(dir)
-		if err != nil {
-			t.Fatalf("cannot create localFS %q, %s", dir, err)
-		}
-		return fsys
-	})
+// localFSNormalizePath strips the "file://" or "file:" URI prefix, leaving a plain path.
+func localFSNormalizePath(name string) string {
+	if after, ok := strings.CutPrefix(name, "file://"); ok {
+		return after
+	}
+	return strings.TrimPrefix(name, "file:")
+}
+
+func validLocalPath(op, name string) error {
+	return pathutil.Validate(op, name)
+}
+
+func localFSWrapFile(f *os.File) fs.File {
+	return f
+}
+
+func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
+	return fi
 }

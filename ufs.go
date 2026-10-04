@@ -28,6 +28,11 @@
 //	fsys, err := ufs.New("gs://bucket/prefix") // Google Cloud Storage
 //	fsys, err := ufs.New("https://host/file.zip") // remote archive (downloaded to temp dir)
 //
+// Each scheme is served by a driver package under
+// github.com/cloudfra/ufs/drivers, which registers itself when imported:
+//
+//	import _ "github.com/cloudfra/ufs/drivers/memfs" // memory:
+//
 // Every [FS] must be closed when no longer needed.
 //
 // # Nested mounts

@@ -36,6 +36,10 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
+// archiveDirExt is appended to the name of an archive to form the name of the
+// virtual directory that holds its contents.
+const archiveDirExt = ".d"
+
 type bufferMode int
 
 const (
@@ -51,7 +55,7 @@ type FSArgs struct {
 var (
 	_ FS                  = (*nestFS)(nil)
 	_ fs.GlobFS           = (*nestFS)(nil)
-	_ realAbsPathGet      = (*nestFS)(nil)
+	_ AbsPathGet          = (*nestFS)(nil)
 	_ MountedArchiveDirFS = (*nestFS)(nil)
 	_ DeviceInfoGetter    = (*mountMap)(nil)
 )
@@ -77,7 +81,7 @@ func (m *mountMap) GetDeviceInfo() DeviceMap {
 	combined := DeviceMap{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combined.combine(mountPoint, fsys.GetDeviceInfo())
+		combined = combined.Combine(mountPoint, fsys.GetDeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -220,16 +224,16 @@ type nestFS struct {
 	args   FSArgs
 }
 
-func (fsys *nestFS) getAbsPath(name string) (string, error) {
-	if rfs, ok := fsys.fsys.(*localFS); ok {
-		return rfs.getAbsPath(name)
+func (fsys *nestFS) GetAbsPath(name string) (string, error) {
+	if rfs, ok := fsys.fsys.(AbsPathGet); ok {
+		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
 func (fsys *nestFS) GetDeviceInfo() DeviceMap {
 	base := fsys.fsys.GetDeviceInfo()
-	return base.combine("", fsys.mounts.GetDeviceInfo())
+	return base.Combine("", fsys.mounts.GetDeviceInfo())
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {
@@ -359,23 +363,27 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		return maybeFS, nil
 	}
 	ctx := fsys.ctx
-	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
-	if ok {
-		absName, err := lfs.getAbsPath(name)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
+	driver := globalArchiveDriver.Load()
+	if driver == nil {
+		return nil, ufserrors.NewPathError("mount", name, errNoArchiveDriver)
+	}
+	var newFS WriteFS
+	// An archive that is also a file on the host is opened by path. A base
+	// that cannot resolve the path is read through an open file instead.
+	if lfs, ok := fsys.fsys.(AbsPathGet); ok {
+		if absName, err := lfs.GetAbsPath(name); err == nil {
+			newFS, err = driver.OpenPathFunc(ctx, absName)
+			if err != nil {
+				return nil, ufserrors.NewPathError("mount", name, err)
+			}
 		}
-		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
-		}
-	} else {
+	}
+	if newFS == nil {
 		f, err := fsys.Open(name)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
-		newFS, err = newArchiveFSFromFile(ctx, f)
+		newFS, err = driver.OpenFileFunc(ctx, f)
 		if err != nil {
 			return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), f.Close())
 		}

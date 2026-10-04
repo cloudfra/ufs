@@ -18,7 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sync"
+	"sync/atomic"
 
 	"gopkg.in/yaml.v3"
 )
@@ -27,6 +29,14 @@ var (
 	globalDriverRegistrar      = newRegistrar()
 	emptyDriverRegistration    = Driver{}
 	emptyDecoratorRegistration = Decorator{}
+
+	// errNoArchiveDriver is returned when an archive is mounted without a
+	// registered [ArchiveDriver].
+	errNoArchiveDriver = errors.New("no archive driver is registered; check that github.com/cloudfra/ufs/drivers/archivefs is imported")
+
+	// globalArchiveDriver is read on every directory listing, so it is kept
+	// out from under the registrar's lock.
+	globalArchiveDriver atomic.Pointer[ArchiveDriver]
 )
 
 type registrar struct {
@@ -143,6 +153,42 @@ func newRegistrar() *registrar {
 		driverMap:    map[string]Driver{},
 		decoratorMap: map[string]Decorator{},
 	}
+}
+
+// ArchiveDriver opens archive files as file systems. The file system returned
+// by [New] uses the registered ArchiveDriver to expose an archive "name" as the
+// virtual directory "name.d". Without one, archives are plain files.
+type ArchiveDriver struct {
+	// MatchFunc reports whether name is the path of an archive that the
+	// driver can open, judged by its name alone.
+	MatchFunc func(name string) bool
+
+	// OpenPathFunc opens the archive at the absolute host path name.
+	OpenPathFunc func(ctx context.Context, name string) (WriteFS, error)
+
+	// OpenFileFunc opens the archive held by file. On success the returned
+	// file system owns file and closes it; on error the caller closes it.
+	OpenFileFunc func(ctx context.Context, file fs.File) (WriteFS, error)
+}
+
+// RegisterArchiveDriver sets the driver used to mount archives. Only one may
+// be registered.
+//
+// This method should be called from your package's init()
+func RegisterArchiveDriver(reg ArchiveDriver) {
+	if reg.MatchFunc == nil || reg.OpenPathFunc == nil || reg.OpenFileFunc == nil {
+		panic(errors.New("archive driver must set MatchFunc, OpenPathFunc and OpenFileFunc"))
+	}
+	if !globalArchiveDriver.CompareAndSwap(nil, &reg) {
+		panic(errors.New("an archive driver is already registered"))
+	}
+}
+
+// isMountableArchivePath reports whether name is an archive that can be
+// mounted, which needs a registered [ArchiveDriver].
+func isMountableArchivePath(name string) bool {
+	reg := globalArchiveDriver.Load()
+	return reg != nil && reg.MatchFunc(name)
 }
 
 // Register a new file system type.

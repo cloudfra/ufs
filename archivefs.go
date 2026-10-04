@@ -36,7 +36,6 @@ import (
 )
 
 const (
-	archiveDirExt   = ".d"
 	archiveFSPrefix = "archive:"
 )
 
@@ -50,17 +49,38 @@ var (
 )
 
 func init() {
-	Register(NewDriver("archive", func(ctx context.Context, name string) (WriteFS, error) {
-		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
-	}, isArchiveFSUri, 1, true, false))
+	Register(NewDriver("archive", newArchiveFS, isArchiveFSUri, 1, true, false))
+	RegisterArchiveDriver(ArchiveDriver{
+		MatchFunc: hasArchiveExt,
+		OpenPathFunc: func(ctx context.Context, name string) (WriteFS, error) {
+			return newArchiveFSFromLocalFS(ctx, name)
+		},
+		OpenFileFunc: func(ctx context.Context, file fs.File) (WriteFS, error) {
+			return newArchiveFSFromFile(ctx, file)
+		},
+	})
 	Register(NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 
+// isArchiveFSUri reports whether name is an archive: URI or a local path that
+// names an archive.
 func isArchiveFSUri(name string) bool {
-	return strings.HasPrefix(name, archiveFSPrefix)
+	if strings.HasPrefix(name, archiveFSPrefix) {
+		return true
+	}
+	isLocal := strings.HasPrefix(name, "file:") || !strings.Contains(name, "://")
+	return isLocal && hasArchiveExt(name)
 }
 
-func isMountableArchivePath(name string) bool {
+func newArchiveFS(ctx context.Context, name string) (WriteFS, error) {
+	if after, ok := strings.CutPrefix(name, "archive://"); ok {
+		return newArchiveFSFromLocalFS(ctx, after)
+	}
+	// The archive is opened by host path, so drop any file: prefix.
+	return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))
+}
+
+func hasArchiveExt(name string) bool {
 	lowerPath := strings.ToLower(name)
 	for _, suffix := range archiveExtList {
 		if strings.HasSuffix(lowerPath, suffix) {

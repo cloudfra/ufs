@@ -54,13 +54,7 @@ func newBufFile(path string, content []byte, mode fs.FileMode, modTime time.Time
 
 func (f *bufFile) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
-	info := &fsInfo{
-		name:    path.Base(f.path),
-		size:    int64(len(f.content)),
-		mode:    f.mode,
-		modTime: f.modTime,
-		isDir:   false,
-	}
+	info := NewFileInfo(path.Base(f.path), int64(len(f.content)), f.mode, f.modTime)
 	f.mu.Unlock()
 	return info, nil
 }

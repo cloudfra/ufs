@@ -47,7 +47,7 @@ func (fsys *tempMountFS) String() string {
 	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", URIOrDefault(fsys, fsys.uri), pathutil.CoerceUnix(fsys.name))
 }
 
-func (fsys *tempMountFS) getAbsPath(name string) (string, error) {
+func (fsys *tempMountFS) GetAbsPath(name string) (string, error) {
 	return AbsPath(fsys.lfs, name)
 }
 

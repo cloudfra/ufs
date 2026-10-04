@@ -43,10 +43,16 @@ func (fsys *readWrapFS) URI() (*url.URL, error) {
 		if err != nil {
 			return nil, err
 		}
-		v := u.Query()
+		if u == nil {
+			// The wrapped file system has no URI, so neither does this one.
+			return nil, nil
+		}
+		// Work on a copy: the wrapped file system may hand out a URL it keeps.
+		out := *u
+		v := out.Query()
 		v.Set("ro", "true")
-		u.RawQuery = v.Encode()
-		return u, nil
+		out.RawQuery = v.Encode()
+		return &out, nil
 	}
 	return nil, nil
 }

@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
+	"sync"
 	"syscall"
 	"time"
 
@@ -103,22 +104,33 @@ func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer,
 		return nil, err
 	}
 
+	hostServer := &fuseHostServer{server: server}
 	go func() {
 		<-ctx.Done()
-		if err := server.Unmount(); err != nil {
+		if err := hostServer.Close(); err != nil {
 			slog.DebugContext(ctx, "fuse mount server is unmounting volume", "error", err)
 		}
 	}()
 
-	return &fuseHostServer{server: server}, nil
+	return hostServer, nil
 }
 
 type fuseHostServer struct {
 	server *fuse.Server
+
+	// fuse.Server.Unmount is not safe to call from two goroutines, and both
+	// Close and the context watcher in mount call it.
+	unmountOnce sync.Once
+	unmountErr  error
 }
 
+// Close unmounts the file system. It is safe to call more than once and from
+// any goroutine; every call returns the result of the first.
 func (s *fuseHostServer) Close() error {
-	return s.server.Unmount()
+	s.unmountOnce.Do(func() {
+		s.unmountErr = s.server.Unmount()
+	})
+	return s.unmountErr
 }
 
 func (s *fuseHostServer) Wait() {

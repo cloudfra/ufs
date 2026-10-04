@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package readwrapfs_test
+package memfs_test
 
 import (
 	"testing"
@@ -20,11 +20,10 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/memfs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 )
 
-func TestReadWrapFSDriver(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, func(_ *testing.T) ufs.ReadFS {
-		return readwrapfs.FromFS(memfs.New("memory://test"))
+func TestMemFSDriver(t *testing.T) {
+	ufsdriversTesting.WriteFS(t, func(_ *testing.T) ufs.WriteFS {
+		return memfs.New("memory://test")
 	})
 }

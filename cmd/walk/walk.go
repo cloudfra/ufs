@@ -28,6 +28,8 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://
 	_ "github.com/cloudfra/ufs/drivers/gitfs"                 // registers git repository URIs
+	_ "github.com/cloudfra/ufs/drivers/memfs"                 // registers memory:
+	_ "github.com/cloudfra/ufs/drivers/nullfs"                // registers null:
 	"github.com/cloudfra/ufs/ops"
 )
 

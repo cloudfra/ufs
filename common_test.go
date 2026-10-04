@@ -16,11 +16,9 @@ package ufs
 
 import (
 	"context"
-	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
-	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 type fsTestCase struct {
@@ -94,20 +92,6 @@ var (
 			wantString: nullFSPrefix,
 		},
 	}
-
-	testassetFilenameList = []string{
-		pathutil.CwdPath,
-		"files/index.html",
-		"archives/nested-testassets.zip",
-	}
-
-	testassetDirList = map[string][]string{
-		pathutil.CwdPath: {},
-		"files":          {},
-		"archives":       {},
-	}
-
-	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
 )
 
 func getAllExceptAngryTestCaseList() []fsTestCase {
@@ -140,46 +124,5 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, err
 		tb.Fatalf("FileSystem %q is nil", name)
 	}
 
-	return fsys
-}
-
-// dirFileConflictCases are Create and MkdirAll calls that conflict with the
-// tree built by newDirFileConflictFS: each replaces a directory with a file
-// or treats a regular file as a directory. wantErr and wantOp are the values
-// memFS returns; other backends may report the conflict differently (for
-// example localFS surfaces the OS's ENOTDIR/EISDIR).
-var dirFileConflictCases = []struct {
-	name    string
-	op      func(fsys WriteFS) error
-	wantErr error
-	wantOp  string
-}{
-	{name: "create_on_dir", op: func(fsys WriteFS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_on_root", op: func(fsys WriteFS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_under_file", op: func(fsys WriteFS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "create_deep_under_file", op: func(fsys WriteFS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "mkdirall_on_file", op: func(fsys WriteFS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-	{name: "mkdirall_under_file", op: func(fsys WriteFS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-}
-
-// newDirFileConflictFS returns a file system from createFS containing the
-// directories dir and dir/sub and the regular file dir/file.
-func newDirFileConflictFS(t *testing.T, createFS func(testing.TB) WriteFS) WriteFS {
-	t.Helper()
-	fsys := createFS(t)
-	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-	if err := fsys.MkdirAll("dir/sub", fs.ModePerm); err != nil {
-		t.Fatal(err)
-	}
-	f, err := fsys.Create("dir/file")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("content"); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
 	return fsys
 }

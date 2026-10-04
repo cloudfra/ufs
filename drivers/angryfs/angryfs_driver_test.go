@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+package angryfs_test
 
 import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/angryfs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 )
 
 func TestAngryFSDriver(t *testing.T) {
 	createFSFunc := func(_ *testing.T) ufs.WriteFS {
-		return ufs.MakeAngryFS("angry://test")
+		return angryfs.New("angry://test")
 	}
 	// ufsdriversTesting.MkdirAll(t, createFSFunc)
 	// ufsdriversTesting.ReadFile(t, createFSFunc)

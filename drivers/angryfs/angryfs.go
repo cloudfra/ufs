@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package angryfs provides the angry: file system, whose operations always
+// fail. It exists to exercise error handling in tests. Import it to register
+// the scheme with ufs.New.
+package angryfs
 
 import (
 	"context"
@@ -21,6 +24,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -30,24 +34,24 @@ const (
 )
 
 var (
-	_ WriteFS   = (*angryFS)(nil)
-	_ fs.GlobFS = (*angryFS)(nil)
+	_ ufs.WriteFS = (*angryFS)(nil)
+	_ fs.GlobFS   = (*angryFS)(nil)
 
 	errAngry = fs.ErrInvalid
 
-	angryDeviceInfo    = NewDeviceInfo("angry", "angry", 1, false)
-	angryDeviceInfoMap = NewDeviceMap(angryDeviceInfo)
+	angryDeviceInfo    = ufs.NewDeviceInfo("angry", "angry", 1, false)
+	angryDeviceInfoMap = ufs.NewDeviceMap(angryDeviceInfo)
 )
 
 func init() {
-	Register(NewDriver("angry", newAngryFS, isAngryFSUri, 1, false, false))
+	ufs.Register(ufs.NewDriver("angry", newAngryFS, isAngryFSUri, 1, false, false))
 }
 
 type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) GetDeviceInfo() DeviceMap {
+func (fsys *angryFS) GetDeviceInfo() ufs.DeviceMap {
 	return angryDeviceInfoMap
 }
 
@@ -63,7 +67,7 @@ func (fsys *angryFS) URI() (*url.URL, error) {
 }
 
 func (fsys *angryFS) String() string {
-	return fmt.Sprintf("angryFS(%s)", URIOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("angryFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *angryFS) Open(name string) (fs.File, error) {
@@ -84,7 +88,7 @@ func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
 	return nil, ufserrors.NewPathError("stat", name, errAngry)
 }
 
-func (fsys *angryFS) Create(name string) (File, error) {
+func (fsys *angryFS) Create(name string) (ufs.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -144,16 +148,12 @@ func (fsys *angryFS) RemoveAll(name string) error {
 	return ufserrors.NewPathError("removeall", name, errAngry)
 }
 
-func newAngryFS(_ context.Context, name string) (WriteFS, error) {
+func newAngryFS(_ context.Context, name string) (ufs.WriteFS, error) {
 	return makeAngryFS(name), nil
 }
 
-// MakeAngryFS returns an angry file system named name, whose operations
-// always fail.
-//
-// Deprecated: MakeAngryFS exists only to support the shared driver tests in
-// drivers/testing and will be removed soon. Use New instead.
-func MakeAngryFS(name string) WriteFS {
+// New returns an angry file system named name, whose operations always fail.
+func New(name string) ufs.WriteFS {
 	return makeAngryFS(name)
 }
 

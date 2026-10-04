@@ -51,6 +51,10 @@ func TestNewBaseFSUnregisteredDriverHint(t *testing.T) {
 	}
 }
 
+// pointerTypeName is what [reflect.Type.Name] reports for every backend,
+// because each is a pointer type and pointer types are unnamed.
+const pointerTypeName = ""
+
 func TestNew(t *testing.T) {
 	tests := []struct {
 		uri               string
@@ -61,49 +65,49 @@ func TestNew(t *testing.T) {
 	}{
 		{
 			uri:               "angry://",
-			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantType:          pointerTypeName,
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:               "angry://",
-			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantType:          pointerTypeName,
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:      "file://",
-			wantType: reflect.TypeFor[*localFS]().Name(),
+			wantType: pointerTypeName,
 			wantErr:  false,
 		},
 		{
 			uri:      pathutil.CwdPath,
-			wantType: reflect.TypeFor[*localFS]().Name(),
+			wantType: pointerTypeName,
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: reflect.TypeFor[*memFS]().Name(),
+			wantType: pointerTypeName,
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: reflect.TypeFor[*memFS]().Name(),
+			wantType: pointerTypeName,
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: pointerTypeName,
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: pointerTypeName,
 			wantErr:  false,
 		},
 		{
 			uri:      "file:///?a=memory://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: pointerTypeName,
 			wantErr:  false,
 			nested:   true,
 		},

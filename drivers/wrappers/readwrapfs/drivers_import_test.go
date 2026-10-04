@@ -15,16 +15,6 @@
 package readwrapfs_test
 
 import (
-	"testing"
-
-	"github.com/cloudfra/ufs"
-	"github.com/cloudfra/ufs/drivers/memfs"
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
+	// Register every driver, so the tests can open file systems by URI.
+	_ "github.com/cloudfra/ufs/drivers/all"
 )
-
-func TestReadWrapFSDriver(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, func(_ *testing.T) ufs.ReadFS {
-		return readwrapfs.FromFS(memfs.New("memory://test"))
-	})
-}

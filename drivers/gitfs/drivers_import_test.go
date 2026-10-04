@@ -12,17 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+package gitfs_test
 
 import (
-	"testing"
-
-	"github.com/cloudfra/ufs"
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	// Register every driver, so the tests can open file systems by URI.
+	_ "github.com/cloudfra/ufs/drivers/all"
 )
-
-func TestMemFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(_ *testing.T) ufs.WriteFS {
-		return ufs.MakeMemFS("memory://test")
-	})
-}

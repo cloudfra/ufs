@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package memfs
 
 import (
 	"context"
@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/testing/eventtest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -30,7 +31,7 @@ import (
 func TestMemWatchCreateWriteRemove(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -45,16 +46,16 @@ func TestMemWatchCreateWriteRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyCreate && ev.Path == "hello.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "hello.txt"
 	})
 
 	if _, err := f.WriteString("updated"); err != nil {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyWrite && ev.Path == "hello.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyWrite && ev.Path == "hello.txt"
 	})
 
 	if err := f.Close(); err != nil {
@@ -65,15 +66,15 @@ func TestMemWatchCreateWriteRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyRemove && ev.Path == "hello.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyRemove && ev.Path == "hello.txt"
 	})
 }
 
 func TestMemWatchNestedDir(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -87,19 +88,19 @@ func TestMemWatchNestedDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyCreate && ev.Path == "a"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "a"
 	})
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyCreate && ev.Path == "a/b"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "a/b"
 	})
 
 	if _, err := fsys.Create("a/b/deep.txt"); err != nil {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyCreate && ev.Path == "a/b/deep.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "a/b/deep.txt"
 	})
 }
 
@@ -112,7 +113,7 @@ func TestMemWatchSubdirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -126,8 +127,8 @@ func TestMemWatchSubdirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyCreate && ev.Path == "watched/inside.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyCreate && ev.Path == "watched/inside.txt"
 	})
 
 	// File outside watched directory should not be delivered.
@@ -137,7 +138,7 @@ func TestMemWatchSubdirectory(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if ec.HasEvent(func(ev eventtest.Event[NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Path == "other/outside.txt"
 	}) {
 		t.Error("received event for file outside watched directory")
@@ -147,7 +148,7 @@ func TestMemWatchSubdirectory(t *testing.T) {
 func TestMemWatchCloseStopsDelivery(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -170,7 +171,7 @@ func TestMemWatchCloseStopsDelivery(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if ec.HasEvent(func(ev eventtest.Event[NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Path == "after.txt"
 	}) {
 		t.Error("received event after Close()")
@@ -180,7 +181,7 @@ func TestMemWatchCloseStopsDelivery(t *testing.T) {
 func TestMemWatchCtxCancellation(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 
 	closer, err := fsys.Watch(ctx, ".", ec.Hook)
@@ -199,7 +200,7 @@ func TestMemWatchCtxCancellation(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if ec.HasEvent(func(ev eventtest.Event[NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[ufs.NotifyOp]) bool {
 		return ev.Path == "post_cancel.txt"
 	}) {
 		t.Error("received event after context cancellation")
@@ -219,7 +220,7 @@ func TestMemWatchRemoveAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -233,8 +234,8 @@ func TestMemWatchRemoveAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyRemove && ev.Path == "dir"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyRemove && ev.Path == "dir"
 	})
 }
 
@@ -245,7 +246,7 @@ func TestMemWatchCreateOverwrite(t *testing.T) {
 		t.Fatalf("failed to create file: %v", err)
 	}
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -264,8 +265,8 @@ func TestMemWatchCreateOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyWrite && ev.Path == "file.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+		return ev.Op == ufs.NotifyWrite && ev.Path == "file.txt"
 	})
 }
 
@@ -274,11 +275,11 @@ func TestMemWatchInvalidPath(t *testing.T) {
 
 	ctx := t.Context()
 
-	if _, err := fsys.Watch(ctx, "../escape", func(NotifyOp, string) {}); err == nil {
+	if _, err := fsys.Watch(ctx, "../escape", func(ufs.NotifyOp, string) {}); err == nil {
 		t.Error("Watch with invalid path should fail")
 	}
 
-	if _, err := fsys.Watch(ctx, "nonexistent", func(NotifyOp, string) {}); err == nil {
+	if _, err := fsys.Watch(ctx, "nonexistent", func(ufs.NotifyOp, string) {}); err == nil {
 		t.Error("Watch on nonexistent directory should fail")
 	}
 
@@ -286,7 +287,7 @@ func TestMemWatchInvalidPath(t *testing.T) {
 	if _, err := fsys.Create("file.txt"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fsys.Watch(ctx, "file.txt", func(NotifyOp, string) {}); err == nil {
+	if _, err := fsys.Watch(ctx, "file.txt", func(ufs.NotifyOp, string) {}); err == nil {
 		t.Error("Watch on a file should fail")
 	}
 }
@@ -297,7 +298,7 @@ func TestMemWatchClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := fsys.Watch(t.Context(), ".", func(NotifyOp, string) {}); err == nil {
+	if _, err := fsys.Watch(t.Context(), ".", func(ufs.NotifyOp, string) {}); err == nil {
 		t.Error("Watch on closed FS should fail")
 	}
 }
@@ -305,7 +306,7 @@ func TestMemWatchClosed(t *testing.T) {
 func TestMemWatchRaceConcurrentClose(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
-	closer, err := fsys.Watch(t.Context(), ".", func(NotifyOp, string) {})
+	closer, err := fsys.Watch(t.Context(), ".", func(ufs.NotifyOp, string) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +326,7 @@ func TestMemWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
 	var hookCalls atomic.Int64
-	hook := func(NotifyOp, string) {
+	hook := func(ufs.NotifyOp, string) {
 		hookCalls.Add(1)
 	}
 
@@ -353,7 +354,7 @@ func TestMemWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 func TestMemWatchRaceConcurrentFileCreation(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -385,8 +386,8 @@ func TestMemWatchRaceConcurrentFileCreation(t *testing.T) {
 
 	for w := range writers {
 		prefix := fmt.Sprintf("w%d_", w)
-		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-			return ev.Op == NotifyCreate && len(ev.Path) >= len(prefix) && ev.Path[:len(prefix)] == prefix
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+			return ev.Op == ufs.NotifyCreate && len(ev.Path) >= len(prefix) && ev.Path[:len(prefix)] == prefix
 		})
 	}
 }
@@ -395,7 +396,7 @@ func TestMemWatchRaceCloseAndCancel(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
 	ctx, cancel := context.WithCancel(t.Context())
-	closer, err := fsys.Watch(ctx, ".", func(NotifyOp, string) {})
+	closer, err := fsys.Watch(ctx, ".", func(ufs.NotifyOp, string) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +417,7 @@ func TestMemWatchRaceCloseAndCancel(t *testing.T) {
 func TestMemWatchFSClose(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
 
 	closer, err := fsys.Watch(t.Context(), ".", ec.Hook)
 	if err != nil {

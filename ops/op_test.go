@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/memfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -71,11 +72,11 @@ func newTestTempMountFS(tb testing.TB) ufs.WriteFS {
 }
 
 func newTestMemFS(_ testing.TB) ufs.WriteFS {
-	return ufs.MakeMemFS("memory://")
+	return memfs.New("memory://")
 }
 
 func newMemFS(name string) (ufs.WriteFS, error) {
-	return ufs.MakeMemFS(name), nil
+	return memfs.New(name), nil
 }
 
 func newAngryFS(name string) (ufs.WriteFS, error) {

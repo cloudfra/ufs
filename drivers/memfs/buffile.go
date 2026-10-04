@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package memfs
 
 import (
 	"fmt"
@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
@@ -54,7 +55,7 @@ func newBufFile(path string, content []byte, mode fs.FileMode, modTime time.Time
 
 func (f *bufFile) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
-	info := NewFileInfo(path.Base(f.path), int64(len(f.content)), f.mode, f.modTime)
+	info := ufs.NewFileInfo(path.Base(f.path), int64(len(f.content)), f.mode, f.modTime)
 	f.mu.Unlock()
 	return info, nil
 }

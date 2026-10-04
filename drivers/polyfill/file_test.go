@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package polyfill
 
 import (
 	"bytes"
@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"testing"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -29,7 +30,7 @@ import (
 // Polyfill test stubs
 //
 // Each stub implements a different subset of the File interface so tests can
-// verify that wrapReadOnlyFSFile and wrapFSFile delegate or fill in exactly
+// verify that WrapReadOnlyFSFile and WrapFSFile delegate or fill in exactly
 // the right methods.
 // ---------------------------------------------------------------------------
 
@@ -45,7 +46,7 @@ func newTestBareFile(name, content string) *testBareFile {
 }
 
 func (f *testBareFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{name: f.name, size: f.r.Size()}, nil
+	return testFileInfo{name: f.name, size: f.r.Size()}, nil
 }
 func (f *testBareFile) Read(p []byte) (int, error) { return f.r.Read(p) }
 func (f *testBareFile) Close() error               { return nil }
@@ -92,7 +93,7 @@ func newTestSeekerFile(name, content string) *testSeekerFile {
 }
 
 func (f *testSeekerFile) Stat() (fs.FileInfo, error) {
-	return &fsInfo{name: f.name, size: f.r.Size()}, nil
+	return testFileInfo{name: f.name, size: f.r.Size()}, nil
 }
 func (f *testSeekerFile) Read(p []byte) (int, error)                { return f.r.Read(p) }
 func (f *testSeekerFile) Close() error                              { return nil }
@@ -100,13 +101,13 @@ func (f *testSeekerFile) Seek(off int64, whence int) (int64, error) { return f.r
 func (f *testSeekerFile) ReadAt(p []byte, off int64) (int, error)   { return f.r.ReadAt(p, off) }
 
 // ---------------------------------------------------------------------------
-// Tests for wrapReadOnlyFSFile
+// Tests for WrapReadOnlyFSFile
 // ---------------------------------------------------------------------------
 
 func TestWrapReadOnlyFSFile(t *testing.T) {
 	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
-		base := newNullFile("test.txt")
-		got, err := wrapReadOnlyFSFile(base)
+		base := newTestFullFile("test.txt")
+		got, err := WrapReadOnlyFSFile(base)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -117,7 +118,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 
 	t.Run("read_through_buffer", func(t *testing.T) {
 		const content = "hello world"
-		wrapped, err := wrapReadOnlyFSFile(newTestBareFile("t.txt", content))
+		wrapped, err := WrapReadOnlyFSFile(newTestBareFile("t.txt", content))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +135,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 
 	t.Run("seek_to_start_after_partial_read", func(t *testing.T) {
 		const content = "hello world"
-		wrapped, err := wrapReadOnlyFSFile(newTestBareFile("t.txt", content))
+		wrapped, err := WrapReadOnlyFSFile(newTestBareFile("t.txt", content))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,7 +163,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 
 	t.Run("seek_current_and_end", func(t *testing.T) {
 		const content = "abcdefghij" // 10 bytes
-		wrapped, err := wrapReadOnlyFSFile(newTestBareFile("t.txt", content))
+		wrapped, err := WrapReadOnlyFSFile(newTestBareFile("t.txt", content))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +197,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 
 	t.Run("readat_does_not_affect_read_position", func(t *testing.T) {
 		const content = "hello world"
-		wrapped, err := wrapReadOnlyFSFile(newTestBareFile("t.txt", content))
+		wrapped, err := WrapReadOnlyFSFile(newTestBareFile("t.txt", content))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,7 +219,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 	})
 
 	t.Run("write_always_errors", func(t *testing.T) {
-		wrapped, err := wrapReadOnlyFSFile(newTestBareFile("t.txt", "content"))
+		wrapped, err := WrapReadOnlyFSFile(newTestBareFile("t.txt", "content"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -234,7 +235,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 
 	t.Run("write_always_errors_even_when_underlying_supports_write", func(t *testing.T) {
 		f := newTestWriterFile("t.txt", "content")
-		wrapped, err := wrapReadOnlyFSFile(f)
+		wrapped, err := WrapReadOnlyFSFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,7 +253,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 	})
 
 	t.Run("stat_delegates_to_underlying", func(t *testing.T) {
-		wrapped, err := wrapReadOnlyFSFile(newTestBareFile("myfile.txt", "hello"))
+		wrapped, err := WrapReadOnlyFSFile(newTestBareFile("myfile.txt", "hello"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -268,11 +269,11 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 	})
 
 	t.Run("close_releases_buffer", func(t *testing.T) {
-		got, err := wrapReadOnlyFSFile(newTestBareFile("t.txt", "content"))
+		got, err := WrapReadOnlyFSFile(newTestBareFile("t.txt", "content"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		nf := got.(*nestFile)
+		nf := got.(*wrappedFile)
 		if nf.buf == nil {
 			t.Fatal("expected non-nil buffer before close")
 		}
@@ -286,13 +287,13 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Tests for wrapFSFile
+// Tests for WrapFSFile
 // ---------------------------------------------------------------------------
 
 func TestWrapFSFile(t *testing.T) {
 	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
-		base := newNullFile("test.txt")
-		got, err := wrapFSFile(base)
+		base := newTestFullFile("test.txt")
+		got, err := WrapFSFile(base)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -303,13 +304,13 @@ func TestWrapFSFile(t *testing.T) {
 
 	t.Run("no_buffer_when_seek_and_readat_present", func(t *testing.T) {
 		f := newTestSeekerFile("t.txt", "hello world")
-		wrapped, err := wrapFSFile(f)
+		wrapped, err := WrapFSFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer ufsTesting.ValidateClose(t, wrapped)()
 
-		nf := wrapped.(*nestFile)
+		nf := wrapped.(*wrappedFile)
 		if nf.buf != nil {
 			t.Error("expected nil buffer when underlying provides both Seek and ReadAt")
 		}
@@ -327,7 +328,7 @@ func TestWrapFSFile(t *testing.T) {
 	})
 
 	t.Run("write_errors_without_underlying_writer", func(t *testing.T) {
-		wrapped, err := wrapFSFile(newTestBareFile("t.txt", "content"))
+		wrapped, err := WrapFSFile(newTestBareFile("t.txt", "content"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -343,7 +344,7 @@ func TestWrapFSFile(t *testing.T) {
 
 	t.Run("write_delegates_to_underlying_writer", func(t *testing.T) {
 		f := newTestWriterFile("t.txt", "")
-		wrapped, err := wrapFSFile(f)
+		wrapped, err := WrapFSFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -359,7 +360,7 @@ func TestWrapFSFile(t *testing.T) {
 
 	t.Run("writestring_derived_from_write_when_no_stringwriter", func(t *testing.T) {
 		f := newTestWriterFile("t.txt", "")
-		wrapped, err := wrapFSFile(f)
+		wrapped, err := WrapFSFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -375,7 +376,7 @@ func TestWrapFSFile(t *testing.T) {
 
 	t.Run("writestring_delegates_to_underlying_stringwriter", func(t *testing.T) {
 		f := newTestStringWriterFile("t.txt", "")
-		wrapped, err := wrapFSFile(f)
+		wrapped, err := WrapFSFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -391,14 +392,14 @@ func TestWrapFSFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Tests for wrapFile (unified wrapper)
+// Tests for WrapFile (unified wrapper)
 // ---------------------------------------------------------------------------
 
 func TestWrapFile(t *testing.T) {
 	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
-		base := newNullFile("test.txt")
+		base := newTestFullFile("test.txt")
 		for _, readOnly := range []bool{true, false} {
-			got, err := wrapFile(base, readOnly, bufferMemory)
+			got, err := WrapFile(base, readOnly, BufferMemory)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -409,7 +410,7 @@ func TestWrapFile(t *testing.T) {
 	})
 
 	t.Run("readonly_write_errors", func(t *testing.T) {
-		wrapped, err := wrapFile(newTestBareFile("t.txt", "content"), true, bufferMemory)
+		wrapped, err := WrapFile(newTestBareFile("t.txt", "content"), true, BufferMemory)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -425,7 +426,7 @@ func TestWrapFile(t *testing.T) {
 
 	t.Run("readwrite_delegates_write", func(t *testing.T) {
 		f := newTestWriterFile("t.txt", "")
-		wrapped, err := wrapFile(f, false, bufferMemory)
+		wrapped, err := WrapFile(f, false, BufferMemory)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -444,12 +445,12 @@ func TestWrapFile(t *testing.T) {
 // Tests for the buffer polyfill behavior (Seek / ReadAt / Read consistency)
 // ---------------------------------------------------------------------------
 
-func testPolyfillBuffering(t *testing.T, mode bufferMode) {
+func testPolyfillBuffering(t *testing.T, mode BufferMode) {
 	t.Helper()
 
 	t.Run("multiple_seeks_are_consistent", func(t *testing.T) {
 		const content = "abcdefghij"
-		wrapped, err := wrapFile(newTestBareFile("t.txt", content), false, mode)
+		wrapped, err := WrapFile(newTestBareFile("t.txt", content), false, mode)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -479,7 +480,7 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 
 	t.Run("readat_at_various_offsets", func(t *testing.T) {
 		const content = "abcdefghij"
-		wrapped, err := wrapFile(newTestBareFile("t.txt", content), false, mode)
+		wrapped, err := WrapFile(newTestBareFile("t.txt", content), false, mode)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -504,7 +505,7 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 
 	t.Run("readat_does_not_affect_read_position", func(t *testing.T) {
 		const content = "hello world"
-		wrapped, err := wrapFile(newTestBareFile("t.txt", content), true, mode)
+		wrapped, err := WrapFile(newTestBareFile("t.txt", content), true, mode)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -526,7 +527,7 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 
 	t.Run("seek_current_and_end", func(t *testing.T) {
 		const content = "abcdefghij" // 10 bytes
-		wrapped, err := wrapFile(newTestBareFile("t.txt", content), true, mode)
+		wrapped, err := WrapFile(newTestBareFile("t.txt", content), true, mode)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -562,13 +563,13 @@ func testPolyfillBuffering(t *testing.T, mode bufferMode) {
 func TestNestFilePolyfillBuffering(t *testing.T) {
 	t.Run("memory", func(t *testing.T) {
 		t.Run("buffer_created_when_seek_missing", func(t *testing.T) {
-			wrapped, err := wrapFile(newTestBareFile("t.txt", "hello"), false, bufferMemory)
+			wrapped, err := WrapFile(newTestBareFile("t.txt", "hello"), false, BufferMemory)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer ufsTesting.ValidateClose(t, wrapped)()
 
-			nf := wrapped.(*nestFile)
+			nf := wrapped.(*wrappedFile)
 			if nf.buf == nil {
 				t.Error("expected non-nil buf when underlying lacks Seek")
 			}
@@ -577,18 +578,18 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 			}
 		})
 
-		testPolyfillBuffering(t, bufferMemory)
+		testPolyfillBuffering(t, BufferMemory)
 	})
 
 	t.Run("disk", func(t *testing.T) {
 		t.Run("tmpfile_created_when_seek_missing", func(t *testing.T) {
-			wrapped, err := wrapFile(newTestBareFile("t.txt", "hello"), false, bufferDisk)
+			wrapped, err := WrapFile(newTestBareFile("t.txt", "hello"), false, BufferDisk)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer ufsTesting.ValidateClose(t, wrapped)()
 
-			nf := wrapped.(*nestFile)
+			nf := wrapped.(*wrappedFile)
 			if nf.tmpFile == nil {
 				t.Error("expected non-nil tmpFile when underlying lacks Seek")
 			}
@@ -598,11 +599,11 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 		})
 
 		t.Run("tmpfile_cleaned_up_on_close", func(t *testing.T) {
-			wrapped, err := wrapFile(newTestBareFile("t.txt", "hello"), false, bufferDisk)
+			wrapped, err := WrapFile(newTestBareFile("t.txt", "hello"), false, BufferDisk)
 			if err != nil {
 				t.Fatal(err)
 			}
-			nf := wrapped.(*nestFile)
+			nf := wrapped.(*wrappedFile)
 			tmpName := nf.tmpFile.Name()
 			if err := wrapped.Close(); err != nil {
 				t.Fatal(err)
@@ -615,18 +616,18 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 			}
 		})
 
-		testPolyfillBuffering(t, bufferDisk)
+		testPolyfillBuffering(t, BufferDisk)
 	})
 
 	t.Run("no_buffer_when_seek_and_readat_present", func(t *testing.T) {
 		f := newTestSeekerFile("t.txt", "hello world")
-		wrapped, err := wrapFile(f, false, bufferDisk)
+		wrapped, err := WrapFile(f, false, BufferDisk)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer ufsTesting.ValidateClose(t, wrapped)()
 
-		nf := wrapped.(*nestFile)
+		nf := wrapped.(*wrappedFile)
 		if nf.buf != nil {
 			t.Error("expected nil buf when underlying provides both Seek and ReadAt")
 		}
@@ -635,3 +636,28 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 		}
 	})
 }
+
+// testFileInfo is the fs.FileInfo of the test files above.
+type testFileInfo struct {
+	name string
+	size int64
+}
+
+func (i testFileInfo) Name() string       { return i.name }
+func (i testFileInfo) Size() int64        { return i.size }
+func (i testFileInfo) Mode() fs.FileMode  { return 0 }
+func (i testFileInfo) ModTime() time.Time { return time.Time{} }
+func (i testFileInfo) IsDir() bool        { return false }
+func (i testFileInfo) Sys() any           { return nil }
+
+// testFullFile already satisfies File, so WrapFile returns it unchanged.
+type testFullFile struct {
+	*testSeekerFile
+}
+
+func newTestFullFile(name string) *testFullFile {
+	return &testFullFile{testSeekerFile: newTestSeekerFile(name, "")}
+}
+
+func (f *testFullFile) Write(p []byte) (int, error)       { return len(p), nil }
+func (f *testFullFile) WriteString(s string) (int, error) { return len(s), nil }

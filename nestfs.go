@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -39,7 +40,7 @@ const archiveDirExt = ".d"
 
 // FSArgs holds optional parameters for constructing a nestFS.
 type FSArgs struct {
-	BufMode bufferMode
+	BufMode polyfill.BufferMode
 }
 
 var (
@@ -442,7 +443,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
-	return wrapFile(f, true, mountFS.args.BufMode)
+	return polyfill.WrapFile(f, true, mountFS.args.BufMode)
 }
 
 func (fsys *nestFS) Close() error {
@@ -472,7 +473,7 @@ func (fsys *nestFS) Create(name string) (File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return wrapFile(f, false, mountFS.args.BufMode)
+	return polyfill.WrapFile(f, false, mountFS.args.BufMode)
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {

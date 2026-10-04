@@ -343,7 +343,7 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 // (see getFSAndSubpath). The real directory is unreachable via this FS
 // regardless of what this method returns; that is a nestFS limitation.
 func (fsys *nestFS) IsMountedArchiveDir(name string) bool {
-	if !strings.HasSuffix(name, archiveDirExt) {
+	if !strings.HasSuffix(name, archiveDirExt) || !fs.ValidPath(name) {
 		return false
 	}
 	archiveName := strings.TrimSuffix(name, archiveDirExt)

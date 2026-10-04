@@ -144,6 +144,13 @@ func (fsys *faultFS) GetDeviceInfo() ufs.DeviceMap {
 	return fsys.inner.GetDeviceInfo()
 }
 
+// IsMountedArchiveDir forwards to the wrapped file system, see
+// [ufs.MountedArchiveDirFS].
+func (fsys *faultFS) IsMountedArchiveDir(name string) bool {
+	m, ok := fsys.inner.(ufs.MountedArchiveDirFS)
+	return ok && m.IsMountedArchiveDir(name)
+}
+
 func (fsys *faultFS) URI() (*url.URL, error) {
 	u, err := fsys.inner.URI()
 	if err != nil {

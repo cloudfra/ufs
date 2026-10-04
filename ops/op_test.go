@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -82,8 +83,24 @@ func newAngryFS(name string) (ufs.WriteFS, error) {
 	return ufs.New(context.Background(), name)
 }
 
-func TestRsync(t *testing.T) {
+// testAssetsFS returns the test assets as the source of the Rsync tests. It
+// fails the test when the directory is missing or empty: os.DirFS does not
+// report a missing directory, and Rsync of nothing would pass every check.
+func testAssetsFS(t *testing.T) fs.FS {
+	t.Helper()
 	srcFS := osutil.DirFS(testLocalFSName)
+	files, err := ListFiles(srcFS, pathutil.CwdPath)
+	if err != nil {
+		t.Fatalf("ListFiles(%q) = %v, want nil", testLocalFSName, err)
+	}
+	if len(files) == 0 {
+		t.Fatalf("%q holds no files, want the test assets", testLocalFSName)
+	}
+	return srcFS
+}
+
+func TestRsync(t *testing.T) {
+	srcFS := testAssetsFS(t)
 	for _, fsysTC := range rsyncDestTestCaseList {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
@@ -117,7 +134,7 @@ func TestRsync(t *testing.T) {
 }
 
 func TestRsyncAngry(t *testing.T) {
-	srcFS := osutil.DirFS(testLocalFSName)
+	srcFS := testAssetsFS(t)
 
 	destFS, err := newAngryFS("angry://")
 	if err != nil {
@@ -131,7 +148,7 @@ func TestRsyncAngry(t *testing.T) {
 }
 
 func TestRsyncNull(t *testing.T) {
-	srcFS := osutil.DirFS(testLocalFSName)
+	srcFS := testAssetsFS(t)
 
 	destFS, err := ufs.New(t.Context(), "null://")
 	if err != nil {
@@ -708,6 +725,26 @@ func TestWalkIncludeMountedArchiveDefault(t *testing.T) {
 	want := []string{"data.zip", "readme.txt"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Walk() default (no archives) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestWalkSkipsMountedArchiveThroughDecorator verifies that a decorator
+// wrapped around the nested file system still lets Walk skip archive
+// directories.
+func TestWalkSkipsMountedArchiveThroughDecorator(t *testing.T) {
+	fsys := readonlyfs.New(setupNestFSWithArchive(t))
+
+	var got []string
+	err := Walk(fsys, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+		got = append(got, name)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk() = %v, want nil", err)
+	}
+	want := []string{"data.zip", "readme.txt"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Walk() through readOnly mismatch (-want +got):\n%s", diff)
 	}
 }
 

@@ -32,6 +32,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 // Not implemented FUSE operations (ufs has no support for these):
@@ -361,6 +362,9 @@ func fuseErrno(err error) syscall.Errno {
 	}
 	if errors.Is(err, fs.ErrClosed) {
 		return syscall.EBADF
+	}
+	if errors.Is(err, ufserrors.ErrDirNotEmpty) {
+		return syscall.ENOTEMPTY
 	}
 	if errno, ok := errors.AsType[syscall.Errno](err); ok {
 		return errno

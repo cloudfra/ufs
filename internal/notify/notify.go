@@ -21,6 +21,7 @@ package notify
 import (
 	"context"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 
@@ -144,7 +145,8 @@ func (b *Bus) Subscribe(ctx context.Context, prefix string, hook Hook) *Subscrip
 }
 
 // Publish delivers op/path to every active subscription whose prefix
-// matches path.
+// matches path. It iterates a snapshot of the subscriptions, so the slice it
+// reads is never modified in place, only replaced.
 func (b *Bus) Publish(op Op, path string) {
 	b.mu.RLock()
 	subs := b.subs
@@ -173,7 +175,9 @@ func (b *Bus) remove(s *Subscription) {
 	defer b.mu.Unlock()
 	for i, sub := range b.subs {
 		if sub == s {
-			b.subs = append(b.subs[:i], b.subs[i+1:]...)
+			// Publish iterates a snapshot of b.subs without holding the lock,
+			// so the backing array must never be modified in place.
+			b.subs = slices.Concat(b.subs[:i], b.subs[i+1:])
 			return
 		}
 	}

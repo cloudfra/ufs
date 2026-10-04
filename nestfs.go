@@ -55,7 +55,7 @@ type FSArgs struct {
 var (
 	_ FS                  = (*nestFS)(nil)
 	_ fs.GlobFS           = (*nestFS)(nil)
-	_ AbsPathGet          = (*nestFS)(nil)
+	_ AbsPathGetter       = (*nestFS)(nil)
 	_ MountedArchiveDirFS = (*nestFS)(nil)
 	_ DeviceInfoGetter    = (*mountMap)(nil)
 )
@@ -225,7 +225,17 @@ type nestFS struct {
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
-	if rfs, ok := fsys.fsys.(AbsPathGet); ok {
+	// A name below a mount belongs to the mounted file system.
+	if _, subName, mountFS, ok := fsys.mounts.getClosestMount(name); ok {
+		return mountFS.GetAbsPath(subName)
+	}
+	// The contents of an archive are not files on the host.
+	for _, archiveDirName := range getPotentialArchives(name) {
+		if isMountableArchivePath(strings.TrimSuffix(archiveDirName, archiveDirExt)) {
+			return "", realAbsPathNotSupported(fsys, name)
+		}
+	}
+	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
@@ -370,7 +380,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	var newFS WriteFS
 	// An archive that is also a file on the host is opened by path. A base
 	// that cannot resolve the path is read through an open file instead.
-	if lfs, ok := fsys.fsys.(AbsPathGet); ok {
+	if lfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		if absName, err := lfs.GetAbsPath(name); err == nil {
 			newFS, err = driver.OpenPathFunc(ctx, absName)
 			if err != nil {
@@ -406,6 +416,12 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	archiveDirNames := getPotentialArchives(targetName)
 	for _, archiveDirName := range archiveDirNames {
 		archiveName := strings.TrimSuffix(archiveDirName, archiveDirExt)
+		// Only a name that the archive driver recognizes is an archive
+		// directory; "conf.d" next to a file "conf" is an ordinary name, as
+		// is every ".d" name when no archive driver is registered.
+		if !isMountableArchivePath(archiveName) {
+			continue
+		}
 		info, err := targetFS.Stat(archiveName)
 		if info != nil && err == nil {
 			subPath, ok := pathutil.RemovePrefix(targetName, archiveDirName)

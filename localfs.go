@@ -46,7 +46,7 @@ func init() {
 type localFSInterface interface {
 	WriteFS
 	fs.GlobFS
-	AbsPathGet
+	AbsPathGetter
 }
 
 type localFS struct {

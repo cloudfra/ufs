@@ -240,15 +240,16 @@ server.Wait() // until unmounted or ctx is canceled
 ### Helpers
 
 Functions that work on any `fs.FS`, using a backend's faster native
-implementation when it has one:
+implementation when it has one. The copy, list and walk helpers live in
+`github.com/cloudfra/ufs/ops`:
 
 | Function                             | Purpose |
 |:-------------------------------------|:--------|
-| `ufs.Copy`                           | Copy one file between two file systems. |
-| `ufs.Rsync`                          | Copy a whole tree between two file systems. |
-| `ufs.List`, `ufs.ListFiles`          | Collect every path, or every file path, under a directory. |
-| `ufs.ForEachFilename`, `ufs.ForEachFileInfo` | Stream the same results without building a slice. |
-| `ufs.Walk`                           | Walk a tree, skipping directories by glob and optionally descending into archives. |
+| `ops.Copy`                           | Copy one file between two file systems. |
+| `ops.Rsync`                          | Copy a whole tree between two file systems. |
+| `ops.List`, `ops.ListFiles`          | Collect every path, or every file path, under a directory. |
+| `ops.ForEachFilename`, `ops.ForEachFileInfo` | Stream the same results without building a slice. |
+| `ops.Walk`                           | Walk a tree, skipping directories by glob and optionally descending into archives. |
 | `ufs.Remove`, `ufs.RemoveAll`        | Delete from any file system that supports it. |
 | `ufs.AbsPath`                        | Resolve a virtual path to a real path on the host, when there is one. |
 

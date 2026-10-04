@@ -299,3 +299,12 @@ type OpenFileFS interface {
 	// OpenFile is the generalized open call; most users will use Open or Create instead.
 	OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error)
 }
+
+// MountedArchiveDirFS is an optional interface implemented by file systems
+// that expose the contents of an archive as a virtual directory next to the
+// archive file, such as "data.zip.d" for "data.zip".
+type MountedArchiveDirFS interface {
+	// IsMountedArchiveDir reports whether name is a virtual directory backed
+	// by an archive rather than a directory of the underlying file system.
+	IsMountedArchiveDir(name string) bool
+}

@@ -28,6 +28,7 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://
 	_ "github.com/cloudfra/ufs/drivers/gitfs"                 // registers git repository URIs
+	"github.com/cloudfra/ufs/ops"
 )
 
 var pathFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
@@ -51,7 +52,7 @@ func run(dir string) error {
 			slog.Warn("cannot close mounted file system", "fs", fsys, "error", err)
 		}
 	}()
-	return ufs.ForEachFilename(fsys, ".", func(name string) error {
+	return ops.ForEachFilename(fsys, ".", func(name string) error {
 		absName, err := ufs.AbsPath(fsys, name)
 		if err == nil {
 			fmt.Println(absName)

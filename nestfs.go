@@ -49,10 +49,11 @@ type FSArgs struct {
 }
 
 var (
-	_ FS               = (*nestFS)(nil)
-	_ fs.GlobFS        = (*nestFS)(nil)
-	_ realAbsPathGet   = (*nestFS)(nil)
-	_ DeviceInfoGetter = (*mountMap)(nil)
+	_ FS                  = (*nestFS)(nil)
+	_ fs.GlobFS           = (*nestFS)(nil)
+	_ realAbsPathGet      = (*nestFS)(nil)
+	_ MountedArchiveDirFS = (*nestFS)(nil)
+	_ DeviceInfoGetter    = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -329,7 +330,7 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 	return fsys.mounts.put(name, mountedFS)
 }
 
-// isMountedArchiveDir reports whether name (a full path within this FS) is a
+// IsMountedArchiveDir reports whether name (a full path within this FS) is a
 // virtual directory backed by a mounted archive. It returns true only when:
 //   - name ends with archiveDirExt
 //   - the trimmed name satisfies isMountableArchivePath
@@ -341,7 +342,7 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 // same FS, nestFS's path routing always redirects access through the archive
 // (see getFSAndSubpath). The real directory is unreachable via this FS
 // regardless of what this method returns; that is a nestFS limitation.
-func (fsys *nestFS) isMountedArchiveDir(name string) bool {
+func (fsys *nestFS) IsMountedArchiveDir(name string) bool {
 	if !strings.HasSuffix(name, archiveDirExt) {
 		return false
 	}

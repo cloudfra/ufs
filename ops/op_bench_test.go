@@ -12,26 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package ops
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io/fs"
 	"path/filepath"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // buildTree creates a localFS-backed directory tree with nFiles files of fileBytes bytes each,
 // spread across ~depth directory levels. Returns (localFS, tempDir) so caller can use it directly.
-func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) WriteFS {
+func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) ufs.WriteFS {
 	t.Helper()
 	dir := t.TempDir()
-	lfs, err := newLocalFS(t.Context(), dir)
+	lfs, err := ufs.New(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,8 +56,8 @@ func buildTree(t testing.TB, nFiles int, depth int, fileBytes int) WriteFS {
 }
 
 // mustMemFS creates a memFS and attaches t.Cleanup to close it.
-func mustMemFS(tb testing.TB, name string) WriteFS {
-	fsys, err := newMemFS(tb.Context(), name)
+func mustMemFS(tb testing.TB, name string) ufs.WriteFS {
+	fsys, err := newMemFS(name)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func mustMemFS(tb testing.TB, name string) WriteFS {
 // --- Copy benchmarks (pure memFS — no backend issues) ---
 
 func BenchmarkCopySmall(b *testing.B) {
-	src, err := newMemFS(b.Context(), "memory://src")
+	src, err := newMemFS("memory://src")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func BenchmarkCopySmall(b *testing.B) {
 	}
 
 	for b.Loop() {
-		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func BenchmarkCopySmall(b *testing.B) {
 }
 
 func BenchmarkCopyMedium(b *testing.B) {
-	src, err := newMemFS(b.Context(), "memory://src")
+	src, err := newMemFS("memory://src")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func BenchmarkCopyMedium(b *testing.B) {
 	}
 
 	for b.Loop() {
-		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -132,7 +132,7 @@ func BenchmarkCopyMedium(b *testing.B) {
 }
 
 func BenchmarkCopyLarge(b *testing.B) {
-	src, err := newMemFS(b.Context(), "memory://src")
+	src, err := newMemFS("memory://src")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func BenchmarkCopyLarge(b *testing.B) {
 	}
 
 	for b.Loop() {
-		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -168,7 +168,7 @@ func BenchmarkRsyncSmall(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -186,7 +186,7 @@ func BenchmarkRsyncMedium(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func BenchmarkRsyncLarge(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		dst, err := newMemFS(b.Context(), fmt.Sprintf("memory://dst%d", b.N))
+		dst, err := newMemFS(fmt.Sprintf("memory://dst%d", b.N))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -450,292 +450,9 @@ func BenchmarkWalkWithExcludes(b *testing.B) {
 	}
 }
 
-// --- memFS internal benchmarks ---
-
-func BenchmarkMemFSReadFileSmall(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
-	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
-		b.Fatal(err)
-	}
-	f, err := fsys.Create("small.bin")
-	if err != nil {
-		b.Fatal(err)
-	}
-	if _, err := f.Write(bytes.Repeat([]byte("X"), 1<<10)); err != nil { // 1 KB
-		b.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := fs.ReadFile(fsys, "small.bin"); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkMemFSReadFileMedium(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
-	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
-		b.Fatal(err)
-	}
-	f, err := fsys.Create("medium.bin")
-	if err != nil {
-		b.Fatal(err)
-	}
-	if _, err := f.Write(bytes.Repeat([]byte("Y"), 100<<10)); err != nil { // 100 KB
-		b.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := fs.ReadFile(fsys, "medium.bin"); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkMemFSReadFileLarge(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
-	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
-		b.Fatal(err)
-	}
-	f, err := fsys.Create("large.bin")
-	if err != nil {
-		b.Fatal(err)
-	}
-	if _, err := f.Write(bytes.Repeat([]byte("Z"), 10<<20)); err != nil { // 10 MB
-		b.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := fs.ReadFile(fsys, "large.bin"); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkMemFSGlob(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
-	for i := range 10_000 {
-		level := i % 256
-		subdir := fmt.Sprintf("d%d/", level)
-		name := subdir + "file_" + fmt.Sprintf("%d.dat", i)
-		f, err := fsys.Create(name)
-		if err != nil {
-			b.Fatal(err)
-		}
-		data := ufsTesting.SeedData(byte(i%256), 1)
-		if _, err := f.Write(data); err != nil {
-			b.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	patterns := []string{"d*/file_*", "*.dat"}
-	for _, pattern := range patterns {
-		b.Run(pattern, func(b *testing.B) {
-			b.ResetTimer()
-			for b.Loop() {
-				if _, err := fsys.(fs.GlobFS).Glob(pattern); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
-func BenchmarkMemFSReadDir(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
-	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
-		b.Fatal(err)
-	}
-	for i := 1000; i < 2000; i++ {
-		name := fmt.Sprintf("entry_%d", i)
-		f, err := fsys.Create(name)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if _, err := fmt.Fprintf(f, "data-%d", i); err != nil {
-			b.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := fs.ReadDir(fsys, "."); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkMemFSCreate(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
-	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
-		b.Fatal(err)
-	}
-	data := bytes.Repeat([]byte("D"), 1024)
-
-	b.ResetTimer()
-	for b.Loop() {
-		name := fmt.Sprintf("file_%d", b.N)
-		f, err := fsys.Create(name)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if _, err := f.Write(data); err != nil {
-			b.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkMemFSRemoveAll(b *testing.B) {
-	fsys := mustMemFS(b, "memory://bench")
-	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {
-		b.Fatal(err)
-	}
-	for i := range 5000 {
-		name := fmt.Sprintf("subdir_%d/file", i)
-		f, err := fsys.Create(name)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if _, err := f.Write([]byte("x")); err != nil {
-			b.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			b.Fatal(err)
-		}
-	}
-
-	b.ResetTimer()
-	for b.Loop() {
-		if err := RemoveAll(fsys, "."); err != nil {
-			b.Fatal(err)
-		}
-		// Rebuild for next iteration
-		for i := range 5000 {
-			name := fmt.Sprintf("subdir_%d/file", i)
-			f, err := fsys.Create(name)
-			if err != nil {
-				b.Fatal(err)
-			}
-			if n, err := f.Write([]byte("x")); err != nil {
-				b.Fatal(err)
-			} else if n != 1 {
-				b.Fatalf("Write() = %d, want 1", n)
-			}
-
-			if err := f.Close(); err != nil {
-				b.Fatal(err)
-			}
-		}
-	}
-}
-
-// --- nestFS benchmarks (uses localFS underneath) ---
-
-func BenchmarkNestFSReadDir(b *testing.B) {
-	dir := b.TempDir()
-	lfs, err := newLocalFS(b.Context(), dir)
-	if err != nil {
-		b.Fatal(err)
-	}
-	for i := range 1000 {
-		name := fmt.Sprintf("file_%d.dat", i)
-		data := bytes.Repeat([]byte("Nest"), 128)
-		if err := osutil.WriteFile(filepath.Join(dir, name), data); err != nil {
-			b.Fatal(err)
-		}
-	}
-	nfs := makeNestFS(context.Background(), lfs)
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := nfs.ReadDir("."); err != nil {
-			b.Fatal(err)
-		}
-	}
-	if err := nfs.Close(); err != nil {
-		b.Errorf("failed to close nfs: %v", err)
-	}
-}
-
-func BenchmarkNestFSReadFile(b *testing.B) {
-	dir := b.TempDir()
-	lfs, err := newLocalFS(b.Context(), dir)
-	if err != nil {
-		b.Fatal(err)
-	}
-	for i := range 100 {
-		name := fmt.Sprintf("file_%d.dat", i)
-		data := bytes.Repeat([]byte("Nest"), 128)
-		if err := osutil.WriteFile(filepath.Join(dir, name), data); err != nil {
-			b.Fatal(err)
-		}
-	}
-	nfs := makeNestFS(context.Background(), lfs)
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := nfs.ReadFile("file_42.dat"); err != nil {
-			b.Fatal(err)
-		}
-	}
-	if err := nfs.Close(); err != nil {
-		b.Errorf("failed to close nfs: %v", err)
-	}
-}
-
-// --- localFS benchmarks ---
-
-func BenchmarkLocalFSReadDir(b *testing.B) {
-	dir := b.TempDir()
-	lfs, err := newLocalFS(b.Context(), dir)
-	if err != nil {
-		b.Fatal(err)
-	}
-	data := bytes.Repeat([]byte("LocData"), 64) // ~600B each
-	for i := range 1000 {
-		name := fmt.Sprintf("file_%d.dat", i)
-		if err := osutil.WriteFile(filepath.Join(dir, name), data); err != nil {
-			b.Fatal(err)
-		}
-	}
-	defer func() {
-		if err := lfs.Close(); err != nil {
-			b.Errorf("failed to close lfs: %v", err)
-		}
-	}()
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := lfs.ReadDir("."); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 func BenchmarkLocalFSListFiles(b *testing.B) {
 	dir := b.TempDir()
-	lfs, err := newLocalFS(b.Context(), dir)
+	lfs, err := ufs.New(b.Context(), dir)
 	if err != nil {
 		b.Fatal(err)
 	}

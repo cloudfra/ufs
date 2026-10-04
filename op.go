@@ -48,7 +48,8 @@ func Rsync(srcFS fs.FS, destFS WriteFS, dir string) error {
 
 // Copy copies the single file at srcFilename in srcFS to destFilename in destFS.
 // The parent directory of destFilename must already exist. The destination file
-// is created (or truncated) via [WriteFS.Create].
+// is created (or truncated) via [WriteFS.Create]. An error from closing the
+// destination file is returned, since the copy may not have been persisted.
 func Copy(srcFS fs.FS, srcFilename string, destFS WriteFS, destFilename string) error {
 	sfp, err := srcFS.Open(srcFilename)
 	if err != nil {
@@ -64,15 +65,12 @@ func Copy(srcFS fs.FS, srcFilename string, destFS WriteFS, destFilename string) 
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := dfp.Close(); err != nil {
-			slog.Error("failed to close destination file", "path", destFilename, "error", err)
-		}
-	}()
 	if _, err := io.Copy(dfp, sfp); err != nil {
-		return err
+		return ufserrors.Join(err, dfp.Close())
 	}
-	return nil
+	// Backends that buffer writes (object stores, databases) only persist the
+	// data on Close, so a failed Close is a failed copy.
+	return dfp.Close()
 }
 
 // ForEachFilename calls f for each file path (not directory) under dir,

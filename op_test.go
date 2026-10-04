@@ -25,6 +25,7 @@ import (
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -203,6 +204,60 @@ func TestCopyOpenError(t *testing.T) {
 
 	if err := Copy(src, "file.txt", dst, "file.txt"); err == nil {
 		t.Error("Copy with angry src succeeded, want error")
+	}
+}
+
+// closeErrorFS is a WriteFS whose files accept every write and then fail to
+// Close, like a backend that only persists buffered data on Close.
+type closeErrorFS struct {
+	WriteFS
+	err error
+}
+
+func (fsys *closeErrorFS) Create(name string) (File, error) {
+	f, err := fsys.WriteFS.Create(name)
+	if err != nil {
+		return nil, err
+	}
+	return &closeErrorFile{File: f, err: fsys.err}, nil
+}
+
+type closeErrorFile struct {
+	File
+	err error
+}
+
+func (f *closeErrorFile) Close() error {
+	return ufserrors.Join(f.File.Close(), f.err)
+}
+
+func TestCopyDestinationCloseError(t *testing.T) {
+	src, err := newMemFS(t.Context(), "memory://src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, src)()
+	f, err := src.Create("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("data"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	mem, err := newMemFS(t.Context(), "memory://dst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, mem)()
+	wantErr := errors.New("flush failed")
+	dst := &closeErrorFS{WriteFS: mem, err: wantErr}
+
+	if err := Copy(src, "file.txt", dst, "file.txt"); !errors.Is(err, wantErr) {
+		t.Errorf("Copy() = %v, want %v", err, wantErr)
 	}
 }
 

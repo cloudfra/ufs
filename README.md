@@ -23,17 +23,17 @@ writes added.
 
 ## Supported integrations
 
-| Storage              | Open it with                           | Access     |
-|:---------------------|:---------------------------------------|:-----------|
-| Local disk           | `/path/to/dir` or `file:///path/to/dir`| read-write |
-| Memory               | `memory:`                              | read-write |
-| Archives             | `/path/to/file.zip` (zip, tar, 7z, rar and compressed tars) | read-only |
-| Remote archives      | `https://host/file.zip`                | read-only  |
-| Google Cloud Storage | `gs://bucket/prefix`                   | read-write |
-| Git repositories     | `https://host/repo.git`                | read-write on a temporary clone |
-| BoltDB               | `bolt:/path/to/file.db`                | read-write |
-| Go `embed.FS`        | `embedfs.New(name, fsys)`              | read-only  |
-| Null                 | `null://`                              | discards writes |
+| Storage              | Open it with                            |
+|:---------------------|:----------------------------------------|
+| Local disk           | `/path/to/dir` or `file:///path/to/dir` |
+| Memory               | `memory:`                               |
+| Archives             | `/path/to/file.zip` (zip, tar, 7z, rar and compressed tars) |
+| Remote archives      | `https://host/file.zip`                 |
+| Google Cloud Storage | `gs://bucket/prefix`                    |
+| Git repositories     | `https://host/repo.git`                 |
+| BoltDB               | `bolt:/path/to/file.db`                 |
+| Go `embed.FS`        | `embedfs.New(name, fsys)`               |
+| Null                 | `null://`                               |
 
 Host mounting is available on Linux (FUSE) and Windows (ProjFS).
 
@@ -42,35 +42,27 @@ Host mounting is available on Linux (FUSE) and Windows (ProjFS).
 ### Mount something with `ufsmount`
 
 `ufsmount` makes any of the storage types above appear as a normal directory.
+Download a prebuilt binary from the
+[releases page](https://github.com/cloudfra/ufs/releases).
+
+Linux (amd64):
 
 ```bash
-go install github.com/cloudfra/ufs/cmd/ufsmount@latest
+curl -fsSL -o ufsmount https://github.com/cloudfra/ufs/releases/latest/download/ufsmount-linux_amd64
+chmod +x ufsmount
 ```
 
-Prebuilt binaries for Linux, macOS and Windows are attached to each
-[release](https://github.com/cloudfra/ufs/releases).
+Windows (amd64), in PowerShell:
 
-Browse an archive without extracting it:
-
-```bash
-mkdir -p /tmp/release
-ufsmount -uri ./release.tar.gz -mount /tmp/release
+```powershell
+Invoke-WebRequest -Uri https://github.com/cloudfra/ufs/releases/latest/download/ufsmount-windows_amd64.exe -OutFile ufsmount.exe
 ```
 
-Then, in another terminal:
+Then mount something, for example a git repository:
 
 ```bash
-ls /tmp/release
-cat /tmp/release/README.md
-```
-
-The same command works for every backend:
-
-```bash
-ufsmount -uri gs://my-bucket/logs -mount /mnt/logs                   # a GCS prefix
-ufsmount -uri https://example.com/assets.zip -mount /mnt/assets      # a remote archive
-ufsmount -uri https://github.com/cloudfra/ufs.git -mount /mnt/ufs    # a git repository
-ufsmount -uri memory: -mount /mnt/scratch                            # a volatile scratch space
+mkdir -p /tmp/ufs
+./ufsmount -uri https://github.com/cloudfra/ufs.git -mount /tmp/ufs
 ```
 
 Press `Ctrl-C` to unmount. Linux needs FUSE (`fuse3`) and Windows needs ProjFS
@@ -92,6 +84,12 @@ import (
 	"log"
 
 	"github.com/cloudfra/ufs"
+
+	// Each blank import installs a driver. Local disk, memory, archives and
+	// null:// are built in; drop the ones you do not need.
+	_ "github.com/cloudfra/ufs/drivers/boltfs" // installs bolt:
+	_ "github.com/cloudfra/ufs/drivers/gcsfs"  // installs gs://
+	_ "github.com/cloudfra/ufs/drivers/gitfs"  // installs URIs ending in .git
 )
 
 func main() {
@@ -123,18 +121,6 @@ func main() {
 }
 ```
 
-Local disk, memory, archives and `null://` work out of the box. The other
-backends live in their own packages so you only pay for the dependencies you
-use; blank-import the ones you need:
-
-```go
-import (
-	_ "github.com/cloudfra/ufs/drivers/boltfs" // bolt:
-	_ "github.com/cloudfra/ufs/drivers/gcsfs"  // gs://
-	_ "github.com/cloudfra/ufs/drivers/gitfs"  // URIs ending in .git
-)
-```
-
 More runnable examples are in [example_test.go](example_test.go) and on
 [pkg.go.dev](https://pkg.go.dev/github.com/cloudfra/ufs#pkg-examples).
 
@@ -142,17 +128,19 @@ More runnable examples are in [example_test.go](example_test.go) and on
 
 ### Backends
 
-| Backend    | URI                             | Package          | Notes |
-|:-----------|:--------------------------------|:-----------------|:------|
-| Local      | `file:///path` or a bare path   | built in         | Rooted with `os.OpenRoot`; paths cannot escape the root. |
-| Memory     | `memory:`                       | built in         | Lost when the file system is closed. |
-| Archive    | a path ending in an archive extension, or `archive:///path` | built in | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`. |
-| Remote archive | `http://` or `https://` URL | built in         | Downloaded to a temporary directory that is removed on `Close`. |
-| Null       | `null://`                       | built in         | Like `/dev/null`: writes are discarded and reads return nothing. |
-| GCS        | `gs://bucket/prefix`            | `drivers/gcsfs`  | Uses Application Default Credentials and falls back to anonymous access for public buckets. |
-| Git        | any URI ending in `.git`        | `drivers/gitfs`  | Shallow-cloned into a temporary directory that is removed on `Close`. |
-| BoltDB     | `bolt:/path/to/file.db`         | `drivers/boltfs` | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file. |
-| `embed.FS` | none, use `embedfs.New`         | `drivers/embedfs`| Wraps files compiled into your binary. |
+| Backend    | URI                             | Access     | Package          | Notes |
+|:-----------|:--------------------------------|:-----------|:-----------------|:------|
+| Local      | `file:///path` or a bare path   | read-write | built in         | Rooted with `os.OpenRoot`; paths cannot escape the root. |
+| Memory     | `memory:`                       | read-write | built in         | Lost when the file system is closed. |
+| Archive    | a path ending in an archive extension, or `archive:///path` | read-only | built in | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`. |
+| Remote archive | `http://` or `https://` URL | read-only  | built in         | Downloaded to a temporary directory that is removed on `Close`. |
+| Null       | `null://`                       | read-write | built in         | Like `/dev/null`: writes are accepted and discarded, reads return nothing. |
+| GCS        | `gs://bucket/prefix`            | read-write | `drivers/gcsfs`  | Uses Application Default Credentials and falls back to anonymous access for public buckets. |
+| Git        | any URI ending in `.git`        | read-write | `drivers/gitfs`  | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
+| BoltDB     | `bolt:/path/to/file.db`         | read-write | `drivers/boltfs` | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file. |
+| `embed.FS` | none, use `embedfs.New`         | read-only  | `drivers/embedfs`| Wraps files compiled into your binary. |
+
+Any backend can be made read-only with the `readOnly` [decorator](#decorators).
 
 ### Archives are directories
 

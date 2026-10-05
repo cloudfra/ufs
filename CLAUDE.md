@@ -198,8 +198,7 @@ code with no `ufs` dependency goes in `internal/`.
 | nestfs.go             | nestFS — mounts and archive directories over a base FS              |
 | backends_test.go      | Opens drivers through the registry for the base package's own tests, which cannot import them |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
-| remove.go             | Remove and RemoveAll — dispatch to the optional RemoveFileFS        |
-| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk       |
+| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers, IsLocalName/LocalPath shared by the local and archive drivers |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |

@@ -215,7 +215,7 @@ func BenchmarkMemFSRemoveAll(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		if err := ufs.RemoveAll(fsys, "."); err != nil {
+		if err := fsys.RemoveAll("."); err != nil {
 			b.Fatal(err)
 		}
 		// Rebuild for next iteration

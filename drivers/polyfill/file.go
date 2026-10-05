@@ -169,9 +169,16 @@ func polyfillSeekReadAtDisk(nf *wrappedFile, f fs.File) error {
 }
 
 // WrapFile returns f unchanged if it already satisfies File. Otherwise it wraps
-// f, polyfilling any missing methods. When readOnly is true, Write and
-// WriteString always return fs.ErrInvalid. mode selects in-memory or disk-backed
-// buffering for Seek/ReadAt polyfills.
+// f, polyfilling any missing methods. mode selects in-memory or disk-backed
+// buffering for the Seek and ReadAt polyfills; an unknown mode buffers in
+// memory.
+//
+// When readOnly is true, Write and WriteString of the wrapper return
+// fs.ErrInvalid. readOnly has no effect on a file that is returned unchanged:
+// such a file keeps its own Write.
+//
+// WrapFile takes ownership of f. Closing the returned file closes f, and when
+// WrapFile fails it closes f before returning.
 func WrapFile(f fs.File, readOnly bool, mode BufferMode) (File, error) {
 	if full, ok := f.(File); ok {
 		return full, nil

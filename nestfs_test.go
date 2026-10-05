@@ -16,6 +16,7 @@ package ufs
 
 import (
 	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"

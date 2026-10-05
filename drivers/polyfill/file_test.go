@@ -560,7 +560,7 @@ func testPolyfillBuffering(t *testing.T, mode BufferMode) {
 	})
 }
 
-func TestNestFilePolyfillBuffering(t *testing.T) {
+func TestWrapFileBuffering(t *testing.T) {
 	t.Run("memory", func(t *testing.T) {
 		t.Run("buffer_created_when_seek_missing", func(t *testing.T) {
 			wrapped, err := WrapFile(newTestBareFile("t.txt", "hello"), false, BufferMemory)

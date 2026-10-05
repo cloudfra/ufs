@@ -48,7 +48,13 @@ var (
 	_ fs.GlobFS           = (*nestFS)(nil)
 	_ AbsPathGetter       = (*nestFS)(nil)
 	_ MountedArchiveDirFS = (*nestFS)(nil)
-	_ DeviceInfoGetter    = (*mountMap)(nil)
+
+	// polyfill cannot import this package, so it declares its own File. The
+	// two must have the same method set, or polyfill.WrapFile stops
+	// recognizing the files of the backends.
+	_ File             = polyfill.File(nil)
+	_ polyfill.File    = File(nil)
+	_ DeviceInfoGetter = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {

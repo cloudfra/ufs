@@ -26,16 +26,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-)
-
-const (
-	localFSPrefix = "file:"
 )
 
 var (
@@ -50,7 +45,7 @@ func init() {
 type localFSInterface interface {
 	ufs.WriteFS
 	fs.GlobFS
-	ufs.AbsPathGet
+	ufs.AbsPathGetter
 }
 
 type localFS struct {
@@ -178,17 +173,15 @@ func (fsys *localFS) Glob(pattern string) ([]string, error) {
 // New returns a local disk file system rooted at name, which is a path or a
 // file: URI.
 func New(name string) (ufs.WriteFS, error) {
-	return makeLocalFS(name)
-}
-
-// NormalizePath returns the host path named by name, which is a path or a
-// file: URI.
-func NormalizePath(name string) string {
-	return localFSNormalizePath(name)
+	fsys, err := makeLocalFS(name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func makeLocalFS(name string) (*localFS, error) {
-	name = localFSNormalizePath(name)
+	name = osutil.LocalPath(name)
 	absPath, err := filepath.Abs(name)
 	if err != nil {
 		return nil, err
@@ -203,16 +196,9 @@ func makeLocalFS(name string) (*localFS, error) {
 }
 
 func newLocalFS(_ context.Context, name string) (ufs.WriteFS, error) {
-	return makeLocalFS(name)
+	return New(name)
 }
 
 func isLocalFSUri(name string) bool {
-	if strings.HasPrefix(name, localFSPrefix) || !strings.Contains(name, "://") {
-		return true
-	}
-	stat, err := osutil.Stat(name)
-	if err == nil && stat != nil {
-		return true
-	}
-	return false
+	return osutil.IsLocalName(name)
 }

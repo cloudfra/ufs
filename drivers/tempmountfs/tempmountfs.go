@@ -32,9 +32,9 @@ import (
 )
 
 var (
-	_ ufs.WriteFS    = (*tempMountFS)(nil)
-	_ fs.GlobFS      = (*tempMountFS)(nil)
-	_ ufs.AbsPathGet = (*tempMountFS)(nil)
+	_ ufs.WriteFS       = (*tempMountFS)(nil)
+	_ fs.GlobFS         = (*tempMountFS)(nil)
+	_ ufs.AbsPathGetter = (*tempMountFS)(nil)
 )
 
 type tempMountFS struct {

@@ -33,7 +33,6 @@ import (
 	"github.com/mholt/archives"
 
 	"github.com/cloudfra/ufs"
-	"github.com/cloudfra/ufs/drivers/localfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -41,6 +40,9 @@ import (
 
 const (
 	archiveFSPrefix = "archive:"
+
+	// localArchivePriority is one ahead of the local driver's priority.
+	localArchivePriority = 9999
 )
 
 var (
@@ -54,33 +56,34 @@ var (
 
 func init() {
 	ufs.Register(ufs.NewDriver("archive", newArchiveFS, isArchiveFSUri, 1, true, false))
+	// A local path that names an archive is opened as one. The priority puts
+	// it ahead of the local driver and behind every driver that owns a
+	// scheme, so "bolt:/data/db.zip" still belongs to bolt.
+	ufs.Register(ufs.NewDriver("local-archive", newLocalArchiveFS, isLocalArchivePath, localArchivePriority, true, false))
 	ufs.RegisterArchiveDriver(ufs.ArchiveDriver{
-		MatchFunc: hasArchiveExt,
-		OpenPathFunc: func(ctx context.Context, name string) (ufs.WriteFS, error) {
-			return newArchiveFSFromLocalFS(ctx, name)
-		},
-		OpenFileFunc: func(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
-			return newArchiveFSFromFile(ctx, file)
-		},
+		MatchFunc:    hasArchiveExt,
+		OpenPathFunc: New,
+		OpenFileFunc: NewFromFile,
 	})
 }
 
-// isArchiveFSUri reports whether name is an archive: URI or a local path that
-// names an archive.
 func isArchiveFSUri(name string) bool {
-	if strings.HasPrefix(name, archiveFSPrefix) {
-		return true
-	}
-	isLocal := strings.HasPrefix(name, "file:") || !strings.Contains(name, "://")
-	return isLocal && hasArchiveExt(name)
+	return strings.HasPrefix(name, archiveFSPrefix)
 }
 
 func newArchiveFS(ctx context.Context, name string) (ufs.WriteFS, error) {
-	if after, ok := strings.CutPrefix(name, "archive://"); ok {
-		return newArchiveFSFromLocalFS(ctx, after)
-	}
+	return New(ctx, strings.TrimPrefix(name, "archive://"))
+}
+
+// isLocalArchivePath reports whether name is a name that the local driver
+// serves and that names an archive.
+func isLocalArchivePath(name string) bool {
+	return hasArchiveExt(name) && osutil.IsLocalName(name)
+}
+
+func newLocalArchiveFS(ctx context.Context, name string) (ufs.WriteFS, error) {
 	// The archive is opened by host path, so drop any file: prefix.
-	return newArchiveFSFromLocalFS(ctx, localfs.NormalizePath(name))
+	return New(ctx, osutil.LocalPath(name))
 }
 
 func hasArchiveExt(name string) bool {
@@ -260,14 +263,22 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 
 // New returns a read-only file system over the archive at the host path name.
 func New(ctx context.Context, name string) (ufs.WriteFS, error) {
-	return newArchiveFSFromLocalFS(ctx, name)
+	fsys, err := newArchiveFSFromLocalFS(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 // NewFromFile returns a read-only file system over the archive held by file,
 // which must support seeking and random reads. On success the returned file
 // system owns file and closes it.
 func NewFromFile(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
-	return newArchiveFSFromFile(ctx, file)
+	fsys, err := newArchiveFSFromFile(ctx, file)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {

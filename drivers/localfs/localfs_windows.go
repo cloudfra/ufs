@@ -19,28 +19,11 @@ package localfs
 import (
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
-
-// localFSNormalizePath strips the "file://" URI prefix and converts a
-// "/C:/path" form (left after stripping "file://" from "file:///C:/path") to
-// the Windows-native "C:\path" form required by filepath.Abs.
-func localFSNormalizePath(name string) string {
-	if after, ok := strings.CutPrefix(name, "file://"); ok {
-		name = after
-	} else {
-		name = strings.TrimPrefix(name, "file:")
-	}
-	// "/C:/path/..." → "C:\path\..." (strip leading slash, convert separators)
-	if len(name) >= 3 && name[0] == '/' && name[2] == ':' {
-		name = filepath.FromSlash(name[1:])
-	}
-	return name
-}
 
 // validLocalPath extends validPath by also rejecting backslash paths on Windows,
 // since os.Root accepts them as separators but fs.FS requires forward slashes only.

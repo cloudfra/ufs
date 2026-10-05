@@ -22,11 +22,15 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-// AbsPathGet is an optional interface implemented by file systems whose files
+// AbsPathGetter is an optional interface implemented by file systems whose files
 // are also reachable on the host, outside of the virtual file system. See
 // [AbsPath].
-type AbsPathGet interface {
-	// GetAbsPath returns the absolute host path of the file at name.
+type AbsPathGetter interface {
+	// GetAbsPath returns the absolute host path of the file at name. The
+	// file does not have to exist, but the path must be the one where the
+	// host would find it: an implementation returns an error for a name
+	// that it serves from somewhere other than the host, such as a mount or
+	// the inside of an archive.
 	GetAbsPath(name string) (string, error)
 }
 
@@ -34,7 +38,7 @@ type AbsPathGet interface {
 //
 // If the virtual file system name resolves to a path that is not accessible outside of the virtual file system, an error is returned.
 func AbsPath(fsys any, name string) (string, error) {
-	if rfs, ok := fsys.(AbsPathGet); ok {
+	if rfs, ok := fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}
 	if rfs, ok := fsys.(*os.Root); ok {

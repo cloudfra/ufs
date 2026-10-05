@@ -14,16 +14,16 @@
 
 //go:build windows
 
-package localfs
+package osutil
 
 import (
 	"testing"
 )
 
-// TestLocalFSNormalizePathWindowsDriveLetters verifies that localFSNormalizePath
+// TestLocalPathWindowsDriveLetters verifies that LocalPath
 // converts the "/D:/path" form (produced after stripping "file://" from a
 // canonical file:///D:/path URI) to the Windows-native "D:\path" form.
-func TestLocalFSNormalizePathWindowsDriveLetters(t *testing.T) {
+func TestLocalPathWindowsDriveLetters(t *testing.T) {
 	tests := []struct {
 		input string
 		want  string
@@ -35,9 +35,9 @@ func TestLocalFSNormalizePathWindowsDriveLetters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := localFSNormalizePath(tt.input)
+			got := LocalPath(tt.input)
 			if got != tt.want {
-				t.Errorf("localFSNormalizePath(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("LocalPath(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

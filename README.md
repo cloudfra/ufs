@@ -93,6 +93,10 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/gitfs"     // installs URIs ending in .git
 	_ "github.com/cloudfra/ufs/drivers/localfs"   // installs file: and bare paths
 	_ "github.com/cloudfra/ufs/drivers/memfs"     // installs memory:
+	_ "github.com/cloudfra/ufs/drivers/nullfs"    // installs null:, the root of a mount table that names none
+
+	// Decorators are installed the same way.
+	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // installs readOnly and the fstab ro option
 )
 
 func main() {
@@ -148,8 +152,9 @@ Any backend can be made read-only with the `readOnly` [decorator](#decorators).
 ### Archives are directories
 
 When a file system contains an archive, its contents appear next to it under
-the archive's name plus `.d`. Nothing needs to be configured, and it works
-inside any backend, including archives nested in other archives.
+the archive's name plus `.d`. It needs `drivers/archivefs` imported and
+nothing else, and it works inside any backend, including archives nested in
+other archives.
 
 ```go
 fsys, _ := ufs.New(ctx, "/srv/downloads")

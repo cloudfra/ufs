@@ -343,3 +343,29 @@ func TestGetRegistrar(t *testing.T) {
 		t.Errorf("getRegistrar() = %p, want %p (the global registrar)", got, globalDriverRegistrar)
 	}
 }
+
+// TestRegisterArchiveDriverPanics verifies that an incomplete archive driver
+// and a second archive driver are both rejected.
+func TestRegisterArchiveDriverPanics(t *testing.T) {
+	complete := *globalArchiveDriver.Load()
+	testCases := []struct {
+		name string
+		reg  ArchiveDriver
+	}{
+		{name: "empty", reg: ArchiveDriver{}},
+		{name: "no_match", reg: ArchiveDriver{OpenPathFunc: complete.OpenPathFunc, OpenFileFunc: complete.OpenFileFunc}},
+		{name: "no_open_path", reg: ArchiveDriver{MatchFunc: complete.MatchFunc, OpenFileFunc: complete.OpenFileFunc}},
+		{name: "no_open_file", reg: ArchiveDriver{MatchFunc: complete.MatchFunc, OpenPathFunc: complete.OpenPathFunc}},
+		{name: "already_registered", reg: complete},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("RegisterArchiveDriver() did not panic")
+				}
+			}()
+			RegisterArchiveDriver(tc.reg)
+		})
+	}
+}

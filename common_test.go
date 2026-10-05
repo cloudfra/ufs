@@ -17,14 +17,11 @@ package ufs
 import (
 	"context"
 	"testing"
-
-	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
 type fsTestCase struct {
-	name       string
-	createFS   func(tb testing.TB) WriteFS
-	wantString string
+	name     string
+	createFS func(tb testing.TB) WriteFS
 }
 
 var (
@@ -44,7 +41,6 @@ var (
 				})
 				return fsys
 			},
-			wantString: "file://" + pathutil.TempDir(),
 		},
 		{
 			name: "memFS",
@@ -57,7 +53,6 @@ var (
 				})
 				return fsys
 			},
-			wantString: memFSPrefix,
 		},
 	}
 
@@ -73,7 +68,6 @@ var (
 				})
 				return fsys
 			},
-			wantString: nullFSPrefix,
 		},
 	}
 )

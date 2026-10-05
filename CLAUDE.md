@@ -131,7 +131,8 @@ wraps. That records the decorator in the reserved `options` query parameter
 `options`, like `ro`, is therefore not usable as a mount point in a URI.
 
 The fstab `ro` option and the implicit read-only null root both map to the
-`readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
+`readOnly` option, so they need `drivers/decorators/readonlyfs` imported. The
+implicit null root also needs `drivers/nullfs`.
 
 | Option    | Package                        | Options type         | Behavior                                       |
 |:----------|:-------------------------------|:---------------------|:-----------------------------------------------|
@@ -172,7 +173,7 @@ which therefore must not import `ufs`.
 |:-------------------------|:-----------------------------------------------------------------|
 | drivers/all/             | Blank-imports every driver and decorator. For tests only: no non-test file may import it (enforced by its own test) |
 | drivers/angryfs/         | angry: driver whose operations always fail; for testing error paths |
-| drivers/archivefs/       | archive: driver backed by mholt/archives; also registers the ArchiveDriver that nestFS mounts name.d with |
+| drivers/archivefs/       | archive: driver backed by mholt/archives; also registers local-archive (local paths that name an archive) and the ArchiveDriver that nestFS mounts name.d with |
 | drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
@@ -199,7 +200,7 @@ code with no `ufs` dependency goes in `internal/`.
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
 | remove.go             | Remove and RemoveAll — dispatch to the optional RemoveFileFS        |
 | ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk       |
-| internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
+| internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers, IsLocalName/LocalPath shared by the local and archive drivers |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |

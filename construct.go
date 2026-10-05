@@ -137,26 +137,28 @@ func nameToURI(name string) (*url.URL, error) {
 // github.com/cloudfra/ufs/drivers that registers itself when imported; New
 // fails for a scheme whose driver is not imported.
 //
-//   - memory://   — volatile in-memory file system; all data is lost when the
+//   - memory://   (drivers/memfs) — volatile in-memory file system; all data is lost when the
 //     FS is closed or the process exits. Safe for concurrent use.
-//   - null://     — /dev/null semantics: Create and MkdirAll always succeed,
+//   - null://     (drivers/nullfs) — /dev/null semantics: Create and MkdirAll always succeed,
 //     writes are accepted but discarded, reads return empty content, Stat
 //     reports everything as a directory. Useful in tests.
-//   - angry://    — always returns [fs.ErrInvalid]; used to exercise
+//   - angry://    (drivers/angryfs) — always returns [fs.ErrInvalid]; used to exercise
 //     error-handling paths in tests.
-//   - file://path  or a bare path — local directory, mounted read-write via
+//   - file://path  or a bare path (drivers/localfs) — local directory, mounted read-write via
 //     [os.OpenRoot] (Go 1.24+). Access outside the mount root is rejected by
 //     the OS. On Windows, directory Stat always reports size 0 (unlike the raw
 //     os package which may report 4096).
-//   - gs://bucket/prefix — Google Cloud Storage bucket, optionally scoped to a
+//   - gs://bucket/prefix (drivers/gcsfs) — Google Cloud Storage bucket, optionally scoped to a
 //     prefix. Credentials are resolved via ADC; unauthenticated access is tried
 //     as a fallback.
-//   - https:// or http:// URL ending in a recognized archive extension — the
+//   - https:// or http:// URL ending in a recognized archive extension
+//     (drivers/httparchivefs) — the
 //     archive is downloaded to a temporary directory, mounted read-only, and the
 //     temporary directory is removed when Close is called.
-//   - A path ending in .git — the repository is shallow-cloned into a temporary
+//   - A path ending in .git (drivers/gitfs) — the repository is shallow-cloned into a temporary
 //     directory (not available on AIX).
-//   - A local path pointing to a recognized archive (.zip, .tar, .tar.gz, etc.)
+//   - A local path pointing to a recognized archive (.zip, .tar, .tar.gz, etc.;
+//     drivers/archivefs)
 //     is mounted read-only through the archive's contents.
 //
 // # Alternative input formats
@@ -196,7 +198,8 @@ func nameToURI(name string) (*url.URL, error) {
 // matches no registered decorator is an error.
 //
 // If no entry has a root mount point (".", "/", "none", or empty), a read-only
-// null:// filesystem is used as the root, which needs the readOnly decorator.
+// null:// filesystem is used as the root, which needs the null driver
+// (drivers/nullfs) and the readOnly decorator (drivers/decorators/readonlyfs).
 //
 // # Nested mounts and archive auto-mounting
 //
@@ -239,7 +242,12 @@ func New(ctx context.Context, name string) (WriteFS, error) {
 			return nFS, nil
 		}
 	}
-	return openNestFS(ctx, name)
+	nFS, err := openNestFS(ctx, name)
+	if err != nil {
+		// Return an untyped nil, so that the result compares equal to nil.
+		return nil, err
+	}
+	return nFS, nil
 }
 
 // openNestFS opens name via newDecoratedFS and wraps the result in a nestFS
@@ -271,7 +279,7 @@ type fsBuildMount struct {
 }
 
 // NewFSBuilder creates a builder rooted at the given URI string. An empty
-// string is treated as "null://" (a FS that discards all writes and returns
+// string is treated as "null://", which needs drivers/nullfs imported (a FS that discards all writes and returns
 // empty content on reads). To use a pre-parsed [*url.URL], pass u.String().
 func NewFSBuilder(name string) *FSBuilder {
 	return &FSBuilder{name: name}

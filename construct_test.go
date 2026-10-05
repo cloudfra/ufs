@@ -51,63 +51,59 @@ func TestNewBaseFSUnregisteredDriverHint(t *testing.T) {
 	}
 }
 
-// pointerTypeName is what [reflect.Type.Name] reports for every backend,
-// because each is a pointer type and pointer types are unnamed.
-const pointerTypeName = ""
-
 func TestNew(t *testing.T) {
 	tests := []struct {
 		uri               string
-		wantType          string
+		wantType          string // name of the driver that serves uri
 		wantErr           bool
 		nested            bool
 		ignoreCloseErrors bool
 	}{
 		{
 			uri:               "angry://",
-			wantType:          pointerTypeName,
+			wantType:          "angry",
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:               "angry://",
-			wantType:          pointerTypeName,
+			wantType:          "angry",
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:      "file://",
-			wantType: pointerTypeName,
+			wantType: "local",
 			wantErr:  false,
 		},
 		{
 			uri:      pathutil.CwdPath,
-			wantType: pointerTypeName,
+			wantType: "local",
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: pointerTypeName,
+			wantType: "memory",
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: pointerTypeName,
+			wantType: "memory",
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: pointerTypeName,
+			wantType: "null",
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: pointerTypeName,
+			wantType: "null",
 			wantErr:  false,
 		},
 		{
 			uri:      "file:///?a=memory://",
-			wantType: pointerTypeName,
+			wantType: "local",
 			wantErr:  false,
 			nested:   true,
 		},
@@ -136,9 +132,9 @@ func TestNew(t *testing.T) {
 				if err != nil {
 					t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, err, tt.wantType)
 				} else {
-					gotTypeName := reflect.TypeOf(got).Name()
-					if gotTypeName != tt.wantType {
-						t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, got, tt.wantType)
+					driver, err := getRegistrar().matchDriver(tt.uri)
+					if err != nil || driver.Name != tt.wantType {
+						t.Errorf("matchDriver(%q) = %q, %v, want driver %q", tt.uri, driver.Name, err, tt.wantType)
 					}
 				}
 			}
@@ -162,13 +158,7 @@ func TestNew(t *testing.T) {
 				if err != nil {
 					t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, err, tt.wantType)
 				} else {
-					gotAsNestFS, ok := got.(*nestFS)
-					if ok {
-						gotTypeName := reflect.TypeOf(gotAsNestFS.fsys).Name()
-						if gotTypeName != tt.wantType {
-							t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, got, tt.wantType)
-						}
-					} else {
+					if _, ok := got.(*nestFS); !ok {
 						t.Errorf("%q is not of type *nestFS", got)
 					}
 				}

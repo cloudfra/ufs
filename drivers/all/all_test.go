@@ -19,6 +19,7 @@ import (
 	"go/token"
 	"io/fs"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -28,16 +29,19 @@ import (
 // TestOnlyTestsImportAll verifies that no non-test file in the module imports
 // this package: it pulls every driver's dependencies into the importer.
 func TestOnlyTestsImportAll(t *testing.T) {
-	const importPath = `"github.com/cloudfra/ufs/drivers/all"`
+	const importPath = "github.com/cloudfra/ufs/drivers/all"
 	root := filepath.Join("..", "..")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			switch d.Name() {
-			case "build", "third_party", ".git":
-				return filepath.SkipDir
+			// Only the tool and vendor directories at the root are skipped.
+			if filepath.Dir(path) == root {
+				switch d.Name() {
+				case "build", "third_party", ".git", ".claude":
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}
@@ -49,7 +53,8 @@ func TestOnlyTestsImportAll(t *testing.T) {
 			return err
 		}
 		for _, imp := range file.Imports {
-			if imp.Path.Value == importPath {
+			// Unquote, so that a raw string import is recognized too.
+			if got, err := strconv.Unquote(imp.Path.Value); err == nil && got == importPath {
 				t.Errorf("%s imports drivers/all; only tests may import it", path)
 			}
 		}

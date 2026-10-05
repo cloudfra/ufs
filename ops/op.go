@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package ops provides file operations that work across any [fs.FS] and
-// [ufs.WriteFS], such as copying, mirroring, listing and walking.
+// [ufs.WriteFS], such as copying, mirroring, listing, walking and removing.
 package ops
 
 import (
@@ -211,4 +211,26 @@ func list(fsys fs.FS, dir string, includeDirs bool) ([]string, error) {
 		return nil
 	})
 	return items, err
+}
+
+// Remove removes the file or empty directory at name in fsys.
+// If fsys implements [ufs.RemoveFileFS], its Remove method is used directly.
+// Otherwise Remove returns [fs.ErrPermission] wrapped in an [fs.PathError].
+func Remove(fsys fs.FS, name string) error {
+	r, ok := fsys.(ufs.RemoveFileFS)
+	if !ok {
+		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
+	}
+	return r.Remove(name)
+}
+
+// RemoveAll removes name and everything beneath it in fsys.
+// If fsys implements [ufs.RemoveFileFS], its RemoveAll method is used directly.
+// Otherwise RemoveAll returns [fs.ErrPermission] wrapped in an [fs.PathError].
+func RemoveAll(fsys fs.FS, name string) error {
+	r, ok := fsys.(ufs.RemoveFileFS)
+	if !ok {
+		return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
+	}
+	return r.RemoveAll(name)
 }

@@ -42,6 +42,7 @@ ifeq ($(origin ANDROID_PLATFORMS),undefined)
 # the Android NDK (see ANDROID_NDK in Makefile_toolchain.mk), which is only
 # wired up for linux/amd64 hosts. The NDK targets ARMv7 and newer
 # (armeabi-v7a), so android/arm/v5 and v6 can't be built.
+ifeq ($(ENABLE_MOBILE_BUILDS), 1)
 ifeq ($(HOST_PLATFORM),linux_amd64)
 ANDROID_PLATFORMS = android/arm64 android/386 android/amd64 android/arm/v7
 else
@@ -56,6 +57,10 @@ ifeq ($(origin IOS_PLATFORMS),undefined)
 # GO_BUILD_FLAGS below). ios/arm64 requires cgo with Xcode's clang and the
 # iOS SDK, so it needs a macOS host and isn't built.
 IOS_PLATFORMS = ios/amd64
+endif
+else
+ANDROID_PLATFORMS = 
+IOS_PLATFORMS =
 endif
 ifeq ($(origin DARWIN_PLATFORMS),undefined)
 DARWIN_PLATFORMS = darwin/amd64 darwin/arm64
@@ -272,9 +277,8 @@ deps:
 
 clean:
 	rm -f coverage.txt
-	-chmod -R +w build/
-	rm -rf build/
-	rm -rf output/
+	-@if [ -n build/ ]; then chmod -R +w build/; rm -rf build/; fi
+	@if [ -n output/ ]; then rm -rf output/; fi
 	@if [ -n "$(strip $(ASSETS))" ]; then rm -rf $(ASSETS); fi
 	@if [ -n "$(strip $(TEST_ASSETS))" ]; then rm -rf $(TEST_ASSETS); fi
 

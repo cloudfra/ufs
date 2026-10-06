@@ -275,6 +275,8 @@ clean:
 	-chmod -R +w build/
 	rm -rf build/
 	rm -rf output/
+	@if [ -n "$(strip $(ASSETS))" ]; then rm -rf $(ASSETS); fi
+	@if [ -n "$(strip $(TEST_ASSETS))" ]; then rm -rf $(TEST_ASSETS); fi
 
 presubmit: no-sudo tools assets testassets lint all test-deflake release-binaries
 

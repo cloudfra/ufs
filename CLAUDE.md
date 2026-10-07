@@ -171,7 +171,7 @@ which therefore must not import `ufs`.
 
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|
-| drivers/all/             | Blank-imports every driver and decorator. For tests only: no non-test file may import it (enforced by its own test) |
+| drivers/all/             | Blank-imports every package that registers a driver or decorator; its test checks the list is complete. Used by the commands and by tests |
 | drivers/angryfs/         | angry: driver whose operations always fail; for testing error paths |
 | drivers/archivefs/       | archive: driver backed by mholt/archives; also registers local-archive (local paths that name an archive) and the ArchiveDriver that nestFS mounts name.d with |
 | drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |

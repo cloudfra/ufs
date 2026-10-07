@@ -79,52 +79,52 @@ go get github.com/cloudfra/ufs
 package main
 
 import (
-	"context"
-	"fmt"
-	"log"
+  "context"
+  "fmt"
+  "log"
 
-	"github.com/cloudfra/ufs"
+  "github.com/cloudfra/ufs"
 
-	// Each blank import installs a driver; ufs.New opens nothing without
-	// one. Drop the ones you do not need.
-	_ "github.com/cloudfra/ufs/drivers/archivefs" // installs archive: and name.zip.d directories
-	_ "github.com/cloudfra/ufs/drivers/boltfs"    // installs bolt:
-	_ "github.com/cloudfra/ufs/drivers/gcsfs"     // installs gs://
-	_ "github.com/cloudfra/ufs/drivers/gitfs"     // installs URIs ending in .git
-	_ "github.com/cloudfra/ufs/drivers/localfs"   // installs file: and bare paths
-	_ "github.com/cloudfra/ufs/drivers/memfs"     // installs memory:
-	_ "github.com/cloudfra/ufs/drivers/nullfs"    // installs null:, the root of a mount table that names none
+  // Each blank import installs a driver; ufs.New opens nothing without
+  // one. Drop the ones you do not need, or import drivers/all for all of them.
+  _ "github.com/cloudfra/ufs/drivers/archivefs" // installs archive: and name.zip.d directories
+  _ "github.com/cloudfra/ufs/drivers/boltfs"    // installs bolt:
+  _ "github.com/cloudfra/ufs/drivers/gcsfs"     // installs gs://
+  _ "github.com/cloudfra/ufs/drivers/gitfs"     // installs URIs ending in .git
+  _ "github.com/cloudfra/ufs/drivers/localfs"   // installs file: and bare paths
+  _ "github.com/cloudfra/ufs/drivers/memfs"     // installs memory:
+  _ "github.com/cloudfra/ufs/drivers/nullfs"    // installs null:, the root of a mount table that names none
 
-	// Decorators are installed the same way.
-	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // installs readOnly and the fstab ro option
+  // Decorators are installed the same way.
+  _ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // installs readOnly and the fstab ro option
 )
 
 func main() {
-	ctx := context.Background()
+  ctx := context.Background()
 
-	// Swap the URI for "/srv/data", "release.zip", "gs://bucket/prefix", ...
-	fsys, err := ufs.New(ctx, "memory:")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer fsys.Close()
+  // Swap the URI for "/srv/data", "release.zip", "gs://bucket/prefix", ...
+    fsys, err := ufs.New(ctx, "memory:")
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer fsys.Close()
 
-	f, err := fsys.Create("hello.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
-	if _, err := f.WriteString("hello, world"); err != nil {
-		log.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		log.Fatal(err)
-	}
+  f, err := fsys.Create("hello.txt")
+  if err != nil {
+    log.Fatal(err)
+  }
+  if _, err := f.WriteString("hello, world"); err != nil {
+    log.Fatal(err)
+  }
+  if err := f.Close(); err != nil {
+    log.Fatal(err)
+  }
 
-	data, err := fsys.ReadFile("hello.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(string(data)) // hello, world
+  data, err := fsys.ReadFile("hello.txt")
+  if err != nil {
+    log.Fatal(err)
+  }
+  fmt.Println(string(data)) // hello, world
 }
 ```
 
@@ -135,17 +135,17 @@ More runnable examples are in [example_test.go](example_test.go) and on
 
 ### Backends
 
-| Backend    | URI                             | Access     | Package          | Notes |
-|:-----------|:--------------------------------|:-----------|:-----------------|:------|
-| Local      | `file:///path` or a bare path   | read-write | `drivers/localfs` | Rooted with `os.OpenRoot`; paths cannot escape the root. |
-| Memory     | `memory:`                       | read-write | `drivers/memfs`  | Lost when the file system is closed. |
-| Archive    | a path ending in an archive extension, or `archive:///path` | read-only | `drivers/archivefs` | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`. |
-| Remote archive | `http://` or `https://` URL | read-only  | `drivers/httparchivefs` | Downloaded to a temporary directory that is removed on `Close`. |
-| Null       | `null://`                       | read-write | `drivers/nullfs` | Like `/dev/null`: writes are accepted and discarded, reads return nothing. |
-| GCS        | `gs://bucket/prefix`            | read-write | `drivers/gcsfs`  | Uses Application Default Credentials and falls back to anonymous access for public buckets. |
-| Git        | any URI ending in `.git`        | read-write | `drivers/gitfs`  | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
-| BoltDB     | `bolt:/path/to/file.db`         | read-write | `drivers/boltfs` | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file. |
-| `embed.FS` | none, use `embedfs.New`         | read-only  | `drivers/embedfs`| Wraps files compiled into your binary. |
+| Backend        | URI                                                         | Access     | Package                 | Notes                                                                                                |
+|:---------------|:------------------------------------------------------------|:-----------|:------------------------|:-----------------------------------------------------------------------------------------------------|
+| Local          | `file:///path` or a bare path                               | read-write | `drivers/localfs`       | Rooted with `os.OpenRoot`; paths cannot escape the root.                                             |
+| Memory         | `memory:`                                                   | read-write | `drivers/memfs`         | Lost when the file system is closed.                                                                 |
+| Archive        | a path ending in an archive extension, or `archive:///path` | read-only  | `drivers/archivefs`     | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`.  |
+| Remote archive | `http://` or `https://` URL                                 | read-only  | `drivers/httparchivefs` | Downloaded to a temporary directory that is removed on `Close`.                                      |
+| Null           | `null://`                                                   | read-write | `drivers/nullfs`        | Like `/dev/null`: writes are accepted and discarded, reads return nothing.                           |
+| GCS            | `gs://bucket/prefix`                                        | read-write | `drivers/gcsfs`         | Uses Application Default Credentials and falls back to anonymous access for public buckets.          |
+| Git            | any URI ending in `.git`                                    | read-write | `drivers/gitfs`         | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
+| BoltDB         | `bolt:/path/to/file.db`                                     | read-write | `drivers/boltfs`        | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file.                      |
+| `embed.FS`     | none, use `embedfs.New`                                     | read-only  | `drivers/embedfs`       | Wraps files compiled into your binary.                                                               |
 
 Any backend can be made read-only with the `readOnly` [decorator](#decorators).
 
@@ -172,16 +172,16 @@ yourself, such as an `embed.FS`:
 
 ```go
 fsys, err := ufs.NewFSBuilder("file:///srv/data").
-	Mount("scratch", "memory:").
-	MountFS("assets", embedfs.New("assets", assets)).
-	Build(ctx)
+  Mount("scratch", "memory:").
+  MountFS("assets", embedfs.New("assets", assets)).
+  Build(ctx)
 ```
 
 As a single URI, which is convenient for flags and configuration values:
 
 ```go
 uri, err := ufs.CreateURI("file:///srv/data", map[string]string{
-	"scratch": "memory:",
+  "scratch": "memory:",
 })
 fsys, err := ufs.New(ctx, uri)
 ```
@@ -208,9 +208,9 @@ Decorators wrap a file system to change how it behaves. List them under
 `options` in a mount table; they are applied in order, so the last one is the
 outermost layer. Blank-import a decorator's package to enable it.
 
-| Option     | Package                         | Behavior |
-|:-----------|:--------------------------------|:---------|
-| `readOnly` | `drivers/decorators/readonlyfs` | Every write returns `fs.ErrPermission`. The fstab `ro` option maps to it. |
+| Option     | Package                         | Behavior                                                                                     |
+|:-----------|:--------------------------------|:---------------------------------------------------------------------------------------------|
+| `readOnly` | `drivers/decorators/readonlyfs` | Every write returns `fs.ErrPermission`. The fstab `ro` option maps to it.                    |
 | `fault`    | `drivers/decorators/faultfs`    | Injects latency and random errors, to test how your code copes with slow or failing storage. |
 
 ```yaml
@@ -234,16 +234,16 @@ import "github.com/cloudfra/ufs/host"
 
 server, err := host.Mount(ctx, fsys, "/mnt/data")
 if err != nil {
-	log.Fatal(err)
+  log.Fatal(err)
 }
 defer server.Close()
 server.Wait() // until unmounted or ctx is canceled
 ```
 
-| Platform | Mechanism | Read | Write |
-|:---------|:----------|:-----|:------|
-| Linux    | FUSE      | yes  | yes, if the file system is writable |
-| Windows  | [ProjFS](https://learn.microsoft.com/en-us/windows/win32/projfs/projected-file-system) | yes | no |
+| Platform | Mechanism                                                                              | Read | Write                               |
+|:---------|:---------------------------------------------------------------------------------------|:-----|:------------------------------------|
+| Linux    | FUSE                                                                                   | yes  | yes, if the file system is writable |
+| Windows  | [ProjFS](https://learn.microsoft.com/en-us/windows/win32/projfs/projected-file-system) | yes  | no                                  |
 
 ### Helpers
 
@@ -251,15 +251,15 @@ Functions that work on any `fs.FS`, using a backend's faster native
 implementation when it has one. They live in `github.com/cloudfra/ufs/ops`,
 except `ufs.AbsPath`:
 
-| Function                             | Purpose |
-|:-------------------------------------|:--------|
-| `ops.Copy`                           | Copy one file between two file systems. |
-| `ops.Rsync`                          | Copy a whole tree between two file systems. |
-| `ops.List`, `ops.ListFiles`          | Collect every path, or every file path, under a directory. |
-| `ops.ForEachFilename`, `ops.ForEachFileInfo` | Stream the same results without building a slice. |
-| `ops.Walk`                           | Walk a tree, skipping directories by glob and optionally descending into archives. |
-| `ops.Remove`, `ops.RemoveAll`        | Delete from any file system that supports it. |
-| `ufs.AbsPath`                        | Resolve a virtual path to a real path on the host, when there is one. |
+| Function                                     | Purpose                                                                            |
+|:---------------------------------------------|:-----------------------------------------------------------------------------------|
+| `ops.Copy`                                   | Copy one file between two file systems.                                            |
+| `ops.Rsync`                                  | Copy a whole tree between two file systems.                                        |
+| `ops.List`, `ops.ListFiles`                  | Collect every path, or every file path, under a directory.                         |
+| `ops.ForEachFilename`, `ops.ForEachFileInfo` | Stream the same results without building a slice.                                  |
+| `ops.Walk`                                   | Walk a tree, skipping directories by glob and optionally descending into archives. |
+| `ops.Remove`, `ops.RemoveAll`                | Delete from any file system that supports it.                                      |
+| `ufs.AbsPath`                                | Resolve a virtual path to a real path on the host, when there is one.              |
 
 ### Change notifications
 
@@ -268,13 +268,13 @@ report changes under a directory and everything below it:
 
 ```go
 if w, ok := fsys.(ufs.Watcher); ok {
-	stop, err := w.Watch(ctx, ".", func(op ufs.NotifyOp, name string) {
-		log.Println("changed:", name)
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer stop.Close()
+  stop, err := w.Watch(ctx, ".", func(op ufs.NotifyOp, name string) {
+    log.Println("changed:", name)
+  })
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer stop.Close()
 }
 ```
 
@@ -287,10 +287,10 @@ conformance suite that every backend runs.
 
 ## Command-line tools
 
-| Tool       | Purpose | Docs |
-|:-----------|:--------|:-----|
+| Tool       | Purpose                                    | Docs                                 |
+|:-----------|:-------------------------------------------|:-------------------------------------|
 | `ufsmount` | Mount any file system as a host directory. | [docs/ufsmount.md](docs/ufsmount.md) |
-| `walk`     | Print every file in any file system.       | [docs/walk.md](docs/walk.md) |
+| `walk`     | Print every file in any file system.       | [docs/walk.md](docs/walk.md)         |
 
 ## Development
 

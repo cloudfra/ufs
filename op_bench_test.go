@@ -556,6 +556,44 @@ func BenchmarkMemFSGlob(b *testing.B) {
 	}
 }
 
+// BenchmarkNestFSGlob measures Glob through the nested file system that New
+// returns, which lists every directory itself to include mounts and archive
+// directories.
+func BenchmarkNestFSGlob(b *testing.B) {
+	fsys, err := New(b.Context(), "memory://bench")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			b.Fatal(err)
+		}
+	})
+	for i := range 10_000 {
+		name := fmt.Sprintf("d%d/file_%d.dat", i%256, i)
+		f, err := fsys.Create(name)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := f.Write(ufsTesting.SeedData(byte(i%256), 1)); err != nil {
+			b.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	for _, pattern := range []string{"d*/file_*", "d7/file_*", "*.dat"} {
+		b.Run(pattern, func(b *testing.B) {
+			for b.Loop() {
+				if _, err := fsys.(fs.GlobFS).Glob(pattern); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkMemFSReadDir(b *testing.B) {
 	fsys := mustMemFS(b, "memory://bench")
 	if err := fsys.MkdirAll(".", fs.ModePerm); err != nil {

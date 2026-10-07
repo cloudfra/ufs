@@ -850,9 +850,12 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 		if !readOnly {
 			return full, nil
 		}
-		// An *os.File opened for reading is already rejected by the OS on
-		// write, so it needs no wrapper.
-		if _, ok := f.(*os.File); ok {
+		// A file backed by an OS handle that was opened for reading is
+		// already rejected by the OS on write, so it needs no wrapper. The
+		// check is on Fd rather than on *os.File because localFS wraps its
+		// files on Windows, and a wrapper would hide the other methods of
+		// the handle.
+		if _, ok := f.(interface{ Fd() uintptr }); ok {
 			return full, nil
 		}
 		return &readOnlyFile{File: full}, nil

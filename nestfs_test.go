@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
@@ -1463,5 +1464,35 @@ func TestNestFSMissingDirectory(t *testing.T) {
 		if _, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
 		}
+	}
+}
+
+// TestWrapFileKeepsOSHandles verifies that a read-only wrap returns a file
+// backed by an OS handle unchanged, also when the backend embeds the handle
+// in its own type, as localFS does on Windows.
+func TestWrapFileKeepsOSHandles(t *testing.T) {
+	t.Parallel()
+	name := filepath.Join(t.TempDir(), "file.txt")
+	if err := osutil.WriteFile(name, []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	type embedsOSFile struct{ *os.File }
+	for _, wrap := range []func(*os.File) fs.File{
+		func(f *os.File) fs.File { return f },
+		func(f *os.File) fs.File { return &embedsOSFile{f} },
+	} {
+		osFile, err := osutil.Open(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := wrap(osFile)
+		got, err := wrapFile(f, true, bufferMemory)
+		if err != nil {
+			t.Fatalf("wrapFile() = %v, want nil", err)
+		}
+		if got != f {
+			t.Errorf("wrapFile() = %T, want the %T it was given", got, f)
+		}
+		ufsTesting.Must(t, got.Close())
 	}
 }

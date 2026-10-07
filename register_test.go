@@ -194,20 +194,37 @@ func TestRegistrarMatch(t *testing.T) {
 		}
 	})
 
-	t.Run("tie between losing drivers is not ambiguous", func(t *testing.T) {
-		// Map iteration order is random, so repeat to cover every order in
-		// which the three drivers can be visited.
-		for range 50 {
-			r := newRegistrar()
-			for _, driver := range []Driver{
-				{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-				{Name: "loser1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
-				{Name: "loser2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
-			} {
-				if err := r.registerDriver(driver); err != nil {
-					t.Fatal(err)
+	// registerInEveryOrder calls check on a registrar for every order in which
+	// drivers can be registered: the outcome must not depend on it.
+	registerInEveryOrder := func(t *testing.T, drivers []Driver, check func(t *testing.T, r *registrar)) {
+		t.Helper()
+		var permute func(k int)
+		permute = func(k int) {
+			if k == len(drivers) {
+				r := newRegistrar()
+				for _, driver := range drivers {
+					if err := r.registerDriver(driver); err != nil {
+						t.Fatal(err)
+					}
 				}
+				check(t, r)
+				return
 			}
+			for i := k; i < len(drivers); i++ {
+				drivers[k], drivers[i] = drivers[i], drivers[k]
+				permute(k + 1)
+				drivers[k], drivers[i] = drivers[i], drivers[k]
+			}
+		}
+		permute(0)
+	}
+
+	t.Run("tie between losing drivers is not ambiguous", func(t *testing.T) {
+		registerInEveryOrder(t, []Driver{
+			{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+			{Name: "loser1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+			{Name: "loser2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+		}, func(t *testing.T, r *registrar) {
 			got, err := r.matchDriver("anything")
 			if err != nil {
 				t.Fatalf("matchDriver() = %v, want nil", err)
@@ -215,21 +232,17 @@ func TestRegistrarMatch(t *testing.T) {
 			if got.Name != "winner" {
 				t.Fatalf("matchDriver() = %q, want %q", got.Name, "winner")
 			}
-		}
+		})
 	})
 
 	t.Run("tie between winning drivers is ambiguous", func(t *testing.T) {
-		for range 50 {
-			r := newRegistrar()
-			for _, driver := range []Driver{
-				{Name: "winner1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-				{Name: "winner2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-				{Name: "loser", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
-			} {
-				if err := r.registerDriver(driver); err != nil {
-					t.Fatal(err)
-				}
-			}
+		// Three drivers tie; the error always names the first two by name.
+		registerInEveryOrder(t, []Driver{
+			{Name: "winner1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+			{Name: "winner2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+			{Name: "winner3", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+			{Name: "loser", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+		}, func(t *testing.T, r *registrar) {
 			_, err := r.matchDriver("anything")
 			if err == nil {
 				t.Fatal("matchDriver() = nil error, want ambiguous match error")
@@ -238,7 +251,22 @@ func TestRegistrarMatch(t *testing.T) {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("got: %q, want substring %q", err, want)
 			}
-		}
+		})
+	})
+
+	t.Run("matchers behind the winning priority are not called", func(t *testing.T) {
+		called := false
+		registerInEveryOrder(t, []Driver{
+			{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
+			{Name: "fallback", MatchFunc: func(string) bool { called = true; return true }, CreateFunc: nopCreate, Priority: 5},
+		}, func(t *testing.T, r *registrar) {
+			if _, err := r.matchDriver("anything"); err != nil {
+				t.Fatalf("matchDriver() = %v, want nil", err)
+			}
+			if called {
+				t.Fatal("matchDriver() called the matcher of a driver that could not win")
+			}
+		})
 	})
 
 	t.Run("lower priority value wins", func(t *testing.T) {
@@ -342,10 +370,12 @@ func TestRegistrarCreate(t *testing.T) {
 		// registerDriver() rejects a nil CreateFunc, so reach this defensive branch
 		// by inserting directly into the map.
 		r := newRegistrar()
-		r.driverMap["broken"] = Driver{
+		broken := Driver{
 			Name:      "broken",
 			MatchFunc: alwaysMatch,
 		}
+		r.driverMap[broken.Name] = broken
+		r.drivers = append(r.drivers, broken)
 		_, err := r.create(t.Context(), "anything")
 		if err == nil {
 			t.Fatal("create() = nil error, want error")

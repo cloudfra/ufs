@@ -15,9 +15,11 @@
 package ufs
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -31,7 +33,10 @@ var (
 
 type registrar struct {
 	sync.RWMutex
-	driverMap    map[string]Driver
+	driverMap map[string]Driver
+	// drivers holds the values of driverMap in the order matchDriver
+	// consults them.
+	drivers      []Driver
 	decoratorMap map[string]Decorator
 }
 
@@ -167,6 +172,15 @@ func getRegistrar() *registrar {
 	return globalDriverRegistrar
 }
 
+// compareDrivers orders drivers by priority, lowest number first, and then by
+// name.
+func compareDrivers(a, b Driver) int {
+	if c := cmp.Compare(a.Priority, b.Priority); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Name, b.Name)
+}
+
 func (r *registrar) registerDriver(reg Driver) error {
 	if reg.Name == "" {
 		return errors.New("cannot register a file system driver with an empty name")
@@ -181,6 +195,9 @@ func (r *registrar) registerDriver(reg Driver) error {
 	r.Lock()
 	if _, ok := r.driverMap[reg.Name]; !ok {
 		r.driverMap[reg.Name] = reg
+		// Keep drivers sorted by priority and then by name, see matchDriver.
+		i, _ := slices.BinarySearchFunc(r.drivers, reg, compareDrivers)
+		r.drivers = slices.Insert(r.drivers, i, reg)
 	} else {
 		err = fmt.Errorf("file system driver %q is already registered", reg.Name)
 	}
@@ -227,30 +244,32 @@ func isLowerCamelCase(name string) bool {
 func (r *registrar) matchDriver(name string) (Driver, error) {
 	r.RLock()
 	result := emptyDriverRegistration
-	// tied is another driver that matches at result's priority. It only makes
-	// the match ambiguous if no later driver beats them both, so it is
-	// checked after every driver has been considered: map iteration order
-	// must not decide the outcome.
 	tied := ""
-	for _, reg := range r.driverMap {
+	// drivers is sorted by priority and then by name, so the first match is
+	// the winner and only drivers at its priority can make it ambiguous. The
+	// matchers of the drivers behind them are not called: some of them look
+	// at the disk. Neither registration order nor map iteration order decides
+	// the outcome or the names in the error.
+	for _, reg := range r.drivers {
+		if result.Name != emptyDriverRegistration.Name && reg.Priority != result.Priority {
+			break
+		}
 		if !reg.MatchFunc(name) {
 			continue
 		}
-		switch {
-		case result.Name == emptyDriverRegistration.Name || reg.Priority < result.Priority:
+		if result.Name == emptyDriverRegistration.Name {
 			result = reg
-			tied = ""
-		case reg.Priority == result.Priority:
-			tied = reg.Name
+			continue
 		}
+		tied = reg.Name
+		break
 	}
 	r.RUnlock()
 	if result.Name == emptyDriverRegistration.Name {
 		return emptyDriverRegistration, fmt.Errorf("cannot find a ufs file system driver for %q", name)
 	}
 	if tied != "" {
-		first, second := min(result.Name, tied), max(result.Name, tied)
-		return emptyDriverRegistration, fmt.Errorf("ambiguous driver match for %q, %q and %q both have priority %d", name, first, second, result.Priority)
+		return emptyDriverRegistration, fmt.Errorf("ambiguous driver match for %q, %q and %q both have priority %d", name, result.Name, tied, result.Priority)
 	}
 	return result, nil
 }

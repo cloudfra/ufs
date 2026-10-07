@@ -661,3 +661,34 @@ func newTestFullFile(name string) *testFullFile {
 
 func (f *testFullFile) Write(p []byte) (int, error)       { return len(p), nil }
 func (f *testFullFile) WriteString(s string) (int, error) { return len(s), nil }
+
+// closeCountFile counts how often it is closed.
+type closeCountFile struct {
+	*testBareFile
+	closed int
+}
+
+func (f *closeCountFile) Close() error {
+	f.closed++
+	return nil
+}
+
+// TestWrapFileCloseAlwaysClosesWrappedFile verifies that Close closes the
+// wrapped file even when the temporary file cannot be removed, and reports
+// that failure.
+func TestWrapFileCloseAlwaysClosesWrappedFile(t *testing.T) {
+	inner := &closeCountFile{testBareFile: newTestBareFile("t.txt", "hello")}
+	wrapped, err := WrapFile(inner, true, BufferDisk)
+	if err != nil {
+		t.Fatalf("WrapFile() = %v, want nil", err)
+	}
+	if err := osutil.Remove(wrapped.(*wrappedFile).tmpFile.Name()); err != nil {
+		t.Fatal(err)
+	}
+	if err := wrapped.Close(); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Close() = %v, want the error from removing the temporary file", err)
+	}
+	if inner.closed != 1 {
+		t.Errorf("wrapped file closed %d times, want 1", inner.closed)
+	}
+}

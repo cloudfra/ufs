@@ -888,7 +888,11 @@ func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error
 }
 
 func newBoltFS(_ context.Context, name string) (ufs.WriteFS, error) {
-	return makeBoltFS(name)
+	fsys, err := makeBoltFS(name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func makeBoltFS(name string) (*boltFS, error) {

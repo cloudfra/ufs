@@ -513,7 +513,11 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 // with the default Google Cloud credentials. When no credentials are available
 // it falls back to unauthenticated access, which works for public buckets.
 func New(ctx context.Context, name string) (ufs.WriteFS, error) {
-	return makeGCSFS(ctx, name)
+	fsys, err := makeGCSFS(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func makeGCSFS(ctx context.Context, name string) (*gcsFS, error) {
@@ -537,7 +541,11 @@ func makeGCSFS(ctx context.Context, name string) (*gcsFS, error) {
 // uses gcsClient for every request, for callers that need custom credentials,
 // endpoints, or options.
 func NewWithClient(ctx context.Context, gcsClient *storage.Client, name string) (ufs.WriteFS, error) {
-	return makeGCSFSWithClient(ctx, gcsClient, name)
+	fsys, err := makeGCSFSWithClient(ctx, gcsClient, name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func makeGCSFSWithClient(ctx context.Context, gcsClient *storage.Client, name string) (*gcsFS, error) {

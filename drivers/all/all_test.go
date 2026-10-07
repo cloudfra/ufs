@@ -174,8 +174,8 @@ func importPath(t *testing.T, imp *ast.ImportSpec) string {
 	return p
 }
 
-// registers reports whether the Go source file at filename calls ufs.Register
-// or ufs.RegisterDecorator.
+// registers reports whether the Go source file at filename calls ufs.Register,
+// ufs.RegisterDecorator or ufs.RegisterArchiveDriver.
 func registers(t *testing.T, filename string) bool {
 	t.Helper()
 	f, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.SkipObjectResolution)
@@ -206,7 +206,7 @@ func registers(t *testing.T, filename string) bool {
 			return !found
 		}
 		if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == ufsName &&
-			(sel.Sel.Name == "Register" || sel.Sel.Name == "RegisterDecorator") {
+			(sel.Sel.Name == "Register" || sel.Sel.Name == "RegisterDecorator" || sel.Sel.Name == "RegisterArchiveDriver") {
 			found = true
 		}
 		return !found

@@ -20,6 +20,11 @@ import (
 	"strings"
 )
 
+// LocalDriverPriority is the registration priority of the driver that serves
+// local names. It is behind every driver that owns a scheme. A driver for a
+// kind of local file, such as an archive, registers one ahead of it.
+const LocalDriverPriority = 10000
+
 // IsLocalName reports whether name names a file or directory of the local
 // disk: a file: URI, a plain path, or any name that exists on disk.
 //

@@ -42,7 +42,7 @@ const (
 	archiveFSPrefix = "archive:"
 
 	// localArchivePriority is one ahead of the local driver's priority.
-	localArchivePriority = 9999
+	localArchivePriority = osutil.LocalDriverPriority - 1
 )
 
 var (

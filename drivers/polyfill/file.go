@@ -81,17 +81,16 @@ func (f *wrappedFile) Read(p []byte) (int, error) {
 
 func (f *wrappedFile) Close() error {
 	f.buf = nil
+	var closeErr, removeErr error
 	if f.tmpFile != nil {
+		// A failure to release the temporary file must not keep the wrapped
+		// file open, so every step runs and the errors are joined.
 		name := f.tmpFile.Name()
-		if err := f.tmpFile.Close(); err != nil {
-			return err
-		}
-		if err := osutil.Remove(name); err != nil {
-			return err
-		}
+		closeErr = f.tmpFile.Close()
+		removeErr = osutil.Remove(name)
 		f.tmpFile = nil
 	}
-	return f.File.Close()
+	return ufserrors.Join(closeErr, removeErr, f.File.Close())
 }
 
 func (f *wrappedFile) Write(p []byte) (int, error) {

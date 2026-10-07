@@ -279,7 +279,7 @@ type fsBuildMount struct {
 }
 
 // NewFSBuilder creates a builder rooted at the given URI string. An empty
-// string is treated as "null://", which needs drivers/nullfs imported (a FS that discards all writes and returns
+// string is treated as "null:", which needs drivers/nullfs imported (a FS that discards all writes and returns
 // empty content on reads). To use a pre-parsed [*url.URL], pass u.String().
 func NewFSBuilder(name string) *FSBuilder {
 	return &FSBuilder{name: name}
@@ -355,9 +355,15 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 	if err != nil {
 		// Drivers outside this package (drivers/...) register their scheme only
 		// when imported, so a missing blank import looks like an unknown path.
-		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
+		// A relative path whose first segment holds a colon reads like a
+		// scheme and is only taken for a path when it exists.
+		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, and if it is a local path, check that it exists, %w", name, runtime.GOOS, err))
 	}
-	fsys, err := r.create(ctx, name)
+	// The driver is matched once: some matchers look at the disk.
+	if driver.CreateFunc == nil {
+		return nil, fmt.Errorf("failed to mount %q with driver %q, FS %q is not configured", name, driver.Name, driver.Name)
+	}
+	fsys, err := driver.CreateFunc(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
 	}

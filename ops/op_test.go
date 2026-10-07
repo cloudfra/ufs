@@ -27,8 +27,10 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
+	"github.com/cloudfra/ufs/drivers/localfs"
 	"github.com/cloudfra/ufs/drivers/memfs"
 	"github.com/cloudfra/ufs/drivers/tempmountfs"
+	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -39,12 +41,20 @@ import (
 const testLocalFSName = "../testing/testassets"
 
 // rsyncDestTestCaseList are the writable file systems Rsync is verified
-// against. localFS is opened with [ufs.New], so it is already nested.
+// against, bare and behind the nested file system that [ufs.New] returns.
 var rsyncDestTestCaseList = []struct {
 	name     string
 	createFS func(tb testing.TB) ufs.WriteFS
 }{
-	{name: "localFS", createFS: newTestLocalFS},
+	{name: "localFS", createFS: func(tb testing.TB) ufs.WriteFS {
+		tb.Helper()
+		fsys, err := localfs.New(tb.TempDir())
+		if err != nil {
+			tb.Fatalf("cannot create localFS file system, %s", err)
+		}
+		return fsys
+	}},
+	{name: "nestFS.localFS", createFS: newTestLocalFS},
 	{name: "tempMountFS", createFS: newTestTempMountFS},
 	{name: "memFS", createFS: newTestMemFS},
 	{name: "nestFS.tempMountFS", createFS: func(tb testing.TB) ufs.WriteFS {
@@ -730,23 +740,34 @@ func TestWalkIncludeMountedArchiveDefault(t *testing.T) {
 	}
 }
 
-// TestWalkSkipsMountedArchiveThroughDecorator verifies that a decorator
+// TestWalkSkipsMountedArchiveThroughWrapper verifies that a file system
 // wrapped around the nested file system still lets Walk skip archive
 // directories.
-func TestWalkSkipsMountedArchiveThroughDecorator(t *testing.T) {
-	fsys := readonlyfs.New(setupNestFSWithArchive(t))
-
-	var got []string
-	err := Walk(fsys, pathutil.CwdPath, WalkArgs{}, func(name string) error {
-		got = append(got, name)
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Walk() = %v, want nil", err)
+func TestWalkSkipsMountedArchiveThroughWrapper(t *testing.T) {
+	testCases := []struct {
+		name string
+		wrap func(t *testing.T, fsys ufs.WriteFS) fs.FS
+	}{
+		{name: "readOnly", wrap: func(_ *testing.T, fsys ufs.WriteFS) fs.FS { return readonlyfs.New(fsys) }},
+		{name: "readWrap", wrap: func(_ *testing.T, fsys ufs.WriteFS) fs.FS { return readwrapfs.FromFS(fsys) }},
 	}
-	want := []string{"data.zip", "readme.txt"}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("Walk() through readOnly mismatch (-want +got):\n%s", diff)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := tc.wrap(t, setupNestFSWithArchive(t))
+
+			var got []string
+			err := Walk(fsys, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+				got = append(got, name)
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("Walk() = %v, want nil", err)
+			}
+			want := []string{"data.zip", "readme.txt"}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Walk() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

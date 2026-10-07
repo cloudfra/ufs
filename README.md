@@ -91,6 +91,7 @@ import (
   _ "github.com/cloudfra/ufs/drivers/boltfs"    // installs bolt:
   _ "github.com/cloudfra/ufs/drivers/gcsfs"     // installs gs://
   _ "github.com/cloudfra/ufs/drivers/gitfs"     // installs URIs ending in .git
+  _ "github.com/cloudfra/ufs/drivers/httparchivefs" // installs archives at http: and https: URLs
   _ "github.com/cloudfra/ufs/drivers/localfs"   // installs file: and bare paths
   _ "github.com/cloudfra/ufs/drivers/memfs"     // installs memory:
   _ "github.com/cloudfra/ufs/drivers/nullfs"    // installs null:, the root of a mount table that names none

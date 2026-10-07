@@ -229,9 +229,11 @@ func (fsys *nestFS) GetAbsPath(name string) (string, error) {
 	if _, subName, mountFS, ok := fsys.mounts.getClosestMount(name); ok {
 		return mountFS.GetAbsPath(subName)
 	}
-	// The contents of an archive are not files on the host.
+	// The contents of an archive are not files on the host. A directory
+	// that is only named like an archive directory, with no archive next to
+	// it, is an ordinary directory of the base.
 	for _, archiveDirName := range getPotentialArchives(name) {
-		if isMountableArchivePath(strings.TrimSuffix(archiveDirName, archiveDirExt)) {
+		if fsys.IsMountedArchiveDir(archiveDirName) {
 			return "", realAbsPathNotSupported(fsys, name)
 		}
 	}

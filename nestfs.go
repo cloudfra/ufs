@@ -85,6 +85,25 @@ func (m *mountMap) GetDeviceInfo() DeviceMap {
 func (m *mountMap) put(name string, fsys *nestFS) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.putLocked(name, fsys)
+}
+
+// putIfAbsent mounts fsys at name unless something is already mounted exactly
+// there, and returns whichever file system ends up mounted at name.
+func (m *mountMap) putIfAbsent(name string, fsys *nestFS) (*nestFS, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if existing, ok := m.m[path.Clean(name)]; ok {
+		return existing, nil
+	}
+	if err := m.putLocked(name, fsys); err != nil {
+		return nil, err
+	}
+	return fsys, nil
+}
+
+// putLocked is put with m.mu already held.
+func (m *mountMap) putLocked(name string, fsys *nestFS) error {
 	for mountPoint := range m.m {
 		if _, ok := pathutil.RemovePrefix(mountPoint, name); ok {
 			return ufserrors.NewPathError("mount", name, fmt.Errorf("mount %q conflicts with %q. You must change the order so that mounting is properly nested. mounts: %s, %+v", name, mountPoint, m.baseName, m.m))
@@ -381,10 +400,17 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	}
 
 	wrapped := makeNestFS(ctx, newFS)
-	if err := fsys.addMount(name+archiveDirExt, wrapped); err != nil {
-		return nil, err
+	mounted, err := fsys.mounts.putIfAbsent(name+archiveDirExt, wrapped)
+	if err != nil {
+		return nil, ufserrors.Join(err, wrapped.Close())
 	}
-	return wrapped, nil
+	if mounted != wrapped {
+		// Another goroutine mounted the same archive first; use its mount.
+		if err := wrapped.Close(); err != nil {
+			return nil, ufserrors.NewPathError("mount", name, err)
+		}
+	}
+	return mounted, nil
 }
 
 func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {

@@ -26,6 +26,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -659,4 +660,51 @@ func TestArchiveConcurrentFirstAccess(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// TestArchiveEmptyConcurrentAccess verifies that an archive with no entries
+// can be read concurrently. The archive library rebuilds the index of an empty
+// archive on every ReadDir, so such an archive never gets to skip the locks.
+func TestArchiveEmptyConcurrentAccess(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	zf, err := osutil.Create(filepath.Join(dir, "empty.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := zip.NewWriter(zf).Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fsys, err := New(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	const archiveDir = "empty.zip" + archiveDirExt
+	// The first ReadDir runs alone, so the workers below only exercise the
+	// state after the first index build.
+	if entries, err := fsys.ReadDir(archiveDir); err != nil || len(entries) != 0 {
+		t.Fatalf("ReadDir() = %v, %v, want no entries and nil", entries, err)
+	}
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for range 50 {
+				if i%2 == 0 {
+					if _, err := fsys.Stat(archiveDir + "/missing"); !errors.Is(err, fs.ErrNotExist) {
+						t.Errorf("Stat() = %v, want fs.ErrNotExist", err)
+					}
+					continue
+				}
+				if entries, err := fsys.ReadDir(archiveDir); err != nil || len(entries) != 0 {
+					t.Errorf("ReadDir() = %v, %v, want no entries and nil", entries, err)
+				}
+			}
+		})
+	}
+	wg.Wait()
 }

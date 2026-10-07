@@ -79,7 +79,9 @@ type archiveFS struct {
 	// fsys.fsys. archives.ArchiveFS builds its index lazily on the first
 	// ReadDir, writing maps that Open and Stat read without any locking of
 	// its own. Once isIndexed is set those maps are never written again, so
-	// readers skip the lock.
+	// readers skip the lock. It is never set for an archive with no entries:
+	// the library takes an empty index for a missing one and rebuilds it on
+	// every ReadDir.
 	indexMu sync.RWMutex
 	// isIndexed is set once ensureIndexed has successfully built the
 	// underlying archive's implicit-directory index, letting openInner skip
@@ -110,10 +112,15 @@ func (fsys *archiveFS) ensureIndexed() {
 			return
 		}
 		fsys.indexMu.Lock()
-		_, err := rdfs.ReadDir(".")
+		entries, err := rdfs.ReadDir(".")
 		fsys.indexMu.Unlock()
 		if err != nil {
 			slog.Warn("failed to index archive", "name", fsys.name, "error", err)
+			return
+		}
+		if len(entries) == 0 {
+			// The library rebuilds the index of an empty archive on every
+			// ReadDir, so its maps keep being written: stay on the locks.
 			return
 		}
 		fsys.isIndexed.Store(true)
@@ -234,7 +241,8 @@ func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	// concurrently with anything else.
 	fsys.ensureIndexed()
 	if !fsys.isIndexed.Load() {
-		// Indexing failed, so every ReadDir attempts it again.
+		// Indexing failed or the archive is empty, so every ReadDir builds
+		// the index again.
 		fsys.indexMu.Lock()
 		defer fsys.indexMu.Unlock()
 	}

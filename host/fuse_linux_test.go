@@ -29,6 +29,7 @@ import (
 	"github.com/cloudfra/ufs"
 
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func requireFUSE(t *testing.T) {
@@ -105,6 +106,8 @@ func TestFuseErrno(t *testing.T) {
 		{errors.New("unknown"), syscall.EIO},
 		{fmt.Errorf("wrap: %w", fs.ErrNotExist), syscall.ENOENT},
 		{fmt.Errorf("wrap: %w", syscall.EPERM), syscall.EACCES},
+		{ufserrors.ErrDirNotEmpty, syscall.ENOTEMPTY},
+		{ufserrors.NewPathError("remove", "dir", ufserrors.ErrDirNotEmpty), syscall.ENOTEMPTY},
 	}
 	for _, tc := range tests {
 		got := fuseErrno(tc.err)

@@ -916,10 +916,24 @@ func TestNestFSAbsPathOutsideHost(t *testing.T) {
 	if _, err := AbsPath(fsys, "a.zip"); err != nil {
 		t.Errorf("AbsPath(a.zip) = %v, want nil", err)
 	}
-	for _, name := range []string{"sub/file.txt", "a.zip.d/hello.txt", "missing.zip.d/x"} {
+	for _, name := range []string{"sub/file.txt", "a.zip.d", "a.zip.d/hello.txt", "../outside", "/abs", ""} {
 		if got, err := AbsPath(fsys, name); err == nil {
 			t.Errorf("AbsPath(%q) = %q, want error", name, got)
 		}
+	}
+	// A directory that is only named like an archive directory is a
+	// directory of the host.
+	ufsTesting.Must(t, fsys.MkdirAll("real.zip.d", fs.ModePerm))
+	root, err := AbsPath(fsys, pathutil.CwdPath)
+	if err != nil {
+		t.Fatalf("AbsPath(.) = %v, want nil", err)
+	}
+	got, err := AbsPath(fsys, "real.zip.d/f.txt")
+	if err != nil {
+		t.Fatalf("AbsPath(real.zip.d/f.txt) = %v, want nil", err)
+	}
+	if want := filepath.Join(root, "real.zip.d", "f.txt"); got != want {
+		t.Errorf("AbsPath(real.zip.d/f.txt) = %q, want %q", got, want)
 	}
 }
 

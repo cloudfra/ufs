@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
@@ -38,6 +39,10 @@ type AbsPathGetter interface {
 //
 // If the virtual file system name resolves to a path that is not accessible outside of the virtual file system, an error is returned.
 func AbsPath(fsys any, name string) (string, error) {
+	// A name such as "../x" would resolve to a path outside of fsys.
+	if err := pathutil.Validate("absPath", name); err != nil {
+		return "", err
+	}
 	if rfs, ok := fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}

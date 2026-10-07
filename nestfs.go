@@ -272,6 +272,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
+	notExist := err != nil
 	appendEntry := map[string]fs.DirEntry{}
 
 	dirs := fsys.mounts.getDirectoryList(name)
@@ -284,6 +285,12 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 			}
 		}
 		appendEntry[dir] = makeVirtualDirEntry(dir)
+	}
+
+	if notExist && len(appendEntry) == 0 {
+		// The directory is missing from the base file system and no mount
+		// lives below it, so it does not exist here either.
+		return nil, err
 	}
 
 	for _, entry := range entries {
@@ -309,6 +316,13 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	})
 
 	return entries, nil
+}
+
+// isMountParent reports whether a file system is mounted somewhere below
+// name. Such a directory exists in this file system even when the base file
+// system has no entry for it.
+func (fsys *nestFS) isMountParent(name string) bool {
+	return len(fsys.mounts.getDirectoryList(name)) > 0
 }
 
 func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
@@ -416,6 +430,9 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 
 	f, err := mountFS.fsys.Open(subName)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
+			return makeReadDirFile(mountFS, subName), nil
+		}
 		return nil, err
 	}
 
@@ -517,7 +534,11 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
-		return cFsys.Stat(subName)
+		info, err := cFsys.Stat(subName)
+		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
+			return makeVirtualDirEntry(path.Base(subName)), nil
+		}
+		return info, err
 	}
 	f, err := mountFS.Open(subName)
 	if err != nil {
@@ -575,7 +596,11 @@ func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
-		return cFsys.Lstat(subName)
+		info, err := cFsys.Lstat(subName)
+		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
+			return makeVirtualDirEntry(path.Base(subName)), nil
+		}
+		return info, err
 	}
 	return mountFS.Stat(subName)
 }

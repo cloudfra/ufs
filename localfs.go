@@ -196,7 +196,8 @@ func makeLocalFS(name string) (*localFS, error) {
 
 func newLocalFS(ctx context.Context, name string) (WriteFS, error) {
 	if isMountableArchivePath(name) {
-		return newArchiveFSFromLocalFS(ctx, name)
+		// The archive is opened by host path, so drop any file: prefix.
+		return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))
 	}
 	return makeLocalFS(name)
 }

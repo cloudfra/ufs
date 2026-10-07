@@ -562,3 +562,26 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 		})
 	}
 }
+
+// TestNewArchiveWithFileScheme verifies that an archive opens the same way
+// whether it is named by a bare path or by a file: URI.
+func TestNewArchiveWithFileScheme(t *testing.T) {
+	t.Parallel()
+	archive := filepath.ToSlash(filepath.Join(mustGetwd(t), testAssetsArchivesDir, "single-testassets.zip"))
+	if !strings.HasPrefix(archive, "/") {
+		archive = "/" + archive // "C:/..." becomes "/C:/..." in a file URI
+	}
+	for _, name := range []string{"file://" + archive, "file:" + archive} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fsys, err := New(t.Context(), name)
+			if err != nil {
+				t.Fatalf("New(%q) = %v, want nil", name, err)
+			}
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if _, err := fsys.Stat("index.html"); err != nil {
+				t.Errorf("Stat(index.html) = %v, want nil", err)
+			}
+		})
+	}
+}

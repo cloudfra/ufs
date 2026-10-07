@@ -2,102 +2,301 @@
 
 <img src="logo.png" alt="Logo" width="64" height="64" />
 
-Unified File System (UFS) is a Go library that allows apps to access multiple
-storage backends through a single fs.FS-based API. It provides a factory
-constructor (ufs.New) that dispatches to the appropriate implementation based on
-URI scheme, and a layering helper (ufs.CreateURI) for composing nested file systems.
+[![Go Reference](https://pkg.go.dev/badge/github.com/cloudfra/ufs.svg)](https://pkg.go.dev/github.com/cloudfra/ufs)
+[![CI](https://github.com/cloudfra/ufs/actions/workflows/deploy.yaml/badge.svg)](https://github.com/cloudfra/ufs/actions/workflows/deploy.yaml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+**Unified File System (UFS)** gives Go programs, and the shell, one way to reach
+files wherever they live. A local directory, a zip file, a cloud bucket, a git
+repository and an in-memory scratch space all open with the same call and
+behave like the standard library's [`fs.FS`](https://pkg.go.dev/io/fs#FS), with
+writes added.
+
+* **One API for every backend.** Change the URI, not your code.
+* **Drop-in for `fs.FS`.** Anything that accepts an `fs.FS` (`fs.WalkDir`,
+  `http.FS`, `template.ParseFS`, ...) accepts a UFS file system.
+* **Composable.** Mount one file system inside another, look inside archives
+  as if they were directories, and wrap any of them as read-only or with
+  injected faults for testing.
+* **Mountable.** Expose any of it as a real directory on Linux (FUSE) or
+  Windows (ProjFS), so tools that know nothing about UFS can use it too.
+
+## Supported integrations
+
+| Storage              | Open it with                            |
+|:---------------------|:----------------------------------------|
+| Local disk           | `/path/to/dir` or `file:///path/to/dir` |
+| Memory               | `memory:`                               |
+| Archives             | `/path/to/file.zip` (zip, tar, 7z, rar and compressed tars) |
+| Remote archives      | `https://host/file.zip`                 |
+| Google Cloud Storage | `gs://bucket/prefix`                    |
+| Git repositories     | `https://host/repo.git`                 |
+| BoltDB               | `bolt:/path/to/file.db`                 |
+| Go `embed.FS`        | `embedfs.New(name, fsys)`               |
+| Null                 | `null://`                               |
+
+Host mounting is available on Linux (FUSE) and Windows (ProjFS).
+
+## Quick start
+
+### Mount something with `ufsmount`
+
+`ufsmount` makes any of the storage types above appear as a normal directory.
+Download a prebuilt binary from the
+[releases page](https://github.com/cloudfra/ufs/releases).
+
+Linux (amd64):
+
+```bash
+curl -fsSL -o ufsmount https://github.com/cloudfra/ufs/releases/latest/download/ufsmount-linux_amd64
+chmod +x ufsmount
+```
+
+Windows (amd64), in PowerShell:
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/cloudfra/ufs/releases/latest/download/ufsmount-windows_amd64.exe -OutFile ufsmount.exe
+```
+
+Then mount something, for example a git repository:
+
+```bash
+mkdir -p /tmp/ufs
+./ufsmount -uri https://github.com/cloudfra/ufs.git -mount /tmp/ufs
+```
+
+Press `Ctrl-C` to unmount. Linux needs FUSE (`fuse3`) and Windows needs ProjFS
+enabled; [docs/ufsmount.md](docs/ufsmount.md) covers setup, every flag, and
+which operations each platform supports.
+
+### Use it in a Go program
+
+```bash
+go get github.com/cloudfra/ufs
+```
+
+```go
+package main
+
+import (
+  "context"
+  "fmt"
+  "log"
+
+  "github.com/cloudfra/ufs"
+
+  // Each blank import installs a driver. Local disk, memory, archives and
+  // null:// are built in; drop the ones you do not need.
+  _ "github.com/cloudfra/ufs/drivers/boltfs" // installs bolt:
+  _ "github.com/cloudfra/ufs/drivers/gcsfs"  // installs gs://
+  _ "github.com/cloudfra/ufs/drivers/gitfs"  // installs URIs ending in .git
+)
+
+func main() {
+  ctx := context.Background()
+
+  // Swap the URI for "/srv/data", "release.zip", "gs://bucket/prefix", ...
+    fsys, err := ufs.New(ctx, "memory:")
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer fsys.Close()
+
+  f, err := fsys.Create("hello.txt")
+  if err != nil {
+    log.Fatal(err)
+  }
+  if _, err := f.WriteString("hello, world"); err != nil {
+    log.Fatal(err)
+  }
+  if err := f.Close(); err != nil {
+    log.Fatal(err)
+  }
+
+  data, err := fsys.ReadFile("hello.txt")
+  if err != nil {
+    log.Fatal(err)
+  }
+  fmt.Println(string(data)) // hello, world
+}
+```
+
+More runnable examples are in [example_test.go](example_test.go) and on
+[pkg.go.dev](https://pkg.go.dev/github.com/cloudfra/ufs#pkg-examples).
 
 ## Features
 
-* **Unified API** — All backends implement the same FS / ReadFS / File interfaces,
-  so you can swap storage without changing application code.
-* **Factory constructor** — ufs.New(ctx, uri) opens any supported backend; no
-  per-backend import needed at call site.
-* **Layering** — ufs.CreateURI() mounts additional virtual file systems at specific
-  paths inside a base FS (caching, scratch space, etc.).
-* **Cross-platform** — Tested on Linux, macOS, and Windows; includes platform-specific
-  build tags where needed.
+### Backends
 
-## File Systems
+| Backend        | URI                                                         | Access     | Package          | Notes                                                                                                |
+|:---------------|:------------------------------------------------------------|:-----------|:-----------------|:-----------------------------------------------------------------------------------------------------|
+| Local          | `file:///path` or a bare path                               | read-write | built in         | Rooted with `os.OpenRoot`; paths cannot escape the root.                                             |
+| Memory         | `memory:`                                                   | read-write | built in         | Lost when the file system is closed.                                                                 |
+| Archive        | a path ending in an archive extension, or `archive:///path` | read-only  | built in         | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`.  |
+| Remote archive | `http://` or `https://` URL                                 | read-only  | built in         | Downloaded to a temporary directory that is removed on `Close`.                                      |
+| Null           | `null://`                                                   | read-write | built in         | Like `/dev/null`: writes are accepted and discarded, reads return nothing.                           |
+| GCS            | `gs://bucket/prefix`                                        | read-write | `drivers/gcsfs`  | Uses Application Default Credentials and falls back to anonymous access for public buckets.          |
+| Git            | any URI ending in `.git`                                    | read-write | `drivers/gitfs`  | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
+| BoltDB         | `bolt:/path/to/file.db`                                     | read-write | `drivers/boltfs` | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file.                      |
+| `embed.FS`     | none, use `embedfs.New`                                     | read-only  | `drivers/embedfs`| Wraps files compiled into your binary.                                                               |
 
-| Storage      | URI Prefix     | Implementation | Description                                               |
-|:-------------|:---------------|:---------------|:----------------------------------------------------------|
-| Null         | `null://`      | nullfs.go      | Acts as /dev/null. Writes discarded, reads return empty.  |
-| Memory       | `memory:`      | memfs.go       | In-memory storage; lost when the process exits.           |
-| Local        | `file:///path` | localfs.go     | Local disk, mounted at a root path via os.OpenRoot.       |
-| Google Cloud | `gs://bucket`  | drivers/gcsfs  | Google Cloud Storage bucket as a read-only file system.¹  |
-| Git          | `git://<url>`  | drivers/gitfs  | Reads files from a git repository (clones on first open).¹|
-| Archive      | `archive://`   | archivefs.go   | Reads archives (zip, tar, 7z) as read-only FSs.           |
-| BoltDB       | `bolt:/path`   | drivers/boltfs | Single BoltDB file.¹                                      |
-| Nested       | via CreateURI  | nestfs.go      | Layers one or more virtual FSs at specific mount paths    |
-|              |                |                | inside a base FS.                                         |
+Any backend can be made read-only with the `readOnly` [decorator](#decorators).
 
-¹ Drivers under `drivers/` register their scheme when imported. For example, add
-`import _ "github.com/cloudfra/ufs/drivers/gcsfs"` to open `gs://` URIs with `ufs.New`,
-or `import _ "github.com/cloudfra/ufs/drivers/boltfs"` to open `bolt:` URIs.
+### Archives are directories
 
-## Public API
+When a file system contains an archive, its contents appear next to it under
+the archive's name plus `.d`. Nothing needs to be configured, and it works
+inside any backend, including archives nested in other archives.
 
 ```go
-// Open any supported file system from a URI.
-func New(ctx context.Context, name string) (FS, error)
-
-// Compose nested mounts: base FS with additional FSs at specific paths.
-func CreateURI(baseName string, nested map[string]string) (string, error)
+fsys, _ := ufs.New(ctx, "/srv/downloads")
+data, _ := fsys.ReadFile("release.zip.d/docs/README.md")
 ```
 
-### Interfaces
+### Nested mounts
 
-| Interface | Content                                                   |
-|:----------|:----------------------------------------------------------|
-| ReadFile  | Read-only file; wraps fs.File                             |
-| File      | Read-write file; extends ReadFile with ReaderAt, Seek     |
-| ReadFS    | Read-only FS; adds Close, ListFilenames, ForEach iterators|
-| FS        | Read-write FS; extends ReadFS with Create, MkdirAll       |
-| FileInfo  | Name, Size, Mode, ModTime, IsDir, Type, Sys               |
+Combine file systems by mounting them at paths inside a base file system.
+There are three ways to describe the layout, and all of them produce the same
+kind of file system.
 
-## Host Mount
+In code, with a builder. This is also how you mount a file system you built
+yourself, such as an `embed.FS`:
 
-`host.Mount` (package `github.com/cloudfra/ufs/host`) exposes any virtual file system as a regular directory on
-the host OS. On Linux it uses FUSE (read-write); on Windows it uses
-[ProjFS](https://learn.microsoft.com/en-us/windows/win32/projfs/projected-file-system)
-(read-only). See [docs/ufsmount.md](docs/ufsmount.md) for the `ufsmount`
-CLI tool and platform-specific setup instructions.
+```go
+fsys, err := ufs.NewFSBuilder("file:///srv/data").
+  Mount("scratch", "memory:").
+  MountFS("assets", embedfs.New("assets", assets)).
+  Build(ctx)
+```
 
-## Commands
+As a single URI, which is convenient for flags and configuration values:
+
+```go
+uri, err := ufs.CreateURI("file:///srv/data", map[string]string{
+  "scratch": "memory:",
+})
+fsys, err := ufs.New(ctx, uri)
+```
+
+As a YAML or fstab-style mount table passed to `ufs.New`:
+
+```yaml
+- source: "file:///srv/data"
+  mountPoint: "."
+- source: "gs://my-bucket/reference"
+  mountPoint: "reference"
+  options:
+    - readOnly: true
+```
+
+```text
+file:///srv/data          .          auto  rw  0  0
+gs://my-bucket/reference  reference  auto  ro  0  0
+```
+
+### Decorators
+
+Decorators wrap a file system to change how it behaves. List them under
+`options` in a mount table; they are applied in order, so the last one is the
+outermost layer. Blank-import a decorator's package to enable it.
+
+| Option     | Package                         | Behavior                                                                                     |
+|:-----------|:--------------------------------|:---------------------------------------------------------------------------------------------|
+| `readOnly` | `drivers/decorators/readonlyfs` | Every write returns `fs.ErrPermission`. The fstab `ro` option maps to it.                    |
+| `fault`    | `drivers/decorators/faultfs`    | Injects latency and random errors, to test how your code copes with slow or failing storage. |
+
+```yaml
+- source: "memory:"
+  mountPoint: "."
+  options:
+    - fault:
+        latency: 100ms
+        errorRate: 0.25
+```
+
+Write your own with `ufs.NewDecorator` and `ufs.RegisterDecorator`.
+
+### Host mounting from Go
+
+`ufsmount` is a thin wrapper around the `host` package, which you can call
+directly:
+
+```go
+import "github.com/cloudfra/ufs/host"
+
+server, err := host.Mount(ctx, fsys, "/mnt/data")
+if err != nil {
+  log.Fatal(err)
+}
+defer server.Close()
+server.Wait() // until unmounted or ctx is canceled
+```
+
+| Platform | Mechanism                                                                              | Read | Write                               |
+|:---------|:---------------------------------------------------------------------------------------|:-----|:------------------------------------|
+| Linux    | FUSE                                                                                   | yes  | yes, if the file system is writable |
+| Windows  | [ProjFS](https://learn.microsoft.com/en-us/windows/win32/projfs/projected-file-system) | yes  | no                                  |
+
+### Helpers
+
+Functions that work on any `fs.FS`, using a backend's faster native
+implementation when it has one:
+
+| Function                                     | Purpose                                                                            |
+|:---------------------------------------------|:-----------------------------------------------------------------------------------|
+| `ufs.Copy`                                   | Copy one file between two file systems.                                            |
+| `ufs.Rsync`                                  | Copy a whole tree between two file systems.                                        |
+| `ufs.List`, `ufs.ListFiles`                  | Collect every path, or every file path, under a directory.                         |
+| `ufs.ForEachFilename`, `ufs.ForEachFileInfo` | Stream the same results without building a slice.                                  |
+| `ufs.Walk`                                   | Walk a tree, skipping directories by glob and optionally descending into archives. |
+| `ufs.Remove`, `ufs.RemoveAll`                | Delete from any file system that supports it.                                      |
+| `ufs.AbsPath`                                | Resolve a virtual path to a real path on the host, when there is one.              |
+
+### Change notifications
+
+Backends that implement `ufs.Watcher` (local disk, memory, BoltDB and GCS)
+report changes under a directory and everything below it:
+
+```go
+if w, ok := fsys.(ufs.Watcher); ok {
+  stop, err := w.Watch(ctx, ".", func(op ufs.NotifyOp, name string) {
+    log.Println("changed:", name)
+  })
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer stop.Close()
+}
+```
+
+### Writing a driver
+
+A driver is a package that implements `ufs.WriteFS` and registers a URI
+matcher from `init()` with `ufs.Register`. [drivers/boltfs](drivers/boltfs) is
+a complete example, and [drivers/testing](drivers/testing) provides the
+conformance suite that every backend runs.
+
+## Command-line tools
+
+| Tool       | Purpose                                    | Docs                                 |
+|:-----------|:-------------------------------------------|:-------------------------------------|
+| `ufsmount` | Mount any file system as a host directory. | [docs/ufsmount.md](docs/ufsmount.md) |
+| `walk`     | Print every file in any file system.       | [docs/walk.md](docs/walk.md)         |
+
+## Development
+
+Everything goes through `make`, which handles test assets, cross-platform
+builds, race detection and linting in the right order.
 
 ```bash
-# Build
-go build ./...
-
-# Test (CGO disabled)
-make test
-
-# Test with race detector
-CGO_ENABLED=1 go test -race ./...
-
-# Run a single test
-go test -run TestName ./...
-
-# Lint (requires golangci-lint)
-golangci-lint run
-
-# Presubmit (lint + check)
-make presubmit
-
-# Deflake flaky tests (runs race tests 10 times)
-make test-deflake
-
-# Cross-compile all binaries
-make build
+make build -j$(nproc)   # cross-compile all binaries
+make test               # run the tests
+make lint               # run the linters
+make presubmit          # everything CI runs; do this before opening a PR
 ```
 
-## Use ollama with Claude Code
-
-```bash
-ANTHROPIC_AUTH_TOKEN="ollama" ANTHROPIC_API_KEY="" ANTHROPIC_BASE_URL="http://mega:11434" claude --model qwen3.6:35b
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
 
 ## License
 
-Apache 2.0 — see LICENSE.
+Apache 2.0, see [LICENSE](LICENSE).

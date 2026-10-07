@@ -203,6 +203,13 @@ func (m *mountMap) Close() error {
 	return ufserrors.Join(errs...)
 }
 
+// isEmpty reports whether nothing is mounted.
+func (m *mountMap) isEmpty() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.m) == 0
+}
+
 func makeMountMap(baseName string) *mountMap {
 	return &mountMap{
 		m:        map[string]*nestFS{},
@@ -627,11 +634,90 @@ func (fsys *nestFS) RemoveAll(name string) error {
 	return mountFS.fsys.RemoveAll(subName)
 }
 
+// Glob returns the names that match pattern, including mount points, the
+// directories above them and the archive directories ("data.zip.d"). Like
+// fs.Glob it ignores I/O errors; the only error is path.ErrBadPattern.
+//
+// A wildcard does not search the contents of an archive: "*/*.txt" matches
+// "data.zip.d" itself for "*" but not the files inside it, so a wide pattern
+// does not unpack every archive it passes. Name the directory to search it:
+// "data.zip.d/*.txt".
 func (fsys *nestFS) Glob(pattern string) ([]string, error) {
-	if cFsys, ok := fsys.fsys.(fs.GlobFS); ok {
-		return cFsys.Glob(pattern)
+	if _, err := path.Match(pattern, ""); err != nil {
+		return nil, err
 	}
-	return globutil.GlobFS(fsys, pattern)
+	if base, ok := fsys.fsys.(fs.GlobFS); ok && fsys.mounts.isEmpty() && !namesArchiveDir(pattern) {
+		return fsys.globBase(base, pattern)
+	}
+	return globutil.GlobFSFunc(fsys, pattern, fsys.isMountedArchiveDir)
+}
+
+// namesArchiveDir reports whether a component of pattern other than the last
+// names an archive directory literally, which is the only way a pattern
+// reaches the contents of an archive.
+func namesArchiveDir(pattern string) bool {
+	dir, _ := path.Split(pattern)
+	for part := range strings.SplitSeq(strings.TrimSuffix(dir, "/"), "/") {
+		if globutil.HasMeta(part) || !strings.HasSuffix(part, archiveDirExt) {
+			continue
+		}
+		if isMountableArchivePath(strings.TrimSuffix(part, archiveDirExt)) {
+			return true
+		}
+	}
+	return false
+}
+
+// globBase answers Glob with the native Glob of the base file system, which
+// is only correct while nothing is mounted. The base does not know the
+// archive directories, so the ones that match pattern are added.
+func (fsys *nestFS) globBase(base fs.GlobFS, pattern string) ([]string, error) {
+	matches, err := base.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	dir, last := path.Split(pattern)
+	if !canMatchArchiveDir(last) {
+		return matches, nil
+	}
+	// An archive directory matches when its archive sits in a directory that
+	// the pattern reaches, whether or not the archive itself matches.
+	siblings, err := base.Glob(dir + "*")
+	if err != nil {
+		return nil, err
+	}
+	added := false
+	for _, name := range siblings {
+		if !isMountableArchivePath(name) {
+			continue
+		}
+		archiveDir := name + archiveDirExt
+		// The pattern was validated above, so Match cannot fail.
+		if ok, err := path.Match(last, path.Base(archiveDir)); err == nil && ok {
+			matches = append(matches, archiveDir)
+			added = true
+		}
+	}
+	if added {
+		sort.Strings(matches)
+		matches = slices.Compact(matches)
+	}
+	return matches, nil
+}
+
+// canMatchArchiveDir reports whether the pattern component last can match a
+// name that ends in archiveDirExt. It may report true for a component that
+// cannot; it only reports false when the literal text after the last wildcard
+// rules such a name out.
+func canMatchArchiveDir(last string) bool {
+	tail := last
+	if i := strings.LastIndexAny(last, `*?]`); i >= 0 {
+		tail = last[i+1:]
+	}
+	if len(tail) >= len(archiveDirExt) {
+		return strings.HasSuffix(tail, archiveDirExt)
+	}
+	return strings.HasSuffix(archiveDirExt, tail)
 }
 
 func (fsys *nestFS) validPath(op string, name string) error {

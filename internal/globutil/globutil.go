@@ -27,21 +27,40 @@ import (
 // GlobFS implements Glob for any FS that satisfies fs.ReadDirFS, walking
 // level-by-level so the FS's own ReadDir is used (avoids routing back through
 // fs.Glob which would recurse if the FS implements GlobFS).
+//
+// Like fs.Glob, it ignores I/O errors such as a directory that cannot be read;
+// the only error it returns is path.ErrBadPattern.
 func GlobFS(fsys fs.ReadDirFS, pattern string) ([]string, error) {
+	return GlobFSFunc(fsys, pattern, nil)
+}
+
+// GlobFSFunc is GlobFS, except that a directory for which skip returns true
+// is not searched when the pattern component that matched it contains a
+// wildcard. The directory itself is still a match, and a pattern component
+// that names it literally still searches it.
+func GlobFSFunc(fsys fs.ReadDirFS, pattern string, skip func(dir string) bool) ([]string, error) {
 	if _, err := path.Match(pattern, ""); err != nil {
 		return nil, err
 	}
-	return globWalk(fsys, pathutil.CwdPath, pattern)
+	return globWalk(fsys, pathutil.CwdPath, pattern, skip)
 }
 
-func globWalk(fsys fs.ReadDirFS, dir, pattern string) ([]string, error) {
+// HasMeta reports whether pattern contains any of the characters that
+// path.Match treats specially.
+func HasMeta(pattern string) bool {
+	return strings.ContainsAny(pattern, `*?[\`)
+}
+
+func globWalk(fsys fs.ReadDirFS, dir, pattern string, skip func(dir string) bool) ([]string, error) {
 	// Split the leftmost path component off the pattern.
 	part, rest, _ := strings.Cut(pattern, "/")
 
 	entries, err := fsys.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		// A directory that cannot be read has no matches.
+		return nil, nil
 	}
+	wildcard := skip != nil && HasMeta(part)
 
 	var matches []string
 	for _, e := range entries {
@@ -59,7 +78,10 @@ func globWalk(fsys fs.ReadDirFS, dir, pattern string) ([]string, error) {
 		if rest == "" {
 			matches = append(matches, entryPath)
 		} else if e.IsDir() {
-			sub, err := globWalk(fsys, entryPath, rest)
+			if wildcard && skip(entryPath) {
+				continue
+			}
+			sub, err := globWalk(fsys, entryPath, rest, skip)
 			if err != nil {
 				return nil, err
 			}

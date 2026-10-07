@@ -15,12 +15,16 @@
 package ufs
 
 import (
+	"archive/zip"
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"path"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 
@@ -28,6 +32,7 @@ import (
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestNewNestFSInvalid(t *testing.T) {
@@ -1352,6 +1357,46 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 	})
 }
 
+func TestNestFSGlobIncludesMounts(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:?cache=memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	for _, name := range []string{"base.txt", "cache/a.txt", "cache/b.txt"} {
+		f, err := fsys.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	globFS, ok := fsys.(fs.GlobFS)
+	if !ok {
+		t.Fatalf("%T does not implement fs.GlobFS", fsys)
+	}
+
+	tests := []struct {
+		pattern string
+		want    []string
+	}{
+		{pattern: "*", want: []string{"base.txt", "cache"}},
+		{pattern: "cache/*", want: []string{"cache/a.txt", "cache/b.txt"}},
+		{pattern: "*/a.txt", want: []string{"cache/a.txt"}},
+	}
+	for _, tc := range tests {
+		got, err := globFS.Glob(tc.pattern)
+		if err != nil {
+			t.Fatalf("Glob(%q) = %v, want nil", tc.pattern, err)
+		}
+		if diff := cmp.Diff(tc.want, got); diff != "" {
+			t.Errorf("Glob(%q) mismatch (-want +got):\n%s", tc.pattern, diff)
+		}
+	}
+}
+
 // TestNestFSMountParentDirectory covers a directory that exists only because
 // a file system is mounted below it: the base has no "a", but "a/b" is a
 // mount. ReadDir already listed "a"; Stat, Lstat and Open must agree.
@@ -1407,5 +1452,124 @@ func TestNestFSMissingDirectory(t *testing.T) {
 		if _, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
 		}
+	}
+}
+
+// newGlobArchiveFS returns a local file system that holds a readable archive,
+// a file that is only named like one, and plain files, for the Glob tests. If
+// withMount is set a memory file system is mounted at "zz", which makes Glob
+// walk the tree itself instead of asking the base file system.
+func newGlobArchiveFS(t *testing.T, withMount bool) WriteFS {
+	t.Helper()
+	dir := t.TempDir()
+	uri := "file://" + filepath.ToSlash(dir)
+	if withMount {
+		uri += "?zz=memory:"
+	}
+	fsys, err := New(t.Context(), uri)
+	if err != nil {
+		t.Fatalf("New(%q) = %v, want nil", uri, err)
+	}
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+	ufsTesting.Must(t, fsys.MkdirAll("d", fs.ModePerm))
+	for name, content := range map[string]string{
+		"bad.zip":  "this is not a zip archive",
+		"d/x.dat":  "x",
+		"top.dat":  "top",
+		"d/y.txt":  "y",
+		"note.txt": "note",
+	} {
+		f, err := fsys.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) = %v, want nil", name, err)
+		}
+		if _, err := f.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		ufsTesting.Must(t, f.Close())
+	}
+	zf, err := osutil.Create(filepath.Join(dir, "good.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(zf)
+	w, err := zw.Create("inside.dat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(w, "inside"); err != nil {
+		t.Fatal(err)
+	}
+	ufsTesting.Must(t, zw.Close())
+	ufsTesting.Must(t, zf.Close())
+	return fsys
+}
+
+// TestNestFSGlobArchives verifies Glob around archives, both when it asks the
+// base file system and when a mount makes it walk the tree itself: a file
+// that is only named like an archive does not fail the search, archive
+// directories are matched, and only a pattern that names an archive directory
+// searches inside it.
+func TestNestFSGlobArchives(t *testing.T) {
+	testCases := []struct {
+		pattern string
+		want    []string
+		// wantMount is added to want when "zz" is mounted.
+		wantMount []string
+	}{
+		{pattern: "*/*.dat", want: []string{"d/x.dat"}},
+		{pattern: "*.dat", want: []string{"top.dat"}},
+		{pattern: "*", want: []string{"bad.zip", "bad.zip.d", "d", "good.zip", "good.zip.d", "note.txt", "top.dat"}, wantMount: []string{"zz"}},
+		{pattern: "*.d", want: []string{"bad.zip.d", "good.zip.d"}},
+		{pattern: "*.zip*", want: []string{"bad.zip", "bad.zip.d", "good.zip", "good.zip.d"}},
+		{pattern: "good.zip.d", want: []string{"good.zip.d"}},
+		{pattern: "good.zip.d/*", want: []string{"good.zip.d/inside.dat"}},
+		{pattern: "good.zip.d/*.dat", want: []string{"good.zip.d/inside.dat"}},
+		{pattern: "bad.zip.d/*", want: nil},
+		{pattern: "*/*", want: []string{"d/x.dat", "d/y.txt"}},
+		{pattern: "missing/*", want: nil},
+	}
+	for _, withMount := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mount=%t", withMount), func(t *testing.T) {
+			t.Parallel()
+			fsys := newGlobArchiveFS(t, withMount)
+			for _, tc := range testCases {
+				want := tc.want
+				if withMount {
+					want = append(slices.Clone(tc.want), tc.wantMount...)
+				}
+				got, err := fs.Glob(fsys, tc.pattern)
+				if err != nil {
+					t.Errorf("Glob(%q) = %v, want nil", tc.pattern, err)
+					continue
+				}
+				if diff := cmp.Diff(want, got, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("Glob(%q) mismatch (-want +got):\n%s", tc.pattern, diff)
+				}
+			}
+			if _, err := fs.Glob(fsys, "*/["); !errors.Is(err, path.ErrBadPattern) {
+				t.Errorf("Glob(*/[) = %v, want path.ErrBadPattern", err)
+			}
+		})
+	}
+}
+
+// TestNestFSGlobWildcardDoesNotMountArchives verifies that a pattern that
+// only passes an archive with a wildcard does not open it.
+func TestNestFSGlobWildcardDoesNotMountArchives(t *testing.T) {
+	for _, withMount := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mount=%t", withMount), func(t *testing.T) {
+			t.Parallel()
+			fsys := newGlobArchiveFS(t, withMount)
+			for _, pattern := range []string{"*", "*/*", "*/*.dat", "*.d"} {
+				if _, err := fs.Glob(fsys, pattern); err != nil {
+					t.Fatalf("Glob(%q) = %v, want nil", pattern, err)
+				}
+			}
+			if nfs := fsys.(*nestFS); nfs.mounts.getMount("good.zip.d") != nil || nfs.mounts.getMount("bad.zip.d") != nil {
+				t.Errorf("Glob() with wildcards mounted an archive, want none mounted: %s", nfs)
+			}
+		})
 	}
 }

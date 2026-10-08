@@ -17,18 +17,11 @@ package ufs
 import (
 	"context"
 	"fmt"
-	"io"
 	"io/fs"
-	"log/slog"
 	"net/url"
-	"path"
-	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 
-	"github.com/mholt/archives"
-
+	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -42,8 +35,6 @@ const (
 
 var (
 	_ WriteFS = (*archiveFS)(nil)
-
-	archiveExtList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".tar.br", ".tar.zst", ".rar", ".zip", ".7z"}
 
 	archiveDeviceInfo    = NewDeviceInfo("archive", "archive", 1, false)
 	archiveDeviceInfoMap = NewDeviceMap(archiveDeviceInfo)
@@ -60,83 +51,13 @@ func isArchiveFSUri(name string) bool {
 	return strings.HasPrefix(name, archiveFSPrefix)
 }
 
-func isMountableArchivePath(name string) bool {
-	lowerPath := strings.ToLower(name)
-	for _, suffix := range archiveExtList {
-		if strings.HasSuffix(lowerPath, suffix) {
-			return true
-		}
-	}
-	return false
-}
-
 type archiveFS struct {
-	fsys    fs.FS
-	name    string
-	closer  io.Closer
-	indexed sync.Once
-	// isIndexed is set once ensureIndexed has successfully built the
-	// underlying archive's implicit-directory index, letting openInner skip
-	// straight to fsys.fsys.Open on every later call instead of repeating the
-	// detect-mismatch-then-retry dance. It stays false if indexing failed, so
-	// a failed attempt keeps falling back to the slow path (which still works
-	// for every explicit entry; only unindexed implicit directories need the
-	// index).
-	isIndexed atomic.Bool
+	fsys archive.FS
+	name string
 }
 
 func (fsys *archiveFS) GetDeviceInfo() DeviceMap {
 	return archiveDeviceInfoMap
-}
-
-// ensureIndexed triggers the underlying archives.ArchiveFS's implicit-directory
-// index build, which requires a full pass over every entry: the mholt/archives
-// library has no mode to index directory structure alone, so this is the
-// cheapest correct option without bypassing the library to parse archives
-// ourselves. It runs at most once per archiveFS (sync.Once) and only when
-// openInner has already detected that Open() returned the wrong entry for an
-// implicit directory, so well-formed archives and plain file access never pay
-// this cost.
-func (fsys *archiveFS) ensureIndexed() {
-	fsys.indexed.Do(func() {
-		rdfs, ok := fsys.fsys.(fs.ReadDirFS)
-		if !ok {
-			return
-		}
-		if _, err := rdfs.ReadDir("."); err != nil {
-			slog.Warn("failed to index archive", "name", fsys.name, "error", err)
-			return
-		}
-		fsys.isIndexed.Store(true)
-	})
-}
-
-// openInner opens name in the underlying FS. If the archive returns an entry
-// whose name doesn't match (implicit directory bug in non-indexed archives),
-// it triggers an index build and retries once. Once the archive is known to be
-// indexed, name always resolves correctly on the first try, so later calls
-// skip the detect-and-retry dance entirely.
-func (fsys *archiveFS) openInner(name string) (fs.File, error) {
-	if fsys.isIndexed.Load() {
-		return fsys.fsys.Open(name)
-	}
-
-	f, err := fsys.fsys.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	if name == "." {
-		return f, nil
-	}
-	info, statErr := f.Stat()
-	if statErr != nil || info.Name() == path.Base(name) {
-		return f, nil
-	}
-	if err := f.Close(); err != nil {
-		return nil, fmt.Errorf("cannot close %q, %w", name, err)
-	}
-	fsys.ensureIndexed()
-	return fsys.fsys.Open(name)
 }
 
 func (fsys *archiveFS) URI() (*url.URL, error) {
@@ -155,29 +76,23 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
 	}
-	return fsys.openInner(name)
+	return fsys.fsys.Open(name)
 }
 
 func (fsys *archiveFS) Close() error {
+	inner := fsys.fsys
 	fsys.fsys = nil
-	if fsys.closer != nil {
-		err := fsys.closer.Close()
-		fsys.closer = nil
-		return err
+	if inner == nil {
+		return nil
 	}
-	return nil
+	return inner.Close()
 }
 
 func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
 	}
-	// archives.ArchiveFS.Stat resolves implicit directories correctly on its
-	// own (it compares the full in-archive path, not just the base name), so
-	// unlike Open it never needs ensureIndexed. Using fs.Stat here also
-	// avoids opening (and decompressing into) a content stream just to read
-	// metadata.
-	return fs.Stat(fsys.fsys, name)
+	return fsys.fsys.Stat(name)
 }
 
 func (fsys *archiveFS) Create(name string) (File, error) {
@@ -198,14 +113,14 @@ func (fsys *archiveFS) ReadFile(name string) ([]byte, error) {
 	if err := pathutil.Validate("readfile", name); err != nil {
 		return nil, err
 	}
-	return fs.ReadFile(fsys.fsys, name)
+	return fsys.fsys.ReadFile(name)
 }
 
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err := pathutil.Validate("readdir", name); err != nil {
 		return nil, err
 	}
-	return fs.ReadDir(fsys.fsys, name)
+	return fsys.fsys.ReadDir(name)
 }
 
 func (fsys *archiveFS) ReadLink(name string) (string, error) {
@@ -236,57 +151,31 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
-	info, err := osutil.Stat(name)
+	fsys, err := archive.New(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}
-	if info.IsDir() {
-		fsys, err := archives.FileSystem(ctx, name, nil)
-		if err != nil {
-			return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
-		}
-		return makeArchiveFS(fsys, name, nil), nil
-	}
-
-	// Open the file ourselves and hand archives.FileSystem a stream rather than
-	// a bare path. archives.ArchiveFS.Open re-opens the file with os.Open on every
-	// call when given only a Path, and leaks that handle whenever the opened name
-	// is a directory within the archive (its dirFile.Close is a no-op that never
-	// references the opened file). Passing a Stream makes ArchiveFS reuse this
-	// single file instead, so the only handle to close is the one we own here.
-	file, err := osutil.Open(filepath.Clean(name))
-	if err != nil {
-		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
-	}
-	fsys, err := archiveFileSystem(ctx, name, file)
-	if err != nil {
-		return nil, ufserrors.Join(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
-	}
-	return makeArchiveFS(fsys, name, file), nil
+	return makeArchiveFS(fsys, name), nil
 }
 
+// newArchiveFSFromFile mounts the archive held by the open file. The returned
+// archiveFS owns file and closes it on Close; on error file is left open.
 func newArchiveFSFromFile(ctx context.Context, file fs.File) (*archiveFS, error) {
 	stat, err := file.Stat()
 	if err != nil {
 		return nil, err
 	}
-	readerAtSeeker, ok := file.(archives.ReaderAtSeeker)
-	if !ok {
-		return nil, fmt.Errorf("cannot mount archive %q: file does not support seek and random read", stat.Name())
-	}
-	afs, err := archiveFileSystem(ctx, stat.Name(), readerAtSeeker)
+	fsys, err := archive.NewFromFile(ctx, stat.Name(), file)
 	if err != nil {
 		return nil, err
 	}
-	result := makeArchiveFS(afs, stat.Name(), file)
-	return result, nil
+	return makeArchiveFS(fsys, stat.Name()), nil
 }
 
-func makeArchiveFS(fsys fs.FS, name string, closer io.Closer) *archiveFS {
+func makeArchiveFS(fsys archive.FS, name string) *archiveFS {
 	return &archiveFS{
-		fsys:   fsys,
-		name:   name,
-		closer: closer,
+		fsys: fsys,
+		name: name,
 	}
 }
 

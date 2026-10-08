@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package archive
 
 import (
 	"bytes"
@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	testXzArchive = "testing/testassets/archives/testassets.tar.xz"
+	testXzArchive = testArchivesDir + "testassets.tar.xz"
 
 	// LZMA2 dictionary size property bytes, see section 5.3.1 of
 	// https://tukaani.org/xz/xz-file-format.txt.
@@ -101,8 +101,8 @@ func assertSameFiles(t *testing.T, got, want fs.FS) {
 	}
 }
 
-func TestArchiveFSXzLargeDictionary(t *testing.T) {
-	want, err := newArchiveFSFromLocalFS(t.Context(), testXzArchive)
+func TestXzLargeDictionary(t *testing.T) {
+	want, err := New(t.Context(), testXzArchive)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,9 +124,9 @@ func TestArchiveFSXzLargeDictionary(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name+" local path", func(t *testing.T) {
 			path := writeXzArchiveWithDict(t, "large-dict.tar.xz", tc.dictProp)
-			got, err := newArchiveFSFromLocalFS(t.Context(), path)
+			got, err := New(t.Context(), path)
 			if err != nil {
-				t.Fatalf("newArchiveFSFromLocalFS() = %v", err)
+				t.Fatalf("New() = %v", err)
 			}
 			t.Cleanup(func() {
 				if err := got.Close(); err != nil {
@@ -137,32 +137,18 @@ func TestArchiveFSXzLargeDictionary(t *testing.T) {
 		})
 	}
 
-	t.Run("96MiB via New", func(t *testing.T) {
-		path := writeXzArchiveWithDict(t, "large-dict.tar.xz", xzDictProp96MiB)
-		got, err := New(t.Context(), path)
-		if err != nil {
-			t.Fatalf("New(%q) = %v", path, err)
-		}
-		t.Cleanup(func() {
-			if err := got.Close(); err != nil {
-				t.Errorf("Close() = %v", err)
-			}
-		})
-		assertSameFiles(t, got, want)
-	})
-
 	t.Run("96MiB open file", func(t *testing.T) {
 		path := writeXzArchiveWithDict(t, "large-dict.tar.xz", xzDictProp96MiB)
 		file, err := osutil.Open(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := newArchiveFSFromFile(t.Context(), file)
+		got, err := NewFromFile(t.Context(), filepath.Base(path), file)
 		if err != nil {
 			if closeErr := file.Close(); closeErr != nil {
 				t.Errorf("Close() = %v", closeErr)
 			}
-			t.Fatalf("newArchiveFSFromFile() = %v", err)
+			t.Fatalf("NewFromFile() = %v", err)
 		}
 		t.Cleanup(func() {
 			if err := got.Close(); err != nil {
@@ -174,9 +160,9 @@ func TestArchiveFSXzLargeDictionary(t *testing.T) {
 
 	t.Run("name without xz extension", func(t *testing.T) {
 		path := writeXzArchiveWithDict(t, "large-dict.bin", xzDictProp96MiB)
-		got, err := newArchiveFSFromLocalFS(t.Context(), path)
+		got, err := New(t.Context(), path)
 		if err != nil {
-			t.Fatalf("newArchiveFSFromLocalFS() = %v", err)
+			t.Fatalf("New() = %v", err)
 		}
 		t.Cleanup(func() {
 			if err := got.Close(); err != nil {
@@ -187,18 +173,18 @@ func TestArchiveFSXzLargeDictionary(t *testing.T) {
 	})
 }
 
-func TestArchiveFSXzDictionaryOverLimit(t *testing.T) {
+func TestXzDictionaryOverLimit(t *testing.T) {
 	t.Parallel()
 	path := writeXzArchiveWithDict(t, "huge-dict.tar.xz", xzDictProp384MiB)
-	fsys, err := newArchiveFSFromLocalFS(t.Context(), path)
+	fsys, err := New(t.Context(), path)
 	if err == nil {
 		if closeErr := fsys.Close(); closeErr != nil {
 			t.Errorf("Close() = %v", closeErr)
 		}
-		t.Fatal("newArchiveFSFromLocalFS() = nil, want an error for a 384 MiB dictionary")
+		t.Fatal("New() = nil, want an error for a 384 MiB dictionary")
 	}
 	if !errors.Is(err, fastxz.ErrMemlimit) {
-		t.Errorf("newArchiveFSFromLocalFS() = %v, want fastxz.ErrMemlimit", err)
+		t.Errorf("New() = %v, want fastxz.ErrMemlimit", err)
 	}
 
 	// The failed mount must release the file so it can be removed on Windows.
@@ -214,7 +200,7 @@ func TestXzDecompressorDictMax(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain, err := osutil.ReadFile("testing/testassets/archives/testassets.tar")
+	plain, err := osutil.ReadFile(testArchivesDir + "testassets.tar")
 	if err != nil {
 		t.Fatal(err)
 	}

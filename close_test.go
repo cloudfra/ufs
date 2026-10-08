@@ -179,39 +179,43 @@ func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
 	}
 }
 
-func TestArchiveFSCloseClosesUnderlyingFile(t *testing.T) {
+// fakeArchive is an archive.FS that counts Close calls and returns closeErr.
+type fakeArchive struct {
+	emptyFS
+	closeCalled atomic.Int32
+	closeErr    error
+}
+
+func (f *fakeArchive) Stat(name string) (fs.FileInfo, error) { return fs.Stat(f.emptyFS, name) }
+
+func (f *fakeArchive) ReadFile(name string) ([]byte, error) { return fs.ReadFile(f.emptyFS, name) }
+
+func (f *fakeArchive) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(f.emptyFS, name) }
+
+func (f *fakeArchive) Close() error {
+	f.closeCalled.Add(1)
+	return f.closeErr
+}
+
+func TestArchiveFSCloseClosesArchive(t *testing.T) {
 	t.Parallel()
 
-	var closeCalled atomic.Int32
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
-		closeCalled.Add(1)
-		return nil
-	}))
+	inner := &fakeArchive{}
+	afs := makeArchiveFS(inner, "test.zip")
 
 	if err := afs.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
-	if closeCalled.Load() != 1 {
-		t.Error("underlying file closer was not called on archiveFS.Close()")
+	if inner.closeCalled.Load() != 1 {
+		t.Error("underlying archive was not closed on archiveFS.Close()")
 	}
 }
 
-func TestArchiveFSCloseWithoutCloserIsNoop(t *testing.T) {
-	t.Parallel()
-
-	afs := makeArchiveFS(emptyFS{}, "test.zip", nil)
-	if err := afs.Close(); err != nil {
-		t.Errorf("Close() = %v, want nil (no closer set)", err)
-	}
-}
-
-func TestArchiveFSCloseReportsCloserError(t *testing.T) {
+func TestArchiveFSCloseReportsArchiveError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("file close failed")
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
-		return wantErr
-	}))
+	afs := makeArchiveFS(&fakeArchive{closeErr: wantErr}, "test.zip")
 
 	err := afs.Close()
 	if !errors.Is(err, wantErr) {
@@ -222,24 +226,16 @@ func TestArchiveFSCloseReportsCloserError(t *testing.T) {
 func TestArchiveFSCloseIdempotent(t *testing.T) {
 	t.Parallel()
 
-	var closeCalled atomic.Int32
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
-		closeCalled.Add(1)
-		return nil
-	}))
+	inner := &fakeArchive{}
+	afs := makeArchiveFS(inner, "test.zip")
 
 	for range 3 {
 		ufsTesting.ValidateClose(t, afs)()
 	}
-	if closeCalled.Load() != 1 {
-		t.Errorf("closer called %d times, want exactly 1", closeCalled.Load())
+	if inner.closeCalled.Load() != 1 {
+		t.Errorf("archive closed %d times, want exactly 1", inner.closeCalled.Load())
 	}
 }
-
-// closerFunc adapts a bare function to io.Closer.
-type closerFunc func() error
-
-func (f closerFunc) Close() error { return f() }
 
 // emptyFS is a minimal fs.FS that contains no files.
 type emptyFS struct{}

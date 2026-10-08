@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package archive
 
 import (
 	"context"
@@ -27,8 +27,8 @@ import (
 )
 
 // xzDictMax is the largest LZMA2 dictionary an xz archive may declare and
-// still be mounted. The decoder allocates the declared size on every open, so
-// the limit bounds what an untrusted archive can make ufs allocate.
+// still be opened. The decoder allocates the declared size on every open, so
+// the limit bounds what an untrusted archive can make this package allocate.
 // archives.Xz allows only 64 MiB, which rejects files written with a larger
 // dictionary so that big, similar files compress against each other.
 const xzDictMax = 256 << 20 // 256 MiB
@@ -50,11 +50,11 @@ func (x xzDecompressor) OpenReader(r io.Reader) (io.ReadCloser, error) {
 	return io.NopCloser(xr), nil
 }
 
-// archiveFileSystem is archives.FileSystem, except that an xz-compressed tar
+// fileSystem is archives.FileSystem, except that an xz-compressed tar
 // archive may declare a dictionary of up to xzDictMax. archives.FileSystem
 // fails to identify such a stream when its dictionary is above 64 MiB, in
 // which case the archive is opened with xzDecompressor instead.
-func archiveFileSystem(ctx context.Context, name string, stream archives.ReaderAtSeeker) (fs.FS, error) {
+func fileSystem(ctx context.Context, name string, stream archives.ReaderAtSeeker) (fs.FS, error) {
 	fsys, err := archives.FileSystem(ctx, name, stream)
 	if err == nil || stream == nil || !errors.Is(err, fastxz.ErrMemlimit) {
 		return fsys, err

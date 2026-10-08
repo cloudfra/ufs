@@ -97,10 +97,12 @@ func (fsys *readOnlyFS) URI() (*url.URL, error) {
 	if u == nil {
 		return nil, nil
 	}
-	v := u.Query()
+	// Edit a copy: the wrapped file system may hand out the URL it keeps.
+	out := *u
+	v := out.Query()
 	v.Set("ro", "true")
-	u.RawQuery = v.Encode()
-	return ufs.AppendURIOption(u, optionName, Options{Enabled: true})
+	out.RawQuery = v.Encode()
+	return ufs.AppendURIOption(&out, optionName, Options{Enabled: true})
 }
 
 func (fsys *readOnlyFS) String() string {

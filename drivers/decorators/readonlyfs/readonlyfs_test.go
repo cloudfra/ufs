@@ -223,3 +223,20 @@ func TestReadOnlyURI(t *testing.T) {
 		}
 	})
 }
+
+// TestReadOnlyURIDoesNotModifyWrappedURI verifies that URI leaves the URL of
+// the wrapped file system alone, even when that file system hands out the URL
+// it keeps.
+func TestReadOnlyURIDoesNotModifyWrappedURI(t *testing.T) {
+	inner := &url.URL{Scheme: "memory"}
+	got, err := New(&uriFS{WriteFS: newInner(t), u: inner}).URI()
+	if err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	if got == nil || !got.Query().Has("ro") {
+		t.Errorf("URI() = %v, want a URI with the ro parameter", got)
+	}
+	if inner.RawQuery != "" {
+		t.Errorf("wrapped URI query = %q, want it left empty", inner.RawQuery)
+	}
+}

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
@@ -1423,12 +1422,8 @@ func TestNestFSReadDirArchiveInArchiveIsStable(t *testing.T) {
 	zw := zip.NewWriter(&inner)
 	ufsTesting.Must(t, zw.Close())
 
-	dir := t.TempDir()
-	zf, err := osutil.Create(filepath.Join(dir, "outer.zip"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw = zip.NewWriter(zf)
+	var outer bytes.Buffer
+	zw = zip.NewWriter(&outer)
 	for _, entry := range []struct {
 		name string
 		data []byte
@@ -1446,13 +1441,21 @@ func TestNestFSReadDirArchiveInArchiveIsStable(t *testing.T) {
 		}
 	}
 	ufsTesting.Must(t, zw.Close())
-	ufsTesting.Must(t, zf.Close())
 
-	fsys, err := New(t.Context(), dir)
+	fsys, err := New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
+
+	zf, err := fsys.Create("outer.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := zf.Write(outer.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	ufsTesting.Must(t, zf.Close())
 
 	want := []string{"b.zip", "b.zip.d", "c.txt", "d.txt"}
 	for i := range 3 {

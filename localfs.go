@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -195,7 +196,7 @@ func makeLocalFS(name string) (*localFS, error) {
 }
 
 func newLocalFS(ctx context.Context, name string) (WriteFS, error) {
-	if isMountableArchivePath(name) {
+	if archive.IsMountablePath(name) {
 		// The archive is opened by host path, so drop any file: prefix.
 		return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))
 	}

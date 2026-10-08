@@ -175,6 +175,7 @@ code with no `ufs` dependency goes in `internal/`.
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
+| internal/archive/     | archive.New opens archives as fs.FS; only mholt/archives importer   |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |

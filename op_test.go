@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
@@ -551,7 +552,7 @@ func setupNestFSWithArchive(t *testing.T) WriteFS {
 	t.Helper()
 	nfs := newMemNestFS(t)
 	writeTestFile(t, nfs, "readme.txt", []byte("hello"))
-	writeTestFile(t, nfs, "data.zip", zipBytes(t, zipEntry{name: "inside.txt", data: []byte("content")}))
+	writeTestFile(t, nfs, "data.zip", archivetest.Zip(t, archivetest.Entry{Name: "inside.txt", Data: []byte("content")}))
 	return nfs
 }
 
@@ -683,7 +684,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 	nfs := newMemNestFS(t)
 
 	// Create data.zip (virtual .d should be detected).
-	writeTestFile(t, nfs, "data.zip", zipBytes(t))
+	writeTestFile(t, nfs, "data.zip", archivetest.Zip(t))
 	// Create conf.d as a real directory (base name "conf" is not an archive).
 	if err := nfs.MkdirAll("conf.d", osutil.DefaultDirectoryPermissions); err != nil {
 		t.Fatal(err)
@@ -710,7 +711,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 	nfs := newMemNestFS(t)
 	writeTestFile(t, nfs, "subdir/nested.txt", []byte("nested"))
-	writeTestFile(t, nfs, "data.zip", zipBytes(t, zipEntry{name: "inside.txt", data: []byte("content")}))
+	writeTestFile(t, nfs, "data.zip", archivetest.Zip(t, archivetest.Entry{Name: "inside.txt", Data: []byte("content")}))
 
 	var got []string
 	err := Walk(nfs, pathutil.CwdPath, WalkArgs{}, func(name string) error {

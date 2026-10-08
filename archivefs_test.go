@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -357,11 +358,11 @@ func TestArchiveFSImplicitDirRootAndNested(t *testing.T) {
 func mustArchiveFromEntries(t *testing.T, entries ...string) WriteFS {
 	t.Helper()
 
-	zipEntries := make([]zipEntry, 0, len(entries))
+	zipEntries := make([]archivetest.Entry, 0, len(entries))
 	for _, name := range entries {
-		zipEntries = append(zipEntries, zipEntry{name: name, data: []byte("ufstest-" + name)})
+		zipEntries = append(zipEntries, archivetest.Entry{Name: name, Data: []byte("ufstest-" + name)})
 	}
-	fsys, err := newMemArchiveFS(t, "ufstest.zip", zipBytes(t, zipEntries...))
+	fsys, err := newMemArchiveFS(t, "ufstest.zip", archivetest.Zip(t, zipEntries...))
 	if err != nil {
 		t.Fatalf("newMemArchiveFS() = %v, want nil", err)
 	}

@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -277,7 +278,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 
 	dirs := fsys.mounts.getDirectoryList(name)
 	for _, dir := range dirs {
-		if strings.HasSuffix(dir, archiveDirExt) && isMountableArchivePath(strings.TrimSuffix(dir, archiveDirExt)) {
+		if strings.HasSuffix(dir, archiveDirExt) && archive.IsMountablePath(strings.TrimSuffix(dir, archiveDirExt)) {
 			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
 			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
 				fsys.mounts.remove(path.Join(name, dir))
@@ -294,7 +295,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	}
 
 	for _, entry := range entries {
-		if isMountableArchivePath(entry.Name()) {
+		if archive.IsMountablePath(entry.Name()) {
 			mountName := entry.Name() + ".d"
 			appendEntry[mountName] = &virtualDirEntry{
 				name: mountName,
@@ -308,6 +309,10 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 		delete(appendEntry, entry.Name())
 	}
 
+	// The base file system may hand out a slice that it keeps, as archives
+	// do with their index, so the virtual entries go into a copy: appending
+	// to and sorting the original would change the next listing.
+	entries = slices.Grow(slices.Clone(entries), len(appendEntry))
 	for _, entry := range appendEntry {
 		entries = append(entries, entry)
 	}
@@ -332,7 +337,7 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 // isMountedArchiveDir reports whether name (a full path within this FS) is a
 // virtual directory backed by a mounted archive. It returns true only when:
 //   - name ends with archiveDirExt
-//   - the trimmed name satisfies isMountableArchivePath
+//   - the trimmed name satisfies archive.IsMountablePath
 //   - the archive file is not confirmed absent; any Stat error other than
 //     ErrNotExist is treated as "file likely exists" so that a permission-denied
 //     error does not cause Walk to descend and trigger a mount failure
@@ -346,7 +351,7 @@ func (fsys *nestFS) isMountedArchiveDir(name string) bool {
 		return false
 	}
 	archiveName := strings.TrimSuffix(name, archiveDirExt)
-	if !isMountableArchivePath(archiveName) {
+	if !archive.IsMountablePath(archiveName) {
 		return false
 	}
 	_, err := fsys.Stat(archiveName)
@@ -823,21 +828,6 @@ func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 	nf.seekFunc = tmp.Seek
 	nf.readAtFunc = tmp.ReadAt
 	return nil
-}
-
-// readOnlyFile is a File whose Write and WriteString always fail. It keeps a
-// backend's read-write handle, such as the one memFS returns from Open, from
-// being used to modify a file that was opened for reading.
-type readOnlyFile struct {
-	File
-}
-
-func (f *readOnlyFile) Write([]byte) (int, error) {
-	return 0, fs.ErrInvalid
-}
-
-func (f *readOnlyFile) WriteString(string) (int, error) {
-	return 0, fs.ErrInvalid
 }
 
 // wrapFile returns a File for f, polyfilling any methods f is missing. When

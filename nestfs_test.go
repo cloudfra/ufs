@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"archive/zip"
 	"bytes"
 	"errors"
 	"fmt"
@@ -1494,5 +1495,63 @@ func TestWrapFileKeepsOSHandles(t *testing.T) {
 			t.Errorf("wrapFile() = %T, want the %T it was given", got, f)
 		}
 		ufsTesting.Must(t, got.Close())
+	}
+}
+
+// TestNestFSReadDirArchiveInArchiveIsStable verifies that listing an archive
+// that holds another archive returns the same entries every time. ReadDir
+// adds the inner archive's directory to the listing, and used to add it to
+// the slice that the archive keeps as its index, which lost an entry from
+// every later listing.
+func TestNestFSReadDirArchiveInArchiveIsStable(t *testing.T) {
+	t.Parallel()
+	var inner bytes.Buffer
+	zw := zip.NewWriter(&inner)
+	ufsTesting.Must(t, zw.Close())
+
+	var outer bytes.Buffer
+	zw = zip.NewWriter(&outer)
+	for _, entry := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "b.zip", data: inner.Bytes()},
+		{name: "c.txt", data: []byte("c")},
+		{name: "d.txt", data: []byte("d")},
+	} {
+		w, err := zw.Create(entry.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(entry.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ufsTesting.Must(t, zw.Close())
+
+	fsys, err := New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	zf, err := fsys.Create("outer.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := zf.Write(outer.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	ufsTesting.Must(t, zf.Close())
+
+	want := []string{"b.zip", "b.zip.d", "c.txt", "d.txt"}
+	for i := range 3 {
+		entries, err := fsys.ReadDir("outer.zip.d")
+		if err != nil {
+			t.Fatalf("ReadDir() call %d = %v, want nil", i+1, err)
+		}
+		if diff := cmp.Diff(want, ufsTesting.DirEntryListToNames(entries)); diff != "" {
+			t.Errorf("ReadDir() call %d mismatch (-want +got):\n%s", i+1, diff)
+		}
 	}
 }

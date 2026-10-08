@@ -38,23 +38,20 @@ func (fsys *readWrapFS) GetDeviceInfo() ufs.DeviceMap {
 }
 
 func (fsys *readWrapFS) URI() (*url.URL, error) {
-	if ug, ok := fsys.fsys.(ufs.URIGet); ok {
-		u, err := ug.URI()
-		if err != nil {
-			return nil, err
-		}
-		if u == nil {
-			// The wrapped file system has no URI, so neither does this one.
-			return nil, nil
-		}
-		// Work on a copy: the wrapped file system may hand out a URL it keeps.
-		out := *u
-		v := out.Query()
-		v.Set("ro", "true")
-		out.RawQuery = v.Encode()
-		return &out, nil
+	u, err := ufs.URIOf(fsys.fsys)
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+	if u == nil {
+		// The wrapped file system has no URI, so neither does this one.
+		return nil, nil
+	}
+	// Work on a copy: the wrapped file system may hand out a URL it keeps.
+	out := *u
+	v := out.Query()
+	v.Set("ro", "true")
+	out.RawQuery = v.Encode()
+	return &out, nil
 }
 
 func (fsys *readWrapFS) String() string {

@@ -19,10 +19,12 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"testing"
 	"testing/fstest"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -259,5 +261,51 @@ func TestURIDoesNotModifyWrappedURI(t *testing.T) {
 	}
 	if inner.RawQuery != "" {
 		t.Errorf("wrapped URI query = %q, want it left empty", inner.RawQuery)
+	}
+}
+
+func TestURIOfWrappedOSFileSystems(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := root.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
+	want := (&url.URL{Scheme: "file", Path: pathutil.CoerceUnix(dir), RawQuery: "ro=true"}).String()
+
+	testCases := []struct {
+		name string
+		fsys fs.FS
+	}{
+		{name: "os.DirFS", fsys: os.DirFS(dir)},
+		{name: "os.Root.FS", fsys: root.FS()},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := FromFS(tc.fsys).URI()
+			if err != nil {
+				t.Fatalf("URI() = %v, want nil", err)
+			}
+			if got == nil || got.String() != want {
+				t.Errorf("URI() = %v, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestURIOfWrappedFSOfUnknownType(t *testing.T) {
+	t.Parallel()
+	got, err := FromFS(testMapFS).URI()
+	if err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("URI() = %v, want nil", got)
 	}
 }

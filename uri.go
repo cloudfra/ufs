@@ -16,11 +16,18 @@ package ufs
 
 import (
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	"gopkg.in/yaml.v3"
 )
+
+var osRootType = reflect.TypeFor[*os.Root]()
 
 // URIOrDefault returns fsys's canonical URI, or value if fsys reports no URI.
 func URIOrDefault(fsys URIGet, value string) string {
@@ -29,6 +36,50 @@ func URIOrDefault(fsys URIGet, value string) string {
 		return value
 	}
 	return u.String()
+}
+
+// URIOf returns the URI of fsys on a best-effort basis. A file system that
+// implements [URIGet] reports its own URI, including a nil URL when it has
+// none. Otherwise fsys is checked against well-known standard library types:
+// the results of [os.DirFS] and [os.Root.FS] yield a file URI of their
+// directory. Any other file system has no URI and yields nil.
+func URIOf(fsys fs.FS) (*url.URL, error) {
+	if ug, ok := fsys.(URIGet); ok {
+		return ug.URI()
+	}
+	if dir, ok := osFSDir(fsys); ok {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return nil, fmt.Errorf("cannot resolve directory %q of %T, %w", dir, fsys, err)
+		}
+		return &url.URL{Scheme: "file", Path: pathutil.CoerceUnix(abs)}, nil
+	}
+	return nil, nil
+}
+
+// osFSDir returns the directory behind a file system created by [os.DirFS] or
+// [os.Root.FS]. Package os does not export either type, so they are recognized
+// by name: os.dirFS is a string holding the directory, and *os.rootFS converts
+// to the [*os.Root] it was made from. If package os changes these types, fsys
+// is simply not recognized.
+func osFSDir(fsys fs.FS) (string, bool) {
+	v := reflect.ValueOf(fsys)
+	if !v.IsValid() {
+		return "", false
+	}
+	t := v.Type()
+	switch {
+	case t.Kind() == reflect.String && t.PkgPath() == "os" && t.Name() == "dirFS":
+		dir := v.String()
+		return dir, dir != ""
+	case t.Kind() == reflect.Pointer && t.Elem().PkgPath() == "os" && t.Elem().Name() == "rootFS" && t.ConvertibleTo(osRootType):
+		root, ok := v.Convert(osRootType).Interface().(*os.Root)
+		if !ok || root == nil {
+			return "", false
+		}
+		return root.Name(), true
+	}
+	return "", false
 }
 
 // AppendURIOption returns a copy of u that also records a decorator named name

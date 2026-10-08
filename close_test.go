@@ -188,8 +188,6 @@ type fakeArchive struct {
 
 func (f *fakeArchive) Stat(name string) (fs.FileInfo, error) { return fs.Stat(f.emptyFS, name) }
 
-func (f *fakeArchive) ReadFile(name string) ([]byte, error) { return fs.ReadFile(f.emptyFS, name) }
-
 func (f *fakeArchive) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(f.emptyFS, name) }
 
 func (f *fakeArchive) Close() error {

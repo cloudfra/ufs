@@ -103,7 +103,7 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 			fsys := mustNew(t, testArchivesDir+name)
 
-			data, err := fsys.ReadFile("index.html")
+			data, err := fs.ReadFile(fsys, "index.html")
 			if err != nil {
 				t.Fatalf("ReadFile(index.html) = %v", err)
 			}
@@ -196,7 +196,7 @@ func TestNewFromFile(t *testing.T) {
 		}
 		t.Fatalf("NewFromFile() = %v", err)
 	}
-	if _, err := fsys.ReadFile("index.html"); err != nil {
+	if _, err := fs.ReadFile(fsys, "index.html"); err != nil {
 		t.Errorf("ReadFile(index.html) = %v", err)
 	}
 

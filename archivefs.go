@@ -113,7 +113,7 @@ func (fsys *archiveFS) ReadFile(name string) ([]byte, error) {
 	if err := pathutil.Validate("readfile", name); err != nil {
 		return nil, err
 	}
-	return fsys.fsys.ReadFile(name)
+	return fs.ReadFile(fsys.fsys, name)
 }
 
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {

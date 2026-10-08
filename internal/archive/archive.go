@@ -39,10 +39,14 @@ var extList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".t
 
 // FS is a read-only file system over the contents of an archive. Close
 // releases the archive file, after which the FS must not be used.
+//
+// Stat and ReadDir are part of the interface because the archive library
+// answers both from entry metadata, which is much cheaper than the io/fs
+// fallbacks that go through Open. Anything else, such as reading a whole
+// file, has no faster path than Open and is left to the io/fs helpers.
 type FS interface {
 	fs.FS
 	fs.StatFS
-	fs.ReadFileFS
 	fs.ReadDirFS
 	io.Closer
 }
@@ -180,19 +184,20 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	return fsys.fsys.Open(name)
 }
 
+// Stat forwards to the library's own Stat rather than leaving callers to the
+// fs.Stat fallback of Open followed by File.Stat. archives.ArchiveFS.Stat
+// resolves implicit directories correctly on its own (it compares the full
+// in-archive path, not just the base name), so unlike Open it never needs
+// ensureIndexed, and it avoids opening (and decompressing into) a content
+// stream just to read metadata.
 func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
-	// archives.ArchiveFS.Stat resolves implicit directories correctly on its
-	// own (it compares the full in-archive path, not just the base name), so
-	// unlike Open it never needs ensureIndexed. Using fs.Stat here also
-	// avoids opening (and decompressing into) a content stream just to read
-	// metadata.
 	return fs.Stat(fsys.fsys, name)
 }
 
-func (fsys *archiveFS) ReadFile(name string) ([]byte, error) {
-	return fs.ReadFile(fsys.fsys, name)
-}
-
+// ReadDir forwards to the library's own ReadDir, which builds and then reuses
+// a directory index, rather than leaving callers to the fs.ReadDir fallback of
+// Open followed by ReadDirFile.ReadDir, which would also pay for Open's
+// implicit-directory check on every call.
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	return fs.ReadDir(fsys.fsys, name)
 }

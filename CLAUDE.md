@@ -172,6 +172,7 @@ code with no `ufs` dependency goes in `internal/`.
 | File                  | Purpose                                                             |
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
+| archivefs_xz.go       | Opens .tar.xz with an LZMA2 dictionary of up to 256 MiB             |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |

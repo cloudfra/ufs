@@ -258,7 +258,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
 	}
-	fsys, err := archives.FileSystem(ctx, name, file)
+	fsys, err := archiveFileSystem(ctx, name, file)
 	if err != nil {
 		return nil, ufserrors.Join(fmt.Errorf("cannot mount %q as archiveFS, %w", name, err), file.Close())
 	}
@@ -274,7 +274,7 @@ func newArchiveFSFromFile(ctx context.Context, file fs.File) (*archiveFS, error)
 	if !ok {
 		return nil, fmt.Errorf("cannot mount archive %q: file does not support seek and random read", stat.Name())
 	}
-	afs, err := archives.FileSystem(ctx, stat.Name(), readerAtSeeker)
+	afs, err := archiveFileSystem(ctx, stat.Name(), readerAtSeeker)
 	if err != nil {
 		return nil, err
 	}

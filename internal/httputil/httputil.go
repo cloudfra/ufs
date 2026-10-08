@@ -17,8 +17,13 @@
 package httputil
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 	"net"
@@ -29,9 +34,19 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const (
+	// URLQueryParamChecksum is the query parameter that carries the expected
+	// checksum of a downloaded file as "<algorithm>:<hex digest>", where
+	// algorithm is sha256, sha384 or sha512. A bare hex digest is treated as
+	// sha256. Case is ignored.
+	URLQueryParamChecksum = "ufs.checksum"
+	// uriParamPrefix marks query parameters that are addressed to ufs rather
+	// than to the server hosting the file.
+	uriParamPrefix  = "ufs."
 	maxDownloadSize = 4 << 30 // 4 GiB
 )
 
@@ -124,7 +139,7 @@ func sanitizeFilename(rawURL *url.URL) (string, error) {
 
 // DownloadFile downloads the file at uri into dir and returns its path. The URL
 // and any redirects are rejected if they resolve to a private or loopback
-// address.
+// address. See DownloadFileWith for how "ufs." query parameters are handled.
 func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
 	return DownloadFileWith(ctx, nil, dir, uri)
 }
@@ -133,10 +148,23 @@ func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
 // new SSRF-hardened client is created and the URL is pre-validated against
 // private/loopback addresses. When a non-nil client is supplied (tests), the
 // pre-flight validation is skipped because the caller owns transport security.
+//
+// Query parameters prefixed with "ufs." are removed from uri before the
+// request is sent. If URLQueryParamChecksum is present, the download fails
+// unless the digest of the response body matches it. A checksum that names an
+// unsupported algorithm or is not a valid digest for its algorithm is rejected
+// before any request is made.
+//
+// If the body cannot be read in full or the checksum does not match, the
+// file is deleted, including any earlier file of the same name it replaced.
 func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
-	parsed, err := url.Parse(uri)
+	parsed, params, err := ParseURI(uri)
 	if err != nil {
 		return "", fmt.Errorf("invalid download URL: %w", err)
+	}
+	sum, err := parseChecksum(params)
+	if err != nil {
+		return "", err
 	}
 	if client == nil {
 		if err := validateDownloadURL(ctx, parsed); err != nil {
@@ -145,7 +173,7 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 		client = newHTTPClient()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -183,15 +211,123 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			slog.Warn("failed to close downloaded file", "path", archiveFilename, "error", err)
-		}
-	}()
 
-	if _, err := io.Copy(f, io.LimitReader(resp.Body, maxDownloadSize)); err != nil {
+	var w io.Writer = f
+	if sum != nil {
+		w = io.MultiWriter(f, sum.hash)
+	}
+	_, err = io.Copy(w, io.LimitReader(resp.Body, maxDownloadSize))
+	if err == nil && sum != nil {
+		err = sum.verify(archiveFilename)
+	}
+	// Close before deleting; Windows cannot remove an open file.
+	if closeErr := f.Close(); closeErr != nil {
+		slog.Warn("failed to close downloaded file", "path", archiveFilename, "error", closeErr)
+	}
+	if err != nil {
+		osutil.TryDeleteFile(archiveFilename)
 		return "", err
 	}
 
 	return archiveFilename, nil
+}
+
+// checksum is the expected digest of a download, parsed from
+// URLQueryParamChecksum.
+type checksum struct {
+	algorithm string
+	// hash must be fed the file contents before verify is called.
+	hash hash.Hash
+	want []byte
+}
+
+// parseChecksum returns the checksum requested by URLQueryParamChecksum in
+// params, or nil if params carries none. The value is "<algorithm>:<hex
+// digest>"; a value without an algorithm is a sha256 digest. Case is ignored.
+// An error is returned if the algorithm is unsupported or the digest is not
+// hex of the algorithm's length.
+func parseChecksum(params map[string]string) (*checksum, error) {
+	value, ok := params[URLQueryParamChecksum]
+	if !ok {
+		return nil, nil
+	}
+	algorithm, digest, ok := strings.Cut(value, ":")
+	if !ok {
+		algorithm, digest = "sha256", value
+	}
+	algorithm = strings.ToLower(algorithm)
+
+	var h hash.Hash
+	switch algorithm {
+	case "sha256":
+		h = sha256.New()
+	case "sha384":
+		h = sha512.New384()
+	case "sha512":
+		h = sha512.New()
+	default:
+		return nil, fmt.Errorf("unsupported checksum algorithm %q, want sha256, sha384 or sha512", algorithm)
+	}
+	want, err := hex.DecodeString(digest)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s checksum %q: %w", algorithm, digest, err)
+	}
+	if len(want) != h.Size() {
+		return nil, fmt.Errorf("invalid %s checksum %q: got %d hex characters, want %d", algorithm, digest, len(digest), hex.EncodedLen(h.Size()))
+	}
+	return &checksum{algorithm: algorithm, hash: h, want: want}, nil
+}
+
+// verify compares the digest of the data written to c.hash, the contents of
+// the file at path, against the expected digest.
+func (c *checksum) verify(path string) error {
+	if got := c.hash.Sum(nil); !bytes.Equal(got, c.want) {
+		return fmt.Errorf("checksum mismatch for %q: expected %s:%x, got %s:%x", path, c.algorithm, c.want, c.algorithm, got)
+	}
+	return nil
+}
+
+// ParseURI parses uri and extracts the query parameters whose name starts with
+// "ufs.". It returns the URL with those parameters removed and a map of the
+// extracted parameters keyed by their full name, prefix included (for example
+// URLQueryParamChecksum). The remaining query parameters keep their original
+// order and encoding. If a parameter is repeated, the first value wins. The
+// map is nil when uri has no "ufs." parameters. An error is returned if uri is
+// invalid or a "ufs." parameter value is not valid percent-encoding.
+func ParseURI(uri string) (*url.URL, map[string]string, error) {
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid URI %q: %w", uri, err)
+	}
+	if parsed.RawQuery == "" {
+		return parsed, nil, nil
+	}
+	// The query is edited pair by pair rather than through url.Values:
+	// Values.Encode sorts and re-encodes every remaining parameter, which
+	// breaks URLs signed over their exact query string, and Query silently
+	// drops malformed pairs, which would skip a malformed checksum.
+	var params map[string]string
+	var kept []string
+	for pair := range strings.SplitSeq(parsed.RawQuery, "&") {
+		rawKey, rawValue, _ := strings.Cut(pair, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err != nil || !strings.HasPrefix(key, uriParamPrefix) {
+			kept = append(kept, pair)
+			continue
+		}
+		value, err := url.QueryUnescape(rawValue)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid value for query parameter %q: %w", key, err)
+		}
+		if params == nil {
+			params = make(map[string]string)
+		}
+		if _, ok := params[key]; !ok {
+			params[key] = value
+		}
+	}
+	if params != nil {
+		parsed.RawQuery = strings.Join(kept, "&")
+	}
+	return parsed, params, nil
 }

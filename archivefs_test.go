@@ -15,16 +15,14 @@
 package ufs
 
 import (
-	"archive/zip"
 	"context"
 	"errors"
 	"io"
 	"io/fs"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -354,57 +352,19 @@ func TestArchiveFSImplicitDirRootAndNested(t *testing.T) {
 	}
 }
 
-// createArchiveWithEntries builds a temp zip containing exactly the named
-// entries and returns its path. An entry whose name ends with "/" becomes a
-// directory entry; every other entry is a file carrying a small non-empty
-// payload. The temp file is removed via t.Cleanup. This lets a test precisely
-// control which directories are present as explicit entries (trailing slash)
-// and which must be inferred from child file paths (implicit).
-func createArchiveWithEntries(t *testing.T, entries ...string) string {
-	t.Helper()
-
-	tmp, err := os.CreateTemp("", "ufstest-*.zip")
-	if err != nil {
-		t.Fatalf("os.CreateTemp = %v, want nil", err)
-	}
-	tmpName := tmp.Name()
-	t.Cleanup(func() {
-		if err := os.Remove(tmpName); err != nil {
-			t.Fatalf("os.Remove(%q) = %v, want nil", tmpName, err)
-		}
-	})
-
-	zw := zip.NewWriter(tmp)
-	for _, name := range entries {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatalf("zip Create(%q) = %v, want nil", name, err)
-		}
-		if !strings.HasSuffix(name, "/") {
-			if _, err := w.Write([]byte("ufstest-" + name)); err != nil {
-				t.Fatalf("zip Write(%q) = %v, want nil", name, err)
-			}
-		}
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatalf("zip Close = %v, want nil", err)
-	}
-	if err := tmp.Close(); err != nil {
-		t.Fatalf("temp file Close = %v, want nil", err)
-	}
-	return tmpName
-}
-
 // mustArchiveFromEntries mounts a freshly built zip (from the given entries) as
 // an archiveFS and registers cleanup to close it, mirroring mustArchiveFS and
 // mustNoDirArchiveFS but giving tests full control over the directory entries.
 func mustArchiveFromEntries(t *testing.T, entries ...string) WriteFS {
 	t.Helper()
 
-	zipPath := createArchiveWithEntries(t, entries...)
-	fsys, err := newArchiveFSFromLocalFS(t.Context(), zipPath)
+	zipEntries := make([]archivetest.Entry, 0, len(entries))
+	for _, name := range entries {
+		zipEntries = append(zipEntries, archivetest.Entry{Name: name, Data: []byte("ufstest-" + name)})
+	}
+	fsys, err := newMemArchiveFS(t, "ufstest.zip", archivetest.Zip(t, zipEntries...))
 	if err != nil {
-		t.Fatalf("newArchiveFSFromLocalFS(%q) = %v, want nil", zipPath, err)
+		t.Fatalf("newMemArchiveFS() = %v, want nil", err)
 	}
 	t.Cleanup(func() {
 		if err := fsys.Close(); err != nil {

@@ -46,7 +46,7 @@ var (
 )
 
 func init() {
-	Register(NewDriver("memory", newMemFS, isMemFSUri, 1, true, true))
+	Register(NewDriver("memory", newMemFS, isMemFSUri, PriorityDefault, true, true))
 }
 
 // memNode holds the stored state for one file or directory.

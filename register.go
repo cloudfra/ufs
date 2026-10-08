@@ -15,9 +15,11 @@
 package ufs
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -29,9 +31,27 @@ var (
 	emptyDecoratorRegistration = Decorator{}
 )
 
+// Driver priorities, from lowest to highest. When several drivers match a URI
+// the one with the highest priority handles it.
+const (
+	// PriorityFallback is for a driver to use only if nothing else matched,
+	// such as the local driver, which accepts any path.
+	PriorityFallback = 100
+	// PriorityDefault is for a driver that handles its own URI scheme.
+	PriorityDefault = 10000
+	// PrioritySpecialized is for a driver that handles a narrow subset of a
+	// scheme another driver handles in general, such as URIs ending in .git.
+	PrioritySpecialized = 100000
+	// PriorityCritical is for a driver that must be used whenever it matches.
+	PriorityCritical = 1000000
+)
+
 type registrar struct {
 	sync.RWMutex
-	driverMap    map[string]Driver
+	driverMap map[string]Driver
+	// drivers holds the values of driverMap in the order matchDriver
+	// consults them.
+	drivers      []Driver
 	decoratorMap map[string]Decorator
 }
 
@@ -60,8 +80,10 @@ type Driver struct {
 	// MatchFunc returns true if the URI in the string matches a pattern that the driver can handle.
 	MatchFunc func(string) bool
 
-	// Priority indicates the priority of the matcher.
-	// This will be used to disambiguate
+	// Priority decides which driver handles a URI that several drivers
+	// match: the one with the highest value wins, and a tie for the highest
+	// value is an error. Use one of the Priority constants; a driver
+	// registered with a zero Priority gets PriorityDefault.
 	Priority int
 
 	// Standard indicates that the driver should be verified by conformance tests.
@@ -167,6 +189,14 @@ func getRegistrar() *registrar {
 	return globalDriverRegistrar
 }
 
+// compareDrivers orders drivers by priority, highest first, and then by name.
+func compareDrivers(a, b Driver) int {
+	if c := cmp.Compare(b.Priority, a.Priority); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Name, b.Name)
+}
+
 func (r *registrar) registerDriver(reg Driver) error {
 	if reg.Name == "" {
 		return errors.New("cannot register a file system driver with an empty name")
@@ -177,10 +207,16 @@ func (r *registrar) registerDriver(reg Driver) error {
 	if reg.MatchFunc == nil {
 		return fmt.Errorf("file system driver %q cannot have an empty MatchFunc", reg.Name)
 	}
+	if reg.Priority == 0 {
+		reg.Priority = PriorityDefault
+	}
 	var err error
 	r.Lock()
 	if _, ok := r.driverMap[reg.Name]; !ok {
 		r.driverMap[reg.Name] = reg
+		// Keep drivers sorted by priority and then by name, see matchDriver.
+		i, _ := slices.BinarySearchFunc(r.drivers, reg, compareDrivers)
+		r.drivers = slices.Insert(r.drivers, i, reg)
 	} else {
 		err = fmt.Errorf("file system driver %q is already registered", reg.Name)
 	}
@@ -227,22 +263,36 @@ func isLowerCamelCase(name string) bool {
 func (r *registrar) matchDriver(name string) (Driver, error) {
 	r.RLock()
 	result := emptyDriverRegistration
-	for _, reg := range r.driverMap {
-		if reg.MatchFunc(name) {
-			switch {
-			case result.Name == emptyDriverRegistration.Name:
-				result = reg
-			case reg.Priority < result.Priority:
-				result = reg
-			case reg.Priority == result.Priority:
-				r.RUnlock()
-				return emptyDriverRegistration, fmt.Errorf("ambiguous driver match for %q, both %q and %q both have a priority %d ", name, reg.Name, result.Name, reg.Priority)
-			}
+	tied := ""
+	// The match is the one driver with the highest priority among those that
+	// match name. If two or more drivers share that highest priority, none of
+	// them wins and the match fails as ambiguous. A tie between drivers below
+	// the highest priority is not a conflict, because neither could win.
+	//
+	// drivers is sorted by priority, highest first, and then by name, so the
+	// first match has the highest priority and only drivers at that priority
+	// are checked for a tie. The matchers of the drivers behind them are not
+	// called: some of them look at the disk.
+	for _, reg := range r.drivers {
+		if result.Name != emptyDriverRegistration.Name && reg.Priority != result.Priority {
+			break
 		}
+		if !reg.MatchFunc(name) {
+			continue
+		}
+		if result.Name == emptyDriverRegistration.Name {
+			result = reg
+			continue
+		}
+		tied = reg.Name
+		break
 	}
 	r.RUnlock()
 	if result.Name == emptyDriverRegistration.Name {
 		return emptyDriverRegistration, fmt.Errorf("cannot find a ufs file system driver for %q", name)
+	}
+	if tied != "" {
+		return emptyDriverRegistration, fmt.Errorf("ambiguous driver match for %q, %q and %q both have priority %d", name, result.Name, tied, result.Priority)
 	}
 	return result, nil
 }

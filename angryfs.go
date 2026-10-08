@@ -40,7 +40,7 @@ var (
 )
 
 func init() {
-	Register(NewDriver("angry", newAngryFS, isAngryFSUri, 1, false, false))
+	Register(NewDriver("angry", newAngryFS, isAngryFSUri, PriorityDefault, false, false))
 }
 
 type angryFS struct {

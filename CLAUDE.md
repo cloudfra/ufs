@@ -69,6 +69,12 @@ Dispatches to the appropriate implementation based on URI scheme:
 | archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
 | bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
 
+When several drivers match a name, the one with the highest `Driver.Priority`
+wins; a tie for the highest priority is an error. Use the constants
+`PriorityFallback` (only if nothing else matched, e.g. local), `PriorityDefault`
+(a driver's own scheme), `PrioritySpecialized` (a narrow subset of another
+driver's scheme, e.g. git) and `PriorityCritical` (must be used when it matches).
+
 ### Layering / nesting
 
 ```go

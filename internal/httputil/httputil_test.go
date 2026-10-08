@@ -17,9 +17,6 @@ package httputil
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -209,6 +206,15 @@ func TestDialControl(t *testing.T) {
 }
 
 var testPayload = bytes.Repeat([]byte("ufs httputil test payload\n"), 1024)
+
+// Hex digests of testPayload.
+const (
+	testPayloadSHA256     = "781ee6dc098e170a7e0c9f337a02ff52972819035c88d96afcd09a839a67c17d"
+	testPayloadSHA384     = "90ca6269d4b969cefb2a8f58f53743a7c8d514f0eaf411b95432e7bbab905066c21c66c69bf929a05488267ad48f28f1"
+	testPayloadSHA512     = "3ae85b2baa4d3e8e942d42d83aa79bf4c18dcd84c1da8c7507f20d023e5d232bd8c1e581c37ce6b9c6cc94618563525a04fd505fe5825b6a00905411e8f92454"
+	testPayloadSHA3Sum256 = "409e611b3e3753faf2adbddaf9a68e7d3db8ebb96a8fb19133f78a852758aa8c"
+	testPayloadSHA3Sum512 = "b6719ec47734601517eddb9cefb327c718f62b8853f1f23e3549bb2f0c64f9ebb60e47f59628d6549ad221a6f82e08ade67bacb8bfbc92be2af5965ea1d752f0"
+)
 
 func testServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -1029,13 +1035,6 @@ func TestParseURIErrors(t *testing.T) {
 
 func TestDownloadFileChecksum(t *testing.T) {
 	t.Parallel()
-	sum256 := sha256.Sum256(testPayload)
-	sum384 := sha512.Sum384(testPayload)
-	sum512 := sha512.Sum512(testPayload)
-	hex256 := hex.EncodeToString(sum256[:])
-	hex384 := hex.EncodeToString(sum384[:])
-	hex512 := hex.EncodeToString(sum512[:])
-
 	testCases := []struct {
 		name      string
 		query     string
@@ -1046,27 +1045,30 @@ func TestDownloadFileChecksum(t *testing.T) {
 		wantNoRequest bool
 	}{
 		{name: "no checksum", query: "", wantQuery: ""},
-		{name: "bare checksum is sha256", query: "?ufs.checksum=" + hex256, wantQuery: ""},
-		{name: "bare uppercase checksum", query: "?ufs.checksum=" + strings.ToUpper(hex256), wantQuery: ""},
-		{name: "sha256", query: "?ufs.checksum=sha256:" + hex256, wantQuery: ""},
-		{name: "sha384", query: "?ufs.checksum=sha384:" + hex384, wantQuery: ""},
-		{name: "sha512", query: "?ufs.checksum=sha512:" + hex512, wantQuery: ""},
-		{name: "uppercase algorithm and digest", query: "?ufs.checksum=SHA512:" + strings.ToUpper(hex512), wantQuery: ""},
-		{name: "escaped colon", query: "?ufs.checksum=sha512%3A" + hex512, wantQuery: ""},
-		{name: "checksum with other params", query: "?z=1&ufs.checksum=sha512:" + hex512 + "&a=b%20c", wantQuery: "z=1&a=b%20c"},
-		{name: "mismatched bare checksum", query: "?ufs.checksum=" + strings.Repeat("0", len(hex256)), wantQuery: "", wantErr: "checksum mismatch"},
-		{name: "mismatched sha256", query: "?ufs.checksum=sha256:" + strings.Repeat("0", len(hex256)), wantQuery: "", wantErr: "checksum mismatch"},
-		{name: "mismatched sha384", query: "?ufs.checksum=sha384:" + strings.Repeat("0", len(hex384)), wantQuery: "", wantErr: "checksum mismatch"},
-		{name: "mismatched sha512", query: "?ufs.checksum=sha512:" + strings.Repeat("F", len(hex512)), wantQuery: "", wantErr: "checksum mismatch"},
-		{name: "mismatched with other params", query: "?token=t&ufs.checksum=sha512:" + strings.Repeat("0", len(hex512)), wantQuery: "token=t", wantErr: "checksum mismatch"},
-		{name: "sha256 digest labeled sha512", query: "?ufs.checksum=sha512:" + hex256, wantErr: "invalid sha512 checksum", wantNoRequest: true},
-		{name: "sha512 digest without prefix", query: "?ufs.checksum=" + hex512, wantErr: "invalid sha256 checksum", wantNoRequest: true},
-		{name: "truncated digest", query: "?ufs.checksum=sha256:" + hex256[:16], wantErr: "invalid sha256 checksum", wantNoRequest: true},
-		{name: "non hex digest", query: "?ufs.checksum=sha256:" + strings.Repeat("z", len(hex256)), wantErr: "invalid sha256 checksum", wantNoRequest: true},
+		{name: "bare checksum is sha256", query: "?ufs.checksum=" + testPayloadSHA256, wantQuery: ""},
+		{name: "bare uppercase checksum", query: "?ufs.checksum=" + strings.ToUpper(testPayloadSHA256), wantQuery: ""},
+		{name: "sha256", query: "?ufs.checksum=sha256:" + testPayloadSHA256, wantQuery: ""},
+		{name: "sha384", query: "?ufs.checksum=sha384:" + testPayloadSHA384, wantQuery: ""},
+		{name: "sha512", query: "?ufs.checksum=sha512:" + testPayloadSHA512, wantQuery: ""},
+		{name: "sha3-256", query: "?ufs.checksum=sha3-256:" + testPayloadSHA3Sum256, wantQuery: ""},
+		{name: "sha3-512", query: "?ufs.checksum=sha3-512:" + testPayloadSHA3Sum512, wantQuery: ""},
+		{name: "mismatched sha3-256", query: "?ufs.checksum=sha3-256:" + testPayloadSHA256, wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "uppercase algorithm and digest", query: "?ufs.checksum=SHA512:" + strings.ToUpper(testPayloadSHA512), wantQuery: ""},
+		{name: "escaped colon", query: "?ufs.checksum=sha512%3A" + testPayloadSHA512, wantQuery: ""},
+		{name: "checksum with other params", query: "?z=1&ufs.checksum=sha512:" + testPayloadSHA512 + "&a=b%20c", wantQuery: "z=1&a=b%20c"},
+		{name: "mismatched bare checksum", query: "?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched sha256", query: "?ufs.checksum=sha256:" + strings.Repeat("0", len(testPayloadSHA256)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched sha384", query: "?ufs.checksum=sha384:" + strings.Repeat("0", len(testPayloadSHA384)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched sha512", query: "?ufs.checksum=sha512:" + strings.Repeat("F", len(testPayloadSHA512)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched with other params", query: "?token=t&ufs.checksum=sha512:" + strings.Repeat("0", len(testPayloadSHA512)), wantQuery: "token=t", wantErr: "checksum mismatch"},
+		{name: "sha256 digest labeled sha512", query: "?ufs.checksum=sha512:" + testPayloadSHA256, wantErr: "invalid sha512 checksum", wantNoRequest: true},
+		{name: "sha512 digest without prefix", query: "?ufs.checksum=" + testPayloadSHA512, wantErr: "invalid sha256 checksum", wantNoRequest: true},
+		{name: "truncated digest", query: "?ufs.checksum=sha256:" + testPayloadSHA256[:16], wantErr: "invalid sha256 checksum", wantNoRequest: true},
+		{name: "non hex digest", query: "?ufs.checksum=sha256:" + strings.Repeat("z", len(testPayloadSHA256)), wantErr: "invalid sha256 checksum", wantNoRequest: true},
 		{name: "empty checksum", query: "?ufs.checksum=", wantErr: "invalid sha256 checksum", wantNoRequest: true},
 		{name: "algorithm without digest", query: "?ufs.checksum=sha512:", wantErr: "invalid sha512 checksum", wantNoRequest: true},
 		{name: "unsupported algorithm", query: "?ufs.checksum=md5:d41d8cd98f00b204e9800998ecf8427e", wantErr: `unsupported checksum algorithm "md5"`, wantNoRequest: true},
-		{name: "empty algorithm", query: "?ufs.checksum=:" + hex256, wantErr: `unsupported checksum algorithm ""`, wantNoRequest: true},
+		{name: "empty algorithm", query: "?ufs.checksum=:" + testPayloadSHA256, wantErr: `unsupported checksum algorithm ""`, wantNoRequest: true},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1138,7 +1140,7 @@ func TestDownloadFileFailureRemovesExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	uri := ts.URL + "/testassets.zip?ufs.checksum=" + strings.Repeat("0", sha256.Size*2)
+	uri := ts.URL + "/testassets.zip?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256))
 	if _, err := DownloadFileWith(t.Context(), ts.Client(), dir, uri); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("DownloadFileWith() = %v, want checksum mismatch", err)
 	}
@@ -1148,14 +1150,12 @@ func TestDownloadFileFailureRemovesExistingFile(t *testing.T) {
 func TestDownloadFileChecksumSurvivesRedirect(t *testing.T) {
 	t.Parallel()
 	ts := testServer(t)
-	sum := sha256.Sum256(testPayload)
-
-	uri := ts.URL + "/redirect-to-archive?ufs.checksum=" + strings.Repeat("0", hex.EncodedLen(len(sum)))
+	uri := ts.URL + "/redirect-to-archive?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256))
 	if _, err := DownloadFileWith(t.Context(), ts.Client(), t.TempDir(), uri); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Errorf("DownloadFileWith() = %v, want checksum mismatch", err)
 	}
 
-	uri = ts.URL + "/redirect-to-archive?ufs.checksum=" + hex.EncodeToString(sum[:])
+	uri = ts.URL + "/redirect-to-archive?ufs.checksum=" + testPayloadSHA256
 	if _, err := DownloadFileWith(t.Context(), ts.Client(), t.TempDir(), uri); err != nil {
 		t.Errorf("DownloadFileWith() = %v", err)
 	}

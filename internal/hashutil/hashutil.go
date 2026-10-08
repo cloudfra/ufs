@@ -19,6 +19,7 @@ package hashutil
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/sha3"
 	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
@@ -29,10 +30,10 @@ import (
 // defaultAlgorithm is the algorithm of a checksum that does not name one.
 const defaultAlgorithm = "sha256"
 
-// NewHash returns a new hash for the named algorithm: sha256, sha384 or
-// sha512. The name is case-insensitive. An error is returned for any other
-// algorithm.
-func NewHash(algorithm string) (hash.Hash, error) {
+// New returns a new hash for the named algorithm: sha256, sha384, sha512,
+// sha3-256, sha3-384 or sha3-512. The name is case-insensitive. An error is
+// returned for any other algorithm.
+func New(algorithm string) (hash.Hash, error) {
 	switch strings.ToLower(algorithm) {
 	case "sha256":
 		return sha256.New(), nil
@@ -40,8 +41,14 @@ func NewHash(algorithm string) (hash.Hash, error) {
 		return sha512.New384(), nil
 	case "sha512":
 		return sha512.New(), nil
+	case "sha3-256":
+		return sha3.New256(), nil
+	case "sha3-384":
+		return sha3.New384(), nil
+	case "sha3-512":
+		return sha3.New512(), nil
 	default:
-		return nil, fmt.Errorf("unsupported checksum algorithm %q, want sha256, sha384 or sha512", algorithm)
+		return nil, fmt.Errorf("unsupported checksum algorithm %q, want sha256, sha384, sha512, sha3-256, sha3-384 or sha3-512", algorithm)
 	}
 }
 
@@ -54,7 +61,7 @@ type Checksum struct {
 }
 
 // ParseChecksum parses value as "<algorithm>:<hex digest>", where algorithm is
-// one accepted by NewHash. A value without an algorithm is a sha256 digest.
+// one accepted by New. A value without an algorithm is a sha256 digest.
 // Case is ignored. An error is returned if the algorithm is unsupported or the
 // digest is not hex of the algorithm's length.
 func ParseChecksum(value string) (*Checksum, error) {
@@ -64,7 +71,7 @@ func ParseChecksum(value string) (*Checksum, error) {
 	}
 	algorithm = strings.ToLower(algorithm)
 
-	h, err := NewHash(algorithm)
+	h, err := New(algorithm)
 	if err != nil {
 		return nil, err
 	}

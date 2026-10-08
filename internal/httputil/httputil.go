@@ -37,8 +37,8 @@ import (
 const (
 	// URLQueryParamChecksum is the query parameter that carries the expected
 	// checksum of a downloaded file as "<algorithm>:<hex digest>", where
-	// algorithm is sha256, sha384 or sha512. A bare hex digest is treated as
-	// sha256. Case is ignored.
+	// algorithm is sha256, sha384, sha512, sha3-256, sha3-384 or sha3-512. A
+	// bare hex digest is treated as sha256. Case is ignored.
 	URLQueryParamChecksum = "ufs.checksum"
 	// uriParamPrefix marks query parameters that are addressed to ufs rather
 	// than to the server hosting the file.

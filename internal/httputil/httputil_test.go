@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -205,6 +206,15 @@ func TestDialControl(t *testing.T) {
 }
 
 var testPayload = bytes.Repeat([]byte("ufs httputil test payload\n"), 1024)
+
+// Hex digests of testPayload.
+const (
+	testPayloadSHA256     = "781ee6dc098e170a7e0c9f337a02ff52972819035c88d96afcd09a839a67c17d"
+	testPayloadSHA384     = "90ca6269d4b969cefb2a8f58f53743a7c8d514f0eaf411b95432e7bbab905066c21c66c69bf929a05488267ad48f28f1"
+	testPayloadSHA512     = "3ae85b2baa4d3e8e942d42d83aa79bf4c18dcd84c1da8c7507f20d023e5d232bd8c1e581c37ce6b9c6cc94618563525a04fd505fe5825b6a00905411e8f92454"
+	testPayloadSHA3Sum256 = "409e611b3e3753faf2adbddaf9a68e7d3db8ebb96a8fb19133f78a852758aa8c"
+	testPayloadSHA3Sum512 = "b6719ec47734601517eddb9cefb327c718f62b8853f1f23e3549bb2f0c64f9ebb60e47f59628d6549ad221a6f82e08ade67bacb8bfbc92be2af5965ea1d752f0"
+)
 
 func testServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -689,10 +699,12 @@ func TestDownloadFileErrors(t *testing.T) {
 
 	t.Run("truncated body", func(t *testing.T) {
 		t.Parallel()
-		_, err := DownloadFileWith(t.Context(), client, t.TempDir(), ts.URL+"/truncated.zip")
+		dir := t.TempDir()
+		_, err := DownloadFileWith(t.Context(), client, dir, ts.URL+"/truncated.zip")
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Errorf("DownloadFileWith(truncated) = %v, want io.ErrUnexpectedEOF", err)
 		}
+		assertEmptyDir(t, dir)
 	})
 
 	t.Run("missing directory", func(t *testing.T) {
@@ -882,5 +894,269 @@ func TestDownloadFileDeletedWorkingDirectory(t *testing.T) {
 	_, err := DownloadFileWith(t.Context(), ts.Client(), ".", ts.URL+"/testassets.zip")
 	if err == nil || !strings.Contains(err.Error(), "invalid download directory") {
 		t.Errorf("DownloadFileWith(deleted cwd) = %v, want 'invalid download directory' error", err)
+	}
+}
+
+func TestParseURI(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name       string
+		uri        string
+		wantURI    string
+		wantParams map[string]string
+	}{
+		{
+			name:    "no query",
+			uri:     "https://example.com/a.zip",
+			wantURI: "https://example.com/a.zip",
+		},
+		{
+			name:    "no ufs params leaves query untouched",
+			uri:     "https://example.com/a.zip?z=1&a=b%20c&flag",
+			wantURI: "https://example.com/a.zip?z=1&a=b%20c&flag",
+		},
+		{
+			name:       "only checksum",
+			uri:        "https://example.com/a.zip?ufs.checksum=abc123",
+			wantURI:    "https://example.com/a.zip",
+			wantParams: map[string]string{URLQueryParamChecksum: "abc123"},
+		},
+		{
+			name:       "checksum first",
+			uri:        "https://example.com/a.zip?ufs.checksum=abc123&token=t",
+			wantURI:    "https://example.com/a.zip?token=t",
+			wantParams: map[string]string{URLQueryParamChecksum: "abc123"},
+		},
+		{
+			name:       "checksum last",
+			uri:        "https://example.com/a.zip?token=t&ufs.checksum=abc123",
+			wantURI:    "https://example.com/a.zip?token=t",
+			wantParams: map[string]string{URLQueryParamChecksum: "abc123"},
+		},
+		{
+			name:       "remaining params keep order and encoding",
+			uri:        "https://example.com/a.zip?z=1&ufs.checksum=abc123&a=b%20c&flag",
+			wantURI:    "https://example.com/a.zip?z=1&a=b%20c&flag",
+			wantParams: map[string]string{URLQueryParamChecksum: "abc123"},
+		},
+		{
+			name:       "multiple ufs params",
+			uri:        "https://example.com/a.zip?ufs.checksum=abc123&x=1&ufs.other=v",
+			wantURI:    "https://example.com/a.zip?x=1",
+			wantParams: map[string]string{URLQueryParamChecksum: "abc123", "ufs.other": "v"},
+		},
+		{
+			name:       "escaped key and value are decoded",
+			uri:        "https://example.com/a.zip?ufs%2Eother=a%20b%26c",
+			wantURI:    "https://example.com/a.zip",
+			wantParams: map[string]string{"ufs.other": "a b&c"},
+		},
+		{
+			name:       "repeated param keeps first value",
+			uri:        "https://example.com/a.zip?ufs.checksum=first&ufs.checksum=second",
+			wantURI:    "https://example.com/a.zip",
+			wantParams: map[string]string{URLQueryParamChecksum: "first"},
+		},
+		{
+			name:       "empty value",
+			uri:        "https://example.com/a.zip?ufs.checksum=",
+			wantURI:    "https://example.com/a.zip",
+			wantParams: map[string]string{URLQueryParamChecksum: ""},
+		},
+		{
+			name:       "missing value",
+			uri:        "https://example.com/a.zip?ufs.checksum",
+			wantURI:    "https://example.com/a.zip",
+			wantParams: map[string]string{URLQueryParamChecksum: ""},
+		},
+		{
+			name:    "prefix must match exactly",
+			uri:     "https://example.com/a.zip?ufs=1&ufschecksum=2&UFS.checksum=3&x.ufs.checksum=4",
+			wantURI: "https://example.com/a.zip?ufs=1&ufschecksum=2&UFS.checksum=3&x.ufs.checksum=4",
+		},
+		{
+			name:    "ufs prefix in value is not a param",
+			uri:     "https://example.com/a.zip?next=ufs.checksum",
+			wantURI: "https://example.com/a.zip?next=ufs.checksum",
+		},
+		{
+			name:       "userinfo path and fragment are preserved",
+			uri:        "https://user@example.com:8443/dir/a.zip?ufs.checksum=abc123&x=1#frag",
+			wantURI:    "https://user@example.com:8443/dir/a.zip?x=1#frag",
+			wantParams: map[string]string{URLQueryParamChecksum: "abc123"},
+		},
+		{
+			name:       "non http scheme",
+			uri:        "archive:///tmp/a.zip?ufs.checksum=abc123",
+			wantURI:    "archive:///tmp/a.zip",
+			wantParams: map[string]string{URLQueryParamChecksum: "abc123"},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parsed, params, err := ParseURI(tc.uri)
+			if err != nil {
+				t.Fatalf("ParseURI(%q) = %v", tc.uri, err)
+			}
+			if got := parsed.String(); got != tc.wantURI {
+				t.Errorf("ParseURI(%q) URL = %q, want %q", tc.uri, got, tc.wantURI)
+			}
+			if len(params) != len(tc.wantParams) || !maps.Equal(params, tc.wantParams) {
+				t.Errorf("ParseURI(%q) params = %v, want %v", tc.uri, params, tc.wantParams)
+			}
+		})
+	}
+}
+
+func TestParseURIErrors(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name string
+		uri  string
+	}{
+		{name: "control character", uri: "https://example.com/\x7f"},
+		{name: "missing scheme before colon", uri: "://example.com/a.zip"},
+		{name: "malformed ufs value", uri: "https://example.com/a.zip?ufs.checksum=%zz"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			parsed, params, err := ParseURI(tc.uri)
+			if err == nil {
+				t.Fatalf("ParseURI(%q) = (%v, %v, nil), want error", tc.uri, parsed, params)
+			}
+			if parsed != nil || params != nil {
+				t.Errorf("ParseURI(%q) = (%v, %v), want nil results on error", tc.uri, parsed, params)
+			}
+		})
+	}
+}
+
+func TestDownloadFileChecksum(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name      string
+		query     string
+		wantQuery string
+		wantErr   string
+		// wantNoRequest is set when the checksum must be rejected before the
+		// server is contacted.
+		wantNoRequest bool
+	}{
+		{name: "no checksum", query: "", wantQuery: ""},
+		{name: "bare checksum is sha256", query: "?ufs.checksum=" + testPayloadSHA256, wantQuery: ""},
+		{name: "bare uppercase checksum", query: "?ufs.checksum=" + strings.ToUpper(testPayloadSHA256), wantQuery: ""},
+		{name: "sha256", query: "?ufs.checksum=sha256:" + testPayloadSHA256, wantQuery: ""},
+		{name: "sha384", query: "?ufs.checksum=sha384:" + testPayloadSHA384, wantQuery: ""},
+		{name: "sha512", query: "?ufs.checksum=sha512:" + testPayloadSHA512, wantQuery: ""},
+		{name: "sha3-256", query: "?ufs.checksum=sha3-256:" + testPayloadSHA3Sum256, wantQuery: ""},
+		{name: "sha3-512", query: "?ufs.checksum=sha3-512:" + testPayloadSHA3Sum512, wantQuery: ""},
+		{name: "mismatched sha3-256", query: "?ufs.checksum=sha3-256:" + testPayloadSHA256, wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "uppercase algorithm and digest", query: "?ufs.checksum=SHA512:" + strings.ToUpper(testPayloadSHA512), wantQuery: ""},
+		{name: "escaped colon", query: "?ufs.checksum=sha512%3A" + testPayloadSHA512, wantQuery: ""},
+		{name: "checksum with other params", query: "?z=1&ufs.checksum=sha512:" + testPayloadSHA512 + "&a=b%20c", wantQuery: "z=1&a=b%20c"},
+		{name: "mismatched bare checksum", query: "?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched sha256", query: "?ufs.checksum=sha256:" + strings.Repeat("0", len(testPayloadSHA256)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched sha384", query: "?ufs.checksum=sha384:" + strings.Repeat("0", len(testPayloadSHA384)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched sha512", query: "?ufs.checksum=sha512:" + strings.Repeat("F", len(testPayloadSHA512)), wantQuery: "", wantErr: "checksum mismatch"},
+		{name: "mismatched with other params", query: "?token=t&ufs.checksum=sha512:" + strings.Repeat("0", len(testPayloadSHA512)), wantQuery: "token=t", wantErr: "checksum mismatch"},
+		{name: "sha256 digest labeled sha512", query: "?ufs.checksum=sha512:" + testPayloadSHA256, wantErr: "invalid sha512 checksum", wantNoRequest: true},
+		{name: "sha512 digest without prefix", query: "?ufs.checksum=" + testPayloadSHA512, wantErr: "invalid sha256 checksum", wantNoRequest: true},
+		{name: "truncated digest", query: "?ufs.checksum=sha256:" + testPayloadSHA256[:16], wantErr: "invalid sha256 checksum", wantNoRequest: true},
+		{name: "non hex digest", query: "?ufs.checksum=sha256:" + strings.Repeat("z", len(testPayloadSHA256)), wantErr: "invalid sha256 checksum", wantNoRequest: true},
+		{name: "empty checksum", query: "?ufs.checksum=", wantErr: "invalid sha256 checksum", wantNoRequest: true},
+		{name: "algorithm without digest", query: "?ufs.checksum=sha512:", wantErr: "invalid sha512 checksum", wantNoRequest: true},
+		{name: "unsupported algorithm", query: "?ufs.checksum=md5:d41d8cd98f00b204e9800998ecf8427e", wantErr: `unsupported checksum algorithm "md5"`, wantNoRequest: true},
+		{name: "empty algorithm", query: "?ufs.checksum=:" + testPayloadSHA256, wantErr: `unsupported checksum algorithm ""`, wantNoRequest: true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var gotQuery atomic.Pointer[string]
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotQuery.Store(&r.URL.RawQuery)
+				if _, err := w.Write(testPayload); err != nil {
+					t.Errorf("failed to write to response: %v", err)
+				}
+			}))
+			t.Cleanup(ts.Close)
+
+			dir := t.TempDir()
+			path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip"+tc.query)
+			switch q := gotQuery.Load(); {
+			case tc.wantNoRequest && q != nil:
+				t.Errorf("server received a request with query %q, want none", *q)
+			case tc.wantNoRequest:
+			case q == nil:
+				t.Error("server did not receive a request")
+			case *q != tc.wantQuery:
+				t.Errorf("server received query %q, want %q", *q, tc.wantQuery)
+			}
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("DownloadFileWith() = %q, want error containing %q", path, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error = %v, want mention of %q", err, tc.wantErr)
+				}
+				assertEmptyDir(t, dir)
+				return
+			}
+			if err != nil {
+				t.Fatalf("DownloadFileWith() = %v", err)
+			}
+			if want := filepath.Join(dir, "testassets.zip"); path != want {
+				t.Errorf("path = %q, want %q", path, want)
+			}
+			got, err := osutil.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, testPayload) {
+				t.Errorf("downloaded %d bytes, want %d", len(got), len(testPayload))
+			}
+		})
+	}
+}
+
+// assertEmptyDir fails the test if a failed download left anything in dir.
+func assertEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		t.Errorf("failed download left %q in %q", entry.Name(), dir)
+	}
+}
+
+func TestDownloadFileFailureRemovesExistingFile(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "testassets.zip"), []byte("stale"), osutil.DefaultFilePermissions); err != nil {
+		t.Fatal(err)
+	}
+
+	uri := ts.URL + "/testassets.zip?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256))
+	if _, err := DownloadFileWith(t.Context(), ts.Client(), dir, uri); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("DownloadFileWith() = %v, want checksum mismatch", err)
+	}
+	assertEmptyDir(t, dir)
+}
+
+func TestDownloadFileChecksumSurvivesRedirect(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t)
+	uri := ts.URL + "/redirect-to-archive?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256))
+	if _, err := DownloadFileWith(t.Context(), ts.Client(), t.TempDir(), uri); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Errorf("DownloadFileWith() = %v, want checksum mismatch", err)
+	}
+
+	uri = ts.URL + "/redirect-to-archive?ufs.checksum=" + testPayloadSHA256
+	if _, err := DownloadFileWith(t.Context(), ts.Client(), t.TempDir(), uri); err != nil {
+		t.Errorf("DownloadFileWith() = %v", err)
 	}
 }

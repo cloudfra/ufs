@@ -1059,7 +1059,7 @@ func TestDownloadFileChecksum(t *testing.T) {
 		{name: "mismatched sha384", query: "?ufs.checksum=sha384:" + strings.Repeat("0", len(hex384)), wantQuery: "", wantErr: "checksum mismatch"},
 		{name: "mismatched sha512", query: "?ufs.checksum=sha512:" + strings.Repeat("F", len(hex512)), wantQuery: "", wantErr: "checksum mismatch"},
 		{name: "mismatched with other params", query: "?token=t&ufs.checksum=sha512:" + strings.Repeat("0", len(hex512)), wantQuery: "token=t", wantErr: "checksum mismatch"},
-		{name: "sha256 digest labelled sha512", query: "?ufs.checksum=sha512:" + hex256, wantErr: "invalid sha512 checksum", wantNoRequest: true},
+		{name: "sha256 digest labeled sha512", query: "?ufs.checksum=sha512:" + hex256, wantErr: "invalid sha512 checksum", wantNoRequest: true},
 		{name: "sha512 digest without prefix", query: "?ufs.checksum=" + hex512, wantErr: "invalid sha256 checksum", wantNoRequest: true},
 		{name: "truncated digest", query: "?ufs.checksum=sha256:" + hex256[:16], wantErr: "invalid sha256 checksum", wantNoRequest: true},
 		{name: "non hex digest", query: "?ufs.checksum=sha256:" + strings.Repeat("z", len(hex256)), wantErr: "invalid sha256 checksum", wantNoRequest: true},
@@ -1113,101 +1113,6 @@ func TestDownloadFileChecksum(t *testing.T) {
 			}
 			if !bytes.Equal(got, testPayload) {
 				t.Errorf("downloaded %d bytes, want %d", len(got), len(testPayload))
-			}
-		})
-	}
-}
-
-func TestParseChecksum(t *testing.T) {
-	t.Parallel()
-	sum256 := sha256.Sum256(testPayload)
-	sum384 := sha512.Sum384(testPayload)
-	sum512 := sha512.Sum512(testPayload)
-	hex256 := hex.EncodeToString(sum256[:])
-
-	testCases := []struct {
-		name          string
-		value         string
-		wantAlgorithm string
-		wantDigest    []byte
-	}{
-		{name: "bare digest", value: hex256, wantAlgorithm: "sha256", wantDigest: sum256[:]},
-		{name: "bare uppercase digest", value: strings.ToUpper(hex256), wantAlgorithm: "sha256", wantDigest: sum256[:]},
-		{name: "bare mixed case digest", value: strings.ToUpper(hex256[:32]) + hex256[32:], wantAlgorithm: "sha256", wantDigest: sum256[:]},
-		{name: "sha256", value: "sha256:" + hex256, wantAlgorithm: "sha256", wantDigest: sum256[:]},
-		{name: "sha384", value: "sha384:" + hex.EncodeToString(sum384[:]), wantAlgorithm: "sha384", wantDigest: sum384[:]},
-		{name: "sha512", value: "sha512:" + hex.EncodeToString(sum512[:]), wantAlgorithm: "sha512", wantDigest: sum512[:]},
-		{name: "uppercase algorithm", value: "SHA512:" + hex.EncodeToString(sum512[:]), wantAlgorithm: "sha512", wantDigest: sum512[:]},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			sum, err := parseChecksum(map[string]string{URLQueryParamChecksum: tc.value})
-			if err != nil {
-				t.Fatalf("parseChecksum(%q) = %v", tc.value, err)
-			}
-			if sum.algorithm != tc.wantAlgorithm {
-				t.Errorf("algorithm = %q, want %q", sum.algorithm, tc.wantAlgorithm)
-			}
-			if !bytes.Equal(sum.want, tc.wantDigest) {
-				t.Errorf("want digest = %x, want %x", sum.want, tc.wantDigest)
-			}
-
-			if err := sum.verify("a.zip"); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
-				t.Errorf("verify() before any data = %v, want checksum mismatch", err)
-			}
-			if _, err := sum.hash.Write(testPayload); err != nil {
-				t.Fatal(err)
-			}
-			if err := sum.verify("a.zip"); err != nil {
-				t.Errorf("verify() = %v", err)
-			}
-		})
-	}
-
-	t.Run("absent", func(t *testing.T) {
-		t.Parallel()
-		for _, params := range []map[string]string{nil, {}, {"ufs.other": hex256}} {
-			if sum, err := parseChecksum(params); sum != nil || err != nil {
-				t.Errorf("parseChecksum(%v) = (%v, %v), want (nil, nil)", params, sum, err)
-			}
-		}
-	})
-}
-
-func TestParseChecksumErrors(t *testing.T) {
-	t.Parallel()
-	hex256 := strings.Repeat("ab", sha256.Size)
-	testCases := []struct {
-		name    string
-		value   string
-		wantErr string
-	}{
-		{name: "empty", value: "", wantErr: "invalid sha256 checksum"},
-		{name: "algorithm without digest", value: "sha512:", wantErr: "invalid sha512 checksum"},
-		{name: "short digest", value: "sha256:" + hex256[:62], wantErr: "got 62 hex characters, want 64"},
-		{name: "long digest", value: "sha256:" + hex256 + "ab", wantErr: "got 66 hex characters, want 64"},
-		{name: "sha256 digest labelled sha384", value: "sha384:" + hex256, wantErr: "got 64 hex characters, want 96"},
-		{name: "sha256 digest labelled sha512", value: "sha512:" + hex256, wantErr: "got 64 hex characters, want 128"},
-		{name: "odd length digest", value: "sha256:" + hex256[:63], wantErr: "invalid sha256 checksum"},
-		{name: "non hex digest", value: "sha256:" + strings.Repeat("zz", sha256.Size), wantErr: "invalid sha256 checksum"},
-		{name: "unsupported algorithm", value: "md5:d41d8cd98f00b204e9800998ecf8427e", wantErr: `unsupported checksum algorithm "md5"`},
-		{name: "empty algorithm", value: ":" + hex256, wantErr: `unsupported checksum algorithm ""`},
-		{name: "padded algorithm", value: " sha256:" + hex256, wantErr: "unsupported checksum algorithm"},
-		{name: "second colon", value: "sha256:sha256:" + hex256, wantErr: "invalid sha256 checksum"},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			sum, err := parseChecksum(map[string]string{URLQueryParamChecksum: tc.value})
-			if err == nil {
-				t.Fatalf("parseChecksum(%q) = %+v, want error containing %q", tc.value, sum, tc.wantErr)
-			}
-			if sum != nil {
-				t.Errorf("parseChecksum(%q) = %+v, want nil on error", tc.value, sum)
-			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Errorf("error = %v, want mention of %q", err, tc.wantErr)
 			}
 		})
 	}

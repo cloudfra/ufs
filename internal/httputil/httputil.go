@@ -17,13 +17,8 @@
 package httputil
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
 	"log/slog"
 	"net"
@@ -35,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/hashutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
@@ -162,9 +158,12 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if err != nil {
 		return "", fmt.Errorf("invalid download URL: %w", err)
 	}
-	sum, err := parseChecksum(params)
-	if err != nil {
-		return "", err
+	var fileChecksum *hashutil.Checksum
+	if value, ok := params[URLQueryParamChecksum]; ok {
+		fileChecksum, err = hashutil.ParseChecksum(value)
+		if err != nil {
+			return "", fmt.Errorf("invalid %s parameter: %w", URLQueryParamChecksum, err)
+		}
 	}
 	if client == nil {
 		if err := validateDownloadURL(ctx, parsed); err != nil {
@@ -213,12 +212,14 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	}
 
 	var w io.Writer = f
-	if sum != nil {
-		w = io.MultiWriter(f, sum.hash)
+	if fileChecksum != nil {
+		w = io.MultiWriter(f, fileChecksum)
 	}
 	_, err = io.Copy(w, io.LimitReader(resp.Body, maxDownloadSize))
-	if err == nil && sum != nil {
-		err = sum.verify(archiveFilename)
+	if err == nil && fileChecksum != nil {
+		if verifyErr := fileChecksum.Verify(); verifyErr != nil {
+			err = fmt.Errorf("downloaded file %q: %w", archiveFilename, verifyErr)
+		}
 	}
 	// Close before deleting; Windows cannot remove an open file.
 	if closeErr := f.Close(); closeErr != nil {
@@ -230,61 +231,6 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	}
 
 	return archiveFilename, nil
-}
-
-// checksum is the expected digest of a download, parsed from
-// URLQueryParamChecksum.
-type checksum struct {
-	algorithm string
-	// hash must be fed the file contents before verify is called.
-	hash hash.Hash
-	want []byte
-}
-
-// parseChecksum returns the checksum requested by URLQueryParamChecksum in
-// params, or nil if params carries none. The value is "<algorithm>:<hex
-// digest>"; a value without an algorithm is a sha256 digest. Case is ignored.
-// An error is returned if the algorithm is unsupported or the digest is not
-// hex of the algorithm's length.
-func parseChecksum(params map[string]string) (*checksum, error) {
-	value, ok := params[URLQueryParamChecksum]
-	if !ok {
-		return nil, nil
-	}
-	algorithm, digest, ok := strings.Cut(value, ":")
-	if !ok {
-		algorithm, digest = "sha256", value
-	}
-	algorithm = strings.ToLower(algorithm)
-
-	var h hash.Hash
-	switch algorithm {
-	case "sha256":
-		h = sha256.New()
-	case "sha384":
-		h = sha512.New384()
-	case "sha512":
-		h = sha512.New()
-	default:
-		return nil, fmt.Errorf("unsupported checksum algorithm %q, want sha256, sha384 or sha512", algorithm)
-	}
-	want, err := hex.DecodeString(digest)
-	if err != nil {
-		return nil, fmt.Errorf("invalid %s checksum %q: %w", algorithm, digest, err)
-	}
-	if len(want) != h.Size() {
-		return nil, fmt.Errorf("invalid %s checksum %q: got %d hex characters, want %d", algorithm, digest, len(digest), hex.EncodedLen(h.Size()))
-	}
-	return &checksum{algorithm: algorithm, hash: h, want: want}, nil
-}
-
-// verify compares the digest of the data written to c.hash, the contents of
-// the file at path, against the expected digest.
-func (c *checksum) verify(path string) error {
-	if got := c.hash.Sum(nil); !bytes.Equal(got, c.want) {
-		return fmt.Errorf("checksum mismatch for %q: expected %s:%x, got %s:%x", path, c.algorithm, c.want, c.algorithm, got)
-	}
-	return nil
 }
 
 // ParseURI parses uri and extracts the query parameters whose name starts with

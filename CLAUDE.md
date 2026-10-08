@@ -176,6 +176,7 @@ code with no `ufs` dependency goes in `internal/`.
 | op.go                 | High-level ops — Rsync copies files between FSes                    |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
+| internal/hashutil/    | NewHash by algorithm name; Checksum parses and verifies digests     |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |

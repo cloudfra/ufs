@@ -53,7 +53,7 @@ var (
 )
 
 func init() {
-	Register(NewDriver("null", newNullFS, isNullFSUri, 1, false, true))
+	Register(NewDriver("null", newNullFS, isNullFSUri, PriorityDefault, false, true))
 }
 
 type nullFile struct {

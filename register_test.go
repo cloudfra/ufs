@@ -221,9 +221,9 @@ func TestRegistrarMatch(t *testing.T) {
 
 	t.Run("tie between losing drivers is not ambiguous", func(t *testing.T) {
 		registerInEveryOrder(t, []Driver{
-			{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-			{Name: "loser1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
-			{Name: "loser2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+			{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault},
+			{Name: "loser1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityFallback},
+			{Name: "loser2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityFallback},
 		}, func(t *testing.T, r *registrar) {
 			got, err := r.matchDriver("anything")
 			if err != nil {
@@ -238,16 +238,16 @@ func TestRegistrarMatch(t *testing.T) {
 	t.Run("tie between winning drivers is ambiguous", func(t *testing.T) {
 		// Three drivers tie; the error always names the first two by name.
 		registerInEveryOrder(t, []Driver{
-			{Name: "winner1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-			{Name: "winner2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-			{Name: "winner3", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-			{Name: "loser", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5},
+			{Name: "winner1", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault},
+			{Name: "winner2", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault},
+			{Name: "winner3", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault},
+			{Name: "loser", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityFallback},
 		}, func(t *testing.T, r *registrar) {
 			_, err := r.matchDriver("anything")
 			if err == nil {
 				t.Fatal("matchDriver() = nil error, want ambiguous match error")
 			}
-			want := `"winner1" and "winner2" both have priority 1`
+			want := `"winner1" and "winner2" both have priority 10000`
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("got: %q, want substring %q", err, want)
 			}
@@ -257,8 +257,8 @@ func TestRegistrarMatch(t *testing.T) {
 	t.Run("matchers behind the winning priority are not called", func(t *testing.T) {
 		called := false
 		registerInEveryOrder(t, []Driver{
-			{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1},
-			{Name: "fallback", MatchFunc: func(string) bool { called = true; return true }, CreateFunc: nopCreate, Priority: 5},
+			{Name: "winner", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault},
+			{Name: "fallback", MatchFunc: func(string) bool { called = true; return true }, CreateFunc: nopCreate, Priority: PriorityFallback},
 		}, func(t *testing.T, r *registrar) {
 			if _, err := r.matchDriver("anything"); err != nil {
 				t.Fatalf("matchDriver() = %v, want nil", err)
@@ -269,29 +269,56 @@ func TestRegistrarMatch(t *testing.T) {
 		})
 	})
 
-	t.Run("lower priority value wins", func(t *testing.T) {
+	t.Run("higher priority value wins", func(t *testing.T) {
 		r := newRegistrar()
-		low := Driver{Name: "low", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1}
-		high := Driver{Name: "high", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 5}
-		if err := r.registerDriver(low); err != nil {
-			t.Fatal(err)
+		drivers := []Driver{
+			{Name: "fallback", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityFallback},
+			{Name: "default", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault},
+			{Name: "specialized", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PrioritySpecialized},
+			{Name: "critical", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityCritical},
 		}
-		if err := r.registerDriver(high); err != nil {
-			t.Fatal(err)
+		// Each driver wins over all those registered before it.
+		for _, driver := range drivers {
+			if err := r.registerDriver(driver); err != nil {
+				t.Fatal(err)
+			}
+			got, err := r.matchDriver("anything")
+			if err != nil {
+				t.Fatalf("matchDriver() = %v, want nil", err)
+			}
+			if got.Name != driver.Name {
+				t.Errorf("matchDriver() = %q, want %q (higher Priority value should win)", got.Name, driver.Name)
+			}
 		}
-		got, err := r.matchDriver("anything")
-		if err != nil {
-			t.Fatalf("matchDriver() = %v, want nil", err)
-		}
-		if got.Name != low.Name {
-			t.Errorf("matchDriver() = %q, want %q (lower Priority value should win)", got.Name, low.Name)
-		}
+	})
+
+	t.Run("unset priority is the default", func(t *testing.T) {
+		registerInEveryOrder(t, []Driver{
+			{Name: "fallback", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityFallback},
+			{Name: "unset", MatchFunc: alwaysMatch, CreateFunc: nopCreate},
+		}, func(t *testing.T, r *registrar) {
+			got, err := r.matchDriver("anything")
+			if err != nil {
+				t.Fatalf("matchDriver() = %v, want nil", err)
+			}
+			if got.Name != "unset" || got.Priority != PriorityDefault {
+				t.Errorf("matchDriver() = %q with priority %d, want %q with priority %d", got.Name, got.Priority, "unset", PriorityDefault)
+			}
+		})
+		registerInEveryOrder(t, []Driver{
+			{Name: "default", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault},
+			{Name: "unset", MatchFunc: alwaysMatch, CreateFunc: nopCreate},
+		}, func(t *testing.T, r *registrar) {
+			if _, err := r.matchDriver("anything"); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+				t.Errorf("matchDriver() = %v, want an ambiguous match error", err)
+			}
+		})
 	})
 
 	t.Run("ambiguous same priority", func(t *testing.T) {
 		r := newRegistrar()
-		a := Driver{Name: "a", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1}
-		b := Driver{Name: "b", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: 1}
+		a := Driver{Name: "a", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault}
+		b := Driver{Name: "b", MatchFunc: alwaysMatch, CreateFunc: nopCreate, Priority: PriorityDefault}
 		if err := r.registerDriver(a); err != nil {
 			t.Fatal(err)
 		}

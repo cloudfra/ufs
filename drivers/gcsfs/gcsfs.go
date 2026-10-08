@@ -52,7 +52,7 @@ var (
 )
 
 func init() {
-	ufs.Register(ufs.NewDriver("gcs", New, isGCSFSUri, 1, true, true))
+	ufs.Register(ufs.NewDriver("gcs", New, isGCSFSUri, ufs.PriorityDefault, true, true))
 }
 
 type gcsFS struct {

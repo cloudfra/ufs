@@ -41,7 +41,7 @@ var (
 )
 
 func init() {
-	Register(NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
+	Register(NewDriver("local", newLocalFS, isLocalFSUri, PriorityFallback, true, true))
 }
 
 type localFSInterface interface {

@@ -17,10 +17,10 @@ package ufs
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"fmt"
-	"io"
 	"io/fs"
+	"path"
+	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -69,8 +69,7 @@ func TestAssets(t *testing.T) {
 		{
 			name: "archiveFS",
 			createFS: func(tb testing.TB) (WriteFS, error) {
-				zipPath := createZipFromDir(tb, testAssetsFilesDir)
-				return newArchiveFSFromLocalFS(context.Background(), zipPath)
+				return newMemArchiveFS(tb, "testassets.zip", zipBytesFromDir(tb, testAssetsFilesDir))
 			},
 		},
 	}
@@ -134,48 +133,98 @@ func copyFSToFS(src fs.FS, dst WriteFS) error {
 	})
 }
 
-// createZipFromDir walks dir, writes all files into a temp zip, and returns its path.
-// The caller does not need to remove the file; tb.Cleanup handles it.
-func createZipFromDir(tb testing.TB, dir string) string {
+// zipEntry is one entry of an archive built by zipBytes. A name ending in "/"
+// is a directory entry and its data is ignored.
+type zipEntry struct {
+	name string
+	data []byte
+}
+
+// zipBytes returns a zip archive holding entries, built in memory.
+func zipBytes(tb testing.TB, entries ...zipEntry) []byte {
+	tb.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, entry := range entries {
+		w, err := zw.Create(entry.name)
+		if err != nil {
+			tb.Fatalf("zip Create(%q) = %v, want nil", entry.name, err)
+		}
+		if strings.HasSuffix(entry.name, "/") {
+			continue
+		}
+		if _, err := w.Write(entry.data); err != nil {
+			tb.Fatalf("zip Write(%q) = %v, want nil", entry.name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		tb.Fatalf("zip Close() = %v, want nil", err)
+	}
+	return buf.Bytes()
+}
+
+// zipBytesFromDir returns a zip archive, built in memory, of every file under
+// the local directory dir.
+func zipBytesFromDir(tb testing.TB, dir string) []byte {
 	tb.Helper()
 	src := osutil.DirFS(dir)
 
-	tmp, err := osutil.CreateTemp("", "testassets-*.zip")
-	if err != nil {
-		tb.Fatalf("createZipFromDir: CreateTemp: %v", err)
-	}
-	tmpName := tmp.Name()
-	tb.Cleanup(func() {
-		if err := osutil.Remove(tmpName); err != nil {
-			tb.Fatalf("createZipFromDir: Cleanup: %v", err)
-		}
-	})
-
-	zw := zip.NewWriter(tmp)
-	err = fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
+	var entries []zipEntry
+	err := fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || p == pathutil.CwdPath {
 			return err
 		}
-		w, err := zw.Create(p)
+		data, err := fs.ReadFile(src, p)
 		if err != nil {
 			return err
 		}
-		f, err := src.Open(p)
-		if err != nil {
-			return err
-		}
-		defer ufsTesting.ValidateClose(tb, f)()
-		_, err = io.Copy(w, f)
-		return err
+		entries = append(entries, zipEntry{name: p, data: data})
+		return nil
 	})
 	if err != nil {
-		tb.Fatalf("createZipFromDir: walk: %v", err)
+		tb.Fatalf("zipBytesFromDir: walk: %v", err)
 	}
-	if err := zw.Close(); err != nil {
-		tb.Fatalf("createZipFromDir: close zip: %v", err)
+	return zipBytes(tb, entries...)
+}
+
+// writeTestFile writes data to name in fsys, creating its parent directories.
+func writeTestFile(tb testing.TB, fsys WriteFS, name string, data []byte) {
+	tb.Helper()
+	if dir := path.Dir(name); dir != pathutil.CwdPath {
+		if err := fsys.MkdirAll(dir, osutil.DefaultDirectoryPermissions); err != nil {
+			tb.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
+		}
 	}
-	if err := tmp.Close(); err != nil {
-		tb.Fatalf("createZipFromDir: close file: %v", err)
+	f, err := fsys.Create(name)
+	if err != nil {
+		tb.Fatalf("Create(%q) = %v, want nil", name, err)
 	}
-	return tmpName
+	if _, err := f.Write(data); err != nil {
+		tb.Errorf("Write(%q) = %v, want nil", name, err)
+	}
+	if err := f.Close(); err != nil {
+		tb.Fatalf("Close(%q) = %v, want nil", name, err)
+	}
+}
+
+// newMemArchiveFS mounts the archive in data, held in memory under name, as an
+// archiveFS. The caller closes the result; nothing is written to disk.
+func newMemArchiveFS(tb testing.TB, name string, data []byte) (*archiveFS, error) {
+	tb.Helper()
+	mfs := makeMemFS("memory:///")
+	tb.Cleanup(func() {
+		if err := mfs.Close(); err != nil {
+			tb.Errorf("failed to close memFS: %v", err)
+		}
+	})
+	writeTestFile(tb, mfs, name, data)
+	f, err := mfs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	fsys, err := newArchiveFSFromFile(tb.Context(), f)
+	if err != nil {
+		return nil, ufserrors.Join(err, f.Close())
+	}
+	return fsys, nil
 }

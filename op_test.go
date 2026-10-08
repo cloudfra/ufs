@@ -15,12 +15,10 @@
 package ufs
 
 import (
-	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
-	"path/filepath"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -534,46 +532,26 @@ func TestForEachFileInfoCallbackError(t *testing.T) {
 	}
 }
 
-// setupNestFSWithArchive creates a temp directory containing a regular file
-// and a zip archive with one entry, then wraps it as a nestFS for Scan tests.
-func setupNestFSWithArchive(t *testing.T) WriteFS {
+// newMemNestFS returns a nestFS over an empty in-memory file system and
+// closes it when the test ends.
+func newMemNestFS(t *testing.T) *nestFS {
 	t.Helper()
-	dir := t.TempDir()
-
-	if err := osutil.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello")); err != nil {
-		t.Fatal(err)
-	}
-
-	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := osutil.Create(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(zf)
-	w, err := zw.Create("inside.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.WriteString(w, "content"); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := zf.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	lfs, err := newLocalFS(t.Context(), dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nfs := makeNestFS(t.Context(), lfs)
+	nfs := makeNestFS(t.Context(), makeMemFS("memory:///"))
 	t.Cleanup(func() {
 		if err := nfs.Close(); err != nil {
 			t.Errorf("failed to close nest FS: %v", err)
 		}
 	})
+	return nfs
+}
+
+// setupNestFSWithArchive creates an in-memory nestFS holding a regular file
+// and a zip archive with one entry, for Scan tests.
+func setupNestFSWithArchive(t *testing.T) WriteFS {
+	t.Helper()
+	nfs := newMemNestFS(t)
+	writeTestFile(t, nfs, "readme.txt", []byte("hello"))
+	writeTestFile(t, nfs, "data.zip", zipBytes(t, zipEntry{name: "inside.txt", data: []byte("content")}))
 	return nfs
 }
 
@@ -702,35 +680,14 @@ func TestWalkCallbackError(t *testing.T) {
 
 // TestIsMountedArchiveDir exercises all early-exit conditions of the method.
 func TestIsMountedArchiveDir(t *testing.T) {
-	dir := t.TempDir()
+	nfs := newMemNestFS(t)
 
 	// Create data.zip (virtual .d should be detected).
-	zf, err := osutil.Create(filepath.Join(dir, "data.zip"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(zf)
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := zf.Close(); err != nil {
-		t.Fatal(err)
-	}
+	writeTestFile(t, nfs, "data.zip", zipBytes(t))
 	// Create conf.d as a real directory (base name "conf" is not an archive).
-	if err := osutil.MkdirAll(filepath.Join(dir, "conf.d")); err != nil {
+	if err := nfs.MkdirAll("conf.d", osutil.DefaultDirectoryPermissions); err != nil {
 		t.Fatal(err)
 	}
-
-	lfs, err := newLocalFS(t.Context(), dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nfs := makeNestFS(t.Context(), lfs)
-	t.Cleanup(func() {
-		if err := nfs.Close(); err != nil {
-			t.Errorf("nfs.Close() = %v", err)
-		}
-	})
 
 	cases := []struct {
 		name string
@@ -751,48 +708,12 @@ func TestIsMountedArchiveDir(t *testing.T) {
 // TestWalkNestFSRegularSubdirNotSkipped verifies that a real subdirectory inside
 // a nestFS is descended into even when IncludeMountedArchive is false.
 func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
-	dir := t.TempDir()
-
-	if err := osutil.MkdirAll(filepath.Join(dir, "subdir")); err != nil {
-		t.Fatal(err)
-	}
-	if err := osutil.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("nested")); err != nil {
-		t.Fatal(err)
-	}
-
-	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := osutil.Create(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(zf)
-	w, err := zw.Create("inside.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.WriteString(w, "content"); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := zf.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	lfs, err := newLocalFS(t.Context(), dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nfs := makeNestFS(t.Context(), lfs)
-	t.Cleanup(func() {
-		if err := nfs.Close(); err != nil {
-			t.Errorf("nfs.Close() = %v", err)
-		}
-	})
+	nfs := newMemNestFS(t)
+	writeTestFile(t, nfs, "subdir/nested.txt", []byte("nested"))
+	writeTestFile(t, nfs, "data.zip", zipBytes(t, zipEntry{name: "inside.txt", data: []byte("content")}))
 
 	var got []string
-	err = Walk(nfs, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+	err := Walk(nfs, pathutil.CwdPath, WalkArgs{}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})

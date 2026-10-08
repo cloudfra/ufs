@@ -40,11 +40,11 @@ const (
 	xzDictProp384MiB = 33
 )
 
-// writeXzArchiveWithDict copies the xz test archive into a temp directory as
-// name, rewriting its first block header to declare the LZMA2 dictionary size
-// encoded by dictProp. Declaring a larger dictionary than the encoder used is
-// valid: the data still decodes, but the decoder must allow that size.
-func writeXzArchiveWithDict(t *testing.T, name string, dictProp byte) string {
+// xzArchiveWithDict returns the xz test archive with its first block header
+// rewritten to declare the LZMA2 dictionary size encoded by dictProp.
+// Declaring a larger dictionary than the encoder used is valid: the data still
+// decodes, but the decoder must allow that size.
+func xzArchiveWithDict(t *testing.T, dictProp byte) []byte {
 	t.Helper()
 	data, err := osutil.ReadFile(testXzArchive)
 	if err != nil {
@@ -71,12 +71,44 @@ func writeXzArchiveWithDict(t *testing.T, name string, dictProp byte) string {
 	}
 	body[i+2] = dictProp
 	binary.LittleEndian.PutUint32(header[headerSize-4:], crc32.ChecksumIEEE(body))
+	return data
+}
 
+// writeXzArchiveWithDict writes the result of xzArchiveWithDict into a temp
+// directory as name and returns its path, for tests that need a local file.
+func writeXzArchiveWithDict(t *testing.T, name string, dictProp byte) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(path, data, osutil.DefaultFilePermissions); err != nil {
+	if err := os.WriteFile(path, xzArchiveWithDict(t, dictProp), osutil.DefaultFilePermissions); err != nil {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// memFile is an in-memory fs.File with the Seek and ReadAt that NewFromFile
+// requires.
+type memFile struct {
+	*bytes.Reader
+}
+
+func (memFile) Stat() (fs.FileInfo, error) { return nil, fs.ErrInvalid }
+
+func (memFile) Close() error { return nil }
+
+// mustNewFromMemory opens the archive in data, under the file name name,
+// without writing it to disk, and closes it when the test ends.
+func mustNewFromMemory(t *testing.T, name string, data []byte) FS {
+	t.Helper()
+	fsys, err := NewFromFile(t.Context(), name, memFile{bytes.NewReader(data)})
+	if err != nil {
+		t.Fatalf("NewFromFile(%q) = %v", name, err)
+	}
+	t.Cleanup(func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
+	return fsys
 }
 
 // assertSameFiles fails the test unless a sample of files, one at the root and
@@ -114,52 +146,8 @@ func TestXzLargeDictionary(t *testing.T) {
 
 	// The decoder allocates the declared dictionary on every open, so these
 	// subtests are not run in parallel.
-	testCases := []struct {
-		name     string
-		dictProp byte
-	}{
-		{name: "96MiB", dictProp: xzDictProp96MiB},
-		{name: "256MiB", dictProp: xzDictProp256MiB},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name+" local path", func(t *testing.T) {
-			path := writeXzArchiveWithDict(t, "large-dict.tar.xz", tc.dictProp)
-			got, err := New(t.Context(), path)
-			if err != nil {
-				t.Fatalf("New() = %v", err)
-			}
-			t.Cleanup(func() {
-				if err := got.Close(); err != nil {
-					t.Errorf("Close() = %v", err)
-				}
-			})
-			assertSameFiles(t, got, want)
-		})
-	}
-
-	t.Run("96MiB open file", func(t *testing.T) {
+	t.Run("96MiB local path", func(t *testing.T) {
 		path := writeXzArchiveWithDict(t, "large-dict.tar.xz", xzDictProp96MiB)
-		file, err := osutil.Open(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := NewFromFile(t.Context(), filepath.Base(path), file)
-		if err != nil {
-			if closeErr := file.Close(); closeErr != nil {
-				t.Errorf("Close() = %v", closeErr)
-			}
-			t.Fatalf("NewFromFile() = %v", err)
-		}
-		t.Cleanup(func() {
-			if err := got.Close(); err != nil {
-				t.Errorf("Close() = %v", err)
-			}
-		})
-		assertSameFiles(t, got, want)
-	})
-
-	t.Run("name without xz extension", func(t *testing.T) {
-		path := writeXzArchiveWithDict(t, "large-dict.bin", xzDictProp96MiB)
 		got, err := New(t.Context(), path)
 		if err != nil {
 			t.Fatalf("New() = %v", err)
@@ -169,6 +157,21 @@ func TestXzLargeDictionary(t *testing.T) {
 				t.Errorf("Close() = %v", err)
 			}
 		})
+		assertSameFiles(t, got, want)
+	})
+
+	t.Run("96MiB open file", func(t *testing.T) {
+		got := mustNewFromMemory(t, "large-dict.tar.xz", xzArchiveWithDict(t, xzDictProp96MiB))
+		assertSameFiles(t, got, want)
+	})
+
+	t.Run("256MiB open file", func(t *testing.T) {
+		got := mustNewFromMemory(t, "large-dict.tar.xz", xzArchiveWithDict(t, xzDictProp256MiB))
+		assertSameFiles(t, got, want)
+	})
+
+	t.Run("name without xz extension", func(t *testing.T) {
+		got := mustNewFromMemory(t, "large-dict.bin", xzArchiveWithDict(t, xzDictProp96MiB))
 		assertSameFiles(t, got, want)
 	})
 }
@@ -195,11 +198,7 @@ func TestXzDictionaryOverLimit(t *testing.T) {
 
 func TestXzDecompressorDictMax(t *testing.T) {
 	t.Parallel()
-	path := writeXzArchiveWithDict(t, "large-dict.tar.xz", xzDictProp96MiB)
-	data, err := osutil.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := xzArchiveWithDict(t, xzDictProp96MiB)
 	plain, err := osutil.ReadFile(testArchivesDir + "testassets.tar")
 	if err != nil {
 		t.Fatal(err)

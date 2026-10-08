@@ -687,14 +687,8 @@ func TestNestFSValidPathClosed(t *testing.T) {
 
 func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	tmpDir := t.TempDir()
-	zipPath := createZipFromDir(t, testAssetsFilesDir)
-
 	destZip := tmpDir + "/testassets.zip"
-	data, err := osutil.ReadFile(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := osutil.WriteFile(destZip, data); err != nil {
+	if err := osutil.WriteFile(destZip, zipBytesFromDir(t, testAssetsFilesDir)); err != nil {
 		t.Fatal(err)
 	}
 

@@ -130,8 +130,24 @@ func copyFSToFS(src fs.FS, dst WriteFS) error {
 		if d.IsDir() {
 			return dst.MkdirAll(p, fs.ModePerm)
 		}
-		return Copy(src, p, dst, p)
+		return copyFileForTest(src, dst, p)
 	})
+}
+
+// copyFileForTest copies the file name from src to the same path in dst.
+func copyFileForTest(src fs.FS, dst WriteFS, name string) error {
+	data, err := fs.ReadFile(src, name)
+	if err != nil {
+		return err
+	}
+	f, err := dst.Create(name)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		return ufserrors.Join(err, f.Close())
+	}
+	return f.Close()
 }
 
 // createZipFromDir walks dir, writes all files into a temp zip, and returns its path.

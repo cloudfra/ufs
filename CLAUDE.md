@@ -173,7 +173,7 @@ code with no `ufs` dependency goes in `internal/`.
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
-| op.go                 | High-level ops — Rsync copies files between FSes                    |
+| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
 | internal/archive/     | archive.New opens archives as fs.FS; only mholt/archives importer   |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |

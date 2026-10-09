@@ -12,17 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package ops
 
 import (
 	"archive/zip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
+	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -30,16 +35,78 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestRsync(t *testing.T) {
-	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
+const testLocalFSName = "../testing/testassets"
+
+// rsyncDestTestCaseList are the writable file systems Rsync is verified
+// against. localFS is opened with [ufs.New], so it is always nested.
+var rsyncDestTestCaseList = []struct {
+	name     string
+	createFS func(tb testing.TB) ufs.WriteFS
+}{
+	{name: "nestFS.localFS", createFS: newTestLocalFS},
+	{name: "tempMountFS", createFS: newTestTempMountFS},
+	{name: "memFS", createFS: newTestMemFS},
+	{name: "nestFS.tempMountFS", createFS: func(tb testing.TB) ufs.WriteFS {
+		return ufs.WrapNestFS(tb.Context(), newTestTempMountFS(tb))
+	}},
+	{name: "nestFS.memFS", createFS: func(tb testing.TB) ufs.WriteFS {
+		return ufs.WrapNestFS(tb.Context(), newTestMemFS(tb))
+	}},
+}
+
+func newTestLocalFS(tb testing.TB) ufs.WriteFS {
+	tb.Helper()
+	fsys, err := ufs.New(tb.Context(), tb.TempDir())
 	if err != nil {
-		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
+		tb.Fatalf("cannot create localFS file system, %s", err)
 	}
-	t.Cleanup(ufsTesting.ValidateClose(t, srcFS))
-	for _, fsysTC := range getAllRegularTestCaseList() {
+	return fsys
+}
+
+func newTestTempMountFS(tb testing.TB) ufs.WriteFS {
+	tb.Helper()
+	fsys, err := ufs.NewTempMountFS(tb.Context(), "test://", func(string) error { return nil })
+	if err != nil {
+		tb.Fatalf("cannot create tempMountFS file system, %s", err)
+	}
+	return fsys
+}
+
+func newTestMemFS(_ testing.TB) ufs.WriteFS {
+	return ufs.MakeMemFS("memory://")
+}
+
+func newMemFS(name string) (ufs.WriteFS, error) {
+	return ufs.MakeMemFS(name), nil
+}
+
+func newAngryFS(name string) (ufs.WriteFS, error) {
+	return ufs.New(context.Background(), name)
+}
+
+// testAssetsFS returns the test assets as the source of the Rsync tests. It
+// fails the test when the directory is missing or empty: os.DirFS does not
+// report a missing directory, and Rsync of nothing would pass every check.
+func testAssetsFS(t *testing.T) fs.FS {
+	t.Helper()
+	srcFS := osutil.DirFS(testLocalFSName)
+	files, err := ListFiles(srcFS, pathutil.CwdPath)
+	if err != nil {
+		t.Fatalf("ListFiles(%q) = %v, want nil", testLocalFSName, err)
+	}
+	if len(files) == 0 {
+		t.Fatalf("%q holds no files, want the test assets", testLocalFSName)
+	}
+	return srcFS
+}
+
+func TestRsync(t *testing.T) {
+	srcFS := testAssetsFS(t)
+	for _, fsysTC := range rsyncDestTestCaseList {
 		t.Run(fsysTC.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := fsysTC.createFS(t)
+			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 			if err := Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
 				t.Errorf("rsync failed with error, %s", err)
 			}
@@ -68,13 +135,12 @@ func TestRsync(t *testing.T) {
 }
 
 func TestRsyncAngry(t *testing.T) {
-	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
-	if err != nil {
-		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
-	}
-	defer ufsTesting.ValidateClose(t, srcFS)()
+	srcFS := testAssetsFS(t)
 
-	destFS := makeAngryFS(angryFSPrefix)
+	destFS, err := newAngryFS("angry://")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ufsTesting.WantCloseError(t, destFS)()
 
 	if err := Rsync(srcFS, destFS, pathutil.CwdPath); err == nil {
@@ -83,13 +149,12 @@ func TestRsyncAngry(t *testing.T) {
 }
 
 func TestRsyncNull(t *testing.T) {
-	srcFS, err := newLocalFS(t.Context(), testLocalFSName)
-	if err != nil {
-		t.Fatalf("cannot mount localFS(%q), %s", testLocalFSName, err)
-	}
-	defer ufsTesting.ValidateClose(t, srcFS)()
+	srcFS := testAssetsFS(t)
 
-	destFS := mustNullFS(t)
+	destFS, err := ufs.New(t.Context(), "null://")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ufsTesting.ValidateClose(t, destFS)()
 
 	if err := Rsync(srcFS, destFS, pathutil.CwdPath); err != nil {
@@ -106,9 +171,9 @@ func TestRsyncNull(t *testing.T) {
 }
 
 // setupListFS creates a memFS with: a.txt, dir/b.txt, dir/c.txt.
-func setupListFS(t *testing.T) WriteFS {
+func setupListFS(t *testing.T) ufs.WriteFS {
 	t.Helper()
-	fsys, err := newMemFS(t.Context(), "memory://test")
+	fsys, err := newMemFS("memory://test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,11 +200,11 @@ func setupListFS(t *testing.T) WriteFS {
 // --- Copy ---
 
 func TestCopy(t *testing.T) {
-	src, err := newMemFS(t.Context(), "memory://src")
+	src, err := newMemFS("memory://src")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dst, err := newMemFS(t.Context(), "memory://dst")
+	dst, err := newMemFS("memory://dst")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,11 +253,11 @@ func TestCopy(t *testing.T) {
 }
 
 func TestCopyOpenError(t *testing.T) {
-	src, err := newAngryFS(t.Context(), "angry://")
+	src, err := newAngryFS("angry://")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dst, err := newMemFS(t.Context(), "memory://dst")
+	dst, err := newMemFS("memory://dst")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,14 +272,14 @@ func TestCopyOpenError(t *testing.T) {
 	}
 }
 
-// closeErrorFS is a WriteFS whose files accept every write and then fail to
+// closeErrorFS is a ufs.WriteFS whose files accept every write and then fail to
 // Close, like a backend that only persists buffered data on Close.
 type closeErrorFS struct {
-	WriteFS
+	ufs.WriteFS
 	err error
 }
 
-func (fsys *closeErrorFS) Create(name string) (File, error) {
+func (fsys *closeErrorFS) Create(name string) (ufs.File, error) {
 	f, err := fsys.WriteFS.Create(name)
 	if err != nil {
 		return nil, err
@@ -223,7 +288,7 @@ func (fsys *closeErrorFS) Create(name string) (File, error) {
 }
 
 type closeErrorFile struct {
-	File
+	ufs.File
 	err error
 }
 
@@ -232,7 +297,7 @@ func (f *closeErrorFile) Close() error {
 }
 
 func TestCopyDestinationCloseError(t *testing.T) {
-	src, err := newMemFS(t.Context(), "memory://src")
+	src, err := newMemFS("memory://src")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +313,7 @@ func TestCopyDestinationCloseError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mem, err := newMemFS(t.Context(), "memory://dst")
+	mem, err := newMemFS("memory://dst")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +327,7 @@ func TestCopyDestinationCloseError(t *testing.T) {
 }
 
 func TestCopyCreateError(t *testing.T) {
-	src, err := newMemFS(t.Context(), "memory://src")
+	src, err := newMemFS("memory://src")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +349,7 @@ func TestCopyCreateError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst, err := newAngryFS(t.Context(), "angry://")
+	dst, err := newAngryFS("angry://")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +408,7 @@ func TestListFiles(t *testing.T) {
 
 // listFilenamesFS implements the optional ListFilenames interface.
 type listFilenamesFS struct {
-	WriteFS
+	ufs.WriteFS
 	files []string
 }
 
@@ -352,7 +417,7 @@ func (lf *listFilenamesFS) ListFilenames(_ string) ([]string, error) {
 }
 
 func TestListFilesInterface(t *testing.T) {
-	inner, err := newMemFS(t.Context(), "memory://test")
+	inner, err := newMemFS("memory://test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +460,7 @@ func TestForEachFilename(t *testing.T) {
 
 // forEachFilenameFS implements the optional ForEachFilenameIter interface.
 type forEachFilenameFS struct {
-	WriteFS
+	ufs.WriteFS
 	files []string
 }
 
@@ -409,7 +474,7 @@ func (f *forEachFilenameFS) ForEachFilename(_ string, fn func(string) error) err
 }
 
 func TestForEachFilenameInterface(t *testing.T) {
-	inner, err := newMemFS(t.Context(), "memory://test")
+	inner, err := newMemFS("memory://test")
 	if err != nil {
 		t.Errorf("newMemFS returned an error, %s", err)
 	}
@@ -474,7 +539,7 @@ func TestForEachFileInfo(t *testing.T) {
 
 // forEachFileInfoFS implements the optional ForEachFileInfoIter interface.
 type forEachFileInfoFS struct {
-	WriteFS
+	ufs.WriteFS
 	infos []fs.FileInfo
 }
 
@@ -488,7 +553,7 @@ func (f *forEachFileInfoFS) ForEachFileInfo(_ string, fn func(fs.FileInfo) error
 }
 
 func TestForEachFileInfoInterface(t *testing.T) {
-	inner, err := newMemFS(t.Context(), "memory://test")
+	inner, err := newMemFS("memory://test")
 	if err != nil {
 		t.Errorf("newMemFS returned an error, %s", err)
 	}
@@ -499,8 +564,8 @@ func TestForEachFileInfoInterface(t *testing.T) {
 	}()
 
 	wantInfos := []fs.FileInfo{
-		&fsInfo{name: "fast.txt", size: 10, mode: fs.ModePerm},
-		&fsInfo{name: "path.txt", size: 20, mode: fs.ModePerm},
+		ufs.NewFileInfo("fast.txt", 10, fs.ModePerm, time.Time{}),
+		ufs.NewFileInfo("path.txt", 20, fs.ModePerm, time.Time{}),
 	}
 	fsys := &forEachFileInfoFS{WriteFS: inner, infos: wantInfos}
 
@@ -536,7 +601,7 @@ func TestForEachFileInfoCallbackError(t *testing.T) {
 
 // setupNestFSWithArchive creates a temp directory containing a regular file
 // and a zip archive with one entry, then wraps it as a nestFS for Scan tests.
-func setupNestFSWithArchive(t *testing.T) WriteFS {
+func setupNestFSWithArchive(t *testing.T) ufs.WriteFS {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -564,11 +629,10 @@ func setupNestFSWithArchive(t *testing.T) WriteFS {
 		t.Fatal(err)
 	}
 
-	lfs, err := newLocalFS(t.Context(), dir)
+	nfs, err := ufs.New(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nfs := makeNestFS(t.Context(), lfs)
 	t.Cleanup(func() {
 		if err := nfs.Close(); err != nil {
 			t.Errorf("failed to close nest FS: %v", err)
@@ -665,6 +729,37 @@ func TestWalkIncludeMountedArchiveDefault(t *testing.T) {
 	}
 }
 
+// TestWalkSkipsMountedArchiveThroughWrapper verifies that a file system
+// wrapped around the nested file system still lets Walk skip archive
+// directories.
+func TestWalkSkipsMountedArchiveThroughWrapper(t *testing.T) {
+	testCases := []struct {
+		name string
+		wrap func(t *testing.T, fsys ufs.WriteFS) fs.FS
+	}{
+		{name: "readOnly", wrap: func(_ *testing.T, fsys ufs.WriteFS) fs.FS { return readonlyfs.New(fsys) }},
+		{name: "readWrap", wrap: func(_ *testing.T, fsys ufs.WriteFS) fs.FS { return readwrapfs.FromFS(fsys) }},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := tc.wrap(t, setupNestFSWithArchive(t))
+
+			var got []string
+			err := Walk(fsys, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+				got = append(got, name)
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("Walk() = %v, want nil", err)
+			}
+			want := []string{"data.zip", "readme.txt"}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Walk() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestWalkIncludeMountedArchive(t *testing.T) {
 	nfs := setupNestFSWithArchive(t)
 
@@ -700,54 +795,6 @@ func TestWalkCallbackError(t *testing.T) {
 	}
 }
 
-// TestIsMountedArchiveDir exercises all early-exit conditions of the method.
-func TestIsMountedArchiveDir(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create data.zip (virtual .d should be detected).
-	zf, err := osutil.Create(filepath.Join(dir, "data.zip"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(zf)
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := zf.Close(); err != nil {
-		t.Fatal(err)
-	}
-	// Create conf.d as a real directory (base name "conf" is not an archive).
-	if err := osutil.MkdirAll(filepath.Join(dir, "conf.d")); err != nil {
-		t.Fatal(err)
-	}
-
-	lfs, err := newLocalFS(t.Context(), dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nfs := makeNestFS(t.Context(), lfs)
-	t.Cleanup(func() {
-		if err := nfs.Close(); err != nil {
-			t.Errorf("nfs.Close() = %v", err)
-		}
-	})
-
-	cases := []struct {
-		name string
-		want bool
-	}{
-		{"readme.txt", false},  // does not end with .d
-		{"conf.d", false},      // ends with .d but "conf" is not a mountable archive name
-		{"ghost.zip.d", false}, // archive name but ghost.zip does not exist (ErrNotExist)
-		{"data.zip.d", true},   // archive exists and is not confirmed absent
-	}
-	for _, tc := range cases {
-		if got := nfs.isMountedArchiveDir(tc.name); got != tc.want {
-			t.Errorf("isMountedArchiveDir(%q) = %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
-
 // TestWalkNestFSRegularSubdirNotSkipped verifies that a real subdirectory inside
 // a nestFS is descended into even when IncludeMountedArchive is false.
 func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
@@ -780,11 +827,10 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lfs, err := newLocalFS(t.Context(), dir)
+	nfs, err := ufs.New(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nfs := makeNestFS(t.Context(), lfs)
 	t.Cleanup(func() {
 		if err := nfs.Close(); err != nil {
 			t.Errorf("nfs.Close() = %v", err)
@@ -808,9 +854,9 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 
 // --- Remove ---
 
-func setupRemoveFS(t *testing.T) WriteFS {
+func setupRemoveFS(t *testing.T) ufs.WriteFS {
 	t.Helper()
-	fsys, err := newMemFS(t.Context(), "memory://test")
+	fsys, err := newMemFS("memory://test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -868,7 +914,7 @@ func TestRemoveNonEmptyDir(t *testing.T) {
 type noRemoverFS struct{ fs.FS }
 
 func TestRemoveFallback(t *testing.T) {
-	inner, err := newMemFS(t.Context(), "memory://test")
+	inner, err := newMemFS("memory://test")
 	if err != nil {
 		t.Errorf("newMemFS returned an error, %s", err)
 	}
@@ -885,14 +931,20 @@ func TestRemoveFallback(t *testing.T) {
 }
 
 func TestRemoveAngry(t *testing.T) {
-	fsys := makeAngryFS(angryFSPrefix)
+	fsys, err := newAngryFS("angry://")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := Remove(fsys, "file.txt"); err == nil {
 		t.Error("Remove on angry FS succeeded, want error")
 	}
 }
 
 func TestRemoveNull(t *testing.T) {
-	fsys := mustNullFS(t)
+	fsys, err := ufs.New(t.Context(), "null://")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := Remove(fsys, "file.txt"); err != nil {
 		t.Errorf("Remove on nullFS = %v, want nil", err)
 	}
@@ -941,7 +993,7 @@ func TestRemoveAllRoot(t *testing.T) {
 }
 
 func TestRemoveAllFallback(t *testing.T) {
-	inner, err := newMemFS(t.Context(), "memory://test")
+	inner, err := newMemFS("memory://test")
 	if err != nil {
 		t.Errorf("newMemFS returned an error, %s", err)
 	}
@@ -957,14 +1009,20 @@ func TestRemoveAllFallback(t *testing.T) {
 }
 
 func TestRemoveAllAngry(t *testing.T) {
-	fsys := makeAngryFS(angryFSPrefix)
+	fsys, err := newAngryFS("angry://")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := RemoveAll(fsys, "dir"); err == nil {
 		t.Error("RemoveAll on angry FS succeeded, want error")
 	}
 }
 
 func TestRemoveAllNull(t *testing.T) {
-	fsys := mustNullFS(t)
+	fsys, err := ufs.New(t.Context(), "null://")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := RemoveAll(fsys, "dir"); err != nil {
 		t.Errorf("RemoveAll on nullFS = %v, want nil", err)
 	}

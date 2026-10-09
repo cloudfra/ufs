@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/ops"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 )
@@ -320,7 +321,7 @@ func TestMountConformanceRsyncArchive(t *testing.T) {
 		}
 		defer validateClose(t, memFS)()
 
-		if err := ufs.Rsync(osutil.DirFS(m.mountDir), memFS, "."); err != nil {
+		if err := ops.Rsync(osutil.DirFS(m.mountDir), memFS, "."); err != nil {
 			t.Fatalf("Rsync: %v", err)
 		}
 

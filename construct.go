@@ -47,6 +47,10 @@ const (
 	// constructor.
 	embedFSPrefix = "embed://"
 
+	// defaultRootSource is the file system used as the root when none is
+	// given. It is served by the null file system.
+	defaultRootSource = "null:"
+
 	// mountOp is the operation reported in errors from mounting a file system.
 	mountOp = "mount"
 
@@ -286,7 +290,7 @@ func (b *FSBuilder) MountFS(path string, fsys WriteFS) *FSBuilder {
 func (b *FSBuilder) Build(ctx context.Context) (FS, error) {
 	rootName := b.name
 	if rootName == "" {
-		rootName = nullFSPrefix
+		rootName = defaultRootSource
 	}
 	nFS, err := openNestFS(ctx, rootName)
 	if err != nil {
@@ -315,7 +319,7 @@ func (b *FSBuilder) Build(ctx context.Context) (FS, error) {
 func (b *FSBuilder) BuildURI() (string, error) {
 	rootName := b.name
 	if rootName == "" {
-		rootName = nullFSPrefix
+		rootName = defaultRootSource
 	}
 	nested := make(map[string]string, len(b.mounts))
 	for _, m := range b.mounts {
@@ -476,7 +480,7 @@ func normalizeMountPoint(mp string) string {
 
 // defaultRootSpec is used when no root mount point is provided.
 var defaultRootSpec = MountSpec{
-	Source:     nullFSPrefix,
+	Source:     defaultRootSource,
 	MountPoint: pathutil.CwdPath,
 	Options:    []MountOption{{Name: readOnlyOption, Config: true}},
 }

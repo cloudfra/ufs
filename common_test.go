@@ -83,7 +83,7 @@ var (
 		{
 			name: "nullFS",
 			createFS: func(tb testing.TB) WriteFS {
-				fsys := makeNullFS(nullFSPrefix)
+				fsys := mustBaseFS(tb, "null:")
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
 						tb.Errorf("Close() = %v", err)
@@ -91,7 +91,7 @@ var (
 				})
 				return fsys
 			},
-			wantString: nullFSPrefix,
+			wantString: "null:",
 		},
 	}
 )
@@ -134,6 +134,17 @@ func mustNestFS(tb testing.TB, name string) FS {
 		tb.Fatalf("FileSystem %q has an error, %s", name, err)
 	}
 	return fsys
+}
+
+// mustNullFile returns a file of the null file system. It implements File
+// itself, so the file wrappers pass it through as is.
+func mustNullFile(tb testing.TB) File {
+	tb.Helper()
+	f, err := mustBaseFS(tb, "null:").Create("test.txt")
+	if err != nil {
+		tb.Fatalf("Create() on the null file system has an error, %s", err)
+	}
+	return f
 }
 
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, error), name string) WriteFS {

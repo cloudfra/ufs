@@ -85,9 +85,10 @@ import (
 
   "github.com/cloudfra/ufs"
 
-  // Each blank import installs a driver. Local disk, memory, archives and
-  // null:// are built in; drop the ones you do not need.
+  // Each blank import installs a driver. Local disk, memory and archives
+  // are built in; drop the ones you do not need.
   _ "github.com/cloudfra/ufs/drivers/boltfs" // installs bolt:
+  _ "github.com/cloudfra/ufs/drivers/core"   // installs null:
   _ "github.com/cloudfra/ufs/drivers/gcsfs"  // installs gs://
   _ "github.com/cloudfra/ufs/drivers/gitfs"  // installs URIs ending in .git
 )
@@ -134,7 +135,7 @@ More runnable examples are in [example_test.go](example_test.go) and on
 | Memory         | `memory:`                                                   | read-write | built in         | Lost when the file system is closed.                                                                 |
 | Archive        | a path ending in an archive extension, or `archive:///path` | read-only  | built in         | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`.  |
 | Remote archive | `http://` or `https://` URL                                 | read-only  | built in         | Downloaded to a temporary directory that is removed on `Close`.                                      |
-| Null           | `null://`                                                   | read-write | built in         | Like `/dev/null`: writes are accepted and discarded, reads return nothing.                           |
+| Null           | `null://`                                                   | read-write | `drivers/core`   | Like `/dev/null`: writes are accepted and discarded, reads return nothing.                           |
 | GCS            | `gs://bucket/prefix`                                        | read-write | `drivers/gcsfs`  | Uses Application Default Credentials and falls back to anonymous access for public buckets.          |
 | Git            | any URI ending in `.git`                                    | read-write | `drivers/gitfs`  | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
 | BoltDB         | `bolt:/path/to/file.db`                                     | read-write | `drivers/boltfs` | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file.                      |

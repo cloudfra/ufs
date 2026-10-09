@@ -94,20 +94,6 @@ var (
 			wantString: nullFSPrefix,
 		},
 	}
-
-	testassetFilenameList = []string{
-		pathutil.CwdPath,
-		"files/index.html",
-		"archives/nested-testassets.zip",
-	}
-
-	testassetDirList = map[string][]string{
-		pathutil.CwdPath: {},
-		"files":          {},
-		"archives":       {},
-	}
-
-	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
 )
 
 func getAllExceptAngryTestCaseList() []fsTestCase {
@@ -127,6 +113,13 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 		}
 	}
 	return result
+}
+
+// mustDriverFS opens name with the registered driver that matches it and
+// returns the driver's file system as is, without the nestFS that New adds.
+func mustDriverFS(tb testing.TB, name string) WriteFS {
+	tb.Helper()
+	return mustFS(tb, getRegistrar().create, name)
 }
 
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, error), name string) WriteFS {

@@ -110,10 +110,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 }
 
 func TestNestFSWatchUnsupportedBackend(t *testing.T) {
-	inner, err := newNullFS(t.Context(), "null://")
-	if err != nil {
-		t.Fatal(err)
-	}
+	inner := mustBaseFS(t, "null://")
 	nfs := makeNestFS(t.Context(), inner)
 	defer func() {
 		if err := nfs.Close(); err != nil {
@@ -121,7 +118,7 @@ func TestNestFSWatchUnsupportedBackend(t *testing.T) {
 		}
 	}()
 
-	_, err = nfs.Watch(t.Context(), ".", func(NotifyOp, string) {})
+	_, err := nfs.Watch(t.Context(), ".", func(NotifyOp, string) {})
 	if err == nil {
 		t.Error("Watch on non-watchable backend should fail")
 	}

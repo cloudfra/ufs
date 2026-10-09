@@ -44,7 +44,7 @@ func TestMountMap(t *testing.T) {
 	defer ufsTesting.WantCloseError(t, mm)()
 	mfs := makeMemFS("memory:///")
 	afs := mustBaseFS(t, "angry:")
-	nfs := mustNullFS(t)
+	nfs := mustBaseFS(t, "null:")
 
 	ufsTesting.Must(t, mm.put("mounts/null", makeNestFS(t.Context(), nfs)))
 	ufsTesting.Must(t, mm.put("mounts/mem", makeNestFS(t.Context(), mfs)))
@@ -475,7 +475,7 @@ func TestNestFSCloseAngryFS(t *testing.T) {
 
 func TestNestFSCloseMountError(t *testing.T) {
 	// A nestFS whose mount itself fails to close should propagate the error.
-	outer := makeNestFS(t.Context(), makeNullFS("null://"))
+	outer := makeNestFS(t.Context(), mustBaseFS(t, "null://"))
 	angryMount := makeNestFS(t.Context(), mustBaseFS(t, "angry:"))
 	if err := outer.addMount("angry", angryMount); err != nil {
 		t.Fatal(err)
@@ -823,12 +823,12 @@ func (f *testSeekerFile) ReadAt(p []byte, off int64) (int, error)   { return f.r
 
 func TestWrapReadOnlyFSFile(t *testing.T) {
 	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
-		base := newNullFile("test.txt")
+		base := mustNullFile(t)
 		got, err := wrapReadOnlyFSFile(base)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != File(base) {
+		if got != base {
 			t.Error("expected same value; file already satisfies File so no wrapper should be created")
 		}
 	})
@@ -1009,12 +1009,12 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 
 func TestWrapFSFile(t *testing.T) {
 	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
-		base := newNullFile("test.txt")
+		base := mustNullFile(t)
 		got, err := wrapFSFile(base)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != File(base) {
+		if got != base {
 			t.Error("expected same value; file already satisfies File so no wrapper should be created")
 		}
 	})
@@ -1114,13 +1114,13 @@ func TestWrapFSFile(t *testing.T) {
 
 func TestWrapFile(t *testing.T) {
 	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
-		base := newNullFile("test.txt")
+		base := mustNullFile(t)
 		for _, readOnly := range []bool{true, false} {
 			got, err := wrapFile(base, readOnly, bufferMemory)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != File(base) {
+			if got != base {
 				t.Errorf("readOnly=%t: expected same value; file already satisfies File", readOnly)
 			}
 		}

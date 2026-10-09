@@ -21,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/cloudfra/ufs"
@@ -273,30 +274,37 @@ func TestFaultInjectorLatency(t *testing.T) {
 	}
 }
 
+// TestFaultInjectorLatencyJitter runs on a fake clock: the time an operation
+// takes is then exactly the injected delay, so the bound can be checked
+// without the scheduler adding to it.
 func TestFaultInjectorLatencyJitter(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping timing-sensitive test in short mode")
-	}
-	t.Parallel()
+	const jitter = 100 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		inner := newInner(t)
+		fsys, err := newFaultFS(inner, Options{
+			LatencyJitter: jitter,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ufsTesting.ValidateClose(t, fsys)()
 
-	inner := newInner(t)
-	fsys, err := newFaultFS(inner, Options{
-		LatencyJitter: 100 * time.Millisecond,
+		delayed := false
+		for range 100 {
+			start := time.Now()
+			if _, err := fsys.Stat("."); err != nil {
+				t.Fatalf("Stat(.) = %v, want nil", err)
+			}
+			elapsed := time.Since(start)
+			if elapsed >= jitter {
+				t.Errorf("operation took %v, jitter should be less than %v", elapsed, jitter)
+			}
+			delayed = delayed || elapsed > 0
+		}
+		if !delayed {
+			t.Error("no operation was delayed, want jitter to delay some")
+		}
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	start := time.Now()
-	if _, err := fsys.Stat("."); err != nil {
-		t.Fatalf("Stat(.) = %v, want nil", err)
-	}
-	elapsed := time.Since(start)
-
-	if elapsed >= 100*time.Millisecond {
-		t.Errorf("operation took %v, jitter should be less than 100ms", elapsed)
-	}
 }
 
 func TestFaultInjectorCloseAlwaysDelegates(t *testing.T) {

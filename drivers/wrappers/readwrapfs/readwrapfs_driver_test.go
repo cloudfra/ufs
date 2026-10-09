@@ -18,12 +18,13 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 )
 
 func TestReadWrapFSDriver(t *testing.T) {
 	ufsdriversTesting.ReadFS(t, func(_ *testing.T) ufs.ReadFS {
-		return readwrapfs.FromFS(ufs.MakeMemFS("memory://test"))
+		return readwrapfs.FromFS(core.MakeMemFS("memory://test"))
 	})
 }

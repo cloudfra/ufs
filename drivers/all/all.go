@@ -31,7 +31,9 @@
 //   - fault from [github.com/cloudfra/ufs/drivers/decorators/faultfs]
 //
 // The null://, memory:, file:// and archive:// file systems are part of the
-// base package and need no import. Packages that register nothing, such as
+// base package and need no import. They are moving to
+// [github.com/cloudfra/ufs/drivers/core], which is imported here already so
+// that programs keep them when they do. Packages that register nothing, such as
 // [github.com/cloudfra/ufs/drivers/embedfs], are not included; call their
 // constructors directly.
 //
@@ -44,6 +46,7 @@ package all
 
 import (
 	_ "github.com/cloudfra/ufs/drivers/boltfs"                // registers bolt:
+	_ "github.com/cloudfra/ufs/drivers/core"                  // will register the built-in file systems
 	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"    // registers the fault mount option
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://

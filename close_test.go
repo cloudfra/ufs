@@ -77,8 +77,8 @@ func TestBuildClosesBaseOnMountError(t *testing.T) {
 
 func TestBuildClosesBaseOnConflictingMountError(t *testing.T) {
 	t.Parallel()
-	base := &closeCounter{WriteFS: makeMemFS("memory://")}
-	mount := &closeCounter{WriteFS: makeMemFS("memory://")}
+	base := &closeCounter{WriteFS: mustBaseFS(t, "memory://")}
+	mount := &closeCounter{WriteFS: mustBaseFS(t, "memory://")}
 
 	b := NewFSBuilder("null://").MountFS("a", base).MountFS("a", mount)
 	_, err := b.Build(t.Context())
@@ -95,9 +95,9 @@ func TestMountMapCloseClosesAllMountsOnError(t *testing.T) {
 	ctx := t.Context()
 	mm := makeMountMap("test")
 
-	good1 := &closeCounter{WriteFS: makeMemFS("memory://1")}
-	bad := &failCloser{WriteFS: makeMemFS("memory://bad")}
-	good2 := &closeCounter{WriteFS: makeMemFS("memory://2")}
+	good1 := &closeCounter{WriteFS: mustBaseFS(t, "memory://1")}
+	bad := &failCloser{WriteFS: mustBaseFS(t, "memory://bad")}
+	good2 := &closeCounter{WriteFS: mustBaseFS(t, "memory://2")}
 
 	ufsTesting.Must(t, mm.put("a", makeNestFS(ctx, good1)))
 	ufsTesting.Must(t, mm.put("b", makeNestFS(ctx, bad)))
@@ -123,8 +123,8 @@ func TestNestFSCloseClosesBaseWhenMountsFail(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	base := &closeCounter{WriteFS: makeMemFS("memory://base")}
-	bad := &failCloser{WriteFS: makeMemFS("memory://bad")}
+	base := &closeCounter{WriteFS: mustBaseFS(t, "memory://base")}
+	bad := &failCloser{WriteFS: mustBaseFS(t, "memory://bad")}
 
 	nfs := makeNestFS(ctx, base)
 	ufsTesting.Must(t, nfs.addMount("failing", makeNestFS(ctx, bad)))

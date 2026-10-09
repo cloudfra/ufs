@@ -26,12 +26,10 @@ import (
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-// mustMemFS creates a memFS and attaches t.Cleanup to close it.
+// mustMemFS opens the memory file system name and attaches t.Cleanup to close it.
 func mustMemFS(tb testing.TB, name string) WriteFS {
-	fsys, err := newMemFS(tb.Context(), name)
-	if err != nil {
-		tb.Fatal(err)
-	}
+	tb.Helper()
+	fsys := mustBaseFS(tb, name)
 	tb.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
 			tb.Fatal(err)

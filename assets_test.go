@@ -53,7 +53,7 @@ func TestAssets(t *testing.T) {
 		{
 			name: "memFS",
 			createFS: func(tb testing.TB) (WriteFS, error) {
-				fsys, err := newMemFS(tb.Context(), "memory://")
+				fsys, err := newBaseFS(tb.Context(), "memory://")
 				if err != nil {
 					return nil, err
 				}

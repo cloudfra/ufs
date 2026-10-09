@@ -146,7 +146,7 @@ func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
 	t.Parallel()
 
 	var cleanupCalled atomic.Int32
-	angry := makeAngryFS(angryFSPrefix)
+	angry := mustBaseFS(t, "angry:")
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
 		cleanupCalled.Add(1)
 		return nil
@@ -164,7 +164,7 @@ func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
 func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
 	t.Parallel()
 
-	angry := makeAngryFS(angryFSPrefix)
+	angry := mustBaseFS(t, "angry:")
 	cleanupErr := errors.New("cleanup boom")
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
 		return cleanupErr

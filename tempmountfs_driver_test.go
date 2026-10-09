@@ -18,13 +18,14 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 )
 
 func TestTempMountFS(t *testing.T) {
 	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
 		name := "temp://test"
-		fsys, err := ufs.NewTempMountFS(t.Context(), name, func(string) error { return nil })
+		fsys, err := core.NewTempMountFS(t.Context(), name, func(string) error { return nil })
 		if err != nil {
 			t.Fatalf("cannot create tempMountFS %q, %s", name, err)
 		}

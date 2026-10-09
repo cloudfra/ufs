@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/ops"
 
 	"github.com/cloudfra/ufs/internal/osutil"

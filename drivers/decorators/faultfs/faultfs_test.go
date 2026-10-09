@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/core"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 

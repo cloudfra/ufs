@@ -115,11 +115,25 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 	return result
 }
 
-// mustDriverFS opens name with the registered driver that matches it and
-// returns the driver's file system as is, without the nestFS that New adds.
-func mustDriverFS(tb testing.TB, name string) WriteFS {
+// mustBaseFS opens name as a base file system: the file system of the
+// registered driver that matches name, as is. The WriteFS it returns is not
+// wrapped in a nestFS, so it has no mounts and no archive directories; use
+// mustNestFS for the file system that New returns.
+func mustBaseFS(tb testing.TB, name string) WriteFS {
 	tb.Helper()
-	return mustFS(tb, getRegistrar().create, name)
+	return mustFS(tb, newBaseFS, name)
+}
+
+// mustNestFS opens name as New does: the base file system for name wrapped
+// in a nestFS. It returns an FS, which only a nestFS implements, where
+// mustBaseFS returns a WriteFS.
+func mustNestFS(tb testing.TB, name string) FS {
+	tb.Helper()
+	fsys, err := newNestFS(tb.Context(), name)
+	if err != nil {
+		tb.Fatalf("FileSystem %q has an error, %s", name, err)
+	}
+	return fsys
 }
 
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, error), name string) WriteFS {

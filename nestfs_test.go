@@ -43,7 +43,7 @@ func TestMountMap(t *testing.T) {
 	mm := makeMountMap("test")
 	defer ufsTesting.WantCloseError(t, mm)()
 	mfs := makeMemFS("memory:///")
-	afs := mustDriverFS(t, "angry:")
+	afs := mustBaseFS(t, "angry:")
 	nfs := mustNullFS(t)
 
 	ufsTesting.Must(t, mm.put("mounts/null", makeNestFS(t.Context(), nfs)))
@@ -466,7 +466,7 @@ func TestNestReadDirFileRead(t *testing.T) {
 }
 
 func TestNestFSCloseAngryFS(t *testing.T) {
-	nfs := makeNestFS(t.Context(), mustDriverFS(t, "angry:"))
+	nfs := mustNestFS(t, "angry:")
 	err := nfs.Close()
 	if err == nil {
 		t.Fatal("Close() of nestFS wrapping angryFS = nil, want error")
@@ -476,7 +476,7 @@ func TestNestFSCloseAngryFS(t *testing.T) {
 func TestNestFSCloseMountError(t *testing.T) {
 	// A nestFS whose mount itself fails to close should propagate the error.
 	outer := makeNestFS(t.Context(), makeNullFS("null://"))
-	angryMount := makeNestFS(t.Context(), mustDriverFS(t, "angry:"))
+	angryMount := makeNestFS(t.Context(), mustBaseFS(t, "angry:"))
 	if err := outer.addMount("angry", angryMount); err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +488,7 @@ func TestNestFSCloseMountError(t *testing.T) {
 
 func TestMountMapCloseError(t *testing.T) {
 	mm := makeMountMap("test")
-	angryNFS := makeNestFS(t.Context(), mustDriverFS(t, "angry:"))
+	angryNFS := makeNestFS(t.Context(), mustBaseFS(t, "angry:"))
 	if err := mm.put("angry", angryNFS); err != nil {
 		t.Fatal(err)
 	}

@@ -26,11 +26,6 @@ import (
 	"github.com/cloudfra/ufs"
 )
 
-// MakeMemFS returns an empty in-memory file system named name.
-func MakeMemFS(name string) ufs.WriteFS {
-	return ufs.MakeMemFS(name)
-}
-
 // NewTempMountFS returns a file system for uri backed by a temporary local
 // directory; prepare is called with the directory path to populate it.
 func NewTempMountFS(ctx context.Context, uri string, prepare func(string) error) (ufs.WriteFS, error) {

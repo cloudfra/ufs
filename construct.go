@@ -48,7 +48,7 @@ const (
 	embedFSPrefix = "embed://"
 
 	// defaultRootSource is the file system used as the root when none is
-	// given. It is served by the null file system.
+	// given. It is served by the null file system in drivers/core.
 	defaultRootSource = "null:"
 
 	// mountOp is the operation reported in errors from mounting a file system.
@@ -192,7 +192,8 @@ func nameToURI(name string) (*url.URL, error) {
 // matches no registered decorator is an error.
 //
 // If no entry has a root mount point (".", "/", "none", or empty), a read-only
-// null:// filesystem is used as the root, which needs the readOnly decorator.
+// null:// filesystem is used as the root, which needs the readOnly decorator
+// and github.com/cloudfra/ufs/drivers/core, the home of the null file system.
 //
 // # Nested mounts and archive auto-mounting
 //

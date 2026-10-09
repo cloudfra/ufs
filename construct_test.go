@@ -92,12 +92,12 @@ func TestNew(t *testing.T) {
 		},
 		{
 			uri:      "null://",
-			wantType: "*ufs.nullFS",
+			wantType: "*core.nullFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: "*ufs.nullFS",
+			wantType: "*core.nullFS",
 			wantErr:  false,
 		},
 		{

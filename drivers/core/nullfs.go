@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -35,22 +36,22 @@ const (
 )
 
 var (
-	_ File           = (*nullFile)(nil)
-	_ WriteFS        = (*nullFS)(nil)
+	_ ufs.File       = (*nullFile)(nil)
+	_ ufs.WriteFS    = (*nullFS)(nil)
 	_ fs.GlobFS      = (*nullFS)(nil)
 	_ fs.ReadDirFile = (*nullReadDirFile)(nil)
 
 	// nullModTime is the modification time of every nullFS entry.
 	nullModTime = time.Time{}
 
-	nullDirStat = NewFileInfo(".", osutil.EmptyDirSize, fs.ModeDir|fs.ModePerm, nullModTime)
+	nullDirStat = ufs.NewFileInfo(".", osutil.EmptyDirSize, fs.ModeDir|fs.ModePerm, nullModTime)
 
-	nullDeviceInfo    = NewDeviceInfo("null", "null", 1, false)
-	nullDeviceInfoMap = NewDeviceMap(nullDeviceInfo)
+	nullDeviceInfo    = ufs.NewDeviceInfo("null", "null", 1, false)
+	nullDeviceInfoMap = ufs.NewDeviceMap(nullDeviceInfo)
 )
 
 func init() {
-	Register(NewDriver("null", newNullFS, isNullFSUri, 1, false, true))
+	ufs.Register(ufs.NewDriver("null", newNullFS, isNullFSUri, 1, false, true))
 }
 
 type nullFile struct {
@@ -65,7 +66,7 @@ func (n *nullFile) Stat() (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = osutil.EmptyDirSize
 	}
-	return NewFileInfo(path.Base(n.name), size, mode, nullModTime), nil
+	return ufs.NewFileInfo(path.Base(n.name), size, mode, nullModTime), nil
 }
 
 func (n *nullFile) Read(_ []byte) (int, error) {
@@ -120,7 +121,7 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) GetDeviceInfo() DeviceMap {
+func (fsys *nullFS) GetDeviceInfo() ufs.DeviceMap {
 	return nullDeviceInfoMap
 }
 
@@ -136,7 +137,7 @@ func (fsys *nullFS) URI() (*url.URL, error) {
 }
 
 func (fsys *nullFS) String() string {
-	return fmt.Sprintf("nullFS(%s)", URIOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("nullFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *nullFS) Open(name string) (fs.File, error) {
@@ -153,7 +154,7 @@ func (fsys *nullFS) Close() error {
 	return nil
 }
 
-func (fsys *nullFS) Create(name string) (File, error) {
+func (fsys *nullFS) Create(name string) (ufs.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -200,7 +201,7 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = osutil.EmptyDirSize
 	}
-	return NewFileInfo(name, size, mode, nullModTime), nil
+	return ufs.NewFileInfo(name, size, mode, nullModTime), nil
 }
 
 func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {
@@ -228,7 +229,7 @@ func (fsys *nullFS) RemoveAll(name string) error {
 	return nil
 }
 
-func newNullFS(_ context.Context, name string) (WriteFS, error) {
+func newNullFS(_ context.Context, name string) (ufs.WriteFS, error) {
 	return makeNullFS(name), nil
 }
 
@@ -236,7 +237,7 @@ func newNullFS(_ context.Context, name string) (WriteFS, error) {
 //
 // Deprecated: MakeNullFS exists only to support the shared driver tests in
 // drivers/testing and will be removed soon. Use New instead.
-func MakeNullFS(name string) WriteFS {
+func MakeNullFS(name string) ufs.WriteFS {
 	return makeNullFS(name)
 }
 

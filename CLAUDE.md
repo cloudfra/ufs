@@ -61,7 +61,7 @@ Dispatches to the appropriate implementation based on URI scheme:
 
 | Scheme        | Implementation   | Struct    | Type     | Status  | Behavior                                                 |
 |:--------------|:-----------------|:----------|:---------|:--------|:---------------------------------------------------------|
-| null://       | nullfs.go        | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
+| null://       | drivers/core/    | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
 | memory:       | memfs.go         | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
 | file:///...   | localfs.go       | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
@@ -159,7 +159,7 @@ enable its scheme. They may use `internal/` packages.
 |:-------------------------|:-----------------------------------------------------------------|
 | drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
-| drivers/core/            | Built-in backends; registers angry: on import. memory:, null:, file:// and archive:// are still in the base package and move here next |
+| drivers/core/            | Built-in backends; registers null: and angry: on import. memory:, file:// and archive:// are still in the base package and move here next |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
 | drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |

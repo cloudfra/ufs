@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+package core_test
 
 import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 )
 
@@ -27,7 +28,7 @@ func TestNullFSDriver(t *testing.T) {
 	// Create, ReadDir, ...) do not apply. Only the read suite and the
 	// invalid-path checks for write operations do.
 	createFSFunc := func(_ *testing.T) ufs.WriteFS {
-		return ufs.MakeNullFS("null://test")
+		return core.MakeNullFS("null://test")
 	}
 	ufsdriversTesting.ReadFS(t, func(t *testing.T) ufs.ReadFS {
 		return createFSFunc(t)

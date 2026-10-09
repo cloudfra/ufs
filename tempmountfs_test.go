@@ -46,7 +46,7 @@ func TestTempMountFSCleanup(t *testing.T) {
 
 func TestTempMountFSCloseError(t *testing.T) {
 	// Use an angry FS so that lfs.Close() returns an error.
-	angry := mustDriverFS(t, "angry:")
+	angry := mustBaseFS(t, "angry:")
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error { return nil })
 	err := tfs.Close()
 	if err == nil {

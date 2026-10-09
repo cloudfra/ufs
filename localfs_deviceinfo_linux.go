@@ -81,7 +81,7 @@ func parseLinuxMounts(r io.Reader) []linuxMountEntry {
 }
 
 func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) DeviceMap {
-	result := DeviceMap{".": defaultDeviceInfo}
+	result := DeviceMap{".": DefaultDeviceInfo}
 
 	// Find the mount that best covers rootPath (longest prefix match).
 	bestMatchLen := -1
@@ -102,7 +102,7 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) DeviceMap {
 			continue
 		}
 		di := linuxMakeDeviceInfo(m)
-		if di.name != result.parent(rel).name {
+		if di.Name() != result.Parent(rel).Name() {
 			result[rel] = di
 		}
 	}

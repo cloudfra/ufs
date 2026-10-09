@@ -46,9 +46,9 @@ func TestNewDeviceInfoMap(t *testing.T) {
 		want  DeviceMap
 	}{
 		{
-			input: defaultDeviceInfo,
+			input: DefaultDeviceInfo,
 			want: DeviceMap{
-				".": defaultDeviceInfo,
+				".": DefaultDeviceInfo,
 			},
 		},
 		{
@@ -74,6 +74,16 @@ type mountInfo struct {
 	incoming  DeviceMap
 }
 
+func TestDeviceInfoAccessors(t *testing.T) {
+	info := NewDeviceInfo("/dev/sda1", "hdd", 2, false)
+	if got, want := info.Name(), "/dev/sda1"; got != want {
+		t.Errorf("Name() = %q, want %q", got, want)
+	}
+	if got, want := info.DeviceType(), "hdd"; got != want {
+		t.Errorf("DeviceType() = %q, want %q", got, want)
+	}
+}
+
 func TestCombineDeviceInfo(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -95,7 +105,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 		},
 		{
 			name: "src populated, incoming nil",
-			src:  NewDeviceMap(defaultDeviceInfo),
+			src:  NewDeviceMap(DefaultDeviceInfo),
 			incoming: []mountInfo{
 				{
 					mountPath: "nvme",
@@ -103,7 +113,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 				},
 			},
 			want: DeviceMap{
-				".": defaultDeviceInfo,
+				".": DefaultDeviceInfo,
 			},
 		},
 		{
@@ -121,7 +131,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 		},
 		{
 			name: "import nested",
-			src:  NewDeviceMap(defaultDeviceInfo),
+			src:  NewDeviceMap(DefaultDeviceInfo),
 			incoming: []mountInfo{
 				{
 					mountPath: "nvme",
@@ -129,13 +139,13 @@ func TestCombineDeviceInfo(t *testing.T) {
 				},
 			},
 			want: DeviceMap{
-				".":    defaultDeviceInfo,
+				".":    DefaultDeviceInfo,
 				"nvme": fakeNvmeDeviceInfo,
 			},
 		},
 		{
 			name: "import nested",
-			src:  NewDeviceMap(defaultDeviceInfo),
+			src:  NewDeviceMap(DefaultDeviceInfo),
 			incoming: []mountInfo{
 				{
 					mountPath: "nvme",
@@ -151,7 +161,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 				},
 				{
 					mountPath: "nvme/default",
-					incoming:  NewDeviceMap(defaultDeviceInfo),
+					incoming:  NewDeviceMap(DefaultDeviceInfo),
 				},
 				{
 					mountPath: "nvme/usb",
@@ -159,15 +169,15 @@ func TestCombineDeviceInfo(t *testing.T) {
 				},
 				{
 					mountPath: "default",
-					incoming:  NewDeviceMap(defaultDeviceInfo),
+					incoming:  NewDeviceMap(DefaultDeviceInfo),
 				},
 				{
 					mountPath: "default/default",
-					incoming:  NewDeviceMap(defaultDeviceInfo),
+					incoming:  NewDeviceMap(DefaultDeviceInfo),
 				},
 				{
 					mountPath: "default/default/default",
-					incoming:  NewDeviceMap(defaultDeviceInfo),
+					incoming:  NewDeviceMap(DefaultDeviceInfo),
 				},
 				{
 					mountPath: "default/default/usb",
@@ -179,11 +189,11 @@ func TestCombineDeviceInfo(t *testing.T) {
 				},
 			},
 			want: DeviceMap{
-				".":                   defaultDeviceInfo,
+				".":                   DefaultDeviceInfo,
 				"default/default/usb": fakeUsbDeviceInfo,
 				"default/nvme":        fakeNvmeDeviceInfo,
 				"nvme":                fakeNvmeDeviceInfo,
-				"nvme/default":        defaultDeviceInfo,
+				"nvme/default":        DefaultDeviceInfo,
 				"nvme/hdd":            fakeHddDeviceInfo,
 				"nvme/usb":            fakeUsbDeviceInfo,
 			},

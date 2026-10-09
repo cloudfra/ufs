@@ -45,21 +45,21 @@ func windowsDeviceMap(rootPath string) DeviceMap {
 func windowsDriveInfo(volumeRoot string) DeviceInfo {
 	ptr, err := syscall.UTF16PtrFromString(volumeRoot)
 	if err != nil {
-		return defaultDeviceInfo
+		return DefaultDeviceInfo
 	}
 	dt := windows.GetDriveType(ptr)
 	name := filepath.VolumeName(volumeRoot)
 	switch dt {
 	case windows.DRIVE_REMOVABLE:
-		return DeviceInfo{name: name, deviceType: "removable", threadCount: 1}
+		return NewDeviceInfo(name, "removable", 1, false)
 	case windows.DRIVE_FIXED:
-		return DeviceInfo{name: name, deviceType: "fixed", threadCount: 1}
+		return NewDeviceInfo(name, "fixed", 1, false)
 	case windows.DRIVE_REMOTE:
-		return DeviceInfo{name: name, deviceType: "network", threadCount: 1}
+		return NewDeviceInfo(name, "network", 1, false)
 	case windows.DRIVE_CDROM:
-		return DeviceInfo{name: name, deviceType: "cdrom", threadCount: 1}
+		return NewDeviceInfo(name, "cdrom", 1, false)
 	case windows.DRIVE_RAMDISK:
-		return DeviceInfo{name: name, deviceType: "memory", threadCount: 4}
+		return NewDeviceInfo(name, "memory", 4, false)
 	}
-	return defaultDeviceInfo
+	return DefaultDeviceInfo
 }

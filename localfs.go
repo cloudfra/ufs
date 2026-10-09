@@ -47,7 +47,7 @@ func init() {
 type localFSInterface interface {
 	WriteFS
 	fs.GlobFS
-	realAbsPathGet
+	AbsPathGetter
 }
 
 type localFS struct {
@@ -62,7 +62,7 @@ func (fsys *localFS) String() string {
 	return fmt.Sprintf("localFS(%s)", URIOrDefault(fsys, fsys.osFS.Name()))
 }
 
-func (fsys *localFS) getAbsPath(name string) (string, error) {
+func (fsys *localFS) GetAbsPath(name string) (string, error) {
 	return filepath.Abs(filepath.Join(fsys.osFS.Name(), name))
 }
 

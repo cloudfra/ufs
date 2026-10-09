@@ -325,6 +325,10 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 		delete(appendEntry, entry.Name())
 	}
 
+	// The base file system may hand out a slice that it keeps, as archives
+	// do with their index, so the virtual entries go into a copy: appending
+	// to and sorting the original would change the next listing.
+	entries = slices.Grow(slices.Clone(entries), len(appendEntry))
 	for _, entry := range appendEntry {
 		entries = append(entries, entry)
 	}

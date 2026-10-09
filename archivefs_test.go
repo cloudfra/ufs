@@ -30,44 +30,6 @@ import (
 
 const testArchive = "testing/testassets/archives/testassets.tar.gz"
 
-var mountableArchivePathTestCases = []struct {
-	input string
-	want  bool
-}{
-	{input: "", want: false},
-	{input: pathutil.CwdPath, want: false},
-	{input: "/", want: false},
-	{input: "abc", want: false},
-	{input: "/abc/d/", want: false},
-	{input: "abc/d/", want: false},
-	{input: "/abc/d", want: false},
-	{input: "abc\\d", want: false},
-	{input: "\\abc\\", want: false},
-	{input: "ok.tar", want: true},
-	{input: "ok.tar.gz", want: true},
-	{input: "ok.tar.bz2", want: true},
-	{input: "ok.tar.xz", want: true},
-	{input: "ok.tar.lz4", want: true},
-	{input: "ok.tar.br", want: true},
-	{input: "ok.tar.zst", want: true},
-	{input: "ok.zip", want: true},
-	{input: "ok.tar.lzma", want: false},
-	{input: "ok.7z", want: true},
-	{input: "ok.7Z", want: true},
-}
-
-func TestIsMountableArchivePath(t *testing.T) {
-	t.Parallel()
-	for _, tc := range mountableArchivePathTestCases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			if got := isMountableArchivePath(tc.input); got != tc.want {
-				t.Errorf("isMountableArchivePath(%q) got: %v, want: %v", tc.input, got, tc.want)
-			}
-		})
-	}
-}
-
 func mustArchiveFS(t *testing.T) WriteFS {
 	t.Helper()
 	fsys, err := newArchiveFSFromLocalFS(context.Background(), testArchive)

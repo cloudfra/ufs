@@ -162,10 +162,6 @@ func TestDecoratorsCompose(t *testing.T) {
 const (
 	ufsImportPath     = "github.com/cloudfra/ufs"
 	driversImportPath = ufsImportPath + "/drivers"
-	// coreImportPath is imported by all.go although it registers nothing
-	// yet: the built-in file systems are moving into it from the base
-	// package. Remove the exception below once the first of them has moved.
-	coreImportPath = driversImportPath + "/core"
 )
 
 // importPath returns the unquoted import path of imp.
@@ -241,7 +237,6 @@ func TestAllRegisteringPackagesImported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WalkDir(%q) = %v, want nil", "..", err)
 	}
-	want = append(want, coreImportPath)
 	slices.Sort(want)
 	want = slices.Compact(want)
 	if len(want) == 0 {

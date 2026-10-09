@@ -20,6 +20,7 @@
 // It registers these drivers, which [github.com/cloudfra/ufs.New] selects by
 // URI:
 //
+//   - angry: from [github.com/cloudfra/ufs/drivers/core]
 //   - bolt: from [github.com/cloudfra/ufs/drivers/boltfs]
 //   - gs:// from [github.com/cloudfra/ufs/drivers/gcsfs]
 //   - URIs ending in .git from [github.com/cloudfra/ufs/drivers/gitfs]
@@ -46,7 +47,7 @@ package all
 
 import (
 	_ "github.com/cloudfra/ufs/drivers/boltfs"                // registers bolt:
-	_ "github.com/cloudfra/ufs/drivers/core"                  // will register the built-in file systems
+	_ "github.com/cloudfra/ufs/drivers/core"                  // registers angry:
 	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"    // registers the fault mount option
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://

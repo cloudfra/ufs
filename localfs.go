@@ -25,7 +25,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -47,7 +46,7 @@ func init() {
 type localFSInterface interface {
 	WriteFS
 	fs.GlobFS
-	realAbsPathGet
+	AbsPathGetter
 }
 
 type localFS struct {
@@ -62,7 +61,7 @@ func (fsys *localFS) String() string {
 	return fmt.Sprintf("localFS(%s)", URIOrDefault(fsys, fsys.osFS.Name()))
 }
 
-func (fsys *localFS) getAbsPath(name string) (string, error) {
+func (fsys *localFS) GetAbsPath(name string) (string, error) {
 	return filepath.Abs(filepath.Join(fsys.osFS.Name(), name))
 }
 
@@ -195,11 +194,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	}, nil
 }
 
-func newLocalFS(ctx context.Context, name string) (WriteFS, error) {
-	if archive.IsMountablePath(name) {
-		// The archive is opened by host path, so drop any file: prefix.
-		return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))
-	}
+func newLocalFS(_ context.Context, name string) (WriteFS, error) {
 	return makeLocalFS(name)
 }
 

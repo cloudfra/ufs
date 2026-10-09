@@ -29,8 +29,10 @@ import (
 )
 
 const (
-	archiveDirExt   = ".d"
 	archiveFSPrefix = "archive:"
+
+	// localArchivePriority is one ahead of the local driver's priority.
+	localArchivePriority = 9999
 )
 
 var (
@@ -41,14 +43,40 @@ var (
 )
 
 func init() {
-	Register(NewDriver("archive", func(ctx context.Context, name string) (WriteFS, error) {
-		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
-	}, isArchiveFSUri, 1, true, false))
+	Register(NewDriver("archive", newArchiveFS, isArchiveFSUri, 1, true, false))
+	// A local path that names an archive is opened as one. The priority puts
+	// it ahead of the local driver and behind every driver that owns a
+	// scheme, so "bolt:/data/db.zip" still belongs to bolt.
+	Register(NewDriver("local-archive", newLocalArchiveFS, isLocalArchivePath, localArchivePriority, true, false))
+	RegisterArchiveDriver(ArchiveDriver{
+		MatchFunc: archive.IsMountablePath,
+		OpenPathFunc: func(ctx context.Context, name string) (WriteFS, error) {
+			return newArchiveFSFromLocalFS(ctx, name)
+		},
+		OpenFileFunc: func(ctx context.Context, file fs.File) (WriteFS, error) {
+			return newArchiveFSFromFile(ctx, file)
+		},
+	})
 	Register(NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 
 func isArchiveFSUri(name string) bool {
 	return strings.HasPrefix(name, archiveFSPrefix)
+}
+
+func newArchiveFS(ctx context.Context, name string) (WriteFS, error) {
+	return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
+}
+
+// isLocalArchivePath reports whether name is a name that the local driver
+// serves and that names an archive.
+func isLocalArchivePath(name string) bool {
+	return archive.IsMountablePath(name) && isLocalFSUri(name)
+}
+
+func newLocalArchiveFS(ctx context.Context, name string) (WriteFS, error) {
+	// The archive is opened by host path, so drop any file: prefix.
+	return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))
 }
 
 type archiveFS struct {

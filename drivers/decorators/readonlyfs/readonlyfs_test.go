@@ -223,3 +223,28 @@ func TestReadOnlyURI(t *testing.T) {
 		}
 	})
 }
+
+// TestReadOnlyForwardsAbsPath verifies that the wrapper resolves host paths
+// through the file system it wraps.
+func TestReadOnlyForwardsAbsPath(t *testing.T) {
+	inner, err := ufs.New(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		if err := inner.Close(); err != nil {
+			t.Errorf("Close() = %v, want nil", err)
+		}
+	})
+	want, err := ufs.AbsPath(inner, "dir/file.txt")
+	if err != nil {
+		t.Fatalf("AbsPath(inner) = %v, want nil", err)
+	}
+	got, err := ufs.AbsPath(New(inner), "dir/file.txt")
+	if err != nil {
+		t.Fatalf("AbsPath() = %v, want nil", err)
+	}
+	if got != want {
+		t.Errorf("AbsPath() = %q, want %q", got, want)
+	}
+}

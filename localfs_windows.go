@@ -80,12 +80,14 @@ func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
 	if !fi.IsDir() || fi.Size() == 0 {
 		return fi
 	}
-	return &fsInfo{
-		name:    fi.Name(),
-		size:    0,
-		mode:    fi.Mode(),
-		modTime: fi.ModTime(),
-		isDir:   true,
-		sys:     fi.Sys(),
-	}
+	return &localFSDirInfo{fi}
+}
+
+// localFSDirInfo reports a directory's size as 0, see localFSNormalizeDirInfo.
+type localFSDirInfo struct {
+	fs.FileInfo
+}
+
+func (fi *localFSDirInfo) Size() int64 {
+	return 0
 }

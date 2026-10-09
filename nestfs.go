@@ -30,12 +30,15 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
+
+// archiveDirExt is appended to the name of an archive to form the name of the
+// virtual directory that holds its contents.
+const archiveDirExt = ".d"
 
 type bufferMode int
 
@@ -52,7 +55,7 @@ type FSArgs struct {
 var (
 	_ FS                  = (*nestFS)(nil)
 	_ fs.GlobFS           = (*nestFS)(nil)
-	_ realAbsPathGet      = (*nestFS)(nil)
+	_ AbsPathGetter       = (*nestFS)(nil)
 	_ MountedArchiveDirFS = (*nestFS)(nil)
 	_ DeviceInfoGetter    = (*mountMap)(nil)
 )
@@ -78,7 +81,7 @@ func (m *mountMap) GetDeviceInfo() DeviceMap {
 	combined := DeviceMap{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combined.combine(mountPoint, fsys.GetDeviceInfo())
+		combined = combined.Combine(mountPoint, fsys.GetDeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -221,16 +224,28 @@ type nestFS struct {
 	args   FSArgs
 }
 
-func (fsys *nestFS) getAbsPath(name string) (string, error) {
-	if rfs, ok := fsys.fsys.(*localFS); ok {
-		return rfs.getAbsPath(name)
+func (fsys *nestFS) GetAbsPath(name string) (string, error) {
+	// A name below a mount belongs to the mounted file system.
+	if _, subName, mountFS, ok := fsys.mounts.getClosestMount(name); ok {
+		return mountFS.GetAbsPath(subName)
+	}
+	// The contents of an archive are not files on the host. A directory
+	// that is only named like an archive directory, with no archive next to
+	// it, is an ordinary directory of the base.
+	for _, archiveDirName := range getPotentialArchives(name) {
+		if fsys.IsMountedArchiveDir(archiveDirName) {
+			return "", realAbsPathNotSupported(fsys, name)
+		}
+	}
+	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
+		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
 func (fsys *nestFS) GetDeviceInfo() DeviceMap {
 	base := fsys.fsys.GetDeviceInfo()
-	return base.combine("", fsys.mounts.GetDeviceInfo())
+	return base.Combine("", fsys.mounts.GetDeviceInfo())
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {
@@ -279,7 +294,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 
 	dirs := fsys.mounts.getDirectoryList(name)
 	for _, dir := range dirs {
-		if strings.HasSuffix(dir, archiveDirExt) && archive.IsMountablePath(strings.TrimSuffix(dir, archiveDirExt)) {
+		if strings.HasSuffix(dir, archiveDirExt) && isMountableArchivePath(strings.TrimSuffix(dir, archiveDirExt)) {
 			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
 			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
 				fsys.mounts.remove(path.Join(name, dir))
@@ -296,7 +311,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	}
 
 	for _, entry := range entries {
-		if archive.IsMountablePath(entry.Name()) {
+		if isMountableArchivePath(entry.Name()) {
 			mountName := entry.Name() + ".d"
 			appendEntry[mountName] = &virtualDirEntry{
 				name: mountName,
@@ -338,7 +353,7 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 // IsMountedArchiveDir reports whether name (a full path within this FS) is a
 // virtual directory backed by a mounted archive. It returns true only when:
 //   - name ends with archiveDirExt
-//   - the trimmed name satisfies archive.IsMountablePath
+//   - the trimmed name satisfies isMountableArchivePath
 //   - the archive file is not confirmed absent; any Stat error other than
 //     ErrNotExist is treated as "file likely exists" so that a permission-denied
 //     error does not cause Walk to descend and trigger a mount failure
@@ -352,7 +367,7 @@ func (fsys *nestFS) IsMountedArchiveDir(name string) bool {
 		return false
 	}
 	archiveName := strings.TrimSuffix(name, archiveDirExt)
-	if !archive.IsMountablePath(archiveName) {
+	if !isMountableArchivePath(archiveName) {
 		return false
 	}
 	_, err := fsys.Stat(archiveName)
@@ -364,23 +379,27 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		return maybeFS, nil
 	}
 	ctx := fsys.ctx
-	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
-	if ok {
-		absName, err := lfs.getAbsPath(name)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
+	driver := globalArchiveDriver.Load()
+	if driver == nil {
+		return nil, ufserrors.NewPathError("mount", name, errNoArchiveDriver)
+	}
+	var newFS WriteFS
+	// An archive that is also a file on the host is opened by path. A base
+	// that cannot resolve the path is read through an open file instead.
+	if lfs, ok := fsys.fsys.(AbsPathGetter); ok {
+		if absName, err := lfs.GetAbsPath(name); err == nil {
+			newFS, err = driver.OpenPathFunc(ctx, absName)
+			if err != nil {
+				return nil, ufserrors.NewPathError("mount", name, err)
+			}
 		}
-		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
-		}
-	} else {
+	}
+	if newFS == nil {
 		f, err := fsys.Open(name)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
-		newFS, err = newArchiveFSFromFile(ctx, f)
+		newFS, err = driver.OpenFileFunc(ctx, f)
 		if err != nil {
 			return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), f.Close())
 		}
@@ -403,6 +422,12 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	archiveDirNames := getPotentialArchives(targetName)
 	for _, archiveDirName := range archiveDirNames {
 		archiveName := strings.TrimSuffix(archiveDirName, archiveDirExt)
+		// Only a name that the archive driver recognizes is an archive
+		// directory; "conf.d" next to a file "conf" is an ordinary name, as
+		// is every ".d" name when no archive driver is registered.
+		if !isMountableArchivePath(archiveName) {
+			continue
+		}
 		info, err := targetFS.Stat(archiveName)
 		if info != nil && err == nil {
 			subPath, ok := pathutil.RemovePrefix(targetName, archiveDirName)

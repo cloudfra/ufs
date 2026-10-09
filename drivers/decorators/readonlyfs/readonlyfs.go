@@ -87,6 +87,11 @@ func (fsys *readOnlyFS) IsMountedArchiveDir(name string) bool {
 	return ok && m.IsMountedArchiveDir(name)
 }
 
+// GetAbsPath forwards to the wrapped file system, see [ufs.AbsPathGetter].
+func (fsys *readOnlyFS) GetAbsPath(name string) (string, error) {
+	return ufs.AbsPath(fsys.ReadFS, name)
+}
+
 // New wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
 // Remove, RemoveAll) always return [fs.ErrPermission]. All read operations
 // delegate to inner unchanged.

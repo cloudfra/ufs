@@ -44,6 +44,11 @@ func (fsys *readWrapFS) IsMountedArchiveDir(name string) bool {
 	return ok && m.IsMountedArchiveDir(name)
 }
 
+// GetAbsPath forwards to the wrapped file system, see [ufs.AbsPathGetter].
+func (fsys *readWrapFS) GetAbsPath(name string) (string, error) {
+	return ufs.AbsPath(fsys.fsys, name)
+}
+
 func (fsys *readWrapFS) URI() (*url.URL, error) {
 	if ug, ok := fsys.fsys.(ufs.URIGet); ok {
 		u, err := ug.URI()

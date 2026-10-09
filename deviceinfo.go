@@ -22,10 +22,10 @@ import (
 )
 
 var (
-	// defaultDeviceInfo is returned when the backing device is not known.
+	// DefaultDeviceInfo is returned when the backing device is not known.
 	//
 	// This signals to ufs that the FS should be treated as unoptimized for features such as parallel directory walking.
-	defaultDeviceInfo = DeviceInfo{
+	DefaultDeviceInfo = DeviceInfo{
 		name:        "default",
 		deviceType:  "unknown",
 		threadCount: 1,
@@ -33,7 +33,7 @@ var (
 
 	// DefaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
 	DefaultDeviceMap = DeviceMap{
-		".": defaultDeviceInfo,
+		".": DefaultDeviceInfo,
 	}
 )
 
@@ -64,6 +64,12 @@ func NewDeviceInfo(name string, deviceType string, threadCount int, remote bool)
 	}
 }
 
+// Name returns the name of the device as specified by the OS or the ufs
+// implementation.
+func (info DeviceInfo) Name() string {
+	return info.name
+}
+
 // String representation of DeviceInfo.
 func (info DeviceInfo) String() string {
 	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d, remote: %t}", info.name, info.deviceType, info.threadCount, info.remote)
@@ -78,10 +84,10 @@ func NewDeviceMap(root DeviceInfo) DeviceMap {
 	return DeviceMap{".": root}
 }
 
-// combine merges dm with incoming, whose paths are relative to mountPath, and
+// Combine merges dm with incoming, whose paths are relative to mountPath, and
 // returns the result. An incoming path is dropped as redundant when it names
 // the same device as its nearest ancestor already in dm.
-func (dm DeviceMap) combine(mountPath string, incoming DeviceMap) DeviceMap {
+func (dm DeviceMap) Combine(mountPath string, incoming DeviceMap) DeviceMap {
 	if len(incoming) == 0 {
 		if len(dm) == 0 {
 			return DeviceMap{}
@@ -94,7 +100,7 @@ func (dm DeviceMap) combine(mountPath string, incoming DeviceMap) DeviceMap {
 
 	for k, nested := range incoming {
 		fullPath := path.Join(mountPath, k)
-		parent := combined.parent(fullPath)
+		parent := combined.Parent(fullPath)
 		if nested.name != parent.name {
 			combined[fullPath] = nested
 		}
@@ -103,8 +109,8 @@ func (dm DeviceMap) combine(mountPath string, incoming DeviceMap) DeviceMap {
 	return combined
 }
 
-// parent returns the DeviceInfo of mountPath's nearest ancestor in dm.
-func (dm DeviceMap) parent(mountPath string) DeviceInfo {
+// Parent returns the DeviceInfo of mountPath's nearest ancestor in dm.
+func (dm DeviceMap) Parent(mountPath string) DeviceInfo {
 	longest := "."
 	for k := range dm {
 		if k == "." {

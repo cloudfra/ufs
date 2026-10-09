@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -39,14 +40,10 @@ var (
 	_ fs.GlobFS      = (*nullFS)(nil)
 	_ fs.ReadDirFile = (*nullReadDirFile)(nil)
 
-	nullDirStat = &fsInfo{
-		name:    ".",
-		size:    osutil.EmptyDirSize,
-		mode:    fs.ModeDir | fs.ModePerm,
-		modTime: unixEpochTime,
-		isDir:   true,
-		sys:     nil,
-	}
+	// nullModTime is the modification time of every nullFS entry.
+	nullModTime = time.Time{}
+
+	nullDirStat = NewFileInfo(".", osutil.EmptyDirSize, fs.ModeDir|fs.ModePerm, nullModTime)
 
 	nullDeviceInfo    = NewDeviceInfo("null", "null", 1, false)
 	nullDeviceInfoMap = NewDeviceMap(nullDeviceInfo)
@@ -68,14 +65,7 @@ func (n *nullFile) Stat() (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = osutil.EmptyDirSize
 	}
-	return &fsInfo{
-		name:    path.Base(n.name),
-		size:    size,
-		mode:    mode,
-		modTime: unixEpochTime,
-		isDir:   isDir,
-		sys:     nil,
-	}, nil
+	return NewFileInfo(path.Base(n.name), size, mode, nullModTime), nil
 }
 
 func (n *nullFile) Read(_ []byte) (int, error) {
@@ -210,14 +200,7 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = osutil.EmptyDirSize
 	}
-	return &fsInfo{
-		name:    name,
-		size:    size,
-		mode:    mode,
-		modTime: unixEpochTime,
-		isDir:   isDir,
-		sys:     nil,
-	}, nil
+	return NewFileInfo(name, size, mode, nullModTime), nil
 }
 
 func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {

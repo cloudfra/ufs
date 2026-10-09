@@ -19,7 +19,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -61,49 +60,49 @@ func TestNew(t *testing.T) {
 	}{
 		{
 			uri:               "angry://",
-			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantType:          "*core.angryFS",
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:               "angry://",
-			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantType:          "*core.angryFS",
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:      "file://",
-			wantType: reflect.TypeFor[*localFS]().Name(),
+			wantType: "*ufs.localFS",
 			wantErr:  false,
 		},
 		{
 			uri:      pathutil.CwdPath,
-			wantType: reflect.TypeFor[*localFS]().Name(),
+			wantType: "*ufs.localFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: reflect.TypeFor[*memFS]().Name(),
+			wantType: "*ufs.memFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: reflect.TypeFor[*memFS]().Name(),
+			wantType: "*ufs.memFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: "*ufs.nullFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: "*ufs.nullFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "file:///?a=memory://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: "*ufs.localFS",
 			wantErr:  false,
 			nested:   true,
 		},
@@ -132,7 +131,7 @@ func TestNew(t *testing.T) {
 				if err != nil {
 					t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, err, tt.wantType)
 				} else {
-					gotTypeName := reflect.TypeOf(got).Name()
+					gotTypeName := fmt.Sprintf("%T", got)
 					if gotTypeName != tt.wantType {
 						t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, got, tt.wantType)
 					}
@@ -160,7 +159,7 @@ func TestNew(t *testing.T) {
 				} else {
 					gotAsNestFS, ok := got.(*nestFS)
 					if ok {
-						gotTypeName := reflect.TypeOf(gotAsNestFS.fsys).Name()
+						gotTypeName := fmt.Sprintf("%T", gotAsNestFS.fsys)
 						if gotTypeName != tt.wantType {
 							t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, got, tt.wantType)
 						}
@@ -239,10 +238,8 @@ func TestCreateURI(t *testing.T) {
 				}
 			}()
 
-			gotTypeName := reflect.TypeOf(fsys).Name()
-			wantType := reflect.TypeFor[*nestFS]().Name()
-			if gotTypeName != wantType {
-				t.Errorf("New(%q) = %q, want %q", got, fsys, wantType)
+			if _, ok := fsys.(*nestFS); !ok {
+				t.Errorf("New(%q) = %T, want *nestFS", got, fsys)
 			}
 		})
 	}

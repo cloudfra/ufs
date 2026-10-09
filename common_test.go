@@ -110,10 +110,6 @@ var (
 	testassetCreateFileList = []string{"a.txt", "b.txt", "a/b.txt"}
 )
 
-func getAllRegularTestCaseList() []fsTestCase {
-	return appendNestFSTestCase(readWriteFSTestCaseList)
-}
-
 func getAllExceptAngryTestCaseList() []fsTestCase {
 	return appendNestFSTestCase(append(readOnlyFSTestCaseList, readWriteFSTestCaseList...))
 }

@@ -493,3 +493,39 @@ func TestFaultInjectorURI(t *testing.T) {
 		}
 	})
 }
+
+// archiveDirFS reports every name as an archive directory.
+type archiveDirFS struct {
+	ufs.WriteFS
+}
+
+func (archiveDirFS) IsMountedArchiveDir(string) bool { return true }
+
+// TestFaultInjectorForwardsIsMountedArchiveDir verifies that the decorator
+// answers for the file system it wraps, and reports false when that file
+// system has no archive directories.
+func TestFaultInjectorForwardsIsMountedArchiveDir(t *testing.T) {
+	inner, err := ufs.New(t.Context(), "null://test")
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		inner ufs.WriteFS
+		want  bool
+	}{
+		{name: "forwards", inner: archiveDirFS{inner}, want: true},
+		{name: "no_archive_dirs", inner: struct{ ufs.WriteFS }{inner}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys, err := newFaultFS(tc.inner, Options{})
+			if err != nil {
+				t.Fatalf("newFaultFS() = %v, want nil", err)
+			}
+			got := fsys.(ufs.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
+			if got != tc.want {
+				t.Errorf("IsMountedArchiveDir() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}

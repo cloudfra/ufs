@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+// Package ops provides file operations that work across any [fs.FS] and
+// [ufs.WriteFS], such as copying, mirroring, listing, walking and removing.
+package ops
 
 import (
 	"fmt"
@@ -21,6 +23,7 @@ import (
 	"log/slog"
 	"path"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -31,7 +34,7 @@ import (
 // is not atomic: if an error occurs mid-walk, destFS may be partially written.
 //
 // dir must satisfy [fs.ValidPath]; use "." to copy the entire file system.
-func Rsync(srcFS fs.FS, destFS WriteFS, dir string) error {
+func Rsync(srcFS fs.FS, destFS ufs.WriteFS, dir string) error {
 	// TODO: Prevent archive traversal.
 	return ForEachFilename(srcFS, dir, func(name string) error {
 		dir, _ := path.Split(name)
@@ -48,9 +51,9 @@ func Rsync(srcFS fs.FS, destFS WriteFS, dir string) error {
 
 // Copy copies the single file at srcFilename in srcFS to destFilename in destFS.
 // The parent directory of destFilename must already exist. The destination file
-// is created (or truncated) via [WriteFS.Create]. An error from closing the
+// is created (or truncated) via [ufs.WriteFS]. An error from closing the
 // destination file is returned, since the copy may not have been persisted.
-func Copy(srcFS fs.FS, srcFilename string, destFS WriteFS, destFilename string) error {
+func Copy(srcFS fs.FS, srcFilename string, destFS ufs.WriteFS, destFilename string) error {
 	sfp, err := srcFS.Open(srcFilename)
 	if err != nil {
 		return err
@@ -75,11 +78,11 @@ func Copy(srcFS fs.FS, srcFilename string, destFS WriteFS, destFilename string) 
 
 // ForEachFilename calls f for each file path (not directory) under dir,
 // streaming results without building an intermediate slice. If fsys implements
-// [ForEachFilenameIter], its native implementation is used directly; otherwise
+// [ufs.ForEachFilenameIter], its native implementation is used directly; otherwise
 // the paths are collected via [fs.WalkDir] and iterated. f receives paths
 // relative to dir. The walk stops and returns the first non-nil error from f.
 func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
-	lf, ok := fsys.(ForEachFilenameIter)
+	lf, ok := fsys.(ufs.ForEachFilenameIter)
 	if ok {
 		return lf.ForEachFilename(dir, f)
 	}
@@ -93,10 +96,10 @@ func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
 
 // ForEachFileInfo calls f for each file (not directory) under dir, providing
 // its [fs.FileInfo]. It is the typed companion to [ForEachFilename] and prefers
-// a native [ForEachFileInfoIter] implementation when available, falling back to
+// a native [ufs.ForEachFileInfoIter] implementation when available, falling back to
 // [fs.WalkDir]. The walk stops and returns the first non-nil error from f.
 func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
-	lf, ok := fsys.(ForEachFileInfoIter)
+	lf, ok := fsys.(ufs.ForEachFileInfoIter)
 	if ok {
 		return lf.ForEachFileInfo(dir, f)
 	}
@@ -125,12 +128,6 @@ func excludeDirs(name string, d fs.DirEntry, err error) (bool, error) {
 	return false, nil
 }
 
-// archiveDirChecker is implemented by nestFS to identify virtual archive-mount
-// directories without exposing the concrete type.
-type archiveDirChecker interface {
-	isMountedArchiveDir(name string) bool
-}
-
 // WalkArgs configures traversal behavior for [Walk].
 type WalkArgs struct {
 	// IncludeMountedArchive controls whether virtual archive-mount directories
@@ -152,7 +149,7 @@ type WalkArgs struct {
 // whose base names match any [WalkArgs.ExcludeDirectory] glob are skipped
 // entirely. The walk stops and returns the first non-nil error from f.
 func Walk(fsys fs.FS, dir string, args WalkArgs, f func(string) error) error {
-	adc, ok := fsys.(archiveDirChecker)
+	adc, ok := fsys.(ufs.MountedArchiveDirFS)
 	return fs.WalkDir(fsys, dir, func(name string, d fs.DirEntry, err error) error {
 		if pathutil.IsCwd(name) {
 			return nil
@@ -161,7 +158,7 @@ func Walk(fsys fs.FS, dir string, args WalkArgs, f func(string) error) error {
 			return err
 		}
 		if d.IsDir() {
-			if !args.IncludeMountedArchive && ok && adc.isMountedArchiveDir(name) {
+			if !args.IncludeMountedArchive && ok && adc.IsMountedArchiveDir(name) {
 				return fs.SkipDir
 			}
 			for _, pattern := range args.ExcludeDirectory {
@@ -185,12 +182,12 @@ func List(fsys fs.FS, dir string) ([]string, error) {
 }
 
 // ListFiles returns the paths of all files (excluding directories) under dir in
-// lexical order. If fsys implements [ListFilenames], its native implementation
+// lexical order. If fsys implements [ufs.ListFilenames], its native implementation
 // is used to avoid building intermediate [fs.FileInfo] values.
 //
 // This method may take a long time since it may traverse a large file system and build a large slice of paths in memory.
 func ListFiles(fsys fs.FS, dir string) ([]string, error) {
-	lf, ok := fsys.(ListFilenames)
+	lf, ok := fsys.(ufs.ListFilenames)
 	if ok {
 		return lf.ListFilenames(dir)
 	}
@@ -217,10 +214,10 @@ func list(fsys fs.FS, dir string, includeDirs bool) ([]string, error) {
 }
 
 // Remove removes the file or empty directory at name in fsys.
-// If fsys implements [RemoveFileFS], its Remove method is used directly.
+// If fsys implements [ufs.RemoveFileFS], its Remove method is used directly.
 // Otherwise Remove returns [fs.ErrPermission] wrapped in an [fs.PathError].
 func Remove(fsys fs.FS, name string) error {
-	r, ok := fsys.(RemoveFileFS)
+	r, ok := fsys.(ufs.RemoveFileFS)
 	if !ok {
 		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
 	}
@@ -228,10 +225,10 @@ func Remove(fsys fs.FS, name string) error {
 }
 
 // RemoveAll removes name and everything beneath it in fsys.
-// If fsys implements [RemoveFileFS], its RemoveAll method is used directly.
+// If fsys implements [ufs.RemoveFileFS], its RemoveAll method is used directly.
 // Otherwise RemoveAll returns [fs.ErrPermission] wrapped in an [fs.PathError].
 func RemoveAll(fsys fs.FS, name string) error {
-	r, ok := fsys.(RemoveFileFS)
+	r, ok := fsys.(ufs.RemoveFileFS)
 	if !ok {
 		return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
 	}

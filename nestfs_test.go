@@ -1498,6 +1498,54 @@ func TestWrapFileKeepsOSHandles(t *testing.T) {
 	}
 }
 
+// TestIsMountedArchiveDir exercises all early-exit conditions of the method.
+func TestIsMountedArchiveDir(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create data.zip (virtual .d should be detected).
+	zf, err := osutil.Create(filepath.Join(dir, "data.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(zf)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Create conf.d as a real directory (base name "conf" is not an archive).
+	if err := osutil.MkdirAll(filepath.Join(dir, "conf.d")); err != nil {
+		t.Fatal(err)
+	}
+
+	lfs, err := newLocalFS(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nfs := makeNestFS(t.Context(), lfs)
+	t.Cleanup(func() {
+		if err := nfs.Close(); err != nil {
+			t.Errorf("nfs.Close() = %v", err)
+		}
+	})
+
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"readme.txt", false},  // does not end with .d
+		{"conf.d", false},      // ends with .d but "conf" is not a mountable archive name
+		{"ghost.zip.d", false}, // archive name but ghost.zip does not exist (ErrNotExist)
+		{"data.zip.d", true},   // archive exists and is not confirmed absent
+	}
+	for _, tc := range cases {
+		if got := nfs.IsMountedArchiveDir(tc.name); got != tc.want {
+			t.Errorf("IsMountedArchiveDir(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestNestFSReadDirArchiveInArchiveIsStable verifies that listing an archive
 // that holds another archive returns the same entries every time. ReadDir
 // adds the inner archive's directory to the listing, and used to add it to

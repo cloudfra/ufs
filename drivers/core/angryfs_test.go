@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"errors"
@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -78,43 +79,43 @@ func TestAngryFSOperations(t *testing.T) {
 	tests := []struct {
 		name string
 		tcs  []string
-		op   func(fsys WriteFS, tc string) error
+		op   func(fsys ufs.WriteFS, tc string) error
 	}{
-		{"Open", testassetFilenameList, func(fsys WriteFS, tc string) error {
+		{"Open", testassetFilenameList, func(fsys ufs.WriteFS, tc string) error {
 			_, err := fsys.Open(tc)
 			return err
 		}},
-		{"ReadFile", testassetFilenameList, func(fsys WriteFS, tc string) error {
+		{"ReadFile", testassetFilenameList, func(fsys ufs.WriteFS, tc string) error {
 			_, err := fsys.ReadFile(tc)
 			return err
 		}},
-		{"ReadLink", testassetFilenameList, func(fsys WriteFS, tc string) error {
+		{"ReadLink", testassetFilenameList, func(fsys ufs.WriteFS, tc string) error {
 			_, err := fsys.ReadLink(tc)
 			return err
 		}},
-		{"Lstat", testassetFilenameList, func(fsys WriteFS, tc string) error {
+		{"Lstat", testassetFilenameList, func(fsys ufs.WriteFS, tc string) error {
 			_, err := fsys.Lstat(tc)
 			return err
 		}},
-		{"ReadDir", dirNames, func(fsys WriteFS, tc string) error {
+		{"ReadDir", dirNames, func(fsys ufs.WriteFS, tc string) error {
 			_, err := fsys.ReadDir(tc)
 			return err
 		}},
-		{"MkdirAll", []string{"a", "a/b", "a/b/c", "abc", "null"}, func(fsys WriteFS, tc string) error {
+		{"MkdirAll", []string{"a", "a/b", "a/b/c", "abc", "null"}, func(fsys ufs.WriteFS, tc string) error {
 			return fsys.MkdirAll(tc, fs.ModePerm)
 		}},
-		{"Create", testassetCreateFileList, func(fsys WriteFS, tc string) error {
+		{"Create", testassetCreateFileList, func(fsys ufs.WriteFS, tc string) error {
 			_, err := fsys.Create(tc)
 			return err
 		}},
-		{"Stat", testassetFilenameList, func(fsys WriteFS, tc string) error {
+		{"Stat", testassetFilenameList, func(fsys ufs.WriteFS, tc string) error {
 			_, err := fsys.Stat(tc)
 			return err
 		}},
-		{"Remove", testassetFilenameList, func(fsys WriteFS, tc string) error {
+		{"Remove", testassetFilenameList, func(fsys ufs.WriteFS, tc string) error {
 			return fsys.Remove(tc)
 		}},
-		{"RemoveAll", append(testassetFilenameList, dirNames...), func(fsys WriteFS, tc string) error {
+		{"RemoveAll", append(testassetFilenameList, dirNames...), func(fsys ufs.WriteFS, tc string) error {
 			return fsys.RemoveAll(tc)
 		}},
 	}
@@ -169,7 +170,7 @@ func TestAngryFSStatInvalid(t *testing.T) {
 	}
 }
 
-func mustAngryFS(tb testing.TB) WriteFS {
+func mustAngryFS(tb testing.TB) ufs.WriteFS {
 	fsys, err := newAngryFS(tb.Context(), angryFSPrefix)
 	if err != nil {
 		tb.Fatalf("newAngryFS() returned error, %s", err)

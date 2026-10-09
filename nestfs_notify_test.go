@@ -25,7 +25,7 @@ import (
 )
 
 func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
-	inner := makeMemFS("memory:")
+	inner := mustBaseFS(t, "memory:")
 	nfs := makeNestFS(t.Context(), inner)
 	defer func() {
 		if err := nfs.Close(); err != nil {
@@ -57,7 +57,7 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 }
 
 func TestNestFSWatchSubdirectory(t *testing.T) {
-	inner := makeMemFS("memory:")
+	inner := mustBaseFS(t, "memory:")
 	if err := inner.MkdirAll("sub", fs.ModePerm); err != nil {
 		t.Fatal(err)
 	}

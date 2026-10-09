@@ -145,7 +145,8 @@ func BenchmarkBufFileSeek(b *testing.B) {
 func BenchmarkMemFileWrite(b *testing.B) {
 	for _, chunkSize := range []int{64, 4 << 10, 64 << 10} {
 		b.Run(fmt.Sprintf("chunk-%dB", chunkSize), func(b *testing.B) {
-			fsys := mustMemFS(b, "memory://bench")
+			fsys := makeMemFS("memory://bench")
+			b.Cleanup(ufsTesting.ValidateClose(b, fsys))
 			f, err := fsys.Create("write.bin")
 			if err != nil {
 				b.Fatal(err)
@@ -167,7 +168,8 @@ func BenchmarkMemFileWrite(b *testing.B) {
 func BenchmarkMemFileWriteString(b *testing.B) {
 	for _, chunkSize := range []int{64, 4 << 10, 64 << 10} {
 		b.Run(fmt.Sprintf("chunk-%dB", chunkSize), func(b *testing.B) {
-			fsys := mustMemFS(b, "memory://bench")
+			fsys := makeMemFS("memory://bench")
+			b.Cleanup(ufsTesting.ValidateClose(b, fsys))
 			f, err := fsys.Create("writestring.bin")
 			if err != nil {
 				b.Fatal(err)

@@ -42,7 +42,7 @@ func TestNewNestFSInvalid(t *testing.T) {
 func TestMountMap(t *testing.T) {
 	mm := makeMountMap("test")
 	defer ufsTesting.WantCloseError(t, mm)()
-	mfs := makeMemFS("memory:///")
+	mfs := mustBaseFS(t, "memory:///")
 	afs := mustBaseFS(t, "angry:")
 	nfs := mustBaseFS(t, "null:")
 
@@ -500,7 +500,7 @@ func TestMountMapCloseError(t *testing.T) {
 
 func TestMountMapConcurrentAccess(t *testing.T) {
 	mm := makeMountMap("test")
-	mfs := makeMemFS("memory:///")
+	mfs := mustBaseFS(t, "memory:///")
 	nfs := makeNestFS(t.Context(), mfs)
 
 	const workers = 20

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -822,14 +823,32 @@ func (f *testSeekerFile) ReadAt(p []byte, off int64) (int, error)   { return f.r
 // ---------------------------------------------------------------------------
 
 func TestWrapReadOnlyFSFile(t *testing.T) {
-	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
+	t.Run("writable_File_rejects_writes", func(t *testing.T) {
 		base := newNullFile("test.txt")
 		got, err := wrapReadOnlyFSFile(base)
 		if err != nil {
 			t.Fatal(err)
 		}
+		if _, err := got.Write([]byte("x")); !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("Write() = %v, want %v", err, fs.ErrInvalid)
+		}
+		if _, err := got.WriteString("x"); !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("WriteString() = %v, want %v", err, fs.ErrInvalid)
+		}
+	})
+
+	t.Run("fast_path_for_os_File", func(t *testing.T) {
+		base, err := os.Open(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ufsTesting.ValidateClose(t, base)()
+		got, err := wrapReadOnlyFSFile(base)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if got != File(base) {
-			t.Error("expected same value; file already satisfies File so no wrapper should be created")
+			t.Error("expected same value; the OS already rejects writes so no wrapper should be created")
 		}
 	})
 
@@ -1115,14 +1134,12 @@ func TestWrapFSFile(t *testing.T) {
 func TestWrapFile(t *testing.T) {
 	t.Run("fast_path_when_already_satisfies_File", func(t *testing.T) {
 		base := newNullFile("test.txt")
-		for _, readOnly := range []bool{true, false} {
-			got, err := wrapFile(base, readOnly, bufferMemory)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != File(base) {
-				t.Errorf("readOnly=%t: expected same value; file already satisfies File", readOnly)
-			}
+		got, err := wrapFile(base, false, bufferMemory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != File(base) {
+			t.Error("expected same value; file already satisfies File")
 		}
 	})
 
@@ -1354,6 +1371,45 @@ func TestNestFilePolyfillBuffering(t *testing.T) {
 	})
 }
 
+func TestNestFSOpenHandleCannotWrite(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	const want = "original"
+	f, err := fsys.Create("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(want); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opened, err := fsys.Open("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, opened)()
+	if w, ok := opened.(io.Writer); ok {
+		if _, err := w.Write([]byte("changed")); err == nil {
+			t.Error("Write() on a handle from Open succeeded, want error")
+		}
+	}
+
+	got, err := fsys.ReadFile("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Errorf("ReadFile() = %q, want %q", got, want)
+	}
+}
+
 // TestNestFSMountParentDirectory covers a directory that exists only because
 // a file system is mounted below it: the base has no "a", but "a/b" is a
 // mount. ReadDir already listed "a"; Stat, Lstat and Open must agree.
@@ -1409,6 +1465,36 @@ func TestNestFSMissingDirectory(t *testing.T) {
 		if _, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
 		}
+	}
+}
+
+// TestWrapFileKeepsOSHandles verifies that a read-only wrap returns a file
+// backed by an OS handle unchanged, also when the backend embeds the handle
+// in its own type, as localFS does on Windows.
+func TestWrapFileKeepsOSHandles(t *testing.T) {
+	t.Parallel()
+	name := filepath.Join(t.TempDir(), "file.txt")
+	if err := osutil.WriteFile(name, []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	type embedsOSFile struct{ *os.File }
+	for _, wrap := range []func(*os.File) fs.File{
+		func(f *os.File) fs.File { return f },
+		func(f *os.File) fs.File { return &embedsOSFile{f} },
+	} {
+		osFile, err := osutil.Open(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := wrap(osFile)
+		got, err := wrapFile(f, true, bufferMemory)
+		if err != nil {
+			t.Fatalf("wrapFile() = %v, want nil", err)
+		}
+		if got != f {
+			t.Errorf("wrapFile() = %T, want the %T it was given", got, f)
+		}
+		ufsTesting.Must(t, got.Close())
 	}
 }
 

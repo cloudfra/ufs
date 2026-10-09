@@ -831,13 +831,25 @@ func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 	return nil
 }
 
-// wrapFile returns f unchanged if it already satisfies File. Otherwise it wraps
-// f, polyfilling any missing methods. When readOnly is true, Write and
-// WriteString always return fs.ErrInvalid. mode selects in-memory or disk-backed
-// buffering for Seek/ReadAt polyfills.
+// wrapFile returns a File for f, polyfilling any methods f is missing. When
+// readOnly is true, Write and WriteString always return fs.ErrInvalid, even
+// if f itself is writable. Otherwise an f that already satisfies File is
+// returned unchanged. mode selects in-memory or disk-backed buffering for
+// Seek/ReadAt polyfills.
 func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 	if full, ok := f.(File); ok {
-		return full, nil
+		if !readOnly {
+			return full, nil
+		}
+		// A file backed by an OS handle that was opened for reading is
+		// already rejected by the OS on write, so it needs no wrapper. The
+		// check is on Fd rather than on *os.File because localFS wraps its
+		// files on Windows, and a wrapper would hide the other methods of
+		// the handle.
+		if _, ok := f.(interface{ Fd() uintptr }); ok {
+			return full, nil
+		}
+		return &readOnlyFile{File: full}, nil
 	}
 	nf := &nestFile{File: f}
 	if err := polyfillSeekReadAt(nf, f, mode); err != nil {
@@ -873,8 +885,7 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 	return nf, nil
 }
 
-// wrapReadOnlyFSFile returns f unchanged if it already satisfies File.
-// Otherwise it wraps f for read-only use with in-memory buffering.
+// wrapReadOnlyFSFile wraps f for read-only use with in-memory buffering.
 func wrapReadOnlyFSFile(f fs.File) (File, error) {
 	return wrapFile(f, true, bufferMemory)
 }

@@ -118,6 +118,12 @@ function Write-Diagnostics([string]$title) {
             'Get-WindowsFeature is not available'
         }
     }
+    Invoke-Logged 'Get-WindowsCapability -Online: number of capabilities, and the ones like *Proj* or *AppCompat*' {
+        $all = @(Get-WindowsCapability -Online -ErrorAction Stop)
+        "total capabilities: $($all.Count)"
+        $all | Where-Object { $_.Name -like '*Proj*' -or $_.Name -like '*AppCompat*' } |
+            Format-Table Name, State -AutoSize
+    }
     Invoke-Logged 'ProjFS files' {
         foreach ($file in 'System32\projectedfslib.dll', 'SysWOW64\projectedfslib.dll', 'System32\drivers\prjflt.sys') {
             $path = Join-Path $env:SystemRoot $file
@@ -310,7 +316,14 @@ if ($enabled) {
     Start-ProjFSDriver
 } else {
     Write-DismLogTail
-    Write-Host '::warning::ProjFS could not be enabled - see the diagnostics in the log of this step'
+    $installationType = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').InstallationType
+    if ($null -eq (Get-OptionalFeatureState)) {
+        # No tool knows the feature, so the image does not contain it and
+        # nothing can enable it. That is the case on a Server Core installation.
+        Write-Host "::warning::ProjFS cannot be enabled: this Windows image (installation type '$installationType') does not contain the $optionalFeatureName feature. Use Windows Server with Desktop Experience, or Windows 10/11."
+    } else {
+        Write-Host '::warning::ProjFS could not be enabled - see the diagnostics in the log of this step'
+    }
 }
 
 Write-Diagnostics 'Diagnostics after enabling ProjFS'

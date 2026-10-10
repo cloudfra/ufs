@@ -17,7 +17,6 @@ package ufs
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -47,7 +46,7 @@ func TestAssets(t *testing.T) {
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) (WriteFS, error) {
-				return newLocalFS(tb.Context(), testAssetsFilesDir)
+				return newBaseFS(tb.Context(), testAssetsFilesDir)
 			},
 		},
 		{
@@ -70,7 +69,7 @@ func TestAssets(t *testing.T) {
 			name: "archiveFS",
 			createFS: func(tb testing.TB) (WriteFS, error) {
 				zipPath := createZipFromDir(tb, testAssetsFilesDir)
-				return newArchiveFSFromLocalFS(context.Background(), zipPath)
+				return newBaseFS(tb.Context(), archiveURIPrefix+zipPath)
 			},
 		},
 	}

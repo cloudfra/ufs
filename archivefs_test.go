@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -575,4 +576,67 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeArchive is an archive.FS that counts Close calls and returns closeErr.
+type fakeArchive struct {
+	emptyFS
+	closeCalled atomic.Int32
+	closeErr    error
+}
+
+func (f *fakeArchive) Stat(name string) (fs.FileInfo, error) { return fs.Stat(f.emptyFS, name) }
+
+func (f *fakeArchive) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(f.emptyFS, name) }
+
+func (f *fakeArchive) Close() error {
+	f.closeCalled.Add(1)
+	return f.closeErr
+}
+
+func TestArchiveFSCloseClosesArchive(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeArchive{}
+	afs := makeArchiveFS(inner, "test.zip")
+
+	if err := afs.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+	if inner.closeCalled.Load() != 1 {
+		t.Error("underlying archive was not closed on archiveFS.Close()")
+	}
+}
+
+func TestArchiveFSCloseReportsArchiveError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("file close failed")
+	afs := makeArchiveFS(&fakeArchive{closeErr: wantErr}, "test.zip")
+
+	err := afs.Close()
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Close() = %v, want %v", err, wantErr)
+	}
+}
+
+func TestArchiveFSCloseIdempotent(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeArchive{}
+	afs := makeArchiveFS(inner, "test.zip")
+
+	for range 3 {
+		ufsTesting.ValidateClose(t, afs)()
+	}
+	if inner.closeCalled.Load() != 1 {
+		t.Errorf("archive closed %d times, want exactly 1", inner.closeCalled.Load())
+	}
+}
+
+// emptyFS is a minimal fs.FS that contains no files.
+type emptyFS struct{}
+
+func (emptyFS) Open(name string) (fs.File, error) {
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 }

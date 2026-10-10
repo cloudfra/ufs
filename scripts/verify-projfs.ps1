@@ -11,37 +11,27 @@ $failures = @()
 $os = Get-CimInstance -ClassName Win32_OperatingSystem
 Write-Host "OS: $($os.Caption) $($os.Version) ($($os.OSArchitecture)), 64-bit process: $([Environment]::Is64BitProcess)"
 
-# 1. The Windows feature is installed.
-# Windows Server reports it through Get-WindowsFeature (FS-Projectedfs);
-# Windows 10/11 desktop through Get-WindowsOptionalFeature (Client-ProjFS).
+# 1. The Windows optional feature is enabled. Microsoft documents it as
+# Client-ProjFS; other sources name it Projected-FileSystem on Windows Server.
 $featureFound = $false
-if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
-    $serverFeature = Get-WindowsFeature -Name FS-Projectedfs -ErrorAction SilentlyContinue
-    if ($serverFeature) {
-        $featureFound = $true
-        Write-Host "FS-Projectedfs state: $($serverFeature.InstallState)"
-        if ($serverFeature.InstallState -ne 'Installed') {
-            $failures += "Windows feature FS-Projectedfs is $($serverFeature.InstallState), want Installed"
-        }
-    }
-}
-if (-not $featureFound) {
-    $clientFeature = $null
+foreach ($name in 'Client-ProjFS', 'Projected-FileSystem') {
+    $feature = $null
     try {
-        $clientFeature = Get-WindowsOptionalFeature -Online -FeatureName Client-ProjFS
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName $name
     } catch {
-        Write-Host "Get-WindowsOptionalFeature failed: $($_.Exception.Message)"
+        Write-Host "Get-WindowsOptionalFeature $name failed: $($_.Exception.Message)"
     }
-    if ($clientFeature) {
+    if ($feature) {
         $featureFound = $true
-        Write-Host "Client-ProjFS state: $($clientFeature.State)"
-        if ($clientFeature.State -ne 'Enabled') {
-            $failures += "Windows optional feature Client-ProjFS is $($clientFeature.State), want Enabled"
+        Write-Host "$name state: $($feature.State)"
+        if ($feature.State -ne 'Enabled') {
+            $failures += "Windows optional feature $name is $($feature.State), want Enabled"
         }
+        break
     }
 }
 if (-not $featureFound) {
-    $failures += 'this OS has neither the FS-Projectedfs nor the Client-ProjFS feature'
+    $failures += 'this Windows image has neither the Client-ProjFS nor the Projected-FileSystem optional feature'
 }
 
 # 2. The user-mode library that the ufs host package loads is present.
@@ -64,20 +54,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($failures.Count -gt 0) {
-    # List what the OS does offer, to find the feature to enable.
-    Write-Host 'Features with a name like *Proj*:'
-    try {
-        Get-WindowsOptionalFeature -Online | Where-Object { $_.FeatureName -like '*Proj*' } |
-            ForEach-Object { Write-Host "  optional feature $($_.FeatureName): $($_.State)" }
-    } catch {
-        Write-Host "  Get-WindowsOptionalFeature failed: $($_.Exception.Message)"
-    }
-    if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
-        Get-WindowsFeature | Where-Object { $_.Name -like '*Proj*' } |
-            ForEach-Object { Write-Host "  server feature $($_.Name): $($_.InstallState)" }
-    } else {
-        Write-Host '  Get-WindowsFeature is not available'
-    }
     foreach ($failure in $failures) {
         Write-Host "::error::ProjFS is not usable: $failure"
     }

@@ -1,15 +1,17 @@
 # scripts/enable-projfs.ps1 - Enable Windows Projected File System feature.
 #
-# The feature is the optional feature Client-ProjFS on Windows 10/11 and on
-# Windows Server. Older notes call it FS-Projectedfs for Install-WindowsFeature,
-# so that name is tried too.
+# Microsoft documents one way: the optional feature Client-ProjFS
+# (https://learn.microsoft.com/windows/win32/projfs/enabling-windows-projected-file-system).
+# Other sources name the feature Projected-FileSystem on Windows Server, and
+# older notes use FS-Projectedfs with Install-WindowsFeature, so those names
+# are tried too.
 #
 # The script tries, in order, and stops at the first that works:
-#   1. Enable-WindowsOptionalFeature (DISM PowerShell module)
-#   2. dism.exe /Online /Enable-Feature
-#   3. Install-WindowsFeature (Server Manager module)
+#   1. Enable-WindowsOptionalFeature (DISM PowerShell module), each name
+#   2. dism.exe /Online /Enable-Feature, each name
+#   3. Install-WindowsFeature (Server Manager module), each name
 #   4. dism.exe again, from a scheduled task that runs as SYSTEM outside of
-#      the process tree of the caller
+#      the process tree of the caller, each name
 #
 # It prints a lot of diagnostics on purpose: it runs unattended on CI runners,
 # where its output is the only way to find out why a step had no effect.
@@ -18,8 +20,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 
-$optionalFeatureName = 'Client-ProjFS'
-$serverFeatureName = 'FS-Projectedfs'
+$optionalFeatureNames = @('Client-ProjFS', 'Projected-FileSystem')
+$serverFeatureNames = @('FS-Projectedfs', 'Projected-FileSystem', 'Client-ProjFS')
 
 function Write-Section([string]$title) {
     Write-Host ''
@@ -45,16 +47,18 @@ function Test-ProjFSLibrary {
     return (Test-Path -LiteralPath (Join-Path $env:SystemRoot 'System32\projectedfslib.dll'))
 }
 
-# Get-OptionalFeatureState returns the state of Client-ProjFS ('Enabled',
-# 'Disabled', ...) or $null if the feature is unknown or the query fails.
+# Get-OptionalFeatureState returns the state ('Enabled', 'Disabled', ...) of
+# the first ProjFS optional feature the image knows, or $null if it knows none.
 function Get-OptionalFeatureState {
-    try {
-        $feature = Get-WindowsOptionalFeature -Online -FeatureName $optionalFeatureName -ErrorAction Stop
-        if ($feature) {
-            return [string]$feature.State
+    foreach ($name in $optionalFeatureNames) {
+        try {
+            $feature = Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction Stop
+            if ($feature) {
+                return [string]$feature.State
+            }
+        } catch {
+            Write-Host "Get-WindowsOptionalFeature $name failed: $($_.Exception.Message)"
         }
-    } catch {
-        Write-Host "Get-WindowsOptionalFeature $optionalFeatureName failed: $($_.Exception.Message)"
     }
     return $null
 }
@@ -90,30 +94,30 @@ function Write-Diagnostics([string]$title) {
         Get-Command -Name Get-WindowsOptionalFeature, Enable-WindowsOptionalFeature, Get-WindowsFeature, Install-WindowsFeature, dism.exe, fltmc.exe, schtasks.exe -ErrorAction SilentlyContinue |
             Format-Table Name, CommandType, Source -AutoSize
     }
-    Invoke-Logged "Get-WindowsOptionalFeature -Online -FeatureName $optionalFeatureName" {
-        Get-WindowsOptionalFeature -Online -FeatureName $optionalFeatureName -ErrorAction Stop | Format-List *
+    foreach ($name in $optionalFeatureNames) {
+        Invoke-Logged "Get-WindowsOptionalFeature -Online -FeatureName $name" {
+            Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction Stop | Format-List *
+        }
+        Invoke-Logged "dism.exe /Online /Get-FeatureInfo /FeatureName:$name" {
+            & dism.exe /Online /English /Get-FeatureInfo "/FeatureName:$name"
+            "dism.exe exit code: $LASTEXITCODE"
+        }
     }
-    Invoke-Logged 'Get-WindowsOptionalFeature -Online: number of features, and the ones like *Proj* or *Client-*' {
+    Invoke-Logged 'Get-WindowsOptionalFeature -Online: every feature' {
         $all = @(Get-WindowsOptionalFeature -Online -ErrorAction Stop)
         "total optional features: $($all.Count)"
-        $all | Where-Object { $_.FeatureName -like '*Proj*' -or $_.FeatureName -like 'Client-*' } |
-            Format-Table FeatureName, State -AutoSize
-    }
-    Invoke-Logged "dism.exe /Online /Get-FeatureInfo /FeatureName:$optionalFeatureName" {
-        & dism.exe /Online /English /Get-FeatureInfo "/FeatureName:$optionalFeatureName"
-        "dism.exe exit code: $LASTEXITCODE"
+        $all | Sort-Object FeatureName | Format-Table FeatureName, State -AutoSize
     }
     Invoke-Logged 'dism.exe /Online /Get-Features: lines like Proj' {
         $lines = @(& dism.exe /Online /English /Get-Features /Format:Table)
         "dism.exe exit code: $LASTEXITCODE, output lines: $($lines.Count)"
         $lines | Select-String -Pattern 'Proj'
     }
-    Invoke-Logged "Get-WindowsFeature: $serverFeatureName and names like *Proj*" {
+    Invoke-Logged 'Get-WindowsFeature: every feature' {
         if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
             $all = @(Get-WindowsFeature)
             "total server features: $($all.Count)"
-            $all | Where-Object { $_.Name -like '*Proj*' -or $_.DisplayName -like '*Proj*' } |
-                Format-Table Name, DisplayName, InstallState -AutoSize
+            $all | Sort-Object Name | Format-Table Name, InstallState, DisplayName -AutoSize
         } else {
             'Get-WindowsFeature is not available'
         }
@@ -175,35 +179,41 @@ function Write-DismLogTail {
 function Test-Enabled([string]$after) {
     $state = Get-OptionalFeatureState
     $library = Test-ProjFSLibrary
-    Write-Host "After ${after}: $optionalFeatureName state = $(if ($state) { $state } else { '<unknown>' }), projectedfslib.dll present = $library"
+    Write-Host "After ${after}: optional feature state = $(if ($state) { $state } else { '<unknown>' }), projectedfslib.dll present = $library"
     return ($state -eq 'Enabled' -or $library)
 }
 
 function Enable-WithCmdlet {
-    Write-Section "Attempt 1: Enable-WindowsOptionalFeature -FeatureName $optionalFeatureName"
-    Invoke-Logged 'Enable-WindowsOptionalFeature' {
-        Enable-WindowsOptionalFeature -Online -FeatureName $optionalFeatureName -All -NoRestart -ErrorAction Stop | Format-List *
+    Write-Section 'Attempt 1: Enable-WindowsOptionalFeature'
+    foreach ($name in $optionalFeatureNames) {
+        Invoke-Logged "Enable-WindowsOptionalFeature -FeatureName $name" {
+            Enable-WindowsOptionalFeature -Online -FeatureName $name -All -NoRestart -ErrorAction Stop | Format-List *
+        }
     }
     Close-Section
 }
 
 function Enable-WithDism {
-    Write-Section "Attempt 2: dism.exe /Enable-Feature /FeatureName:$optionalFeatureName"
-    Invoke-Logged 'dism.exe' {
-        & dism.exe /Online /English /Enable-Feature "/FeatureName:$optionalFeatureName" /All /NoRestart
-        "dism.exe exit code: $LASTEXITCODE (0 = done, 3010 = done, restart required)"
+    Write-Section 'Attempt 2: dism.exe /Enable-Feature'
+    foreach ($name in $optionalFeatureNames) {
+        Invoke-Logged "dism.exe /Enable-Feature /FeatureName:$name" {
+            & dism.exe /Online /English /Enable-Feature "/FeatureName:$name" /All /NoRestart
+            "dism.exe exit code: $LASTEXITCODE (0 = done, 3010 = done, restart required)"
+        }
     }
     Close-Section
 }
 
 function Enable-WithServerManager {
-    Write-Section "Attempt 3: Install-WindowsFeature -Name $serverFeatureName"
-    Invoke-Logged 'Install-WindowsFeature' {
-        if (Get-Command Install-WindowsFeature -ErrorAction SilentlyContinue) {
-            Install-WindowsFeature -Name $serverFeatureName -ErrorAction Stop | Format-List *
-        } else {
-            'Install-WindowsFeature is not available'
+    Write-Section 'Attempt 3: Install-WindowsFeature'
+    if (Get-Command Install-WindowsFeature -ErrorAction SilentlyContinue) {
+        foreach ($name in $serverFeatureNames) {
+            Invoke-Logged "Install-WindowsFeature -Name $name" {
+                Install-WindowsFeature -Name $name -ErrorAction Stop | Format-List *
+            }
         }
+    } else {
+        Write-Host 'Install-WindowsFeature is not available'
     }
     Close-Section
 }
@@ -223,13 +233,15 @@ function Enable-WithScheduledTask {
     # A .cmd file keeps the task's command line free of quoting problems.
     $commands = @(
         '@echo off',
-        "echo task started as %USERNAME% in session %SESSIONNAME% > `"$logFile`"",
-        "whoami /all >> `"$logFile`" 2>&1",
-        "`"%SystemRoot%\System32\dism.exe`" /Online /English /Enable-Feature /FeatureName:$optionalFeatureName /All /NoRestart >> `"$logFile`" 2>&1",
-        "echo dism.exe exit code: %ERRORLEVEL% >> `"$logFile`"",
-        "`"%SystemRoot%\System32\dism.exe`" /Online /English /Get-FeatureInfo /FeatureName:$optionalFeatureName >> `"$logFile`" 2>&1",
-        "echo done > `"$doneFile`""
+        "echo task started as %USERNAME% > `"$logFile`"",
+        "whoami /user /priv >> `"$logFile`" 2>&1"
     )
+    foreach ($name in $optionalFeatureNames) {
+        $commands += "echo dism.exe /Enable-Feature /FeatureName:$name >> `"$logFile`""
+        $commands += "`"%SystemRoot%\System32\dism.exe`" /Online /English /Enable-Feature /FeatureName:$name /All /NoRestart >> `"$logFile`" 2>&1"
+        $commands += "echo dism.exe exit code: %ERRORLEVEL% >> `"$logFile`""
+    }
+    $commands += "echo done > `"$doneFile`""
 
     try {
         Set-Content -LiteralPath $cmdFile -Value $commands -Encoding Ascii
@@ -320,7 +332,7 @@ if ($enabled) {
     if ($null -eq (Get-OptionalFeatureState)) {
         # No tool knows the feature, so the image does not contain it and
         # nothing can enable it. That is the case on a Server Core installation.
-        Write-Host "::warning::ProjFS cannot be enabled: this Windows image (installation type '$installationType') does not contain the $optionalFeatureName feature. Use Windows Server with Desktop Experience, or Windows 10/11."
+        Write-Host "::warning::ProjFS cannot be enabled: this Windows image (installation type '$installationType') contains none of the features $($optionalFeatureNames -join ', '). Use an installation that has one, such as Windows Server with Desktop Experience or Windows 10/11."
     } else {
         Write-Host '::warning::ProjFS could not be enabled - see the diagnostics in the log of this step'
     }

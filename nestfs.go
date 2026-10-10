@@ -44,6 +44,16 @@ const (
 	bufferDisk
 )
 
+const (
+	// archiveDirExt is the suffix of the virtual directory that holds the
+	// content of an archive: a.zip is listed at a.zip.d.
+	archiveDirExt = ".d"
+
+	// archiveURIPrefix is put in front of the host path of an archive to open
+	// it through the archive driver.
+	archiveURIPrefix = "archive://"
+)
+
 // FSArgs holds optional parameters for constructing a nestFS.
 type FSArgs struct {
 	BufMode bufferMode
@@ -222,7 +232,7 @@ type nestFS struct {
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
-	if rfs, ok := fsys.fsys.(*localFS); ok {
+	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
@@ -364,14 +374,21 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		return maybeFS, nil
 	}
 	ctx := fsys.ctx
-	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
-	if ok {
-		absName, err := lfs.GetAbsPath(name)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
+	// A base file system that has a host path for the archive opens it by that
+	// path, any other one through an open file.
+	var absName string
+	var onHost bool
+	if hostFS, ok := fsys.fsys.(AbsPathGetter); ok {
+		hostPath, err := hostFS.GetAbsPath(name)
+		if err == nil {
+			absName = hostPath
+			onHost = true
 		}
-		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
+	}
+	var newFS WriteFS
+	if onHost {
+		var err error
+		newFS, err = newBaseFS(ctx, archiveURIPrefix+absName)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}

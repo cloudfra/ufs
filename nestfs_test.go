@@ -603,7 +603,7 @@ func TestNestFSRemoveAll(t *testing.T) {
 
 func TestNestFSGlobFallback(t *testing.T) {
 	// archiveFS does not implement fs.GlobFS, triggering the globutil fallback in nestFS.
-	afs := mustArchiveFS(t)
+	afs := mustBaseFS(t, archiveURIPrefix+testAssetsArchivesDir+"/testassets.tar.gz")
 	nfs := makeNestFS(t.Context(), afs)
 	defer ufsTesting.ValidateClose(t, nfs)()
 
@@ -1433,10 +1433,7 @@ func TestIsMountedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lfs, err := newLocalFS(t.Context(), dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lfs := mustBaseFS(t, dir)
 	nfs := makeNestFS(t.Context(), lfs)
 	t.Cleanup(func() {
 		if err := nfs.Close(); err != nil {
@@ -1518,19 +1515,22 @@ func TestNestFSReadDirArchiveInArchiveIsStable(t *testing.T) {
 	}
 }
 
+// noHostPathFS is a file system that implements AbsPathGetter but has no host
+// path for any of its files.
+type noHostPathFS struct {
+	WriteFS
+}
+
+func (noHostPathFS) GetAbsPath(name string) (string, error) {
+	return "", &fs.PathError{Op: "abspath", Path: name, Err: errors.ErrUnsupported}
+}
+
 // TestNestFSMountArchiveWithoutHostPath checks that an archive is still
 // mounted when the base file system implements AbsPathGetter but has no host
-// path for it: a tempMountFS over an archive resolves no host paths, so the
-// archives inside it must be opened through a file.
+// path for it, as a tempMountFS over an archive does: the archives inside it
+// must be opened through a file.
 func TestNestFSMountArchiveWithoutHostPath(t *testing.T) {
-	outer, err := newArchiveFSFromLocalFS(t.Context(), testAssetsArchivesDir+"/nested-testassets.zip")
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := makeTempMountFS(outer, "test://", t.TempDir(), func() error { return nil })
-	if _, err := base.GetAbsPath("single-testassets.zip"); err == nil {
-		t.Fatal("GetAbsPath() = nil error, want an error for a file inside an archive")
-	}
+	base := noHostPathFS{mustBaseFS(t, archiveURIPrefix+testAssetsArchivesDir+"/nested-testassets.zip")}
 	nfs := makeNestFS(t.Context(), base)
 	defer ufsTesting.ValidateClose(t, nfs)()
 

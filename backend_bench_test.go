@@ -242,10 +242,7 @@ func BenchmarkMemFSRemoveAll(b *testing.B) {
 
 func BenchmarkNestFSReadDir(b *testing.B) {
 	dir := b.TempDir()
-	lfs, err := newLocalFS(b.Context(), dir)
-	if err != nil {
-		b.Fatal(err)
-	}
+	lfs := mustBaseFS(b, dir)
 	for i := range 1000 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		data := bytes.Repeat([]byte("Nest"), 128)
@@ -268,10 +265,7 @@ func BenchmarkNestFSReadDir(b *testing.B) {
 
 func BenchmarkNestFSReadFile(b *testing.B) {
 	dir := b.TempDir()
-	lfs, err := newLocalFS(b.Context(), dir)
-	if err != nil {
-		b.Fatal(err)
-	}
+	lfs := mustBaseFS(b, dir)
 	for i := range 100 {
 		name := fmt.Sprintf("file_%d.dat", i)
 		data := bytes.Repeat([]byte("Nest"), 128)
@@ -289,34 +283,5 @@ func BenchmarkNestFSReadFile(b *testing.B) {
 	}
 	if err := nfs.Close(); err != nil {
 		b.Errorf("failed to close nfs: %v", err)
-	}
-}
-
-// --- localFS benchmarks ---
-
-func BenchmarkLocalFSReadDir(b *testing.B) {
-	dir := b.TempDir()
-	lfs, err := newLocalFS(b.Context(), dir)
-	if err != nil {
-		b.Fatal(err)
-	}
-	data := bytes.Repeat([]byte("LocData"), 64) // ~600B each
-	for i := range 1000 {
-		name := fmt.Sprintf("file_%d.dat", i)
-		if err := osutil.WriteFile(filepath.Join(dir, name), data); err != nil {
-			b.Fatal(err)
-		}
-	}
-	defer func() {
-		if err := lfs.Close(); err != nil {
-			b.Errorf("failed to close lfs: %v", err)
-		}
-	}()
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := lfs.ReadDir("."); err != nil {
-			b.Fatal(err)
-		}
 	}
 }

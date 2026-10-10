@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"bytes"
@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -28,7 +29,7 @@ import (
 )
 
 func TestNewRemoteArchive(t *testing.T) {
-	fsys, err := New(t.Context(), "https://github.com/mholt/archives/archive/refs/heads/main.zip")
+	fsys, err := ufs.New(t.Context(), "https://github.com/mholt/archives/archive/refs/heads/main.zip")
 	if err != nil {
 		t.Error(err)
 	}
@@ -83,7 +84,7 @@ func testArchiveServer(t *testing.T) *httptest.Server {
 	return ts
 }
 
-func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) WriteFS {
+func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) ufs.WriteFS {
 	t.Helper()
 	ctx := t.Context()
 	client := ts.Client()
@@ -184,7 +185,7 @@ func TestNewRemoteArchiveSSRFBlocked(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := New(t.Context(), tc.uri)
+			_, err := ufs.New(t.Context(), tc.uri)
 			if err == nil {
 				t.Fatalf("New(%q) should have been blocked", tc.uri)
 			}

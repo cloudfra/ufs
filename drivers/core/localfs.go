@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -36,18 +37,18 @@ const (
 )
 
 var (
-	_ File             = (*os.File)(nil)
+	_ ufs.File         = (*os.File)(nil)
 	_ localFSInterface = (*localFS)(nil)
 )
 
 func init() {
-	Register(NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
+	ufs.Register(ufs.NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
 }
 
 type localFSInterface interface {
-	WriteFS
+	ufs.WriteFS
 	fs.GlobFS
-	AbsPathGetter
+	ufs.AbsPathGetter
 }
 
 type localFS struct {
@@ -59,7 +60,7 @@ func (fsys *localFS) URI() (*url.URL, error) {
 }
 
 func (fsys *localFS) String() string {
-	return fmt.Sprintf("localFS(%s)", URIOrDefault(fsys, fsys.osFS.Name()))
+	return fmt.Sprintf("localFS(%s)", ufs.URIOrDefault(fsys, fsys.osFS.Name()))
 }
 
 func (fsys *localFS) GetAbsPath(name string) (string, error) {
@@ -81,7 +82,7 @@ func (fsys *localFS) Close() error {
 	return fsys.osFS.Close()
 }
 
-func (fsys *localFS) Create(name string) (File, error) {
+func (fsys *localFS) Create(name string) (ufs.File, error) {
 	if err := validLocalPath("create", name); err != nil {
 		return nil, err
 	}
@@ -176,7 +177,7 @@ func (fsys *localFS) Glob(pattern string) ([]string, error) {
 //
 // Deprecated: MakeLocalFS exists only to support the shared driver tests in
 // drivers/testing and will be removed soon. Use New instead.
-func MakeLocalFS(name string) (WriteFS, error) {
+func MakeLocalFS(name string) (ufs.WriteFS, error) {
 	return makeLocalFS(name)
 }
 
@@ -195,7 +196,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	}, nil
 }
 
-func newLocalFS(ctx context.Context, name string) (WriteFS, error) {
+func newLocalFS(ctx context.Context, name string) (ufs.WriteFS, error) {
 	if archive.IsMountablePath(name) {
 		// The archive is opened by host path, so drop any file: prefix.
 		return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))

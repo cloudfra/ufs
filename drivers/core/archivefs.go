@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -33,21 +34,21 @@ const (
 )
 
 var (
-	_ WriteFS = (*archiveFS)(nil)
+	_ ufs.WriteFS = (*archiveFS)(nil)
 
-	archiveDeviceInfo    = NewDeviceInfo("archive", "archive", 1, false)
-	archiveDeviceInfoMap = NewDeviceMap(archiveDeviceInfo)
+	archiveDeviceInfo    = ufs.NewDeviceInfo("archive", "archive", 1, false)
+	archiveDeviceInfoMap = ufs.NewDeviceMap(archiveDeviceInfo)
 )
 
 func init() {
-	archiveDriver := NewDriver("archive", func(ctx context.Context, name string) (WriteFS, error) {
+	archiveDriver := ufs.NewDriver("archive", func(ctx context.Context, name string) (ufs.WriteFS, error) {
 		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
 	}, isArchiveFSUri, 1, true, false)
-	archiveDriver.CreateFromFileFunc = func(ctx context.Context, file fs.File) (WriteFS, error) {
+	archiveDriver.CreateFromFileFunc = func(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
 		return newArchiveFSFromFile(ctx, file)
 	}
-	Register(archiveDriver)
-	Register(NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
+	ufs.Register(archiveDriver)
+	ufs.Register(ufs.NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 
 func isArchiveFSUri(name string) bool {
@@ -59,7 +60,7 @@ type archiveFS struct {
 	name string
 }
 
-func (fsys *archiveFS) GetDeviceInfo() DeviceMap {
+func (fsys *archiveFS) GetDeviceInfo() ufs.DeviceMap {
 	return archiveDeviceInfoMap
 }
 
@@ -72,7 +73,7 @@ func (fsys *archiveFS) URI() (*url.URL, error) {
 }
 
 func (fsys *archiveFS) String() string {
-	return fmt.Sprintf("archiveFS(%s)", URIOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("archiveFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
@@ -98,7 +99,7 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	return fsys.fsys.Stat(name)
 }
 
-func (fsys *archiveFS) Create(name string) (File, error) {
+func (fsys *archiveFS) Create(name string) (ufs.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -186,7 +187,7 @@ func isTempMountRemoteArchiveURI(name string) bool {
 	return strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://")
 }
 
-func newTempMountRemoteArchiveFS(ctx context.Context, name string) (WriteFS, error) {
+func newTempMountRemoteArchiveFS(ctx context.Context, name string) (ufs.WriteFS, error) {
 	tempDir, cleanup, err := osutil.CreateTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
@@ -202,7 +203,7 @@ func newTempMountRemoteArchiveFS(ctx context.Context, name string) (WriteFS, err
 	fsys, err := newArchiveFSFromLocalFS(ctx, filename)
 	if err != nil {
 		cleanupErr := cleanup()
-		return nil, fmt.Errorf("cannot create archive FS from local file, %w", ufserrors.Join(err, cleanupErr))
+		return nil, fmt.Errorf("cannot create archive ufs.FS from local file, %w", ufserrors.Join(err, cleanupErr))
 	}
 	return makeTempMountFS(fsys, name, tempDir, cleanup), nil
 }

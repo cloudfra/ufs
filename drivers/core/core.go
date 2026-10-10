@@ -15,19 +15,6 @@
 // Package core is the home of the file systems that every ufs program is
 // expected to use: memory:, null:, angry:, file:// and archive://.
 //
-// They are being moved here from the base package. Until a file system has
-// moved, this package forwards to the base package, so that callers can
-// already use the import path it will have.
+// Importing the package registers them, so that [ufs.New] can open their
+// URIs.
 package core
-
-import (
-	"context"
-
-	"github.com/cloudfra/ufs"
-)
-
-// NewTempMountFS returns a file system for uri backed by a temporary local
-// directory; prepare is called with the directory path to populate it.
-func NewTempMountFS(ctx context.Context, uri string, prepare func(string) error) (ufs.WriteFS, error) {
-	return ufs.NewTempMountFS(ctx, uri, prepare)
-}

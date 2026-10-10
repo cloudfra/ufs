@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"errors"
@@ -47,7 +47,7 @@ func TestTempMountFSCleanup(t *testing.T) {
 
 func TestTempMountFSCloseError(t *testing.T) {
 	// Use an angry FS so that lfs.Close() returns an error.
-	angry := mustBaseFS(t, "angry:")
+	angry := MakeAngryFS("angry:")
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error { return nil })
 	err := tfs.Close()
 	if err == nil {
@@ -239,7 +239,7 @@ func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
 	t.Parallel()
 
 	var cleanupCalled atomic.Int32
-	angry := mustBaseFS(t, "angry:")
+	angry := MakeAngryFS("angry:")
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
 		cleanupCalled.Add(1)
 		return nil
@@ -250,14 +250,14 @@ func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
 		t.Fatal("Close() should return error from angry lfs")
 	}
 	if cleanupCalled.Load() < 1 {
-		t.Error("cleanup function was not called when inner FS Close failed")
+		t.Error("cleanup function was not called when inner ufs.FS Close failed")
 	}
 }
 
 func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
 	t.Parallel()
 
-	angry := mustBaseFS(t, "angry:")
+	angry := MakeAngryFS("angry:")
 	cleanupErr := errors.New("cleanup boom")
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
 		return cleanupErr

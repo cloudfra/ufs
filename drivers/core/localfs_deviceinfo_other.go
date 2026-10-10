@@ -12,34 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
+//go:build !linux && !windows
 
-package ufs
+package core
 
-import (
-	"io/fs"
-	"os"
-	"strings"
+import "github.com/cloudfra/ufs"
 
-	"github.com/cloudfra/ufs/internal/pathutil"
-)
-
-// localFSNormalizePath strips the "file://" or "file:" URI prefix, leaving a plain path.
-func localFSNormalizePath(name string) string {
-	if after, ok := strings.CutPrefix(name, "file://"); ok {
-		return after
-	}
-	return strings.TrimPrefix(name, "file:")
-}
-
-func validLocalPath(op, name string) error {
-	return pathutil.Validate(op, name)
-}
-
-func localFSWrapFile(f *os.File) fs.File {
-	return f
-}
-
-func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
-	return fi
+func (fsys *localFS) GetDeviceInfo() ufs.DeviceMap {
+	return ufs.DefaultDeviceMap
 }

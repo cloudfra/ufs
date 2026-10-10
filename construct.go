@@ -156,6 +156,12 @@ func nameToURI(name string) (*url.URL, error) {
 //   - A local path pointing to a recognized archive (.zip, .tar, .tar.gz, etc.)
 //     is mounted read-only through the archive's contents.
 //
+// Every scheme is served by a driver that registers itself when its package
+// is imported; the base package registers none. file://, bare paths, archives,
+// memory://, null:// and angry:// come from
+// github.com/cloudfra/ufs/drivers/core, which archive auto-mounting (below)
+// needs as well.
+//
 // # Alternative input formats
 //
 // In addition to URIs, name may be an fstab-format string or a YAML document.

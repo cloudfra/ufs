@@ -136,12 +136,12 @@ func TestNew(t *testing.T) {
 		},
 		{
 			uri:      "file://",
-			wantType: "*ufs.localFS",
+			wantType: "*core.localFS",
 			wantErr:  false,
 		},
 		{
 			uri:      pathutil.CwdPath,
-			wantType: "*ufs.localFS",
+			wantType: "*core.localFS",
 			wantErr:  false,
 		},
 		{
@@ -166,7 +166,7 @@ func TestNew(t *testing.T) {
 		},
 		{
 			uri:      "file:///?a=memory://",
-			wantType: "*ufs.localFS",
+			wantType: "*core.localFS",
 			wantErr:  false,
 			nested:   true,
 		},

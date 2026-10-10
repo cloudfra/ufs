@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"errors"
@@ -31,7 +31,7 @@ const (
 )
 
 func TestLocalFSString(t *testing.T) {
-	fsys, err := makeLocalFS(testLocalFSName)
+	fsys, err := makeLocalFS("../../" + testLocalFSName)
 	if err != nil {
 		t.Fatal(err)
 	}

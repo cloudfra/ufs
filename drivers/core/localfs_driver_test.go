@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+package core_test
 
 import (
 	"testing"
@@ -22,12 +22,12 @@ import (
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 )
 
-func TestTempMountFS(t *testing.T) {
+func TestLocalFSDriver(t *testing.T) {
 	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
-		name := "temp://test"
-		fsys, err := core.NewTempMountFS(t.Context(), name, func(string) error { return nil })
+		dir := t.TempDir()
+		fsys, err := core.MakeLocalFS(dir)
 		if err != nil {
-			t.Fatalf("cannot create tempMountFS %q, %s", name, err)
+			t.Fatalf("cannot create localFS %q, %s", dir, err)
 		}
 		return fsys
 	})

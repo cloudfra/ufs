@@ -64,6 +64,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($failures.Count -gt 0) {
+    # List what the OS does offer, to find the feature to enable.
+    Write-Host 'Features with a name like *Proj*:'
+    try {
+        Get-WindowsOptionalFeature -Online | Where-Object { $_.FeatureName -like '*Proj*' } |
+            ForEach-Object { Write-Host "  optional feature $($_.FeatureName): $($_.State)" }
+    } catch {
+        Write-Host "  Get-WindowsOptionalFeature failed: $($_.Exception.Message)"
+    }
+    if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
+        Get-WindowsFeature | Where-Object { $_.Name -like '*Proj*' } |
+            ForEach-Object { Write-Host "  server feature $($_.Name): $($_.InstallState)" }
+    } else {
+        Write-Host '  Get-WindowsFeature is not available'
+    }
     foreach ($failure in $failures) {
         Write-Host "::error::ProjFS is not usable: $failure"
     }

@@ -65,7 +65,10 @@ func TestIsLocalFSUri(t *testing.T) {
 
 func TestLocalFSLstat(t *testing.T) {
 	dir := t.TempDir()
-	fsys := mustFS(t, newLocalFS, dir)
+	fsys, err := newLocalFS(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("lstat_file.txt")
@@ -111,7 +114,10 @@ func TestLocalFSLstat(t *testing.T) {
 
 func TestLocalFSReadLink(t *testing.T) {
 	dir := t.TempDir()
-	fsys := mustFS(t, newLocalFS, dir)
+	fsys, err := newLocalFS(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("target.txt")

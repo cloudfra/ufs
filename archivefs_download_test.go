@@ -44,7 +44,7 @@ func TestNewRemoteArchive(t *testing.T) {
 
 func testArchiveServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	zipPath := createZipFromDir(t, testAssetsFilesDir)
+	zipPath := ufsTesting.ZipDir(t, testAssetsFilesDir)
 	zipData, err := osutil.ReadFile(zipPath)
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) Wri
 func TestDownloadFileAndMount(t *testing.T) {
 	t.Parallel()
 	ts := testArchiveServer(t)
-	wantFiles := loadTestAssets(t)
+	wantFiles := ufsTesting.ReadDirFiles(t, testAssetsFilesDir)
 
 	fsys := testDownloadAndMount(t, ts, "/testassets.zip")
 	for filePath, wantData := range wantFiles {

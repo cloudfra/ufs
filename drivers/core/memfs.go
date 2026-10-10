@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/common/buffile"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -85,40 +86,45 @@ type memFS struct {
 // immediately synced back to the filesystem node so that subsequent Open calls
 // observe the latest content.
 type memFile struct {
-	bufFile
+	buffile.File
 	fsys *memFS
+
+	// syncMu serializes a write with its sync to the node, so concurrent
+	// writes on one handle reach the node in the order they were buffered.
+	syncMu sync.Mutex
 }
 
 func (f *memFile) Write(p []byte) (int, error) {
-	f.mu.Lock()
-	copy(f.writeAtOffsetLocked(len(p)), p)
-	f.syncToFSLocked()
-	f.mu.Unlock()
+	f.syncMu.Lock()
+	n, err := f.File.Write(p)
+	f.syncToFS()
+	f.syncMu.Unlock()
 
 	f.notifyWrite()
-	return len(p), nil
+	return n, err
 }
 
 func (f *memFile) WriteString(s string) (int, error) {
-	f.mu.Lock()
-	copy(f.writeAtOffsetLocked(len(s)), s)
-	f.syncToFSLocked()
-	f.mu.Unlock()
+	f.syncMu.Lock()
+	n, err := f.File.WriteString(s)
+	f.syncToFS()
+	f.syncMu.Unlock()
 
 	f.notifyWrite()
-	return len(s), nil
+	return n, err
 }
 
-// syncToFSLocked stamps modTime and, if the file is backed by a live memFS,
-// pushes a snapshot of content to the corresponding node so that other open
-// handles and future Opens observe the write. f.mu must be held.
-func (f *memFile) syncToFSLocked() {
+// syncToFS stamps modTime and, if the file is backed by a live memFS, pushes
+// a snapshot of content to the corresponding node so that other open handles
+// and future Opens observe the write. f.syncMu must be held.
+func (f *memFile) syncToFS() {
 	now := time.Now()
-	f.modTime = now
+	f.MarkDirty()
+	content, _, _ := f.TakeDirty(now)
 	if f.fsys != nil {
 		f.fsys.mu.Lock()
-		if node, ok := f.fsys.nodes[f.path]; ok {
-			node.content = bytes.Clone(f.content)
+		if node, ok := f.fsys.nodes[f.Path()]; ok {
+			node.content = content
 			node.modTime = now
 		}
 		f.fsys.mu.Unlock()
@@ -127,7 +133,7 @@ func (f *memFile) syncToFSLocked() {
 
 func (f *memFile) notifyWrite() {
 	if f.fsys != nil {
-		f.fsys.notify(ufs.NotifyWrite, f.path)
+		f.fsys.notify(ufs.NotifyWrite, f.Path())
 	}
 }
 
@@ -218,8 +224,8 @@ func (fsys *memFS) Open(name string) (fs.File, error) {
 		return fsys.openDir(name)
 	}
 	return &memFile{
-		fsys:    fsys,
-		bufFile: newBufFile(name, bytes.Clone(node.content), node.mode, node.modTime),
+		fsys: fsys,
+		File: buffile.New(name, bytes.Clone(node.content), node.mode, node.modTime),
 	}, nil
 }
 
@@ -321,8 +327,8 @@ func (fsys *memFS) Create(name string) (ufs.File, error) {
 	}
 
 	return &memFile{
-		fsys:    fsys,
-		bufFile: newBufFile(name, nil, node.mode, node.modTime),
+		fsys: fsys,
+		File: buffile.New(name, nil, node.mode, node.modTime),
 	}, nil
 }
 

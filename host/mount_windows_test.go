@@ -36,7 +36,7 @@ import (
 )
 
 // requireProjFSEnv names the environment variable that turns a missing ProjFS
-// from a skip into a failure. CI sets it on runners that have ProjFS, so the
+// from a skip into a failure. CI is to set it on runners that have ProjFS, so the
 // ProjFS tests cannot be skipped there without anyone noticing.
 const requireProjFSEnv = "UFS_REQUIRE_PROJFS"
 

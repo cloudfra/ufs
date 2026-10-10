@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -34,9 +35,17 @@ import (
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
+// requireProjFSEnv names the environment variable that turns a missing ProjFS
+// from a skip into a failure. CI sets it on runners that have ProjFS, so the
+// ProjFS tests cannot be skipped there without anyone noticing.
+const requireProjFSEnv = "UFS_REQUIRE_PROJFS"
+
 func requireProjFS(t *testing.T) {
 	t.Helper()
 	if err := projfsAvailable(); err != nil {
+		if os.Getenv(requireProjFSEnv) != "" {
+			t.Fatalf("ProjFS not available but %s is set: %v", requireProjFSEnv, err)
+		}
 		t.Skipf("ProjFS not available: %v", err)
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -47,6 +48,69 @@ func TestNewBaseFSUnregisteredDriverHint(t *testing.T) {
 	}
 	if want := "check that the driver package is imported"; !strings.Contains(err.Error(), want) {
 		t.Errorf("newBaseFS(%q) = %q, want it to contain %q", name, err, want)
+	}
+}
+
+func TestNewBaseFSFromFile(t *testing.T) {
+	const archivePath = testAssetsArchivesDir + "/single-testassets.zip"
+	f, err := osutil.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys, err := newBaseFSFromFile(t.Context(), "archive://single-testassets.zip", f)
+	if err != nil {
+		t.Fatalf("newBaseFSFromFile() = %v, want nil", err)
+	}
+	if _, err := fs.Stat(fsys, "index.html"); err != nil {
+		t.Errorf("Stat(index.html) = %v, want nil", err)
+	}
+	if err := fsys.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil", err)
+	}
+	// The file system owns the file, so Close has closed it.
+	if _, err := f.Stat(); err == nil {
+		t.Error("the file is still open after the file system was closed")
+	}
+}
+
+func TestNewBaseFSFromFileErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		uri     string
+		wantErr string
+	}{
+		{
+			name:    "no driver for the name",
+			uri:     "gs://bucket/archive.zip",
+			wantErr: "check that the driver package is imported",
+		},
+		{
+			name:    "driver cannot open a file",
+			uri:     "file:///archive.zip",
+			wantErr: "from an open file",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "archive.zip")
+			if err := osutil.WriteFile(filename, []byte("not an archive")); err != nil {
+				t.Fatal(err)
+			}
+			f, err := osutil.Open(filename)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ufsTesting.ValidateClose(t, f)()
+
+			_, err = newBaseFSFromFile(t.Context(), tc.uri, f)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("newBaseFSFromFile(%q) = %v, want an error containing %q", tc.uri, err, tc.wantErr)
+			}
+			// On error the file is left open for the caller to close.
+			if _, err := f.Stat(); err != nil {
+				t.Errorf("the file was closed on error, Stat() = %v", err)
+			}
+		})
 	}
 }
 

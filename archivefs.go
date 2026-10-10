@@ -40,9 +40,13 @@ var (
 )
 
 func init() {
-	Register(NewDriver("archive", func(ctx context.Context, name string) (WriteFS, error) {
+	archiveDriver := NewDriver("archive", func(ctx context.Context, name string) (WriteFS, error) {
 		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
-	}, isArchiveFSUri, 1, true, false))
+	}, isArchiveFSUri, 1, true, false)
+	archiveDriver.CreateFromFileFunc = func(ctx context.Context, file fs.File) (WriteFS, error) {
+		return newArchiveFSFromFile(ctx, file)
+	}
+	Register(archiveDriver)
 	Register(NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
 

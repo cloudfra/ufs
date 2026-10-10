@@ -222,7 +222,7 @@ type nestFS struct {
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
-	if rfs, ok := fsys.fsys.(*localFS); ok {
+	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
@@ -364,13 +364,18 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		return maybeFS, nil
 	}
 	ctx := fsys.ctx
-	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
-	if ok {
-		absName, err := lfs.GetAbsPath(name)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
+	// A base file system that has a host path for the archive opens it by that
+	// path, any other one through an open file.
+	var absName string
+	var onHost bool
+	if hostFS, ok := fsys.fsys.(AbsPathGetter); ok {
+		if p, err := hostFS.GetAbsPath(name); err == nil {
+			absName, onHost = p, true
 		}
+	}
+	var newFS *archiveFS
+	if onHost {
+		var err error
 		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)

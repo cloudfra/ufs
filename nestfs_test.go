@@ -1517,3 +1517,28 @@ func TestNestFSReadDirArchiveInArchiveIsStable(t *testing.T) {
 		}
 	}
 }
+
+// TestNestFSMountArchiveWithoutHostPath checks that an archive is still
+// mounted when the base file system implements AbsPathGetter but has no host
+// path for it: a tempMountFS over an archive resolves no host paths, so the
+// archives inside it must be opened through a file.
+func TestNestFSMountArchiveWithoutHostPath(t *testing.T) {
+	outer, err := newArchiveFSFromLocalFS(t.Context(), testAssetsArchivesDir+"/nested-testassets.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := makeTempMountFS(outer, "test://", t.TempDir(), func() error { return nil })
+	if _, err := base.GetAbsPath("single-testassets.zip"); err == nil {
+		t.Fatal("GetAbsPath() = nil error, want an error for a file inside an archive")
+	}
+	nfs := makeNestFS(t.Context(), base)
+	defer ufsTesting.ValidateClose(t, nfs)()
+
+	got, err := fs.ReadFile(nfs, "single-testassets.zip.d/index.html")
+	if err != nil {
+		t.Fatalf("ReadFile() = %v, want nil", err)
+	}
+	if len(got) == 0 {
+		t.Error("ReadFile() returned no content")
+	}
+}

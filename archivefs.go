@@ -29,7 +29,6 @@ import (
 )
 
 const (
-	archiveDirExt   = ".d"
 	archiveFSPrefix = "archive:"
 )
 

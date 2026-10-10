@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package core
+package buffile
 
 import (
-	"fmt"
 	"io"
 	"testing"
 
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-// bufFileBenchSizes mirrors the Small/Medium/Large convention used by the
-// other *_bench_test.go files in this package.
-var bufFileBenchSizes = []struct {
+// fileBenchSizes mirrors the Small/Medium/Large convention used by the
+// benchmarks of the file systems.
+var fileBenchSizes = []struct {
 	name string
 	n    int
 }{
@@ -33,10 +32,10 @@ var bufFileBenchSizes = []struct {
 	{"Large", 10 << 20},   // 10 MB
 }
 
-func BenchmarkBufFileStat(b *testing.B) {
-	for _, sz := range bufFileBenchSizes {
+func BenchmarkFileStat(b *testing.B) {
+	for _, sz := range fileBenchSizes {
 		b.Run(sz.name, func(b *testing.B) {
-			f := newTestBufFile("stat.bin", string(ufsTesting.SeedData('S', sz.n)))
+			f := newTestFile("stat.bin", string(ufsTesting.SeedData('S', sz.n)))
 			b.ResetTimer()
 			for b.Loop() {
 				if _, err := f.Stat(); err != nil {
@@ -47,14 +46,14 @@ func BenchmarkBufFileStat(b *testing.B) {
 	}
 }
 
-// BenchmarkBufFileReadSequential reads the whole content in fixed-size
+// BenchmarkFileReadSequential reads the whole content in fixed-size
 // chunks, re-seeking to the start whenever it hits EOF, so every iteration
 // does the same amount of copying.
-func BenchmarkBufFileReadSequential(b *testing.B) {
+func BenchmarkFileReadSequential(b *testing.B) {
 	const chunk = 4 << 10 // 4 KB reads
-	for _, sz := range bufFileBenchSizes {
+	for _, sz := range fileBenchSizes {
 		b.Run(sz.name, func(b *testing.B) {
-			f := newTestBufFile("read.bin", string(ufsTesting.SeedData('R', sz.n)))
+			f := newTestFile("read.bin", string(ufsTesting.SeedData('R', sz.n)))
 			buf := make([]byte, chunk)
 			b.SetBytes(chunk)
 			b.ResetTimer()
@@ -71,14 +70,14 @@ func BenchmarkBufFileReadSequential(b *testing.B) {
 	}
 }
 
-// BenchmarkBufFileReadAt issues fixed-size reads at increasing offsets,
+// BenchmarkFileReadAt issues fixed-size reads at increasing offsets,
 // wrapping back to the start, exercising the random-access path without
 // disturbing any shared read cursor.
-func BenchmarkBufFileReadAt(b *testing.B) {
+func BenchmarkFileReadAt(b *testing.B) {
 	const chunk = 4 << 10 // 4 KB reads
-	for _, sz := range bufFileBenchSizes {
+	for _, sz := range fileBenchSizes {
 		b.Run(sz.name, func(b *testing.B) {
-			f := newTestBufFile("readat.bin", string(ufsTesting.SeedData('A', sz.n)))
+			f := newTestFile("readat.bin", string(ufsTesting.SeedData('A', sz.n)))
 			buf := make([]byte, chunk)
 			maxOff := max(int64(sz.n-chunk), 1)
 			var off int64
@@ -94,14 +93,14 @@ func BenchmarkBufFileReadAt(b *testing.B) {
 	}
 }
 
-// BenchmarkBufFileReadAtParallel runs concurrent ReadAt calls from multiple
-// goroutines against one bufFile, to surface mutex contention: ReadAt never
+// BenchmarkFileReadAtParallel runs concurrent ReadAt calls from multiple
+// goroutines against one File, to surface mutex contention: ReadAt never
 // mutates the shared offset, so it's a candidate for a read lock even though
-// bufFile currently guards it with a plain sync.Mutex.
-func BenchmarkBufFileReadAtParallel(b *testing.B) {
+// File currently guards it with a plain sync.Mutex.
+func BenchmarkFileReadAtParallel(b *testing.B) {
 	const chunk = 4 << 10 // 4 KB reads
 	sz := 1 << 20         // 1 MB content
-	f := newTestBufFile("readat-parallel.bin", string(ufsTesting.SeedData('P', sz)))
+	f := newTestFile("readat-parallel.bin", string(ufsTesting.SeedData('P', sz)))
 	maxOff := int64(sz - chunk)
 
 	b.SetBytes(chunk)
@@ -118,11 +117,11 @@ func BenchmarkBufFileReadAtParallel(b *testing.B) {
 	})
 }
 
-// BenchmarkBufFileSeek cycles through SeekStart, SeekCurrent and SeekEnd with
+// BenchmarkFileSeek cycles through SeekStart, SeekCurrent and SeekEnd with
 // offsets chosen to always be valid regardless of the file's current
 // position, so the loop never hits the error path.
-func BenchmarkBufFileSeek(b *testing.B) {
-	f := newTestBufFile("seek.bin", string(ufsTesting.SeedData('K', 1<<20))) // 1 MB
+func BenchmarkFileSeek(b *testing.B) {
+	f := newTestFile("seek.bin", string(ufsTesting.SeedData('K', 1<<20))) // 1 MB
 	seeks := []struct {
 		offset int64
 		whence int
@@ -137,51 +136,5 @@ func BenchmarkBufFileSeek(b *testing.B) {
 		if _, err := f.Seek(s.offset, s.whence); err != nil {
 			b.Fatal(err)
 		}
-	}
-}
-
-// BenchmarkMemFileWrite grows a file one fixed-size chunk at a time via
-// Write, the common append pattern for a freshly Create'd file.
-func BenchmarkMemFileWrite(b *testing.B) {
-	for _, chunkSize := range []int{64, 4 << 10, 64 << 10} {
-		b.Run(fmt.Sprintf("chunk-%dB", chunkSize), func(b *testing.B) {
-			fsys := makeMemFS("memory://bench")
-			b.Cleanup(ufsTesting.ValidateClose(b, fsys))
-			f, err := fsys.Create("write.bin")
-			if err != nil {
-				b.Fatal(err)
-			}
-			data := ufsTesting.SeedData('W', chunkSize)
-			b.SetBytes(int64(chunkSize))
-			b.ResetTimer()
-			for b.Loop() {
-				if _, err := f.Write(data); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
-// BenchmarkMemFileWriteString mirrors BenchmarkMemFileWrite but through the
-// io.StringWriter path, to compare against Write's []byte path.
-func BenchmarkMemFileWriteString(b *testing.B) {
-	for _, chunkSize := range []int{64, 4 << 10, 64 << 10} {
-		b.Run(fmt.Sprintf("chunk-%dB", chunkSize), func(b *testing.B) {
-			fsys := makeMemFS("memory://bench")
-			b.Cleanup(ufsTesting.ValidateClose(b, fsys))
-			f, err := fsys.Create("writestring.bin")
-			if err != nil {
-				b.Fatal(err)
-			}
-			data := string(ufsTesting.SeedData('S', chunkSize))
-			b.SetBytes(int64(chunkSize))
-			b.ResetTimer()
-			for b.Loop() {
-				if _, err := f.WriteString(data); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
 	}
 }

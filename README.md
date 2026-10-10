@@ -85,10 +85,10 @@ import (
 
   "github.com/cloudfra/ufs"
 
-  // Each blank import installs a driver. Local disk, memory and archives
-  // are built in; drop the ones you do not need.
+  // Each blank import installs a driver. Local disk and archives are built
+  // in; drop the ones you do not need.
   _ "github.com/cloudfra/ufs/drivers/boltfs" // installs bolt:
-  _ "github.com/cloudfra/ufs/drivers/core"   // installs null:
+  _ "github.com/cloudfra/ufs/drivers/core"   // installs memory: and null:
   _ "github.com/cloudfra/ufs/drivers/gcsfs"  // installs gs://
   _ "github.com/cloudfra/ufs/drivers/gitfs"  // installs URIs ending in .git
 )
@@ -132,7 +132,7 @@ More runnable examples are in [example_test.go](example_test.go) and on
 | Backend        | URI                                                         | Access     | Package          | Notes                                                                                                |
 |:---------------|:------------------------------------------------------------|:-----------|:-----------------|:-----------------------------------------------------------------------------------------------------|
 | Local          | `file:///path` or a bare path                               | read-write | built in         | Rooted with `os.OpenRoot`; paths cannot escape the root.                                             |
-| Memory         | `memory:`                                                   | read-write | built in         | Lost when the file system is closed.                                                                 |
+| Memory         | `memory:`                                                   | read-write | `drivers/core`   | Lost when the file system is closed.                                                                 |
 | Archive        | a path ending in an archive extension, or `archive:///path` | read-only  | built in         | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`.  |
 | Remote archive | `http://` or `https://` URL                                 | read-only  | built in         | Downloaded to a temporary directory that is removed on `Close`.                                      |
 | Null           | `null://`                                                   | read-write | `drivers/core`   | Like `/dev/null`: writes are accepted and discarded, reads return nothing.                           |

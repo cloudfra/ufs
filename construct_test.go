@@ -82,12 +82,12 @@ func TestNew(t *testing.T) {
 		},
 		{
 			uri:      "memory://",
-			wantType: "*ufs.memFS",
+			wantType: "*core.memFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: "*ufs.memFS",
+			wantType: "*core.memFS",
 			wantErr:  false,
 		},
 		{

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"bytes"
@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -38,15 +39,15 @@ const (
 )
 
 var (
-	_ File           = (*memFile)(nil)
-	_ WriteFS        = (*memFS)(nil)
+	_ ufs.File       = (*memFile)(nil)
+	_ ufs.WriteFS    = (*memFS)(nil)
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
-	_ Watcher        = (*memFS)(nil)
+	_ ufs.Watcher    = (*memFS)(nil)
 )
 
 func init() {
-	Register(NewDriver("memory", newMemFS, isMemFSUri, 1, true, true))
+	ufs.Register(ufs.NewDriver("memory", newMemFS, isMemFSUri, 1, true, true))
 }
 
 // memNode holds the stored state for one file or directory.
@@ -66,7 +67,7 @@ func (n *memNode) size() int64 {
 }
 
 func (n *memNode) info() fs.FileInfo {
-	return NewFileInfo(n.name, n.size(), n.mode, n.modTime)
+	return ufs.NewFileInfo(n.name, n.size(), n.mode, n.modTime)
 }
 
 // memFS is an in-memory file system. All nodes are stored in a flat map keyed
@@ -126,7 +127,7 @@ func (f *memFile) syncToFSLocked() {
 
 func (f *memFile) notifyWrite() {
 	if f.fsys != nil {
-		f.fsys.notify(NotifyWrite, f.path)
+		f.fsys.notify(ufs.NotifyWrite, f.path)
 	}
 }
 
@@ -146,7 +147,7 @@ type memDirFile struct {
 }
 
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
-	return NewFileInfo(path.Base(d.path), osutil.EmptyDirSize, d.mode, d.modTime), nil
+	return ufs.NewFileInfo(path.Base(d.path), osutil.EmptyDirSize, d.mode, d.modTime), nil
 }
 
 func (d *memDirFile) Read([]byte) (int, error) {
@@ -175,9 +176,9 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-func (fsys *memFS) GetDeviceInfo() DeviceMap {
-	info := NewDeviceInfo(fsys.name, "memory", 2, false)
-	return NewDeviceMap(info)
+func (fsys *memFS) GetDeviceInfo() ufs.DeviceMap {
+	info := ufs.NewDeviceInfo(fsys.name, "memory", 2, false)
+	return ufs.NewDeviceMap(info)
 }
 
 func (fsys *memFS) URI() (*url.URL, error) {
@@ -185,7 +186,7 @@ func (fsys *memFS) URI() (*url.URL, error) {
 }
 
 func (fsys *memFS) String() string {
-	return fmt.Sprintf("memFS(%s)", URIOrDefault(fsys, fsys.name))
+	return fmt.Sprintf("memFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
 }
 
 func (fsys *memFS) isClosed() bool {
@@ -284,7 +285,7 @@ func (fsys *memFS) Close() error {
 	return err
 }
 
-func (fsys *memFS) Create(name string) (File, error) {
+func (fsys *memFS) Create(name string) (ufs.File, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("create", name, fs.ErrClosed)
 	}
@@ -314,9 +315,9 @@ func (fsys *memFS) Create(name string) (File, error) {
 	fsys.ensureParentsLocked(name, now)
 
 	if existed {
-		fsys.notify(NotifyWrite, name)
+		fsys.notify(ufs.NotifyWrite, name)
 	} else {
-		fsys.notify(NotifyCreate, name)
+		fsys.notify(ufs.NotifyCreate, name)
 	}
 
 	return &memFile{
@@ -364,7 +365,7 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 		}
 	}
 	for _, p := range created {
-		fsys.notify(NotifyCreate, p)
+		fsys.notify(ufs.NotifyCreate, p)
 	}
 	return nil
 }
@@ -568,7 +569,7 @@ func (fsys *memFS) Remove(name string) error {
 		}
 	}
 	delete(fsys.nodes, name)
-	fsys.notify(NotifyRemove, name)
+	fsys.notify(ufs.NotifyRemove, name)
 	return nil
 }
 
@@ -587,7 +588,7 @@ func (fsys *memFS) RemoveAll(name string) error {
 		}
 		fsys.mu.Unlock()
 		for _, p := range removed {
-			fsys.notify(NotifyRemove, p)
+			fsys.notify(ufs.NotifyRemove, p)
 		}
 		return nil
 	}
@@ -605,17 +606,17 @@ func (fsys *memFS) RemoveAll(name string) error {
 	}
 	fsys.mu.Unlock()
 	for _, p := range removed {
-		fsys.notify(NotifyRemove, p)
+		fsys.notify(ufs.NotifyRemove, p)
 	}
 	return nil
 }
 
-func newMemFS(_ context.Context, name string) (WriteFS, error) {
+func newMemFS(_ context.Context, name string) (ufs.WriteFS, error) {
 	return MakeMemFS(name), nil
 }
 
 // MakeMemFS creates a memory FS without a context. (Deprecated; use NewDriver with newMemFS instead.)
-func MakeMemFS(name string) WriteFS {
+func MakeMemFS(name string) ufs.WriteFS {
 	return makeMemFS(name)
 }
 
@@ -642,7 +643,7 @@ func isMemFSUri(name string) bool {
 // Watch implements [Watcher] for in-memory file systems. It watches name (a
 // directory) and all nested paths, invoking hook for each mutation performed
 // through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
-func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
+func (fsys *memFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
 	}
@@ -665,11 +666,11 @@ func (fsys *memFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.
 	fsys.mu.RUnlock()
 
 	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
-		hook(NotifyOp(op), path)
+		hook(ufs.NotifyOp(op), path)
 	}), nil
 }
 
 // notify sends an event to all active watchers.
-func (fsys *memFS) notify(op NotifyOp, path string) {
+func (fsys *memFS) notify(op ufs.NotifyOp, path string) {
 	fsys.notifyBus.Publish(notify.Op(op), path)
 }

@@ -268,7 +268,7 @@ function Enable-WithScheduledTask {
         }
 
         Invoke-Logged 'schtasks /Query' {
-            & schtasks.exe /Query /TN $taskName /V /FO LIST
+            & schtasks.exe /Query /TN $taskName /V /FO LIST # codespell:ignore fo
         }
         Invoke-Logged 'output of the scheduled task' {
             if (Test-Path -LiteralPath $logFile) {

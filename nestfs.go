@@ -369,8 +369,10 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	var absName string
 	var onHost bool
 	if hostFS, ok := fsys.fsys.(AbsPathGetter); ok {
-		if p, err := hostFS.GetAbsPath(name); err == nil {
-			absName, onHost = p, true
+		hostPath, err := hostFS.GetAbsPath(name)
+		if err == nil {
+			absName = hostPath
+			onHost = true
 		}
 	}
 	var newFS *archiveFS

@@ -44,6 +44,16 @@ const (
 	bufferDisk
 )
 
+const (
+	// archiveDirExt is the suffix of the virtual directory that holds the
+	// content of an archive: a.zip is listed at a.zip.d.
+	archiveDirExt = ".d"
+
+	// archiveURIPrefix is put in front of the host path of an archive to open
+	// it through the archive driver.
+	archiveURIPrefix = "archive://"
+)
+
 // FSArgs holds optional parameters for constructing a nestFS.
 type FSArgs struct {
 	BufMode bufferMode
@@ -375,10 +385,10 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 			onHost = true
 		}
 	}
-	var newFS *archiveFS
+	var newFS WriteFS
 	if onHost {
 		var err error
-		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
+		newFS, err = newBaseFS(ctx, archiveURIPrefix+absName)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}

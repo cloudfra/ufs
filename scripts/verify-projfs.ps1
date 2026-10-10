@@ -8,6 +8,9 @@ $ErrorActionPreference = 'Stop'
 
 $failures = @()
 
+$os = Get-CimInstance -ClassName Win32_OperatingSystem
+Write-Host "OS: $($os.Caption) $($os.Version) ($($os.OSArchitecture)), 64-bit process: $([Environment]::Is64BitProcess)"
+
 # 1. The Windows feature is installed.
 # Windows Server reports it through Get-WindowsFeature (FS-Projectedfs);
 # Windows 10/11 desktop through Get-WindowsOptionalFeature (Client-ProjFS).
@@ -23,7 +26,12 @@ if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
     }
 }
 if (-not $featureFound) {
-    $clientFeature = Get-WindowsOptionalFeature -Online -FeatureName Client-ProjFS -ErrorAction SilentlyContinue
+    $clientFeature = $null
+    try {
+        $clientFeature = Get-WindowsOptionalFeature -Online -FeatureName Client-ProjFS
+    } catch {
+        Write-Host "Get-WindowsOptionalFeature failed: $($_.Exception.Message)"
+    }
     if ($clientFeature) {
         $featureFound = $true
         Write-Host "Client-ProjFS state: $($clientFeature.State)"

@@ -42,10 +42,14 @@ var (
 
 func init() {
 	archiveDriver := ufs.NewDriver("archive", func(ctx context.Context, name string) (ufs.WriteFS, error) {
-		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
+		return newArchiveWriteFS(ctx, strings.TrimPrefix(name, "archive://"))
 	}, isArchiveFSUri, 1, true, false)
 	archiveDriver.CreateFromFileFunc = func(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
-		return newArchiveFSFromFile(ctx, file)
+		fsys, err := newArchiveFSFromFile(ctx, file)
+		if err != nil {
+			return nil, err
+		}
+		return fsys, nil
 	}
 	ufs.Register(archiveDriver)
 	ufs.Register(ufs.NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
@@ -152,6 +156,16 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 		return err
 	}
 	return ufserrors.NewPathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
+}
+
+// newArchiveWriteFS is newArchiveFSFromLocalFS with an interface result, which
+// is nil on error; returning its nil *archiveFS directly would not be.
+func newArchiveWriteFS(ctx context.Context, name string) (ufs.WriteFS, error) {
+	fsys, err := newArchiveFSFromLocalFS(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {

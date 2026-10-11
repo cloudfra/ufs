@@ -242,7 +242,13 @@ func New(ctx context.Context, name string) (WriteFS, error) {
 			return nFS, nil
 		}
 	}
-	return openNestFS(ctx, name)
+	nFS, err := openNestFS(ctx, name)
+	if err != nil {
+		// Not "return openNestFS(...)": a nil *nestFS in the WriteFS result
+		// would be a non-nil interface.
+		return nil, err
+	}
+	return nFS, nil
 }
 
 // openNestFS opens name via newDecoratedFS and wraps the result in a nestFS

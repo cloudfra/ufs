@@ -178,7 +178,17 @@ func (fsys *localFS) Glob(pattern string) ([]string, error) {
 // Deprecated: MakeLocalFS exists only to support the shared driver tests in
 // drivers/testing and will be removed soon. Use New instead.
 func MakeLocalFS(name string) (ufs.WriteFS, error) {
-	return makeLocalFS(name)
+	return newLocalDirFS(name)
+}
+
+// newLocalDirFS is makeLocalFS with an interface result, which is nil on
+// error; returning makeLocalFS's nil *localFS directly would not be.
+func newLocalDirFS(name string) (ufs.WriteFS, error) {
+	fsys, err := makeLocalFS(name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func makeLocalFS(name string) (*localFS, error) {
@@ -199,9 +209,9 @@ func makeLocalFS(name string) (*localFS, error) {
 func newLocalFS(ctx context.Context, name string) (ufs.WriteFS, error) {
 	if archive.IsMountablePath(name) {
 		// The archive is opened by host path, so drop any file: prefix.
-		return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))
+		return newArchiveWriteFS(ctx, localFSNormalizePath(name))
 	}
-	return makeLocalFS(name)
+	return newLocalDirFS(name)
 }
 
 func isLocalFSUri(name string) bool {

@@ -4,6 +4,11 @@ go 1.26.2
 
 toolchain go1.26.6
 
+// go-fuse v2.12.0 does not compile for 32-bit Linux (386, arm): splice/pair_linux.go
+// assigns syscall.Splice's result to an int64, but it returns an int there.
+// Excluding it keeps `make deps` (go get -u) from upgrading to it.
+exclude github.com/hanwen/go-fuse/v2 v2.12.0
+
 require (
 	cloud.google.com/go/pubsub/v2 v2.7.0
 	cloud.google.com/go/storage v1.69.0
@@ -15,8 +20,9 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0
 	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/mholt/archives v0.1.5
+	github.com/mikelolasagasti/xz v1.0.1
 	go.etcd.io/bbolt v1.5.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 	google.golang.org/api v0.300.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8
 	google.golang.org/grpc v1.84.0
@@ -70,7 +76,6 @@ require (
 	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/klauspost/pgzip v1.2.7 // indirect
-	github.com/mikelolasagasti/xz v1.0.1 // indirect
 	github.com/minio/minlz v1.2.2 // indirect
 	github.com/nwaples/rardecode/v2 v2.4.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect

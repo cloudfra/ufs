@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/core"
 )
 
 const (

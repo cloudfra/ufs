@@ -1184,3 +1184,35 @@ func TestDownloadFileChecksumSurvivesRedirect(t *testing.T) {
 		t.Errorf("DownloadFileWith() = %v", err)
 	}
 }
+
+func TestCopyLimited(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		limit   int64
+		wantErr bool
+	}{
+		{name: "below the limit", content: "abc", limit: 4},
+		{name: "exactly the limit", content: "abcd", limit: 4},
+		{name: "one byte over the limit", content: "abcde", limit: 4, wantErr: true},
+		{name: "empty", content: "", limit: 4},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var dst bytes.Buffer
+			err := copyLimited(&dst, strings.NewReader(tc.content), tc.limit)
+			if tc.wantErr {
+				if !errors.Is(err, errTooLarge) {
+					t.Fatalf("copyLimited() = %v, want errTooLarge", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("copyLimited() = %v, want nil", err)
+			}
+			if got := dst.String(); got != tc.content {
+				t.Errorf("copyLimited() wrote %q, want %q", got, tc.content)
+			}
+		})
+	}
+}

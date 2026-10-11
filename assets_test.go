@@ -18,10 +18,12 @@ import (
 	"bytes"
 	"fmt"
 	"io/fs"
+	"path"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -66,8 +68,7 @@ func TestAssets(t *testing.T) {
 		{
 			name: "archiveFS",
 			createFS: func(tb testing.TB) (WriteFS, error) {
-				zipPath := ufsTesting.ZipDir(tb, testAssetsFilesDir)
-				return newBaseFS(tb.Context(), archiveURIPrefix+zipPath)
+				return newMemArchiveFS(tb, "testassets.zip", archivetest.ZipDir(tb, testAssetsFilesDir))
 			},
 		},
 	}
@@ -123,4 +124,32 @@ func copyFileForTest(src fs.FS, dst WriteFS, name string) error {
 		return ufserrors.Join(err, f.Close())
 	}
 	return f.Close()
+}
+
+// writeTestFile writes data to name in fsys, creating its parent directories.
+func writeTestFile(tb testing.TB, fsys WriteFS, name string, data []byte) {
+	tb.Helper()
+	if dir := path.Dir(name); dir != pathutil.CwdPath {
+		if err := fsys.MkdirAll(dir, osutil.DefaultDirectoryPermissions); err != nil {
+			tb.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
+		}
+	}
+	f, err := fsys.Create(name)
+	if err != nil {
+		tb.Fatalf("Create(%q) = %v, want nil", name, err)
+	}
+	if _, err := f.Write(data); err != nil {
+		tb.Errorf("Write(%q) = %v, want nil", name, err)
+	}
+	if err := f.Close(); err != nil {
+		tb.Fatalf("Close(%q) = %v, want nil", name, err)
+	}
+}
+
+// newMemArchiveFS mounts the archive in data, held in memory under name,
+// through the archive driver. The caller closes the result; nothing is written
+// to disk.
+func newMemArchiveFS(tb testing.TB, name string, data []byte) (WriteFS, error) {
+	tb.Helper()
+	return newBaseFSFromFile(tb.Context(), archiveURIPrefix+name, archivetest.NewFile(name, data))
 }

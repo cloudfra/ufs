@@ -16,7 +16,6 @@
 package testing
 
 import (
-	"archive/zip"
 	"bytes"
 	"embed"
 	"io"
@@ -307,51 +306,4 @@ func ReadDirFiles(tb testing.TB, dir string) map[string][]byte {
 		tb.Fatalf("ReadDirFiles(%q): %v", dir, err)
 	}
 	return result
-}
-
-// ZipDir writes every file below the host directory dir into a temporary zip
-// file and returns the path of the zip file. The zip file is removed when the
-// test ends.
-func ZipDir(tb testing.TB, dir string) string {
-	tb.Helper()
-	src := osutil.DirFS(dir)
-
-	tmp, err := osutil.CreateTemp("", "testassets-*.zip")
-	if err != nil {
-		tb.Fatalf("ZipDir: CreateTemp: %v", err)
-	}
-	tmpName := tmp.Name()
-	tb.Cleanup(func() {
-		if err := osutil.Remove(tmpName); err != nil {
-			tb.Fatalf("ZipDir: Cleanup: %v", err)
-		}
-	})
-
-	zw := zip.NewWriter(tmp)
-	err = fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || p == pathutil.CwdPath {
-			return err
-		}
-		w, err := zw.Create(p)
-		if err != nil {
-			return err
-		}
-		f, err := src.Open(p)
-		if err != nil {
-			return err
-		}
-		defer ValidateClose(tb, f)()
-		_, err = io.Copy(w, f)
-		return err
-	})
-	if err != nil {
-		tb.Fatalf("ZipDir: walk: %v", err)
-	}
-	if err := zw.Close(); err != nil {
-		tb.Fatalf("ZipDir: close zip: %v", err)
-	}
-	if err := tmp.Close(); err != nil {
-		tb.Fatalf("ZipDir: close file: %v", err)
-	}
-	return tmpName
 }

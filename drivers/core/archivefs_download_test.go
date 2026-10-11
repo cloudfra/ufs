@@ -23,8 +23,8 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/httputil"
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -45,11 +45,7 @@ func TestNewRemoteArchive(t *testing.T) {
 
 func testArchiveServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	zipPath := ufsTesting.ZipDir(t, testAssetsFilesDir)
-	zipData, err := osutil.ReadFile(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	zipData := archivetest.ZipDir(t, testAssetsFilesDir)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/testassets.zip", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/zip")

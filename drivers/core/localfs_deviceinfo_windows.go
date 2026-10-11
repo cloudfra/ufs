@@ -14,52 +14,54 @@
 
 //go:build windows
 
-package ufs
+package core
 
 import (
 	"path/filepath"
 	"syscall"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/cloudfra/ufs"
 )
 
-func (fsys *localFS) GetDeviceInfo() DeviceMap {
+func (fsys *localFS) GetDeviceInfo() ufs.DeviceMap {
 	rootPath := fsys.osFS.Name()
 	return windowsDeviceMap(rootPath)
 }
 
-func windowsDeviceMap(rootPath string) DeviceMap {
+func windowsDeviceMap(rootPath string) ufs.DeviceMap {
 	vol := filepath.VolumeName(rootPath)
 	if vol == "" {
-		return DefaultDeviceMap
+		return ufs.DefaultDeviceMap
 	}
 	volumeRoot := vol + string(filepath.Separator)
 	// NTFS volume mount points (volumes mounted at arbitrary subdirectories) are not
 	// detected here; FindFirstVolumeMountPoint / GetVolumeNameForVolumeMountPoint
 	// could enumerate them in a future implementation.
-	return DeviceMap{
+	return ufs.DeviceMap{
 		".": windowsDriveInfo(volumeRoot),
 	}
 }
 
-func windowsDriveInfo(volumeRoot string) DeviceInfo {
+func windowsDriveInfo(volumeRoot string) ufs.DeviceInfo {
 	ptr, err := syscall.UTF16PtrFromString(volumeRoot)
 	if err != nil {
-		return DefaultDeviceInfo
+		return ufs.DefaultDeviceInfo
 	}
 	dt := windows.GetDriveType(ptr)
 	name := filepath.VolumeName(volumeRoot)
 	switch dt {
 	case windows.DRIVE_REMOVABLE:
-		return NewDeviceInfo(name, "removable", 1, false)
+		return ufs.NewDeviceInfo(name, "removable", 1, false)
 	case windows.DRIVE_FIXED:
-		return NewDeviceInfo(name, "fixed", 1, false)
+		return ufs.NewDeviceInfo(name, "fixed", 1, false)
 	case windows.DRIVE_REMOTE:
-		return NewDeviceInfo(name, "network", 1, false)
+		return ufs.NewDeviceInfo(name, "network", 1, false)
 	case windows.DRIVE_CDROM:
-		return NewDeviceInfo(name, "cdrom", 1, false)
+		return ufs.NewDeviceInfo(name, "cdrom", 1, false)
 	case windows.DRIVE_RAMDISK:
-		return NewDeviceInfo(name, "memory", 4, false)
+		return ufs.NewDeviceInfo(name, "memory", 4, false)
 	}
-	return DefaultDeviceInfo
+	return ufs.DefaultDeviceInfo
 }

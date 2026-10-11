@@ -232,6 +232,9 @@ type nestFS struct {
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
+	if err := fsys.validPath(absPathOp, name); err != nil {
+		return "", err
+	}
 	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}
@@ -397,7 +400,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
-		newFS, err = newArchiveFSFromFile(ctx, f)
+		newFS, err = newBaseFSFromFile(ctx, archiveURIPrefix+name, f)
 		if err != nil {
 			return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), f.Close())
 		}

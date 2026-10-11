@@ -16,6 +16,7 @@ package ufs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -154,6 +155,12 @@ func nameToURI(name string) (*url.URL, error) {
 //     directory (not available on AIX).
 //   - A local path pointing to a recognized archive (.zip, .tar, .tar.gz, etc.)
 //     is mounted read-only through the archive's contents.
+//
+// Every scheme is served by a driver that registers itself when its package
+// is imported; the base package registers none. file://, bare paths, archives,
+// memory://, null:// and angry:// come from
+// github.com/cloudfra/ufs/drivers/core, which archive auto-mounting (below)
+// needs as well.
 //
 // # Alternative input formats
 //
@@ -346,6 +353,24 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
 	}
 	fsys, err := r.create(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
+	}
+	return fsys, nil
+}
+
+// newBaseFSFromFile opens the file system held by the open file with the driver
+// that matches name. The returned file system owns file and closes it on
+// Close; on error file is left open.
+func newBaseFSFromFile(ctx context.Context, name string, file fs.File) (WriteFS, error) {
+	driver, err := getRegistrar().matchDriver(name)
+	if err != nil {
+		return nil, fmt.Errorf("%q needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, err)
+	}
+	if driver.CreateFromFileFunc == nil {
+		return nil, fmt.Errorf("driver %q cannot mount %q from an open file, %w", driver.Name, name, errors.ErrUnsupported)
+	}
+	fsys, err := driver.CreateFromFileFunc(ctx, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
 	}

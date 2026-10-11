@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"context"
@@ -24,19 +24,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfra/ufs"
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
-var _ Watcher = (*localFS)(nil)
+var _ ufs.Watcher = (*localFS)(nil)
 
 // Watch implements [Watcher] for local file systems. It recursively watches
 // name and all nested directories using github.com/fsnotify/fsnotify,
 // translating OS-native absolute paths back to root-relative, forward-slash
 // paths before invoking hook.
-func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
+func (fsys *localFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
 	if err := validLocalPath("watch", name); err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook NotifyHook) (i
 type localWatcher struct {
 	fsys      *localFS
 	watcher   *fsnotify.Watcher
-	hook      NotifyHook
+	hook      ufs.NotifyHook
 	cancel    context.CancelFunc
 	absRoot   string
 	watchRoot string
@@ -208,18 +209,18 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	lw.hook(op, rel)
 }
 
-func convertOp(op fsnotify.Op) (NotifyOp, bool) {
+func convertOp(op fsnotify.Op) (ufs.NotifyOp, bool) {
 	switch {
 	case op.Has(fsnotify.Create):
-		return NotifyCreate, true
+		return ufs.NotifyCreate, true
 	case op.Has(fsnotify.Write):
-		return NotifyWrite, true
+		return ufs.NotifyWrite, true
 	case op.Has(fsnotify.Remove):
-		return NotifyRemove, true
+		return ufs.NotifyRemove, true
 	case op.Has(fsnotify.Rename):
-		return NotifyRename, true
+		return ufs.NotifyRename, true
 	case op.Has(fsnotify.Chmod):
-		return NotifyChmod, true
+		return ufs.NotifyChmod, true
 	default:
 		return 0, false
 	}

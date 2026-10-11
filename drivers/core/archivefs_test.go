@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"archive/zip"
@@ -22,15 +22,22 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-const testArchive = "testing/testassets/archives/testassets.tar.gz"
+const (
+	testArchive = "../../testing/testassets/archives/testassets.tar.gz"
 
-func mustArchiveFS(t *testing.T) WriteFS {
+	// testAssetsFilesDir is the directory of the files that the test archives hold.
+	testAssetsFilesDir = "../../testing/testassets/files"
+)
+
+func mustArchiveFS(t *testing.T) ufs.WriteFS {
 	t.Helper()
 	fsys, err := newArchiveFSFromLocalFS(context.Background(), testArchive)
 	if err != nil {
@@ -38,7 +45,7 @@ func mustArchiveFS(t *testing.T) WriteFS {
 	}
 	t.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
-			t.Errorf("failed to close archive FS: %v", err)
+			t.Errorf("failed to close archive ufs.FS: %v", err)
 		}
 	})
 	return fsys
@@ -53,7 +60,7 @@ func TestNewArchiveFSFromLocalFS(t *testing.T) {
 		t.Fatal("fsys is nil")
 	}
 	if err := fsys.Close(); err != nil {
-		t.Errorf("failed to close archive FS: %v", err)
+		t.Errorf("failed to close archive ufs.FS: %v", err)
 	}
 }
 
@@ -227,9 +234,9 @@ func TestArchiveFSRemoveAll(t *testing.T) {
 	}
 }
 
-const testNoDirArchive = "testing/testassets/archives/nodir-testassets.zip"
+const testNoDirArchive = "../../testing/testassets/archives/nodir-testassets.zip"
 
-func mustNoDirArchiveFS(t *testing.T) WriteFS {
+func mustNoDirArchiveFS(t *testing.T) ufs.WriteFS {
 	t.Helper()
 	fsys, err := newArchiveFSFromLocalFS(context.Background(), testNoDirArchive)
 	if err != nil {
@@ -237,7 +244,7 @@ func mustNoDirArchiveFS(t *testing.T) WriteFS {
 	}
 	t.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
-			t.Errorf("failed to close archive FS: %v", err)
+			t.Errorf("failed to close archive ufs.FS: %v", err)
 		}
 	})
 	return fsys
@@ -398,7 +405,7 @@ func createArchiveWithEntries(t *testing.T, entries ...string) string {
 // mustArchiveFromEntries mounts a freshly built zip (from the given entries) as
 // an archiveFS and registers cleanup to close it, mirroring mustArchiveFS and
 // mustNoDirArchiveFS but giving tests full control over the directory entries.
-func mustArchiveFromEntries(t *testing.T, entries ...string) WriteFS {
+func mustArchiveFromEntries(t *testing.T, entries ...string) ufs.WriteFS {
 	t.Helper()
 
 	zipPath := createArchiveWithEntries(t, entries...)
@@ -408,7 +415,7 @@ func mustArchiveFromEntries(t *testing.T, entries ...string) WriteFS {
 	}
 	t.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
-			t.Errorf("failed to close archive FS: %v", err)
+			t.Errorf("failed to close archive ufs.FS: %v", err)
 		}
 	})
 	return fsys
@@ -526,38 +533,38 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 
 	tests := []struct {
 		name string
-		op   func(fsys WriteFS, path string) error
+		op   func(fsys ufs.WriteFS, path string) error
 	}{
-		{"Open", func(fsys WriteFS, path string) error {
+		{"Open", func(fsys ufs.WriteFS, path string) error {
 			_, err := fsys.Open(path)
 			return err
 		}},
-		{"Create", func(fsys WriteFS, path string) error {
+		{"Create", func(fsys ufs.WriteFS, path string) error {
 			_, err := fsys.Create(path)
 			return err
 		}},
-		{"MkdirAll", func(fsys WriteFS, path string) error {
+		{"MkdirAll", func(fsys ufs.WriteFS, path string) error {
 			return fsys.MkdirAll(path, fs.ModePerm)
 		}},
-		{"Remove", func(fsys WriteFS, path string) error {
+		{"Remove", func(fsys ufs.WriteFS, path string) error {
 			return fsys.Remove(path)
 		}},
-		{"RemoveAll", func(fsys WriteFS, path string) error {
+		{"RemoveAll", func(fsys ufs.WriteFS, path string) error {
 			return fsys.RemoveAll(path)
 		}},
-		{"ReadFile", func(fsys WriteFS, path string) error {
+		{"ReadFile", func(fsys ufs.WriteFS, path string) error {
 			_, err := fsys.(fs.ReadFileFS).ReadFile(path)
 			return err
 		}},
-		{"ReadDir", func(fsys WriteFS, path string) error {
+		{"ReadDir", func(fsys ufs.WriteFS, path string) error {
 			_, err := fsys.(fs.ReadDirFS).ReadDir(path)
 			return err
 		}},
-		{"ReadLink", func(fsys WriteFS, path string) error {
+		{"ReadLink", func(fsys ufs.WriteFS, path string) error {
 			_, err := fsys.ReadLink(path)
 			return err
 		}},
-		{"Lstat", func(fsys WriteFS, path string) error {
+		{"Lstat", func(fsys ufs.WriteFS, path string) error {
 			_, err := fsys.Lstat(path)
 			return err
 		}},
@@ -574,5 +581,61 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// fakeArchive is an archive.FS that counts Close calls and returns closeErr.
+type fakeArchive struct {
+	ufsTesting.EmptyFS
+	closeCalled atomic.Int32
+	closeErr    error
+}
+
+func (f *fakeArchive) Stat(name string) (fs.FileInfo, error) { return fs.Stat(f.EmptyFS, name) }
+
+func (f *fakeArchive) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(f.EmptyFS, name) }
+
+func (f *fakeArchive) Close() error {
+	f.closeCalled.Add(1)
+	return f.closeErr
+}
+
+func TestArchiveFSCloseClosesArchive(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeArchive{}
+	afs := makeArchiveFS(inner, "test.zip")
+
+	if err := afs.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+	if inner.closeCalled.Load() != 1 {
+		t.Error("underlying archive was not closed on archiveFS.Close()")
+	}
+}
+
+func TestArchiveFSCloseReportsArchiveError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("file close failed")
+	afs := makeArchiveFS(&fakeArchive{closeErr: wantErr}, "test.zip")
+
+	err := afs.Close()
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Close() = %v, want %v", err, wantErr)
+	}
+}
+
+func TestArchiveFSCloseIdempotent(t *testing.T) {
+	t.Parallel()
+
+	inner := &fakeArchive{}
+	afs := makeArchiveFS(inner, "test.zip")
+
+	for range 3 {
+		ufsTesting.ValidateClose(t, afs)()
+	}
+	if inner.closeCalled.Load() != 1 {
+		t.Errorf("archive closed %d times, want exactly 1", inner.closeCalled.Load())
 	}
 }

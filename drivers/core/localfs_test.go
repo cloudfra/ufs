@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"errors"
@@ -31,7 +31,7 @@ const (
 )
 
 func TestLocalFSString(t *testing.T) {
-	fsys, err := makeLocalFS(testLocalFSName)
+	fsys, err := makeLocalFS("../../" + testLocalFSName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,10 @@ func TestIsLocalFSUri(t *testing.T) {
 
 func TestLocalFSLstat(t *testing.T) {
 	dir := t.TempDir()
-	fsys := mustFS(t, newLocalFS, dir)
+	fsys, err := newLocalFS(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("lstat_file.txt")
@@ -111,7 +114,10 @@ func TestLocalFSLstat(t *testing.T) {
 
 func TestLocalFSReadLink(t *testing.T) {
 	dir := t.TempDir()
-	fsys := mustFS(t, newLocalFS, dir)
+	fsys, err := newLocalFS(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
 	f, err := fsys.Create("target.txt")

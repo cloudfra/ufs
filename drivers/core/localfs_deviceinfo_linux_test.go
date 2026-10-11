@@ -14,7 +14,7 @@
 
 //go:build linux
 
-package ufs
+package core
 
 import (
 	"strings"

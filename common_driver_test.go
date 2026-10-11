@@ -12,34 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-
-package ufs
+package ufs_test
 
 import (
-	"io/fs"
-	"os"
-	"strings"
+	"context"
 
-	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
 )
 
-// localFSNormalizePath strips the "file://" or "file:" URI prefix, leaving a plain path.
-func localFSNormalizePath(name string) string {
-	if after, ok := strings.CutPrefix(name, "file://"); ok {
-		return after
-	}
-	return strings.TrimPrefix(name, "file:")
-}
-
-func validLocalPath(op, name string) error {
-	return pathutil.Validate(op, name)
-}
-
-func localFSWrapFile(f *os.File) fs.File {
-	return f
-}
-
-func localFSNormalizeDirInfo(fi fs.FileInfo) fs.FileInfo {
-	return fi
+// init registers the driver for the URI "test-tempmount:", which opens an
+// empty tempMountFS. The tests of package ufs cannot import drivers/core
+// themselves, because it imports ufs.
+func init() {
+	const name = "test-tempmount"
+	ufs.Register(ufs.NewDriver(name, func(ctx context.Context, _ string) (ufs.WriteFS, error) {
+		return core.NewTempMountFS(ctx, "test://", func(string) error { return nil })
+	}, func(uri string) bool {
+		return uri == name+":"
+	}, 1, false, true))
 }

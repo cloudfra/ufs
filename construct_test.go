@@ -155,6 +155,27 @@ func TestNewKeepsUFSParameters(t *testing.T) {
 	}
 }
 
+// TestNewErrorReturnsNilFS checks that a failed New returns a nil interface,
+// not a non-nil interface that holds a nil pointer: callers that test the
+// file system against nil would otherwise use it and panic.
+func TestNewErrorReturnsNilFS(t *testing.T) {
+	for _, name := range []string{
+		"unknown://surely-not-a-path-xyz",
+		"surely/not/a/path/xyz",
+		"memory:?cache=unknown://surely-not-a-path-xyz",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fsys, err := New(t.Context(), name)
+			if err == nil {
+				t.Fatalf("New(%q) = nil error, want an error", name)
+			}
+			if fsys != nil {
+				t.Errorf("New(%q) = %#v, want a nil file system with the error", name, fsys)
+			}
+		})
+	}
+}
+
 func TestNew(t *testing.T) {
 	tests := []struct {
 		uri               string

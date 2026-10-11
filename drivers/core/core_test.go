@@ -69,3 +69,15 @@ func TestNewTempMountFS(t *testing.T) {
 	}
 	checkWriteRead(t, fsys)
 }
+
+// TestMakeLocalFSErrorReturnsNilFS checks that a failed MakeLocalFS returns a
+// nil interface, not a non-nil interface that holds a nil pointer.
+func TestMakeLocalFSErrorReturnsNilFS(t *testing.T) {
+	fsys, err := core.MakeLocalFS(t.TempDir() + "/missing")
+	if err == nil {
+		t.Fatal("MakeLocalFS() = nil error, want an error for a missing directory")
+	}
+	if fsys != nil {
+		t.Errorf("MakeLocalFS() = %#v, want a nil file system with the error", fsys)
+	}
+}

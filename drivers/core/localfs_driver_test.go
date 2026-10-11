@@ -12,9 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package core is the home of the file systems that every ufs program is
-// expected to use: memory:, null:, angry:, file:// and archive://.
-//
-// Importing the package registers them, so that [ufs.New] can open their
-// URIs.
-package core
+package core_test
+
+import (
+	"testing"
+
+	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
+	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+)
+
+func TestLocalFSDriver(t *testing.T) {
+	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+		dir := t.TempDir()
+		fsys, err := core.MakeLocalFS(dir)
+		if err != nil {
+			t.Fatalf("cannot create localFS %q, %s", dir, err)
+		}
+		return fsys
+	})
+}

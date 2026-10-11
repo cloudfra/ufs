@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"errors"
 	"io/fs"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -46,7 +47,7 @@ func TestTempMountFSCleanup(t *testing.T) {
 
 func TestTempMountFSCloseError(t *testing.T) {
 	// Use an angry FS so that lfs.Close() returns an error.
-	angry := mustBaseFS(t, "angry:")
+	angry := MakeAngryFS("angry:")
 	tfs := makeTempMountFS(angry, "test://", "test://", func() error { return nil })
 	err := tfs.Close()
 	if err == nil {
@@ -232,4 +233,41 @@ func TestTempMountFSLstat(t *testing.T) {
 			t.Errorf("Mode() missing ModeSymlink for symlink: %v", info.Mode())
 		}
 	})
+}
+
+func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
+	t.Parallel()
+
+	var cleanupCalled atomic.Int32
+	angry := MakeAngryFS("angry:")
+	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
+		cleanupCalled.Add(1)
+		return nil
+	})
+
+	err := tfs.Close()
+	if err == nil {
+		t.Fatal("Close() should return error from angry lfs")
+	}
+	if cleanupCalled.Load() < 1 {
+		t.Error("cleanup function was not called when inner ufs.FS Close failed")
+	}
+}
+
+func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
+	t.Parallel()
+
+	angry := MakeAngryFS("angry:")
+	cleanupErr := errors.New("cleanup boom")
+	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
+		return cleanupErr
+	})
+
+	err := tfs.Close()
+	if err == nil {
+		t.Fatal("Close() should return error")
+	}
+	if !errors.Is(err, cleanupErr) {
+		t.Errorf("Close() error should contain cleanup error, got: %v", err)
+	}
 }

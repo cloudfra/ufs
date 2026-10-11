@@ -12,23 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs_test
+//go:build !linux && !windows
 
-import (
-	"testing"
+package core
 
-	"github.com/cloudfra/ufs"
-	"github.com/cloudfra/ufs/drivers/core"
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-)
+import "github.com/cloudfra/ufs"
 
-func TestTempMountFS(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
-		name := "temp://test"
-		fsys, err := core.NewTempMountFS(t.Context(), name, func(string) error { return nil })
-		if err != nil {
-			t.Fatalf("cannot create tempMountFS %q, %s", name, err)
-		}
-		return fsys
-	})
+func (fsys *localFS) GetDeviceInfo() ufs.DeviceMap {
+	return ufs.DefaultDeviceMap
 }

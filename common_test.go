@@ -21,6 +21,11 @@ import (
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
+// tempMountTestURI opens a tempMountFS. It is served by a driver that only
+// these tests register, see common_driver_test.go: a tempMountFS has no URI of
+// its own.
+const tempMountTestURI = "test-tempmount:"
+
 type fsTestCase struct {
 	name       string
 	createFS   func(tb testing.TB) WriteFS
@@ -32,11 +37,7 @@ var (
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) WriteFS {
-				dir := tb.TempDir()
-				fsys, err := newLocalFS(tb.Context(), dir)
-				if err != nil {
-					tb.Fatalf("cannot create localFS file system, %s", err)
-				}
+				fsys := mustBaseFS(tb, tb.TempDir())
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
 						tb.Errorf("Close() = %v", err)
@@ -49,10 +50,7 @@ var (
 		{
 			name: "tempMountFS",
 			createFS: func(tb testing.TB) WriteFS {
-				fsys, err := newTempMountFS(tb.Context(), "test://", func(string) error { return nil })
-				if err != nil {
-					tb.Fatalf("cannot create tempMountFS file system, %s", err)
-				}
+				fsys := mustBaseFS(tb, tempMountTestURI)
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
 						tb.Errorf("Close() = %v", err)

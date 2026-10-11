@@ -18,6 +18,7 @@ package httputil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -151,8 +152,8 @@ func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
 // unsupported algorithm or is not a valid digest for its algorithm is rejected
 // before any request is made.
 //
-// If the body cannot be read in full or the checksum does not match, the
-// file is deleted, including any earlier file of the same name it replaced.
+// If the body cannot be read in full, is larger than 4 GiB or the checksum
+// does not match, the file is deleted, including any earlier file of the same name it replaced.
 func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
 	parsed, params, err := ParseURI(uri)
 	if err != nil {
@@ -215,15 +216,17 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if fileChecksum != nil {
 		w = io.MultiWriter(f, fileChecksum)
 	}
-	_, err = io.Copy(w, io.LimitReader(resp.Body, maxDownloadSize))
+	err = copyLimited(w, resp.Body, maxDownloadSize)
 	if err == nil && fileChecksum != nil {
 		if verifyErr := fileChecksum.Verify(); verifyErr != nil {
 			err = fmt.Errorf("downloaded file %q: %w", archiveFilename, verifyErr)
 		}
 	}
-	// Close before deleting; Windows cannot remove an open file.
-	if closeErr := f.Close(); closeErr != nil {
-		slog.Warn("failed to close downloaded file", "path", archiveFilename, "error", closeErr)
+	// Close before deleting; Windows cannot remove an open file. A failed
+	// Close can mean that the last writes did not reach the disk, so the
+	// download is not reported as complete.
+	if closeErr := f.Close(); closeErr != nil && err == nil {
+		err = fmt.Errorf("cannot close downloaded file %q: %w", archiveFilename, closeErr)
 	}
 	if err != nil {
 		osutil.TryDeleteFile(archiveFilename)
@@ -231,6 +234,24 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	}
 
 	return archiveFilename, nil
+}
+
+// errTooLarge is returned for a download that is larger than maxDownloadSize.
+var errTooLarge = errors.New("download is larger than the size limit")
+
+// copyLimited copies src to dst. It fails with errTooLarge if src holds more
+// than limit bytes, instead of silently storing only the first limit bytes.
+func copyLimited(dst io.Writer, src io.Reader, limit int64) error {
+	// Read one byte past the limit to tell a source of exactly limit bytes
+	// from a longer one.
+	n, err := io.Copy(dst, io.LimitReader(src, limit+1))
+	if err != nil {
+		return err
+	}
+	if n > limit {
+		return fmt.Errorf("%w of %d bytes", errTooLarge, limit)
+	}
+	return nil
 }
 
 // ParseURI parses uri and extracts the query parameters whose name starts with

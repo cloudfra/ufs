@@ -15,6 +15,7 @@
 package ufs
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,5 +74,41 @@ func TestAbsPath(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAbsPathRejectsInvalidNames checks that AbsPath does not turn a name that
+// is not a valid path, such as one with "..", into a host path outside of the
+// file system's root.
+func TestAbsPathRejectsInvalidNames(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range getAllExceptAngryTestCaseList() {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := tc.createFS(t)
+			defer ufsTesting.ValidateClose(t, fsys)()
+
+			for _, name := range []string{"..", "../outside.txt", "a/../../outside.txt", "/etc/passwd", ""} {
+				if got, err := AbsPath(fsys, name); err == nil {
+					t.Errorf("AbsPath(%q) = %q, want an error", name, got)
+				}
+			}
+		})
+	}
+}
+
+func TestAbsPathOSRootRejectsInvalidNames(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, root)()
+
+	if got, err := AbsPath(root, "../outside.txt"); err == nil {
+		t.Errorf("AbsPath(../outside.txt) = %q, want an error", got)
+	}
+	if _, err := AbsPath(root, "inside.txt"); err != nil {
+		t.Errorf("AbsPath(inside.txt) = %v, want nil", err)
 	}
 }

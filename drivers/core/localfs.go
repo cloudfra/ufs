@@ -64,6 +64,9 @@ func (fsys *localFS) String() string {
 }
 
 func (fsys *localFS) GetAbsPath(name string) (string, error) {
+	if err := validLocalPath("absPath", name); err != nil {
+		return "", err
+	}
 	return filepath.Abs(filepath.Join(fsys.osFS.Name(), name))
 }
 

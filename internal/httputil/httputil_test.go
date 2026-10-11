@@ -74,6 +74,30 @@ func TestIsBlockedIP(t *testing.T) {
 		{"fe80::abcd:1234", true},
 		{"2001:4860:4860::8888", false},
 		{"93.184.216.34", false},
+
+		// Shared address space (RFC 6598), used for carrier-grade NAT and by
+		// some clouds for their metadata service.
+		{"100.64.0.1", true},
+		{"100.100.100.200", true},
+		{"100.127.255.255", true},
+		{"100.63.255.255", false},
+		{"100.128.0.1", false},
+		// "This network", protocol assignments, benchmarking, reserved and
+		// broadcast.
+		{"0.1.2.3", true},
+		{"192.0.0.1", true},
+		{"198.18.0.1", true},
+		{"198.19.255.255", true},
+		{"198.20.0.1", false},
+		{"240.0.0.1", true},
+		{"255.255.255.255", true},
+		// Multicast outside of the link-local range.
+		{"239.1.2.3", true},
+		{"ff0e::1", true},
+		// NAT64 (RFC 6052) addresses reach the IPv4 address they embed.
+		{"64:ff9b::7f00:1", true},    // 127.0.0.1
+		{"64:ff9b::a9fe:a9fe", true}, // 169.254.169.254
+		{"64:ff9b::808:808", false},  // 8.8.8.8
 	}
 	for _, tc := range tests {
 		t.Run(tc.ip, func(t *testing.T) {

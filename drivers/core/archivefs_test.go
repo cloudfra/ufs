@@ -586,14 +586,14 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 
 // fakeArchive is an archive.FS that counts Close calls and returns closeErr.
 type fakeArchive struct {
-	emptyFS
+	ufsTesting.EmptyFS
 	closeCalled atomic.Int32
 	closeErr    error
 }
 
-func (f *fakeArchive) Stat(name string) (fs.FileInfo, error) { return fs.Stat(f.emptyFS, name) }
+func (f *fakeArchive) Stat(name string) (fs.FileInfo, error) { return fs.Stat(f.EmptyFS, name) }
 
-func (f *fakeArchive) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(f.emptyFS, name) }
+func (f *fakeArchive) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(f.EmptyFS, name) }
 
 func (f *fakeArchive) Close() error {
 	f.closeCalled.Add(1)
@@ -638,11 +638,4 @@ func TestArchiveFSCloseIdempotent(t *testing.T) {
 	if inner.closeCalled.Load() != 1 {
 		t.Errorf("archive closed %d times, want exactly 1", inner.closeCalled.Load())
 	}
-}
-
-// emptyFS is a minimal fs.FS that contains no files.
-type emptyFS struct{}
-
-func (emptyFS) Open(name string) (fs.File, error) {
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 }

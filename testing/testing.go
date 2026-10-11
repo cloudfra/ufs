@@ -277,6 +277,15 @@ func SeedData(seed byte, n int) []byte {
 	return rep[:n]
 }
 
+// EmptyFS is an [fs.FS] that contains no files: Open reports every name as
+// not existing.
+type EmptyFS struct{}
+
+// Open returns an [fs.PathError] that wraps [fs.ErrNotExist].
+func (EmptyFS) Open(name string) (fs.File, error) {
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+}
+
 // ReadDirFiles returns the content of every file below the host directory
 // dir, keyed by the file's slash-separated path relative to dir.
 func ReadDirFiles(tb testing.TB, dir string) map[string][]byte {

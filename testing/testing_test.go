@@ -16,7 +16,9 @@ package testing
 
 import (
 	"archive/zip"
+	"errors"
 	"io"
+	"io/fs"
 	"path/filepath"
 	"testing"
 
@@ -39,6 +41,14 @@ func writeTestDir(t *testing.T, files map[string]string) string {
 		}
 	}
 	return dir
+}
+
+func TestEmptyFS(t *testing.T) {
+	_, err := EmptyFS{}.Open("a.txt")
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) || pathErr.Path != "a.txt" || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Open() = %v, want an *fs.PathError for a.txt that wraps fs.ErrNotExist", err)
+	}
 }
 
 func TestReadDirFiles(t *testing.T) {

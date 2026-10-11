@@ -30,3 +30,17 @@ func (f *readOnlyFile) Write([]byte) (int, error) {
 func (f *readOnlyFile) WriteString(string) (int, error) {
 	return 0, fs.ErrInvalid
 }
+
+// readOnlyHandle returns a File for the handle f of a file that was opened for
+// reading, one that cannot be used to write.
+//
+// A handle backed by an OS file needs no wrapper: the OS already rejects
+// writes to a file that was opened for reading. The check is on Fd rather than
+// on *os.File because localFS wraps its files on Windows, and a wrapper would
+// hide the other methods of the handle (Sync, ReadDir, the io.Copy fast paths).
+func readOnlyHandle(f File) File {
+	if _, ok := f.(interface{ Fd() uintptr }); ok {
+		return f
+	}
+	return &readOnlyFile{File: f}
+}

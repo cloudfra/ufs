@@ -15,14 +15,16 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -51,6 +53,129 @@ func TestNewBaseFSUnregisteredDriverHint(t *testing.T) {
 	}
 }
 
+func TestNewBaseFSFromFile(t *testing.T) {
+	const archivePath = testAssetsArchivesDir + "/single-testassets.zip"
+	f, err := osutil.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys, err := newBaseFSFromFile(t.Context(), "archive://single-testassets.zip", f)
+	if err != nil {
+		t.Fatalf("newBaseFSFromFile() = %v, want nil", err)
+	}
+	if _, err := fs.Stat(fsys, "index.html"); err != nil {
+		t.Errorf("Stat(index.html) = %v, want nil", err)
+	}
+	if err := fsys.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil", err)
+	}
+	// The file system owns the file, so Close has closed it.
+	if _, err := f.Stat(); err == nil {
+		t.Error("the file is still open after the file system was closed")
+	}
+}
+
+func TestNewBaseFSFromFileErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		uri     string
+		wantErr string
+	}{
+		{
+			name:    "no driver for the name",
+			uri:     "gs://bucket/archive.zip",
+			wantErr: "check that the driver package is imported",
+		},
+		{
+			name:    "driver cannot open a file",
+			uri:     "file:///archive.zip",
+			wantErr: "from an open file",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "archive.zip")
+			if err := osutil.WriteFile(filename, []byte("not an archive")); err != nil {
+				t.Fatal(err)
+			}
+			f, err := osutil.Open(filename)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ufsTesting.ValidateClose(t, f)()
+
+			_, err = newBaseFSFromFile(t.Context(), tc.uri, f)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("newBaseFSFromFile(%q) = %v, want an error containing %q", tc.uri, err, tc.wantErr)
+			}
+			// On error the file is left open for the caller to close.
+			if _, err := f.Stat(); err != nil {
+				t.Errorf("the file was closed on error, Stat() = %v", err)
+			}
+		})
+	}
+}
+
+var (
+	ufsParamsDriverOnce  sync.Once
+	ufsParamsDriverNames sync.Map
+)
+
+// TestNewKeepsUFSParameters checks that query parameters addressed to ufs
+// (the "ufs." prefix, e.g. ufs.checksum) reach the driver with the base URI
+// and are not opened as mounts.
+func TestNewKeepsUFSParameters(t *testing.T) {
+	// The driver records the names it is asked to open under a host that is
+	// unique to this run: drivers cannot be unregistered, so with -count the
+	// one registered by the first run serves the later runs too.
+	const scheme = "ufsparams-test://"
+	ufsParamsDriverOnce.Do(func() {
+		Register(NewDriver("ufsparams-test", func(ctx context.Context, name string) (WriteFS, error) {
+			ufsParamsDriverNames.Store(name, true)
+			return newBaseFS(ctx, "memory:")
+		}, func(name string) bool {
+			return strings.HasPrefix(name, scheme)
+		}, 1, false, true))
+	})
+	host := ufsTesting.RandomString(12)
+
+	fsys, err := New(t.Context(), scheme+host+"/a.zip?ufs.checksum=sha256:abcd&cache=memory:")
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	want := scheme + host + "/a.zip?ufs.checksum=sha256%3Aabcd"
+	if _, ok := ufsParamsDriverNames.Load(want); !ok {
+		t.Errorf("the driver was not asked to open %q", want)
+	}
+	// The other parameter is still a mount point.
+	if _, err := fsys.Stat("cache"); err != nil {
+		t.Errorf("Stat(cache) = %v, want the mount point", err)
+	}
+}
+
+// TestNewErrorReturnsNilFS checks that a failed New returns a nil interface,
+// not a non-nil interface that holds a nil pointer: callers that test the
+// file system against nil would otherwise use it and panic.
+func TestNewErrorReturnsNilFS(t *testing.T) {
+	for _, name := range []string{
+		"unknown://surely-not-a-path-xyz",
+		"surely/not/a/path/xyz",
+		"memory:?cache=unknown://surely-not-a-path-xyz",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fsys, err := New(t.Context(), name)
+			if err == nil {
+				t.Fatalf("New(%q) = nil error, want an error", name)
+			}
+			if fsys != nil {
+				t.Errorf("New(%q) = %#v, want a nil file system with the error", name, fsys)
+			}
+		})
+	}
+}
+
 func TestNew(t *testing.T) {
 	tests := []struct {
 		uri               string
@@ -61,49 +186,49 @@ func TestNew(t *testing.T) {
 	}{
 		{
 			uri:               "angry://",
-			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantType:          "*core.angryFS",
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:               "angry://",
-			wantType:          reflect.TypeFor[*nullFS]().Name(),
+			wantType:          "*core.angryFS",
 			wantErr:           false,
 			ignoreCloseErrors: true,
 		},
 		{
 			uri:      "file://",
-			wantType: reflect.TypeFor[*localFS]().Name(),
+			wantType: "*core.localFS",
 			wantErr:  false,
 		},
 		{
 			uri:      pathutil.CwdPath,
-			wantType: reflect.TypeFor[*localFS]().Name(),
+			wantType: "*core.localFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: reflect.TypeFor[*memFS]().Name(),
+			wantType: "*core.memFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "memory://",
-			wantType: reflect.TypeFor[*memFS]().Name(),
+			wantType: "*core.memFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: "*core.nullFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "null://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: "*core.nullFS",
 			wantErr:  false,
 		},
 		{
 			uri:      "file:///?a=memory://",
-			wantType: reflect.TypeFor[*nullFS]().Name(),
+			wantType: "*core.localFS",
 			wantErr:  false,
 			nested:   true,
 		},
@@ -132,7 +257,7 @@ func TestNew(t *testing.T) {
 				if err != nil {
 					t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, err, tt.wantType)
 				} else {
-					gotTypeName := reflect.TypeOf(got).Name()
+					gotTypeName := fmt.Sprintf("%T", got)
 					if gotTypeName != tt.wantType {
 						t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, got, tt.wantType)
 					}
@@ -160,7 +285,7 @@ func TestNew(t *testing.T) {
 				} else {
 					gotAsNestFS, ok := got.(*nestFS)
 					if ok {
-						gotTypeName := reflect.TypeOf(gotAsNestFS.fsys).Name()
+						gotTypeName := fmt.Sprintf("%T", gotAsNestFS.fsys)
 						if gotTypeName != tt.wantType {
 							t.Errorf("getBaseFS(%q) = %q, want %q", tt.uri, got, tt.wantType)
 						}
@@ -239,10 +364,8 @@ func TestCreateURI(t *testing.T) {
 				}
 			}()
 
-			gotTypeName := reflect.TypeOf(fsys).Name()
-			wantType := reflect.TypeFor[*nestFS]().Name()
-			if gotTypeName != wantType {
-				t.Errorf("New(%q) = %q, want %q", got, fsys, wantType)
+			if _, ok := fsys.(*nestFS); !ok {
+				t.Errorf("New(%q) = %T, want *nestFS", got, fsys)
 			}
 		})
 	}

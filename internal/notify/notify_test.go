@@ -82,7 +82,9 @@ func TestPublishRespectsPrefix(t *testing.T) {
 	b.Publish(opCreate, "other/b.txt")
 	b.Publish(opCreate, "dirsibling/c.txt")
 
-	// Give the non-matching events a chance to (wrongly) arrive.
+	// Delivery is asynchronous: wait for the matching event, then give the
+	// non-matching ones a chance to (wrongly) arrive.
+	ufsTesting.WaitFor(t, waitTimeout, func() bool { return len(c.snapshot()) >= 1 })
 	time.Sleep(20 * time.Millisecond)
 	got := c.snapshot()
 	if len(got) != 1 || got[0].path != "dir/a.txt" {

@@ -18,16 +18,19 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // newReadOnlyTestFile returns a readOnlyFile over a read-write memFS handle
 // to a file holding content, along with the memFS to check the file through.
-func newReadOnlyTestFile(t *testing.T, content string) (*readOnlyFile, *memFS) {
+func newReadOnlyTestFile(t *testing.T, content string) (*readOnlyFile, WriteFS) {
 	t.Helper()
-	mfs := makeMemFS("memory:///")
+	mfs := mustBaseFS(t, "memory:")
 	t.Cleanup(ufsTesting.ValidateClose(t, mfs))
 
 	w, err := mfs.Create("file.txt")
@@ -82,7 +85,7 @@ func TestReadOnlyFileRejectsWrites(t *testing.T) {
 			if n != 0 || !errors.Is(err, fs.ErrInvalid) {
 				t.Errorf("%s = (%d, %v), want (0, fs.ErrInvalid)", tc.name, n, err)
 			}
-			got, err := mfs.ReadFile("file.txt")
+			got, err := fs.ReadFile(mfs, "file.txt")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -183,4 +186,75 @@ type closeCountFile struct {
 func (f *closeCountFile) Close() error {
 	f.closed++
 	return f.err
+}
+
+// TestReadOnlyHandleKeepsOSHandles verifies that a handle backed by an OS file
+// is returned unchanged, also when the backend embeds the OS file in its own
+// type, as localFS does on Windows, and that any other handle is wrapped.
+func TestReadOnlyHandleKeepsOSHandles(t *testing.T) {
+	t.Parallel()
+	name := filepath.Join(t.TempDir(), "file.txt")
+	if err := osutil.WriteFile(name, []byte("content")); err != nil {
+		t.Fatal(err)
+	}
+	type embedsOSFile struct{ *os.File }
+	for _, wrap := range []func(*os.File) File{
+		func(f *os.File) File { return f },
+		func(f *os.File) File { return &embedsOSFile{f} },
+	} {
+		osFile, err := osutil.Open(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := wrap(osFile)
+		if got := readOnlyHandle(f); got != f {
+			t.Errorf("readOnlyHandle() = %T, want the %T it was given", got, f)
+		}
+		ufsTesting.Must(t, osFile.Close())
+	}
+
+	if _, ok := readOnlyHandle(&closeCountFile{}).(*readOnlyFile); !ok {
+		t.Error("readOnlyHandle() did not wrap a handle that is not an OS file")
+	}
+}
+
+// TestNestFSOpenHandleCannotWrite verifies that a handle from Open cannot
+// change the file, for a backend whose handles can write.
+func TestNestFSOpenHandleCannotWrite(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	const want = "original"
+	f, err := fsys.Create("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(want); err != nil {
+		t.Fatal(err)
+	}
+	ufsTesting.Must(t, f.Close())
+
+	opened, err := fsys.Open("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, opened)()
+	w, ok := opened.(io.Writer)
+	if !ok {
+		t.Fatalf("Open() = %T, want a handle with a Write method that fails", opened)
+	}
+	if _, err := w.Write([]byte("changed")); !errors.Is(err, fs.ErrInvalid) {
+		t.Errorf("Write() on a handle from Open = %v, want fs.ErrInvalid", err)
+	}
+
+	got, err := fsys.ReadFile("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Errorf("ReadFile() = %q, want %q", got, want)
+	}
 }

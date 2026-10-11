@@ -44,6 +44,16 @@ const (
 	bufferDisk
 )
 
+const (
+	// archiveDirExt is the suffix of the virtual directory that holds the
+	// content of an archive: a.zip is listed at a.zip.d.
+	archiveDirExt = ".d"
+
+	// archiveURIPrefix is put in front of the host path of an archive to open
+	// it through the archive driver.
+	archiveURIPrefix = "archive://"
+)
+
 // FSArgs holds optional parameters for constructing a nestFS.
 type FSArgs struct {
 	BufMode bufferMode
@@ -52,7 +62,7 @@ type FSArgs struct {
 var (
 	_ FS                  = (*nestFS)(nil)
 	_ fs.GlobFS           = (*nestFS)(nil)
-	_ realAbsPathGet      = (*nestFS)(nil)
+	_ AbsPathGetter       = (*nestFS)(nil)
 	_ MountedArchiveDirFS = (*nestFS)(nil)
 	_ DeviceInfoGetter    = (*mountMap)(nil)
 )
@@ -221,9 +231,12 @@ type nestFS struct {
 	args   FSArgs
 }
 
-func (fsys *nestFS) getAbsPath(name string) (string, error) {
-	if rfs, ok := fsys.fsys.(*localFS); ok {
-		return rfs.getAbsPath(name)
+func (fsys *nestFS) GetAbsPath(name string) (string, error) {
+	if err := fsys.validPath(absPathOp, name); err != nil {
+		return "", err
+	}
+	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
+		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
 }
@@ -364,14 +377,21 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		return maybeFS, nil
 	}
 	ctx := fsys.ctx
-	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
-	if ok {
-		absName, err := lfs.getAbsPath(name)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
+	// A base file system that has a host path for the archive opens it by that
+	// path, any other one through an open file.
+	var absName string
+	var onHost bool
+	if hostFS, ok := fsys.fsys.(AbsPathGetter); ok {
+		hostPath, err := hostFS.GetAbsPath(name)
+		if err == nil {
+			absName = hostPath
+			onHost = true
 		}
-		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
+	}
+	var newFS WriteFS
+	if onHost {
+		var err error
+		newFS, err = newBaseFS(ctx, archiveURIPrefix+absName)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
@@ -380,7 +400,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
-		newFS, err = newArchiveFSFromFile(ctx, f)
+		newFS, err = newBaseFSFromFile(ctx, archiveURIPrefix+name, f)
 		if err != nil {
 			return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), f.Close())
 		}
@@ -449,6 +469,12 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
+	// The handle of a backend such as memFS can write. It must not let a
+	// file that was opened for reading change, and must not get around the
+	// readOnly decorator, which does not intercept writes through a handle.
+	if full, ok := f.(File); ok {
+		return readOnlyHandle(full), nil
+	}
 	return wrapFile(f, true, mountFS.args.BufMode)
 }
 
@@ -831,25 +857,13 @@ func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 	return nil
 }
 
-// wrapFile returns a File for f, polyfilling any methods f is missing. When
-// readOnly is true, Write and WriteString always return fs.ErrInvalid, even
-// if f itself is writable. Otherwise an f that already satisfies File is
-// returned unchanged. mode selects in-memory or disk-backed buffering for
-// Seek/ReadAt polyfills.
+// wrapFile returns f unchanged if it already satisfies File. Otherwise it wraps
+// f, polyfilling any missing methods. When readOnly is true, Write and
+// WriteString always return fs.ErrInvalid. mode selects in-memory or disk-backed
+// buffering for Seek/ReadAt polyfills.
 func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 	if full, ok := f.(File); ok {
-		if !readOnly {
-			return full, nil
-		}
-		// A file backed by an OS handle that was opened for reading is
-		// already rejected by the OS on write, so it needs no wrapper. The
-		// check is on Fd rather than on *os.File because localFS wraps its
-		// files on Windows, and a wrapper would hide the other methods of
-		// the handle.
-		if _, ok := f.(interface{ Fd() uintptr }); ok {
-			return full, nil
-		}
-		return &readOnlyFile{File: full}, nil
+		return full, nil
 	}
 	nf := &nestFile{File: f}
 	if err := polyfillSeekReadAt(nf, f, mode); err != nil {
@@ -885,7 +899,8 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 	return nf, nil
 }
 
-// wrapReadOnlyFSFile wraps f for read-only use with in-memory buffering.
+// wrapReadOnlyFSFile returns f unchanged if it already satisfies File.
+// Otherwise it wraps f for read-only use with in-memory buffering.
 func wrapReadOnlyFSFile(f fs.File) (File, error) {
 	return wrapFile(f, true, bufferMemory)
 }

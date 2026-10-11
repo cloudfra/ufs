@@ -61,12 +61,12 @@ Dispatches to the appropriate implementation based on URI scheme:
 
 | Scheme        | Implementation   | Struct    | Type     | Status  | Behavior                                                 |
 |:--------------|:-----------------|:----------|:---------|:--------|:---------------------------------------------------------|
-| null://       | nullfs.go        | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
-| memory:       | memfs.go         | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
-| file:///...   | localfs.go       | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
+| null://       | drivers/core/    | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
+| memory:       | drivers/core/    | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
+| file:///...   | drivers/core/    | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
 | git://...     | drivers/gitfs/   | --        | ro       | Impl.   | Reads from a git repo (clones on first open; blank-import drivers/gitfs) |
-| archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
+| archive://    | drivers/core/    | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
 | bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
 
 ### Layering / nesting
@@ -79,7 +79,7 @@ Creates a URI that mounts additional file systems at specific paths inside a bas
 The result is nestFS (nestfs.go) which dispatches reads/writes based on mount path
 prefix.
 
-A temporary local-mount wrapper (tempMountFS in tempmountfs.go) provides writable
+A temporary local-mount wrapper (tempMountFS in drivers/core/tempmountfs.go, created with core.NewTempMountFS) provides writable
 scratch space on top of any read-only FS for implementations that need it.
 
 ### Decorators (`drivers/decorators/` subpackages)
@@ -117,7 +117,9 @@ A decorator's `URI()` must call `AppendURIOption` on the URI of the FS it
 wraps. That records the decorator in the reserved `options` query parameter
 (the same list in YAML flow form, e.g. `options=[{readOnly: true}]`), which
 `New` reads back to re-apply the decorators in order, so the URI round-trips.
-`options`, like `ro`, is therefore not usable as a mount point in a URI.
+`options`, like `ro`, is therefore not usable as a mount point in a URI. The
+same holds for names that start with `ufs.` (e.g. `ufs.checksum`): they are
+parameters for the driver and stay with the base URI.
 
 The fstab `ro` option and the implicit read-only null root both map to the
 `readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
@@ -159,6 +161,7 @@ enable its scheme. They may use `internal/` packages.
 |:-------------------------|:-----------------------------------------------------------------|
 | drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
+| drivers/core/            | Built-in backends; registers file://, archive://, http(s):// archives, memory:, null: and angry: on import. The base package registers no driver itself |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
 | drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |
@@ -182,7 +185,6 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
-| localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
 

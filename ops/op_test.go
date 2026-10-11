@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
 	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -65,7 +66,7 @@ func newTestLocalFS(tb testing.TB) ufs.WriteFS {
 
 func newTestTempMountFS(tb testing.TB) ufs.WriteFS {
 	tb.Helper()
-	fsys, err := ufs.NewTempMountFS(tb.Context(), "test://", func(string) error { return nil })
+	fsys, err := core.NewTempMountFS(tb.Context(), "test://", func(string) error { return nil })
 	if err != nil {
 		tb.Fatalf("cannot create tempMountFS file system, %s", err)
 	}
@@ -73,11 +74,11 @@ func newTestTempMountFS(tb testing.TB) ufs.WriteFS {
 }
 
 func newTestMemFS(_ testing.TB) ufs.WriteFS {
-	return ufs.MakeMemFS("memory://")
+	return core.MakeMemFS("memory://")
 }
 
 func newMemFS(name string) (ufs.WriteFS, error) {
-	return ufs.MakeMemFS(name), nil
+	return core.MakeMemFS(name), nil
 }
 
 func newAngryFS(name string) (ufs.WriteFS, error) {

@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/core"
 	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
 	ufsTesting "github.com/cloudfra/ufs/testing"

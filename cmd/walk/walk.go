@@ -24,6 +24,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	_ "github.com/cloudfra/ufs/drivers/all"
+	"github.com/cloudfra/ufs/ops"
 )
 
 var pathFlag = flag.String("path", ".", "Path to walk the directory tree to report file names.")
@@ -47,7 +48,7 @@ func run(dir string) error {
 			slog.Warn("cannot close mounted file system", "fs", fsys, "error", err)
 		}
 	}()
-	return ufs.ForEachFilename(fsys, ".", func(name string) error {
+	return ops.ForEachFilename(fsys, ".", func(name string) error {
 		absName, err := ufs.AbsPath(fsys, name)
 		if err == nil {
 			fmt.Println(absName)

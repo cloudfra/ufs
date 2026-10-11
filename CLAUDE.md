@@ -183,6 +183,7 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/hashutil/    | New creates a hash by algorithm name; Checksum verifies digests     |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
+| internal/polyfill/    | WrapFile fills in the Seek, ReadAt and Write methods a plain fs.File lacks, for nestFS |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | testing_test.go       | Shared test harness used by each backend                            |

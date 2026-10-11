@@ -132,17 +132,6 @@ func mustNestFS(tb testing.TB, name string) FS {
 	return fsys
 }
 
-// mustNullFile returns a file of the null file system. It implements File
-// itself, so the file wrappers pass it through as is.
-func mustNullFile(tb testing.TB) File {
-	tb.Helper()
-	f, err := mustBaseFS(tb, "null:").Create("test.txt")
-	if err != nil {
-		tb.Fatalf("Create() on the null file system has an error, %s", err)
-	}
-	return f
-}
-
 func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, error), name string) WriteFS {
 	tb.Helper()
 

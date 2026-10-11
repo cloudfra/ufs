@@ -17,8 +17,11 @@
 package gitfs
 
 import (
+	"context"
+	"errors"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -206,4 +209,37 @@ func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 		},
 	})
 	return err
+}
+
+// TestNewGitFSCanceledContext checks that the clone observes the context: a
+// repository that would clone fine is not opened once the context is done.
+func TestNewGitFSCanceledContext(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "repo.git")
+	if err := initTestGitRepo(t, repoDir, map[string]string{"hello.txt": "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	fsys, err := New(ctx, repoDir)
+	if err == nil {
+		ufsTesting.ValidateClose(t, fsys)()
+		t.Fatal("New() = nil error, want an error for a canceled context")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("New() = %v, want an error that wraps context.Canceled", err)
+	}
+}
+
+// TestNewGitFSErrorNamesRepository checks that a failed clone reports the
+// repository it could not clone, with the error of every attempt.
+func TestNewGitFSErrorNamesRepository(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.git")
+	_, err := New(t.Context(), missing)
+	if err == nil {
+		t.Fatal("New() = nil error, want an error for a missing repository")
+	}
+	if !strings.Contains(err.Error(), "could not clone "+missing) {
+		t.Errorf("New() = %q, want it to name the repository %q", err, missing)
+	}
 }

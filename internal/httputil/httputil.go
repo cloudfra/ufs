@@ -18,6 +18,7 @@ package httputil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -110,12 +111,53 @@ func validateDownloadURL(ctx context.Context, u *url.URL) error {
 	return nil
 }
 
+// blockedNets are the address ranges that are not on the public internet and
+// that the net.IP predicates used by isBlockedIP do not cover.
+var blockedNets = mustParseCIDRs(
+	"0.0.0.0/8",     // "this network" (RFC 791)
+	"100.64.0.0/10", // shared address space for carrier-grade NAT (RFC 6598)
+	"192.0.0.0/24",  // IETF protocol assignments (RFC 6890)
+	"198.18.0.0/15", // benchmarking (RFC 2544)
+	"240.0.0.0/4",   // reserved (RFC 1112) and limited broadcast
+)
+
+// nat64Net is the well-known NAT64 prefix (RFC 6052). An address in it
+// reaches the IPv4 address held in its last four bytes.
+var nat64Net = mustParseCIDRs("64:ff9b::/96")[0]
+
+func mustParseCIDRs(cidrs ...string) []*net.IPNet {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(err)
+		}
+		nets = append(nets, ipNet)
+	}
+	return nets
+}
+
+// isBlockedIP reports whether ip is an address that a download must not
+// connect to: anything that is not a public unicast address.
 func isBlockedIP(ip net.IP) bool {
-	return ip.IsLoopback() ||
+	if ip.To4() == nil && nat64Net.Contains(ip) {
+		// Judge a NAT64 address by the IPv4 address it is translated to, so
+		// that public hosts stay reachable on IPv6-only networks.
+		return isBlockedIP(ip[len(ip)-net.IPv4len:])
+	}
+	if ip.IsLoopback() ||
 		ip.IsPrivate() ||
 		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified()
+		ip.IsMulticast() ||
+		ip.IsUnspecified() {
+		return true
+	}
+	for _, blocked := range blockedNets {
+		if blocked.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeFilename(rawURL *url.URL) (string, error) {
@@ -151,8 +193,8 @@ func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
 // unsupported algorithm or is not a valid digest for its algorithm is rejected
 // before any request is made.
 //
-// If the body cannot be read in full or the checksum does not match, the
-// file is deleted, including any earlier file of the same name it replaced.
+// If the body cannot be read in full, is larger than 4 GiB or the checksum
+// does not match, the file is deleted, including any earlier file of the same name it replaced.
 func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
 	parsed, params, err := ParseURI(uri)
 	if err != nil {
@@ -215,15 +257,17 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if fileChecksum != nil {
 		w = io.MultiWriter(f, fileChecksum)
 	}
-	_, err = io.Copy(w, io.LimitReader(resp.Body, maxDownloadSize))
+	err = copyLimited(w, resp.Body, maxDownloadSize)
 	if err == nil && fileChecksum != nil {
 		if verifyErr := fileChecksum.Verify(); verifyErr != nil {
 			err = fmt.Errorf("downloaded file %q: %w", archiveFilename, verifyErr)
 		}
 	}
-	// Close before deleting; Windows cannot remove an open file.
-	if closeErr := f.Close(); closeErr != nil {
-		slog.Warn("failed to close downloaded file", "path", archiveFilename, "error", closeErr)
+	// Close before deleting; Windows cannot remove an open file. A failed
+	// Close can mean that the last writes did not reach the disk, so the
+	// download is not reported as complete.
+	if closeErr := f.Close(); closeErr != nil && err == nil {
+		err = fmt.Errorf("cannot close downloaded file %q: %w", archiveFilename, closeErr)
 	}
 	if err != nil {
 		osutil.TryDeleteFile(archiveFilename)
@@ -231,6 +275,24 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	}
 
 	return archiveFilename, nil
+}
+
+// errTooLarge is returned for a download that is larger than maxDownloadSize.
+var errTooLarge = errors.New("download is larger than the size limit")
+
+// copyLimited copies src to dst. It fails with errTooLarge if src holds more
+// than limit bytes, instead of silently storing only the first limit bytes.
+func copyLimited(dst io.Writer, src io.Reader, limit int64) error {
+	// Read one byte past the limit to tell a source of exactly limit bytes
+	// from a longer one.
+	n, err := io.Copy(dst, io.LimitReader(src, limit+1))
+	if err != nil {
+		return err
+	}
+	if n > limit {
+		return fmt.Errorf("%w of %d bytes", errTooLarge, limit)
+	}
+	return nil
 }
 
 // ParseURI parses uri and extracts the query parameters whose name starts with

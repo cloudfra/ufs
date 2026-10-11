@@ -257,7 +257,7 @@ func TestRegistrarDecorate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			base := makeNullFS(nullFSPrefix)
+			base := mustBaseFS(t, "null:")
 			got, err := r.decorate(t.Context(), base, tc.opts)
 			if tc.wantError != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
@@ -274,7 +274,7 @@ func TestRegistrarDecorate(t *testing.T) {
 			if gotTags := tags(got); !reflect.DeepEqual(gotTags, tc.want) {
 				t.Errorf("decorate() applied %v, want %v", gotTags, tc.want)
 			}
-			if len(tc.want) == 0 && got != WriteFS(base) {
+			if len(tc.want) == 0 && got != base {
 				t.Errorf("decorate() = %v, want the undecorated base", got)
 			}
 		})
@@ -398,7 +398,7 @@ func TestNewFromMountSpecClosesOnDecoratorError(t *testing.T) {
 		Name:      scheme,
 		MatchFunc: func(name string) bool { return strings.HasPrefix(name, scheme+":") },
 		CreateFunc: func(context.Context, string) (WriteFS, error) {
-			fsys := &closeTrackFS{WriteFS: makeNullFS(nullFSPrefix), closed: &closed[created]}
+			fsys := &closeTrackFS{WriteFS: mustBaseFS(t, "null:"), closed: &closed[created]}
 			created++
 			return fsys, nil
 		},

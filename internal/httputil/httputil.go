@@ -110,12 +110,53 @@ func validateDownloadURL(ctx context.Context, u *url.URL) error {
 	return nil
 }
 
+// blockedNets are the address ranges that are not on the public internet and
+// that the net.IP predicates used by isBlockedIP do not cover.
+var blockedNets = mustParseCIDRs(
+	"0.0.0.0/8",     // "this network" (RFC 791)
+	"100.64.0.0/10", // shared address space for carrier-grade NAT (RFC 6598)
+	"192.0.0.0/24",  // IETF protocol assignments (RFC 6890)
+	"198.18.0.0/15", // benchmarking (RFC 2544)
+	"240.0.0.0/4",   // reserved (RFC 1112) and limited broadcast
+)
+
+// nat64Net is the well-known NAT64 prefix (RFC 6052). An address in it
+// reaches the IPv4 address held in its last four bytes.
+var nat64Net = mustParseCIDRs("64:ff9b::/96")[0]
+
+func mustParseCIDRs(cidrs ...string) []*net.IPNet {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(err)
+		}
+		nets = append(nets, ipNet)
+	}
+	return nets
+}
+
+// isBlockedIP reports whether ip is an address that a download must not
+// connect to: anything that is not a public unicast address.
 func isBlockedIP(ip net.IP) bool {
-	return ip.IsLoopback() ||
+	if ip.To4() == nil && nat64Net.Contains(ip) {
+		// Judge a NAT64 address by the IPv4 address it is translated to, so
+		// that public hosts stay reachable on IPv6-only networks.
+		return isBlockedIP(ip[len(ip)-net.IPv4len:])
+	}
+	if ip.IsLoopback() ||
 		ip.IsPrivate() ||
 		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified()
+		ip.IsMulticast() ||
+		ip.IsUnspecified() {
+		return true
+	}
+	for _, blocked := range blockedNets {
+		if blocked.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeFilename(rawURL *url.URL) (string, error) {

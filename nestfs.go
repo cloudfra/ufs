@@ -368,6 +368,9 @@ func (fsys *nestFS) IsMountedArchiveDir(name string) bool {
 	if !archive.IsMountablePath(archiveName) {
 		return false
 	}
+	if fsys.mounts.getMount(name) != nil {
+		return true
+	}
 	_, err := fsys.Stat(archiveName)
 	return !errors.Is(err, fs.ErrNotExist)
 }

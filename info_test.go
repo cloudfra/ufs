@@ -156,7 +156,7 @@ func TestVirtualDirEntry(t *testing.T) {
 }
 
 func TestReadDirFile(t *testing.T) {
-	fsys := makeMemFS("memory:///")
+	fsys := mustBaseFS(t, "memory:///")
 	ufsTesting.Must(t, fsys.MkdirAll("a/b/c", fs.ModePerm))
 	ufsTesting.Must(t, fsys.MkdirAll("d/e/f", fs.ModePerm))
 	ufsTesting.Must(t, fsys.MkdirAll("g/h/i", fs.ModePerm))

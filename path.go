@@ -23,24 +23,25 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-// AbsPathGetter is an optional interface implemented by file systems whose files
-// are also reachable on the host, outside of the virtual file system. See
-// [AbsPath].
+// AbsPathGetter is implemented by file systems whose files are also accessible
+// outside of the virtual file system, such as files on the local disk.
+// [AbsPath] uses it to resolve a name.
 type AbsPathGetter interface {
-	// GetAbsPath returns the absolute host path of the file at name. The
-	// file does not have to exist, but the path must be the one where the
-	// host would find it: an implementation returns an error for a name
-	// that it serves from somewhere other than the host, such as a mount or
-	// the inside of an archive.
+	// GetAbsPath returns the absolute host path of name. It returns an error if
+	// name is not accessible outside of the virtual file system, or if name is
+	// not a valid path ([fs.ValidPath]).
 	GetAbsPath(name string) (string, error)
 }
 
 // AbsPath returns the absolute path of the file that's accessible outside of the virtual file system.
 //
 // If the virtual file system name resolves to a path that is not accessible outside of the virtual file system, an error is returned.
+//
+// name must be a valid path of the file system ([fs.ValidPath]); any other
+// name, such as one that contains "..", is an error, so that the result is
+// always at or below the root of the file system.
 func AbsPath(fsys any, name string) (string, error) {
-	// A name such as "../x" would resolve to a path outside of fsys.
-	if err := pathutil.Validate("absPath", name); err != nil {
+	if err := pathutil.Validate(absPathOp, name); err != nil {
 		return "", err
 	}
 	if rfs, ok := fsys.(AbsPathGetter); ok {
@@ -53,6 +54,9 @@ func AbsPath(fsys any, name string) (string, error) {
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
+// absPathOp is the operation reported in errors from [AbsPath].
+const absPathOp = "absPath"
+
 func realAbsPathNotSupported(fsys any, name string) error {
-	return ufserrors.NewPathError("absPath", name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
+	return ufserrors.NewPathError(absPathOp, name, fmt.Errorf("%q is not accessible outside of the virtual file system, %q", name, fsys))
 }

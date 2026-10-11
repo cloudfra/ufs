@@ -74,6 +74,16 @@ type mountInfo struct {
 	incoming  DeviceMap
 }
 
+func TestDeviceInfoAccessors(t *testing.T) {
+	info := NewDeviceInfo("/dev/sda1", "hdd", 2, false)
+	if got, want := info.Name(), "/dev/sda1"; got != want {
+		t.Errorf("Name() = %q, want %q", got, want)
+	}
+	if got, want := info.DeviceType(), "hdd"; got != want {
+		t.Errorf("DeviceType() = %q, want %q", got, want)
+	}
+}
+
 func TestCombineDeviceInfo(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -218,7 +228,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.src
 			for _, mi := range tc.incoming {
-				got = got.Combine(mi.mountPath, mi.incoming)
+				got = got.combine(mi.mountPath, mi.incoming)
 			}
 			if d := cmp.Diff(tc.want, got, cmpopts.EquateComparable(DeviceInfo{})); d != "" {
 				t.Errorf("got %v, want %v diff(-want,+got):\n %v", got, tc.want, d)

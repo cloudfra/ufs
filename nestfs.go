@@ -28,15 +28,22 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cloudfra/ufs/drivers/polyfill"
+	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/polyfill"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-// archiveDirExt is appended to the name of an archive to form the name of the
-// virtual directory that holds its contents.
-const archiveDirExt = ".d"
+const (
+	// archiveDirExt is the suffix of the virtual directory that holds the
+	// content of an archive: a.zip is listed at a.zip.d.
+	archiveDirExt = ".d"
+
+	// archiveURIPrefix is put in front of the host path of an archive to open
+	// it through the archive driver.
+	archiveURIPrefix = "archive://"
+)
 
 // FSArgs holds optional parameters for constructing a nestFS.
 type FSArgs struct {
@@ -48,13 +55,13 @@ var (
 	_ fs.GlobFS           = (*nestFS)(nil)
 	_ AbsPathGetter       = (*nestFS)(nil)
 	_ MountedArchiveDirFS = (*nestFS)(nil)
+	_ DeviceInfoGetter    = (*mountMap)(nil)
 
-	// polyfill cannot import this package, so it declares its own File. The
-	// two must have the same method set, or polyfill.WrapFile stops
-	// recognizing the files of the backends.
-	_ File             = polyfill.File(nil)
-	_ polyfill.File    = File(nil)
-	_ DeviceInfoGetter = (*mountMap)(nil)
+	// polyfill.File is a copy of File that cannot import this package. Keep
+	// the two the same: if only polyfill.File grew a method, the files of
+	// every backend would stop satisfying it and be wrapped needlessly.
+	_ File          = polyfill.File(nil)
+	_ polyfill.File = File(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -78,7 +85,7 @@ func (m *mountMap) GetDeviceInfo() DeviceMap {
 	combined := DeviceMap{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combined.Combine(mountPoint, fsys.GetDeviceInfo())
+		combined = combined.combine(mountPoint, fsys.GetDeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -222,17 +229,8 @@ type nestFS struct {
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
-	// A name below a mount belongs to the mounted file system.
-	if _, subName, mountFS, ok := fsys.mounts.getClosestMount(name); ok {
-		return mountFS.GetAbsPath(subName)
-	}
-	// The contents of an archive are not files on the host. A directory
-	// that is only named like an archive directory, with no archive next to
-	// it, is an ordinary directory of the base.
-	for _, archiveDirName := range getPotentialArchives(name) {
-		if fsys.IsMountedArchiveDir(archiveDirName) {
-			return "", realAbsPathNotSupported(fsys, name)
-		}
+	if err := fsys.validPath(absPathOp, name); err != nil {
+		return "", err
 	}
 	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
@@ -242,7 +240,7 @@ func (fsys *nestFS) GetAbsPath(name string) (string, error) {
 
 func (fsys *nestFS) GetDeviceInfo() DeviceMap {
 	base := fsys.fsys.GetDeviceInfo()
-	return base.Combine("", fsys.mounts.GetDeviceInfo())
+	return base.combine("", fsys.mounts.GetDeviceInfo())
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {
@@ -291,7 +289,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 
 	dirs := fsys.mounts.getDirectoryList(name)
 	for _, dir := range dirs {
-		if strings.HasSuffix(dir, archiveDirExt) && isMountableArchivePath(strings.TrimSuffix(dir, archiveDirExt)) {
+		if strings.HasSuffix(dir, archiveDirExt) && archive.IsMountablePath(strings.TrimSuffix(dir, archiveDirExt)) {
 			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
 			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
 				fsys.mounts.remove(path.Join(name, dir))
@@ -308,7 +306,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	}
 
 	for _, entry := range entries {
-		if isMountableArchivePath(entry.Name()) {
+		if archive.IsMountablePath(entry.Name()) {
 			mountName := entry.Name() + ".d"
 			appendEntry[mountName] = &virtualDirEntry{
 				name: mountName,
@@ -322,6 +320,10 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 		delete(appendEntry, entry.Name())
 	}
 
+	// The base file system may hand out a slice that it keeps, as archives
+	// do with their index, so the virtual entries go into a copy: appending
+	// to and sorting the original would change the next listing.
+	entries = slices.Grow(slices.Clone(entries), len(appendEntry))
 	for _, entry := range appendEntry {
 		entries = append(entries, entry)
 	}
@@ -346,7 +348,7 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 // IsMountedArchiveDir reports whether name (a full path within this FS) is a
 // virtual directory backed by a mounted archive. It returns true only when:
 //   - name ends with archiveDirExt
-//   - the trimmed name satisfies isMountableArchivePath
+//   - the trimmed name satisfies archive.IsMountablePath
 //   - the archive file is not confirmed absent; any Stat error other than
 //     ErrNotExist is treated as "file likely exists" so that a permission-denied
 //     error does not cause Walk to descend and trigger a mount failure
@@ -360,7 +362,7 @@ func (fsys *nestFS) IsMountedArchiveDir(name string) bool {
 		return false
 	}
 	archiveName := strings.TrimSuffix(name, archiveDirExt)
-	if !isMountableArchivePath(archiveName) {
+	if !archive.IsMountablePath(archiveName) {
 		return false
 	}
 	_, err := fsys.Stat(archiveName)
@@ -372,27 +374,30 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		return maybeFS, nil
 	}
 	ctx := fsys.ctx
-	driver := globalArchiveDriver.Load()
-	if driver == nil {
-		return nil, ufserrors.NewPathError("mount", name, errNoArchiveDriver)
-	}
-	var newFS WriteFS
-	// An archive that is also a file on the host is opened by path. A base
-	// that cannot resolve the path is read through an open file instead.
-	if lfs, ok := fsys.fsys.(AbsPathGetter); ok {
-		if absName, err := lfs.GetAbsPath(name); err == nil {
-			newFS, err = driver.OpenPathFunc(ctx, absName)
-			if err != nil {
-				return nil, ufserrors.NewPathError("mount", name, err)
-			}
+	// A base file system that has a host path for the archive opens it by that
+	// path, any other one through an open file.
+	var absName string
+	var onHost bool
+	if hostFS, ok := fsys.fsys.(AbsPathGetter); ok {
+		hostPath, err := hostFS.GetAbsPath(name)
+		if err == nil {
+			absName = hostPath
+			onHost = true
 		}
 	}
-	if newFS == nil {
+	var newFS WriteFS
+	if onHost {
+		var err error
+		newFS, err = newBaseFS(ctx, archiveURIPrefix+absName)
+		if err != nil {
+			return nil, ufserrors.NewPathError("mount", name, err)
+		}
+	} else {
 		f, err := fsys.Open(name)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
-		newFS, err = driver.OpenFileFunc(ctx, f)
+		newFS, err = newBaseFSFromFile(ctx, archiveURIPrefix+name, f)
 		if err != nil {
 			return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), f.Close())
 		}
@@ -415,12 +420,6 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	archiveDirNames := getPotentialArchives(targetName)
 	for _, archiveDirName := range archiveDirNames {
 		archiveName := strings.TrimSuffix(archiveDirName, archiveDirExt)
-		// Only a name that the archive driver recognizes is an archive
-		// directory; "conf.d" next to a file "conf" is an ordinary name, as
-		// is every ".d" name when no archive driver is registered.
-		if !isMountableArchivePath(archiveName) {
-			continue
-		}
 		info, err := targetFS.Stat(archiveName)
 		if info != nil && err == nil {
 			subPath, ok := pathutil.RemovePrefix(targetName, archiveDirName)

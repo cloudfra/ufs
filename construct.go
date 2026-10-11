@@ -16,6 +16,7 @@ package ufs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -43,12 +44,18 @@ const (
 	// point. Its value is the options list of a [MountSpec] in YAML flow form.
 	optionsQueryParam = "options"
 
+	// ufsQueryParamPrefix starts the name of a URI query parameter that is
+	// addressed to ufs or one of its drivers, such as [URLQueryParamChecksum].
+	// Such a parameter belongs to the file system whose URI carries it; it is
+	// not a mount point.
+	ufsQueryParamPrefix = "ufs."
+
 	// embedFSPrefix is the scheme of drivers/embedfs, which has no URI-based
 	// constructor.
 	embedFSPrefix = "embed://"
 
 	// defaultRootSource is the file system used as the root when none is
-	// given. It is served by drivers/nullfs.
+	// given. It is served by the null file system in drivers/core.
 	defaultRootSource = "null:"
 
 	// mountOp is the operation reported in errors from mounting a file system.
@@ -155,6 +162,12 @@ func nameToURI(name string) (*url.URL, error) {
 //   - A local path pointing to a recognized archive (.zip, .tar, .tar.gz, etc.)
 //     is mounted read-only through the archive's contents.
 //
+// Every scheme is served by a driver that registers itself when its package
+// is imported; the base package registers none. file://, bare paths, archives,
+// memory://, null:// and angry:// come from
+// github.com/cloudfra/ufs/drivers/core, which archive auto-mounting (below)
+// needs as well.
+//
 // # Alternative input formats
 //
 // In addition to URIs, name may be an fstab-format string or a YAML document.
@@ -192,7 +205,8 @@ func nameToURI(name string) (*url.URL, error) {
 // matches no registered decorator is an error.
 //
 // If no entry has a root mount point (".", "/", "none", or empty), a read-only
-// null:// filesystem is used as the root, which needs the readOnly decorator.
+// null:// filesystem is used as the root, which needs the readOnly decorator
+// and github.com/cloudfra/ufs/drivers/core, the home of the null file system.
 //
 // # Nested mounts and archive auto-mounting
 //
@@ -212,15 +226,19 @@ func New(ctx context.Context, name string) (WriteFS, error) {
 		baseURI := *u
 		baseURI.RawQuery = ""
 		baseURI.Fragment = ""
-		// The decorators of the base travel with it; every other query
-		// parameter is a mount point.
-		if opts, ok := query[optionsQueryParam]; ok {
-			baseURI.RawQuery = url.Values{optionsQueryParam: opts}.Encode()
+		// The decorators of the base and the parameters addressed to ufs
+		// travel with it; every other query parameter is a mount point.
+		baseQuery := url.Values{}
+		for param, values := range query {
+			if param == optionsQueryParam || strings.HasPrefix(param, ufsQueryParamPrefix) {
+				baseQuery[param] = values
+			}
 		}
+		baseURI.RawQuery = baseQuery.Encode()
 		nFS, err := openNestFS(ctx, baseURI.String())
 		if err == nil {
 			for mountPath, mountURI := range query {
-				if mountPath == roQueryParam || mountPath == optionsQueryParam {
+				if mountPath == roQueryParam || baseQuery.Has(mountPath) {
 					continue
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])
@@ -345,6 +363,24 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
 	}
 	fsys, err := r.create(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
+	}
+	return fsys, nil
+}
+
+// newBaseFSFromFile opens the file system held by the open file with the driver
+// that matches name. The returned file system owns file and closes it on
+// Close; on error file is left open.
+func newBaseFSFromFile(ctx context.Context, name string, file fs.File) (WriteFS, error) {
+	driver, err := getRegistrar().matchDriver(name)
+	if err != nil {
+		return nil, fmt.Errorf("%q needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, err)
+	}
+	if driver.CreateFromFileFunc == nil {
+		return nil, fmt.Errorf("driver %q cannot mount %q from an open file, %w", driver.Name, name, errors.ErrUnsupported)
+	}
+	fsys, err := driver.CreateFromFileFunc(ctx, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
 	}

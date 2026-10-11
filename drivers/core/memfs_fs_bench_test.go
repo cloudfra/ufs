@@ -12,24 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package core
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io/fs"
-	"path/filepath"
 	"testing"
 
-	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // mustMemFS opens the memory file system name and attaches t.Cleanup to close it.
-func mustMemFS(tb testing.TB, name string) WriteFS {
+func mustMemFS(tb testing.TB, name string) ufs.WriteFS {
 	tb.Helper()
-	fsys := mustBaseFS(tb, name)
+	fsys := MakeMemFS(name)
 	tb.Cleanup(func() {
 		if err := fsys.Close(); err != nil {
 			tb.Fatal(err)
@@ -235,53 +233,5 @@ func BenchmarkMemFSRemoveAll(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
-	}
-}
-
-// --- nestFS benchmarks (uses localFS underneath) ---
-
-func BenchmarkNestFSReadDir(b *testing.B) {
-	dir := b.TempDir()
-	lfs := mustBaseFS(b, dir)
-	for i := range 1000 {
-		name := fmt.Sprintf("file_%d.dat", i)
-		data := bytes.Repeat([]byte("Nest"), 128)
-		if err := osutil.WriteFile(filepath.Join(dir, name), data); err != nil {
-			b.Fatal(err)
-		}
-	}
-	nfs := makeNestFS(context.Background(), lfs)
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := nfs.ReadDir("."); err != nil {
-			b.Fatal(err)
-		}
-	}
-	if err := nfs.Close(); err != nil {
-		b.Errorf("failed to close nfs: %v", err)
-	}
-}
-
-func BenchmarkNestFSReadFile(b *testing.B) {
-	dir := b.TempDir()
-	lfs := mustBaseFS(b, dir)
-	for i := range 100 {
-		name := fmt.Sprintf("file_%d.dat", i)
-		data := bytes.Repeat([]byte("Nest"), 128)
-		if err := osutil.WriteFile(filepath.Join(dir, name), data); err != nil {
-			b.Fatal(err)
-		}
-	}
-	nfs := makeNestFS(context.Background(), lfs)
-
-	b.ResetTimer()
-	for b.Loop() {
-		if _, err := nfs.ReadFile("file_42.dat"); err != nil {
-			b.Fatal(err)
-		}
-	}
-	if err := nfs.Close(); err != nil {
-		b.Errorf("failed to close nfs: %v", err)
 	}
 }

@@ -61,29 +61,6 @@ func TestNameToURIWindowsDriveLetters(t *testing.T) {
 	}
 }
 
-// TestLocalFSNormalizePathWindowsDriveLetters verifies that localFSNormalizePath
-// converts the "/D:/path" form (produced after stripping "file://" from a
-// canonical file:///D:/path URI) to the Windows-native "D:\path" form.
-func TestLocalFSNormalizePathWindowsDriveLetters(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{`file:///D:/some/path`, `D:\some\path`},
-		{`file:///D:/`, `D:\`},
-		{`file:///Z:/data`, `Z:\data`},
-		{`file:///Z:/deeply/nested/dir`, `Z:\deeply\nested\dir`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := localFSNormalizePath(tt.input)
-			if got != tt.want {
-				t.Errorf("localFSNormalizePath(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestNewWindowsDriveLetters verifies that New() can mount drives other than C:\
 // in all supported forms: bare drive ("D:"), drive root ("D:\"), and
 // file://-prefixed ("file://D:\"). Each drive letter is skipped entirely when

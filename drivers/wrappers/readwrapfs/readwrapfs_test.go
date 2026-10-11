@@ -25,6 +25,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -195,7 +196,7 @@ func TestFromFSForEachFilename(t *testing.T) {
 	fsys := makeTestStdFS(t)
 
 	var files []string
-	err := ufs.ForEachFilename(fsys, ".", func(name string) error {
+	err := ops.ForEachFilename(fsys, ".", func(name string) error {
 		files = append(files, name)
 		return nil
 	})

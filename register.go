@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -69,6 +70,12 @@ type Driver struct {
 
 	// ReadWrite indicates that the driver supports read-write operations.
 	ReadWrite bool
+
+	// CreateFromFileFunc is invoked to create an instance of the file system
+	// from an open file instead of a name, e.g. for an archive that is stored
+	// inside another file system. The returned file system owns the file and
+	// closes it on Close; on error the file is left open. It is optional.
+	CreateFromFileFunc func(context.Context, fs.File) (WriteFS, error)
 }
 
 // NewDriver builds a Driver configuration for a file system driver, to be passed to Register.

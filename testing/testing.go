@@ -30,6 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -272,4 +274,36 @@ func SeedData(seed byte, n int) []byte {
 		return append(rep, bytes.Repeat([]byte{seed ^ 1}, n-len(rep))...)
 	}
 	return rep[:n]
+}
+
+// EmptyFS is an [fs.FS] that contains no files: Open reports every name as
+// not existing.
+type EmptyFS struct{}
+
+// Open returns an [fs.PathError] that wraps [fs.ErrNotExist].
+func (EmptyFS) Open(name string) (fs.File, error) {
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+}
+
+// ReadDirFiles returns the content of every file below the host directory
+// dir, keyed by the file's slash-separated path relative to dir.
+func ReadDirFiles(tb testing.TB, dir string) map[string][]byte {
+	tb.Helper()
+	src := osutil.DirFS(dir)
+	result := make(map[string][]byte)
+	err := fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(src, p)
+		if err != nil {
+			return err
+		}
+		result[p] = data
+		return nil
+	})
+	if err != nil {
+		tb.Fatalf("ReadDirFiles(%q): %v", dir, err)
+	}
+	return result
 }

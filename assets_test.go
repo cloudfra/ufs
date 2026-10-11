@@ -37,7 +37,7 @@ const testAssetsFilesDir = "testing/testassets/files"
 func TestAssets(t *testing.T) {
 	t.Parallel()
 
-	wantFiles := loadTestAssets(t)
+	wantFiles := ufsTesting.ReadDirFiles(t, testAssetsFilesDir)
 
 	testCases := []struct {
 		name     string
@@ -46,13 +46,13 @@ func TestAssets(t *testing.T) {
 		{
 			name: "localFS",
 			createFS: func(tb testing.TB) (WriteFS, error) {
-				return newLocalFS(tb.Context(), testAssetsFilesDir)
+				return newBaseFS(tb.Context(), testAssetsFilesDir)
 			},
 		},
 		{
 			name: "memFS",
 			createFS: func(tb testing.TB) (WriteFS, error) {
-				fsys, err := newMemFS(tb.Context(), "memory://")
+				fsys, err := newBaseFS(tb.Context(), "memory://")
 				if err != nil {
 					return nil, err
 				}
@@ -97,28 +97,6 @@ func TestAssets(t *testing.T) {
 	}
 }
 
-// loadTestAssets walks testAssetsFilesDir and returns a path→content map for every file.
-func loadTestAssets(tb testing.TB) map[string][]byte {
-	tb.Helper()
-	src := osutil.DirFS(testAssetsFilesDir)
-	result := make(map[string][]byte)
-	err := fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		data, err := fs.ReadFile(src, p)
-		if err != nil {
-			return err
-		}
-		result[p] = data
-		return nil
-	})
-	if err != nil {
-		tb.Fatalf("loadTestAssets: %v", err)
-	}
-	return result
-}
-
 // copyFSToFS copies all files and directories from src into dst.
 func copyFSToFS(src fs.FS, dst WriteFS) error {
 	return fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
@@ -128,8 +106,24 @@ func copyFSToFS(src fs.FS, dst WriteFS) error {
 		if d.IsDir() {
 			return dst.MkdirAll(p, fs.ModePerm)
 		}
-		return Copy(src, p, dst, p)
+		return copyFileForTest(src, dst, p)
 	})
+}
+
+// copyFileForTest copies the file name from src to the same path in dst.
+func copyFileForTest(src fs.FS, dst WriteFS, name string) error {
+	data, err := fs.ReadFile(src, name)
+	if err != nil {
+		return err
+	}
+	f, err := dst.Create(name)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		return ufserrors.Join(err, f.Close())
+	}
+	return f.Close()
 }
 
 // writeTestFile writes data to name in fsys, creating its parent directories.
@@ -152,9 +146,10 @@ func writeTestFile(tb testing.TB, fsys WriteFS, name string, data []byte) {
 	}
 }
 
-// newMemArchiveFS mounts the archive in data, held in memory under name, as an
-// archiveFS. The caller closes the result; nothing is written to disk.
-func newMemArchiveFS(tb testing.TB, name string, data []byte) (*archiveFS, error) {
+// newMemArchiveFS mounts the archive in data, held in memory under name,
+// through the archive driver. The caller closes the result; nothing is written
+// to disk.
+func newMemArchiveFS(tb testing.TB, name string, data []byte) (WriteFS, error) {
 	tb.Helper()
-	return newArchiveFSFromFile(tb.Context(), archivetest.NewFile(name, data))
+	return newBaseFSFromFile(tb.Context(), archiveURIPrefix+name, archivetest.NewFile(name, data))
 }

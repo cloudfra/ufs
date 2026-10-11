@@ -15,30 +15,44 @@
 package testing
 
 import (
+	"errors"
+	"io/fs"
+	"path/filepath"
 	"testing"
+
+	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/google/go-cmp/cmp"
 )
 
-func TestTestAssetsFS(t *testing.T) {
-	fsys := TestAssetsFS()
-	want := "testing/testassets/files/index.html"
-	data, err := fsys.ReadFile("testassets/files/index.html")
-	if err != nil {
-		t.Fatal(err)
+// writeTestDir writes files, keyed by slash-separated path, below a new
+// temporary directory and returns the directory.
+func writeTestDir(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		filename := filepath.Join(dir, filepath.FromSlash(name))
+		if err := osutil.MkdirAll(filepath.Dir(filename)); err != nil {
+			t.Fatal(err)
+		}
+		if err := osutil.WriteFile(filename, []byte(content)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	got := string(data)
-	if got != want {
-		t.Errorf("got: %q, want: %q", got, want)
+	return dir
+}
+
+func TestEmptyFS(t *testing.T) {
+	_, err := EmptyFS{}.Open("a.txt")
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) || pathErr.Path != "a.txt" || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Open() = %v, want an *fs.PathError for a.txt that wraps fs.ErrNotExist", err)
 	}
 }
 
-func TestTestAssetsArchivesFS(t *testing.T) {
-	fsys := TestAssetsArchivesFS()
-	data, err := fsys.ReadFile("testassets/archives/testassets.tar.xz")
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotFileSize := len(data)
-	if gotFileSize < 1000 {
-		t.Errorf("got: %d, want: > %d", gotFileSize, 1000)
+func TestReadDirFiles(t *testing.T) {
+	dir := writeTestDir(t, map[string]string{"a.txt": "A", "sub/b.txt": "B"})
+	want := map[string][]byte{"a.txt": []byte("A"), "sub/b.txt": []byte("B")}
+	if diff := cmp.Diff(want, ReadDirFiles(t, dir)); diff != "" {
+		t.Errorf("ReadDirFiles() mismatch (-want +got):\n%s", diff)
 	}
 }

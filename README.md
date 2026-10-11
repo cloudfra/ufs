@@ -85,9 +85,9 @@ import (
 
   "github.com/cloudfra/ufs"
 
-  // Each blank import installs a driver. Local disk, memory, archives and
-  // null:// are built in; drop the ones you do not need.
+  // Each blank import installs a driver; drop the ones you do not need.
   _ "github.com/cloudfra/ufs/drivers/boltfs" // installs bolt:
+  _ "github.com/cloudfra/ufs/drivers/core"   // installs local disk, archives, memory: and null:
   _ "github.com/cloudfra/ufs/drivers/gcsfs"  // installs gs://
   _ "github.com/cloudfra/ufs/drivers/gitfs"  // installs URIs ending in .git
 )
@@ -130,11 +130,11 @@ More runnable examples are in [example_test.go](example_test.go) and on
 
 | Backend        | URI                                                         | Access     | Package          | Notes                                                                                                |
 |:---------------|:------------------------------------------------------------|:-----------|:-----------------|:-----------------------------------------------------------------------------------------------------|
-| Local          | `file:///path` or a bare path                               | read-write | built in         | Rooted with `os.OpenRoot`; paths cannot escape the root.                                             |
-| Memory         | `memory:`                                                   | read-write | built in         | Lost when the file system is closed.                                                                 |
-| Archive        | a path ending in an archive extension, or `archive:///path` | read-only  | built in         | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`.  |
-| Remote archive | `http://` or `https://` URL                                 | read-only  | built in         | Downloaded to a temporary directory that is removed on `Close`.                                      |
-| Null           | `null://`                                                   | read-write | built in         | Like `/dev/null`: writes are accepted and discarded, reads return nothing.                           |
+| Local          | `file:///path` or a bare path                               | read-write | `drivers/core`   | Rooted with `os.OpenRoot`; paths cannot escape the root.                                             |
+| Memory         | `memory:`                                                   | read-write | `drivers/core`   | Lost when the file system is closed.                                                                 |
+| Archive        | a path ending in an archive extension, or `archive:///path` | read-only  | `drivers/core`   | `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, `.tar.br`, `.tar.zst`, `.7z`, `.rar`.  |
+| Remote archive | `http://` or `https://` URL                                 | read-only  | `drivers/core`   | Downloaded to a temporary directory that is removed on `Close`.                                      |
+| Null           | `null://`                                                   | read-write | `drivers/core`   | Like `/dev/null`: writes are accepted and discarded, reads return nothing.                           |
 | GCS            | `gs://bucket/prefix`                                        | read-write | `drivers/gcsfs`  | Uses Application Default Credentials and falls back to anonymous access for public buckets.          |
 | Git            | any URI ending in `.git`                                    | read-write | `drivers/gitfs`  | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
 | BoltDB         | `bolt:/path/to/file.db`                                     | read-write | `drivers/boltfs` | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file.                      |
@@ -240,16 +240,17 @@ server.Wait() // until unmounted or ctx is canceled
 ### Helpers
 
 Functions that work on any `fs.FS`, using a backend's faster native
-implementation when it has one:
+implementation when it has one. They live in `github.com/cloudfra/ufs/ops`,
+except `ufs.AbsPath`:
 
 | Function                                     | Purpose                                                                            |
 |:---------------------------------------------|:-----------------------------------------------------------------------------------|
-| `ufs.Copy`                                   | Copy one file between two file systems.                                            |
-| `ufs.Rsync`                                  | Copy a whole tree between two file systems.                                        |
-| `ufs.List`, `ufs.ListFiles`                  | Collect every path, or every file path, under a directory.                         |
-| `ufs.ForEachFilename`, `ufs.ForEachFileInfo` | Stream the same results without building a slice.                                  |
-| `ufs.Walk`                                   | Walk a tree, skipping directories by glob and optionally descending into archives. |
-| `ufs.Remove`, `ufs.RemoveAll`                | Delete from any file system that supports it.                                      |
+| `ops.Copy`                                   | Copy one file between two file systems.                                            |
+| `ops.Rsync`                                  | Copy a whole tree between two file systems.                                        |
+| `ops.List`, `ops.ListFiles`                  | Collect every path, or every file path, under a directory.                         |
+| `ops.ForEachFilename`, `ops.ForEachFileInfo` | Stream the same results without building a slice.                                  |
+| `ops.Walk`                                   | Walk a tree, skipping directories by glob and optionally descending into archives. |
+| `ops.Remove`, `ops.RemoveAll`                | Delete from any file system that supports it.                                      |
 | `ufs.AbsPath`                                | Resolve a virtual path to a real path on the host, when there is one.              |
 
 ### Change notifications

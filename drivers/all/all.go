@@ -20,6 +20,8 @@
 // It registers these drivers, which [github.com/cloudfra/ufs.New] selects by
 // URI:
 //
+//   - file://, archive://, http(s):// archives, memory:, null: and angry:
+//     from [github.com/cloudfra/ufs/drivers/core]
 //   - bolt: from [github.com/cloudfra/ufs/drivers/boltfs]
 //   - gs:// from [github.com/cloudfra/ufs/drivers/gcsfs]
 //   - URIs ending in .git from [github.com/cloudfra/ufs/drivers/gitfs]
@@ -30,10 +32,9 @@
 //     also needed by the fstab ro option and the implicit read-only root
 //   - fault from [github.com/cloudfra/ufs/drivers/decorators/faultfs]
 //
-// The null://, memory:, file:// and archive:// file systems are part of the
-// base package and need no import. Packages that register nothing, such as
-// [github.com/cloudfra/ufs/drivers/embedfs], are not included; call their
-// constructors directly.
+// The base package registers no driver itself. Packages that register
+// nothing, such as [github.com/cloudfra/ufs/drivers/embedfs], are not
+// included; call their constructors directly.
 //
 // Importing this package links the dependencies of every driver (the Google
 // Cloud Storage client, go-git and bbolt) into the binary. Import the
@@ -44,6 +45,7 @@ package all
 
 import (
 	_ "github.com/cloudfra/ufs/drivers/boltfs"                // registers bolt:
+	_ "github.com/cloudfra/ufs/drivers/core"                  // registers file://, archive://, memory:, null: and angry:
 	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"    // registers the fault mount option
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://

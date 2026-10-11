@@ -117,7 +117,9 @@ A decorator's `URI()` must call `AppendURIOption` on the URI of the FS it
 wraps. That records the decorator in the reserved `options` query parameter
 (the same list in YAML flow form, e.g. `options=[{readOnly: true}]`), which
 `New` reads back to re-apply the decorators in order, so the URI round-trips.
-`options`, like `ro`, is therefore not usable as a mount point in a URI.
+`options`, like `ro`, is therefore not usable as a mount point in a URI. The
+same holds for names that start with `ufs.` (e.g. `ufs.checksum`): they are
+parameters for the driver and stay with the base URI.
 
 The fstab `ro` option and the implicit read-only null root both map to the
 `readOnly` option, so they need `drivers/decorators/readonlyfs` imported.

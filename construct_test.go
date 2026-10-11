@@ -15,11 +15,13 @@
 package ufs
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -111,6 +113,45 @@ func TestNewBaseFSFromFileErrors(t *testing.T) {
 				t.Errorf("the file was closed on error, Stat() = %v", err)
 			}
 		})
+	}
+}
+
+var (
+	ufsParamsDriverOnce  sync.Once
+	ufsParamsDriverNames sync.Map
+)
+
+// TestNewKeepsUFSParameters checks that query parameters addressed to ufs
+// (the "ufs." prefix, e.g. ufs.checksum) reach the driver with the base URI
+// and are not opened as mounts.
+func TestNewKeepsUFSParameters(t *testing.T) {
+	// The driver records the names it is asked to open under a host that is
+	// unique to this run: drivers cannot be unregistered, so with -count the
+	// one registered by the first run serves the later runs too.
+	const scheme = "ufsparams-test://"
+	ufsParamsDriverOnce.Do(func() {
+		Register(NewDriver("ufsparams-test", func(ctx context.Context, name string) (WriteFS, error) {
+			ufsParamsDriverNames.Store(name, true)
+			return newBaseFS(ctx, "memory:")
+		}, func(name string) bool {
+			return strings.HasPrefix(name, scheme)
+		}, 1, false, true))
+	})
+	host := ufsTesting.RandomString(12)
+
+	fsys, err := New(t.Context(), scheme+host+"/a.zip?ufs.checksum=sha256:abcd&cache=memory:")
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	want := scheme + host + "/a.zip?ufs.checksum=sha256%3Aabcd"
+	if _, ok := ufsParamsDriverNames.Load(want); !ok {
+		t.Errorf("the driver was not asked to open %q", want)
+	}
+	// The other parameter is still a mount point.
+	if _, err := fsys.Stat("cache"); err != nil {
+		t.Errorf("Stat(cache) = %v, want the mount point", err)
 	}
 }
 

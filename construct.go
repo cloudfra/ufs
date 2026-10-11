@@ -44,6 +44,12 @@ const (
 	// point. Its value is the options list of a [MountSpec] in YAML flow form.
 	optionsQueryParam = "options"
 
+	// ufsQueryParamPrefix starts the name of a URI query parameter that is
+	// addressed to ufs or one of its drivers, such as [URLQueryParamChecksum].
+	// Such a parameter belongs to the file system whose URI carries it; it is
+	// not a mount point.
+	ufsQueryParamPrefix = "ufs."
+
 	// embedFSPrefix is the scheme of drivers/embedfs, which has no URI-based
 	// constructor.
 	embedFSPrefix = "embed://"
@@ -220,15 +226,19 @@ func New(ctx context.Context, name string) (WriteFS, error) {
 		baseURI := *u
 		baseURI.RawQuery = ""
 		baseURI.Fragment = ""
-		// The decorators of the base travel with it; every other query
-		// parameter is a mount point.
-		if opts, ok := query[optionsQueryParam]; ok {
-			baseURI.RawQuery = url.Values{optionsQueryParam: opts}.Encode()
+		// The decorators of the base and the parameters addressed to ufs
+		// travel with it; every other query parameter is a mount point.
+		baseQuery := url.Values{}
+		for param, values := range query {
+			if param == optionsQueryParam || strings.HasPrefix(param, ufsQueryParamPrefix) {
+				baseQuery[param] = values
+			}
 		}
+		baseURI.RawQuery = baseQuery.Encode()
 		nFS, err := openNestFS(ctx, baseURI.String())
 		if err == nil {
 			for mountPath, mountURI := range query {
-				if mountPath == roQueryParam || mountPath == optionsQueryParam {
+				if mountPath == roQueryParam || baseQuery.Has(mountPath) {
 					continue
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])

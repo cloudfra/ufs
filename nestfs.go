@@ -232,6 +232,9 @@ type nestFS struct {
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
+	if err := fsys.validPath(absPathOp, name); err != nil {
+		return "", err
+	}
 	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}

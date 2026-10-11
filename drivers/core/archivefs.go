@@ -42,15 +42,9 @@ var (
 
 func init() {
 	archiveDriver := ufs.NewDriver("archive", func(ctx context.Context, name string) (ufs.WriteFS, error) {
-		return newArchiveWriteFS(ctx, strings.TrimPrefix(name, "archive://"))
+		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
 	}, isArchiveFSUri, 1, true, false)
-	archiveDriver.CreateFromFileFunc = func(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
-		fsys, err := newArchiveFSFromFile(ctx, file)
-		if err != nil {
-			return nil, err
-		}
-		return fsys, nil
-	}
+	archiveDriver.CreateFromFileFunc = newArchiveFSFromFile
 	ufs.Register(archiveDriver)
 	ufs.Register(ufs.NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
 }
@@ -158,17 +152,10 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 	return ufserrors.NewPathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
-// newArchiveWriteFS is newArchiveFSFromLocalFS with an interface result, which
-// is nil on error; returning its nil *archiveFS directly would not be.
-func newArchiveWriteFS(ctx context.Context, name string) (ufs.WriteFS, error) {
-	fsys, err := newArchiveFSFromLocalFS(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	return fsys, nil
-}
-
-func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, error) {
+// newArchiveFSFromLocalFS mounts the archive at the host path name. The result
+// is an interface, so that it is nil, not a nil *archiveFS in an interface,
+// when err is not nil.
+func newArchiveFSFromLocalFS(ctx context.Context, name string) (ufs.WriteFS, error) {
 	fsys, err := archive.New(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
@@ -178,7 +165,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (*archiveFS, erro
 
 // newArchiveFSFromFile mounts the archive held by the open file. The returned
 // archiveFS owns file and closes it on Close; on error file is left open.
-func newArchiveFSFromFile(ctx context.Context, file fs.File) (*archiveFS, error) {
+func newArchiveFSFromFile(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
 	stat, err := file.Stat()
 	if err != nil {
 		return nil, err

@@ -28,6 +28,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -226,7 +227,7 @@ func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name strin
 }
 
 // Conventions copies the ufs test assets into the file system with
-// [ufs.Rsync] and verifies the result satisfies the [fstest.TestFS]
+// [ops.Rsync] and verifies the result satisfies the [fstest.TestFS]
 // conventions for every copied file.
 func Conventions(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	t.Run("Conventions", func(t *testing.T) {
@@ -234,11 +235,11 @@ func Conventions(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 		srcFS := ufsTesting.TestAssetsFS()
 		fsys := createFSFunc(t)
 		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-		if err := ufs.Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
+		if err := ops.Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
 			t.Fatalf("Rsync() = %v, want nil", err)
 		}
 
-		filenames, err := ufs.List(srcFS, pathutil.CwdPath)
+		filenames, err := ops.List(srcFS, pathutil.CwdPath)
 		if err != nil {
 			t.Fatalf("List() = %v, want nil", err)
 		}

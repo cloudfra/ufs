@@ -80,6 +80,13 @@ type readOnlyFS struct {
 	ufs.ReadFS
 }
 
+// IsMountedArchiveDir forwards to the wrapped file system, see
+// [ufs.MountedArchiveDirFS].
+func (fsys *readOnlyFS) IsMountedArchiveDir(name string) bool {
+	m, ok := fsys.ReadFS.(ufs.MountedArchiveDirFS)
+	return ok && m.IsMountedArchiveDir(name)
+}
+
 // New wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
 // Remove, RemoveAll) always return [fs.ErrPermission]. All read operations
 // delegate to inner unchanged.

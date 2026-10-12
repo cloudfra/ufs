@@ -32,7 +32,9 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -41,15 +43,27 @@ func init() {
 	ufs.Register(ufs.NewDriver("git", New, isGitFSUri, ufs.PrioritySpecialized, true, true))
 }
 
-func prepareGitDirectory(name string, gitURL string) error {
-	var err error
+// prepareGitDirectory clones the repository gitURL into the directory name.
+// Each set of clone options is tried in turn until one works; if none does,
+// the error holds the error of every attempt.
+func prepareGitDirectory(ctx context.Context, name string, gitURL string) error {
+	var errs []error
+	cloned := false
 	for _, opts := range cloneOptions(gitURL) {
-		if _, err = git.PlainClone(name, false, opts); err == nil {
+		// Do not start a clone, or another attempt, once the caller gave up.
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
 			break
 		}
+		_, err := git.PlainCloneContext(ctx, name, false, opts)
+		if err == nil {
+			cloned = true
+			break
+		}
+		errs = append(errs, err)
 	}
-	if err != nil {
-		return fmt.Errorf("could not clone %s, %w", name, err)
+	if !cloned {
+		return fmt.Errorf("could not clone %s, %w", gitURL, ufserrors.Join(errs...))
 	}
 
 	osutil.TryDeleteDirectory(filepath.Join(name, ".git"))
@@ -66,8 +80,8 @@ func New(ctx context.Context, name string) (ufs.WriteFS, error) {
 		return nil, fmt.Errorf("%q is not a valid git repository", name)
 	}
 
-	return ufs.NewTempMountFS(ctx, name, func(tempDir string) error {
-		return prepareGitDirectory(tempDir, name)
+	return core.NewTempMountFS(ctx, name, func(tempDir string) error {
+		return prepareGitDirectory(ctx, tempDir, name)
 	})
 }
 

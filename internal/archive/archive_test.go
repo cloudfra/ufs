@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 const (
@@ -261,18 +262,11 @@ type closerFunc func() error
 
 func (f closerFunc) Close() error { return f() }
 
-// emptyFS is an fs.FS with no entries.
-type emptyFS struct{}
-
-func (emptyFS) Open(name string) (fs.File, error) {
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-}
-
 func TestCloseClosesUnderlyingFile(t *testing.T) {
 	t.Parallel()
 
 	var closeCalled atomic.Int32
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
+	afs := makeArchiveFS(ufsTesting.EmptyFS{}, "test.zip", closerFunc(func() error {
 		closeCalled.Add(1)
 		return nil
 	}))
@@ -288,7 +282,7 @@ func TestCloseClosesUnderlyingFile(t *testing.T) {
 func TestCloseWithoutCloserIsNoop(t *testing.T) {
 	t.Parallel()
 
-	afs := makeArchiveFS(emptyFS{}, "test.zip", nil)
+	afs := makeArchiveFS(ufsTesting.EmptyFS{}, "test.zip", nil)
 	if err := afs.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil (no closer set)", err)
 	}
@@ -298,7 +292,7 @@ func TestCloseReportsCloserError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("file close failed")
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
+	afs := makeArchiveFS(ufsTesting.EmptyFS{}, "test.zip", closerFunc(func() error {
 		return wantErr
 	}))
 
@@ -311,7 +305,7 @@ func TestCloseIdempotent(t *testing.T) {
 	t.Parallel()
 
 	var closeCalled atomic.Int32
-	afs := makeArchiveFS(emptyFS{}, "test.zip", closerFunc(func() error {
+	afs := makeArchiveFS(ufsTesting.EmptyFS{}, "test.zip", closerFunc(func() error {
 		closeCalled.Add(1)
 		return nil
 	}))

@@ -25,7 +25,7 @@ import (
 )
 
 func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
-	inner := makeMemFS("memory:")
+	inner := mustBaseFS(t, "memory:")
 	nfs := makeNestFS(t.Context(), inner)
 	defer func() {
 		if err := nfs.Close(); err != nil {
@@ -57,7 +57,7 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 }
 
 func TestNestFSWatchSubdirectory(t *testing.T) {
-	inner := makeMemFS("memory:")
+	inner := mustBaseFS(t, "memory:")
 	if err := inner.MkdirAll("sub", fs.ModePerm); err != nil {
 		t.Fatal(err)
 	}
@@ -110,10 +110,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 }
 
 func TestNestFSWatchUnsupportedBackend(t *testing.T) {
-	inner, err := newNullFS(t.Context(), "null://")
-	if err != nil {
-		t.Fatal(err)
-	}
+	inner := mustBaseFS(t, "null://")
 	nfs := makeNestFS(t.Context(), inner)
 	defer func() {
 		if err := nfs.Close(); err != nil {
@@ -121,7 +118,7 @@ func TestNestFSWatchUnsupportedBackend(t *testing.T) {
 		}
 	}()
 
-	_, err = nfs.Watch(t.Context(), ".", func(NotifyOp, string) {})
+	_, err := nfs.Watch(t.Context(), ".", func(NotifyOp, string) {})
 	if err == nil {
 		t.Error("Watch on non-watchable backend should fail")
 	}

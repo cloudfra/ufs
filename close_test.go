@@ -16,7 +16,6 @@ package ufs
 
 import (
 	"errors"
-	"io/fs"
 	"sync/atomic"
 	"testing"
 
@@ -77,8 +76,8 @@ func TestBuildClosesBaseOnMountError(t *testing.T) {
 
 func TestBuildClosesBaseOnConflictingMountError(t *testing.T) {
 	t.Parallel()
-	base := &closeCounter{WriteFS: makeMemFS("memory://")}
-	mount := &closeCounter{WriteFS: makeMemFS("memory://")}
+	base := &closeCounter{WriteFS: mustBaseFS(t, "memory://")}
+	mount := &closeCounter{WriteFS: mustBaseFS(t, "memory://")}
 
 	b := NewFSBuilder("null://").MountFS("a", base).MountFS("a", mount)
 	_, err := b.Build(t.Context())
@@ -95,9 +94,9 @@ func TestMountMapCloseClosesAllMountsOnError(t *testing.T) {
 	ctx := t.Context()
 	mm := makeMountMap("test")
 
-	good1 := &closeCounter{WriteFS: makeMemFS("memory://1")}
-	bad := &failCloser{WriteFS: makeMemFS("memory://bad")}
-	good2 := &closeCounter{WriteFS: makeMemFS("memory://2")}
+	good1 := &closeCounter{WriteFS: mustBaseFS(t, "memory://1")}
+	bad := &failCloser{WriteFS: mustBaseFS(t, "memory://bad")}
+	good2 := &closeCounter{WriteFS: mustBaseFS(t, "memory://2")}
 
 	ufsTesting.Must(t, mm.put("a", makeNestFS(ctx, good1)))
 	ufsTesting.Must(t, mm.put("b", makeNestFS(ctx, bad)))
@@ -123,8 +122,8 @@ func TestNestFSCloseClosesBaseWhenMountsFail(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	base := &closeCounter{WriteFS: makeMemFS("memory://base")}
-	bad := &failCloser{WriteFS: makeMemFS("memory://bad")}
+	base := &closeCounter{WriteFS: mustBaseFS(t, "memory://base")}
+	bad := &failCloser{WriteFS: mustBaseFS(t, "memory://bad")}
 
 	nfs := makeNestFS(ctx, base)
 	ufsTesting.Must(t, nfs.addMount("failing", makeNestFS(ctx, bad)))
@@ -140,104 +139,4 @@ func TestNestFSCloseClosesBaseWhenMountsFail(t *testing.T) {
 	if bad.closed() < 1 {
 		t.Error("failing mount Close was not called")
 	}
-}
-
-func TestTempMountFSCloseRunsCleanupOnInnerError(t *testing.T) {
-	t.Parallel()
-
-	var cleanupCalled atomic.Int32
-	angry := makeAngryFS(angryFSPrefix)
-	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
-		cleanupCalled.Add(1)
-		return nil
-	})
-
-	err := tfs.Close()
-	if err == nil {
-		t.Fatal("Close() should return error from angry lfs")
-	}
-	if cleanupCalled.Load() < 1 {
-		t.Error("cleanup function was not called when inner FS Close failed")
-	}
-}
-
-func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
-	t.Parallel()
-
-	angry := makeAngryFS(angryFSPrefix)
-	cleanupErr := errors.New("cleanup boom")
-	tfs := makeTempMountFS(angry, "test://", "test://", func() error {
-		return cleanupErr
-	})
-
-	err := tfs.Close()
-	if err == nil {
-		t.Fatal("Close() should return error")
-	}
-	if !errors.Is(err, cleanupErr) {
-		t.Errorf("Close() error should contain cleanup error, got: %v", err)
-	}
-}
-
-// fakeArchive is an archive.FS that counts Close calls and returns closeErr.
-type fakeArchive struct {
-	emptyFS
-	closeCalled atomic.Int32
-	closeErr    error
-}
-
-func (f *fakeArchive) Stat(name string) (fs.FileInfo, error) { return fs.Stat(f.emptyFS, name) }
-
-func (f *fakeArchive) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(f.emptyFS, name) }
-
-func (f *fakeArchive) Close() error {
-	f.closeCalled.Add(1)
-	return f.closeErr
-}
-
-func TestArchiveFSCloseClosesArchive(t *testing.T) {
-	t.Parallel()
-
-	inner := &fakeArchive{}
-	afs := makeArchiveFS(inner, "test.zip")
-
-	if err := afs.Close(); err != nil {
-		t.Fatalf("Close() = %v, want nil", err)
-	}
-	if inner.closeCalled.Load() != 1 {
-		t.Error("underlying archive was not closed on archiveFS.Close()")
-	}
-}
-
-func TestArchiveFSCloseReportsArchiveError(t *testing.T) {
-	t.Parallel()
-
-	wantErr := errors.New("file close failed")
-	afs := makeArchiveFS(&fakeArchive{closeErr: wantErr}, "test.zip")
-
-	err := afs.Close()
-	if !errors.Is(err, wantErr) {
-		t.Errorf("Close() = %v, want %v", err, wantErr)
-	}
-}
-
-func TestArchiveFSCloseIdempotent(t *testing.T) {
-	t.Parallel()
-
-	inner := &fakeArchive{}
-	afs := makeArchiveFS(inner, "test.zip")
-
-	for range 3 {
-		ufsTesting.ValidateClose(t, afs)()
-	}
-	if inner.closeCalled.Load() != 1 {
-		t.Errorf("archive closed %d times, want exactly 1", inner.closeCalled.Load())
-	}
-}
-
-// emptyFS is a minimal fs.FS that contains no files.
-type emptyFS struct{}
-
-func (emptyFS) Open(name string) (fs.File, error) {
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 }

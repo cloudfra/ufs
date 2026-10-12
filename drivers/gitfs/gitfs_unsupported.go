@@ -31,7 +31,7 @@ func init() {
 
 // New reports that gitfs is unavailable on GOOS=aix and GOOS=wasip1, where
 // go-git does not build.
-func New(_ context.Context, name string) (ufs.FS, error) {
+func New(_ context.Context, name string) (ufs.WriteFS, error) {
 	return nil, fmt.Errorf("cannot mount %q, gitfs is not supported on this operating system", name)
 }
 

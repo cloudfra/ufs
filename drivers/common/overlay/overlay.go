@@ -40,9 +40,10 @@ var (
 	_ fs.ReadDirFile = (*dirFile)(nil)
 )
 
-// FS is a union of layers, top first. Layer 0 receives every write and is
-// always visible. A path in a lower layer is visible unless a higher layer
-// has it or a tombstone hides it.
+// FS is a union of at least two layers, top first. Layer 0 receives every
+// write and is always visible: a lookup in it never consults the tombstones.
+// A path in a lower layer is visible unless a higher layer has it or a
+// tombstone hides it.
 //
 // FS keeps the merged view consistent for writes made through it: Create and
 // MkdirAll reject a path that the merged view already has as the other kind
@@ -59,10 +60,12 @@ type FS struct {
 }
 
 // New returns an overlay of layers, top first. layers[0] receives all writes.
-// The overlay owns the layers: Close closes them.
+// The overlay owns the layers: Close closes them. An overlay of fewer than two
+// layers has nothing to merge, so New fails for it; use the file system
+// itself.
 func New(layers ...ufs.FS) (*FS, error) {
-	if len(layers) == 0 {
-		return nil, errors.New("overlay: at least one layer is required")
+	if len(layers) < 2 {
+		return nil, fmt.Errorf("overlay: at least two layers are required, got %d", len(layers))
 	}
 	return &FS{
 		layers:     slices.Clone(layers),
@@ -78,14 +81,15 @@ func (o *FS) Layer(i int) ufs.FS {
 // Tombstones returns a snapshot of the tombstones and their sequence numbers.
 func (o *FS) Tombstones() map[string]uint64 {
 	o.mu.RLock()
-	defer o.mu.RUnlock()
 	if len(o.tombstones) == 0 {
+		o.mu.RUnlock()
 		return nil
 	}
 	snapshot := make(map[string]uint64, len(o.tombstones))
 	for name, seq := range o.tombstones {
 		snapshot[name] = seq
 	}
+	o.mu.RUnlock()
 	return snapshot
 }
 
@@ -93,19 +97,20 @@ func (o *FS) Tombstones() map[string]uint64 {
 // snapshot. A tombstone recorded again after the snapshot is kept.
 func (o *FS) ClearTombstones(snapshot map[string]uint64) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	for name, seq := range snapshot {
 		if o.tombstones[name] == seq {
 			delete(o.tombstones, name)
 		}
 	}
+	o.mu.Unlock()
 }
 
 // Hidden reports whether name, or an ancestor of it, has a tombstone.
 func (o *FS) Hidden(name string) bool {
 	o.mu.RLock()
-	defer o.mu.RUnlock()
-	return o.hiddenLocked(name)
+	hidden := o.hiddenLocked(name)
+	o.mu.RUnlock()
+	return hidden
 }
 
 func (o *FS) hiddenLocked(name string) bool {
@@ -125,10 +130,11 @@ func (o *FS) hiddenLocked(name string) bool {
 // addTombstone records a tombstone on name and returns its sequence number.
 func (o *FS) addTombstone(name string) uint64 {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	o.seq++
-	o.tombstones[name] = o.seq
-	return o.seq
+	seq := o.seq
+	o.tombstones[name] = seq
+	o.mu.Unlock()
+	return seq
 }
 
 // dropTombstone removes the tombstone on name if it still has sequence seq.
@@ -136,39 +142,33 @@ func (o *FS) dropTombstone(name string, seq uint64) {
 	o.ClearTombstones(map[string]uint64{name: seq})
 }
 
-// visibleLayers returns how many layers, from the top, may show name: all of
-// them, or only layer 0 when name is hidden.
-func (o *FS) visibleLayers(name string) int {
-	if len(o.layers) > 1 && o.Hidden(name) {
-		return 1
-	}
-	return len(o.layers)
-}
-
-// check returns the error for op on name when the overlay is closed or name
-// is invalid.
+// check returns the error for op on name when name is invalid or the overlay
+// is closed.
 func (o *FS) check(op, name string) error {
+	if err := pathutil.Validate(op, name); err != nil {
+		return err
+	}
 	if o.closed.Load() {
 		return ufserrors.NewPathError(op, name, fs.ErrClosed)
 	}
-	return pathutil.Validate(op, name)
+	return nil
 }
 
-// find calls fn on each visible layer, top first, until fn returns an error
-// other than fs.ErrNotExist, and returns that result. If every layer returns
-// fs.ErrNotExist, find returns the top layer's error.
-func find[T any](o *FS, name string, fn func(l ufs.FS) (T, error)) (T, error) {
-	var (
-		first    T
-		firstErr error
-	)
-	for i := range o.visibleLayers(name) {
-		v, err := fn(o.layers[i])
+// findFirst calls fn on the layers, top first, until fn returns an error other
+// than fs.ErrNotExist, and returns that result: the first layer that has name
+// answers for it. Layer 0 is asked without looking at the tombstones; they
+// are consulted only once layer 0 does not have name, and a tombstone stops
+// the search before the lower layers. If no layer has name, findFirst returns
+// layer 0's error.
+func findFirst[T any](o *FS, name string, fn func(l ufs.FS) (T, error)) (T, error) {
+	first, firstErr := fn(o.layers[0])
+	if !errors.Is(firstErr, fs.ErrNotExist) || o.Hidden(name) {
+		return first, firstErr
+	}
+	for _, l := range o.layers[1:] {
+		v, err := fn(l)
 		if !errors.Is(err, fs.ErrNotExist) {
 			return v, err
-		}
-		if i == 0 {
-			first, firstErr = v, err
 		}
 	}
 	return first, firstErr
@@ -176,16 +176,17 @@ func find[T any](o *FS, name string, fn func(l ufs.FS) (T, error)) (T, error) {
 
 // stat returns the merged view's Stat of name.
 func (o *FS) stat(name string) (fs.FileInfo, error) {
-	return find(o, name, func(l ufs.FS) (fs.FileInfo, error) { return l.Stat(name) })
+	return findFirst(o, name, func(l ufs.FS) (fs.FileInfo, error) { return l.Stat(name) })
 }
 
-// Open opens name from the highest layer that has it. A directory is
+// Open opens name from the highest layer that has it. A directory that is in
+// layer 0 only is returned as layer 0 opened it; any other directory is
 // returned as a snapshot of its merged listing.
 func (o *FS) Open(name string) (fs.File, error) {
 	if err := o.check("open", name); err != nil {
 		return nil, err
 	}
-	f, err := find(o, name, func(l ufs.FS) (fs.File, error) { return l.Open(name) })
+	f, err := findFirst(o, name, func(l ufs.FS) (fs.File, error) { return l.Open(name) })
 	if err != nil {
 		return nil, err
 	}
@@ -193,13 +194,22 @@ func (o *FS) Open(name string) (fs.File, error) {
 	if err != nil {
 		return nil, ufserrors.Join(err, f.Close())
 	}
-	if !info.IsDir() || len(o.layers) == 1 {
+	if !info.IsDir() {
+		return f, nil
+	}
+	layers, _, err := o.dirLayers("open", name)
+	if err != nil {
+		return nil, ufserrors.Join(err, f.Close())
+	}
+	if len(layers) == 1 && layers[0] == 0 {
+		// Nothing below layer 0 has this directory, so there is nothing to
+		// merge and its own handle is the answer.
 		return f, nil
 	}
 	if err := f.Close(); err != nil {
 		return nil, err
 	}
-	entries, err := o.readDir("open", name)
+	entries, err := o.mergeDir("open", name, layers)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +221,7 @@ func (o *FS) ReadFile(name string) ([]byte, error) {
 	if err := o.check("readfile", name); err != nil {
 		return nil, err
 	}
-	return find(o, name, func(l ufs.FS) ([]byte, error) { return l.ReadFile(name) })
+	return findFirst(o, name, func(l ufs.FS) ([]byte, error) { return l.ReadFile(name) })
 }
 
 // ReadLink reads the link name from the highest layer that has it.
@@ -219,7 +229,7 @@ func (o *FS) ReadLink(name string) (string, error) {
 	if err := o.check("readlink", name); err != nil {
 		return "", err
 	}
-	return find(o, name, func(l ufs.FS) (string, error) { return l.ReadLink(name) })
+	return findFirst(o, name, func(l ufs.FS) (string, error) { return l.ReadLink(name) })
 }
 
 // Stat returns name's FileInfo from the highest layer that has it.
@@ -236,7 +246,7 @@ func (o *FS) Lstat(name string) (fs.FileInfo, error) {
 	if err := o.check("lstat", name); err != nil {
 		return nil, err
 	}
-	return find(o, name, func(l ufs.FS) (fs.FileInfo, error) { return l.Lstat(name) })
+	return findFirst(o, name, func(l ufs.FS) (fs.FileInfo, error) { return l.Lstat(name) })
 }
 
 // ReadDir returns the merged listing of the directory name, sorted by name.
@@ -247,38 +257,70 @@ func (o *FS) ReadDir(name string) ([]fs.DirEntry, error) {
 	return o.readDir("readdir", name)
 }
 
-// readDir returns the merged, sorted listing of the directory name. The
-// highest layer that has name decides whether it is a directory; it and every
-// visible layer below it where name is also a directory contribute entries.
-// Entries hidden by a tombstone are skipped in the lower layers.
-func (o *FS) readDir(op, name string) ([]fs.DirEntry, error) {
-	visible := o.visibleLayers(name)
-	top := -1
-	for i := range visible {
-		info, err := o.layers[i].Stat(name)
-		if errors.Is(err, fs.ErrNotExist) {
+// dirLayers returns the indexes of the layers, top first, that have name as a
+// directory, and the FileInfo of the highest of them. The highest layer that
+// has name decides whether it is a directory; a lower layer where name is
+// missing or not a directory contributes nothing. Layers below the top are
+// not consulted when name is hidden by a tombstone.
+func (o *FS) dirLayers(op, name string) ([]int, fs.FileInfo, error) {
+	var (
+		layers []int
+		info   fs.FileInfo
+	)
+	for i, l := range o.layers {
+		if i == 1 && o.Hidden(name) {
+			break
+		}
+		li, err := l.Stat(name)
+		if errNotDir(err) {
 			continue
 		}
 		if err != nil {
-			return nil, ufserrors.NewPathError(op, name, err)
+			return nil, nil, ufserrors.NewPathError(op, name, err)
 		}
-		if !info.IsDir() {
-			return nil, ufserrors.NewPathError(op, name, fmt.Errorf("not a directory: %w", fs.ErrInvalid))
-		}
-		top = i
-		break
-	}
-	if top < 0 {
-		return nil, ufserrors.NewPathError(op, name, fs.ErrNotExist)
-	}
-
-	merged := map[string]fs.DirEntry{}
-	var entries []fs.DirEntry
-	for i := top; i < visible; i++ {
-		layerEntries, err := o.layers[i].ReadDir(name)
-		if i > top && errNotDir(err) {
+		if !li.IsDir() {
+			if len(layers) == 0 {
+				return nil, nil, ufserrors.NewPathError(op, name, fmt.Errorf("not a directory: %w", fs.ErrInvalid))
+			}
 			continue
 		}
+		if len(layers) == 0 {
+			info = li
+		}
+		layers = append(layers, i)
+	}
+	if len(layers) == 0 {
+		return nil, nil, ufserrors.NewPathError(op, name, fs.ErrNotExist)
+	}
+	return layers, info, nil
+}
+
+// readDir returns the merged, sorted listing of the directory name.
+func (o *FS) readDir(op, name string) ([]fs.DirEntry, error) {
+	layers, _, err := o.dirLayers(op, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(layers) == 1 && layers[0] == 0 {
+		// Only layer 0 has the directory: its listing is the answer, and it
+		// is already sorted.
+		entries, err := o.layers[0].ReadDir(name)
+		if err != nil {
+			return nil, ufserrors.NewPathError(op, name, err)
+		}
+		return entries, nil
+	}
+	return o.mergeDir(op, name, layers)
+}
+
+// mergeDir merges the listings of the layers, which dirLayers returned for
+// name, with the highest layer winning. Entries of the layers below the top
+// are skipped when a tombstone hides them.
+func (o *FS) mergeDir(op, name string, layers []int) ([]fs.DirEntry, error) {
+	merged := map[string]fs.DirEntry{}
+	var entries []fs.DirEntry
+	for _, i := range layers {
+		layerEntries, err := o.layers[i].ReadDir(name)
 		if err != nil {
 			return nil, ufserrors.NewPathError(op, name, err)
 		}
@@ -330,9 +372,6 @@ func (o *FS) Create(name string) (ufs.File, error) {
 	if err := o.check("create", name); err != nil {
 		return nil, err
 	}
-	if len(o.layers) == 1 {
-		return o.layers[0].Create(name)
-	}
 	if info, err := o.stat(name); err == nil && info.IsDir() {
 		return nil, ufserrors.NewPathError("create", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
 	}
@@ -353,7 +392,7 @@ func (o *FS) MkdirAll(name string, perm fs.FileMode) error {
 	if err := o.check("mkdir", name); err != nil {
 		return err
 	}
-	if len(o.layers) > 1 && name != pathutil.CwdPath {
+	if name != pathutil.CwdPath {
 		if info, err := o.stat(name); err == nil && !info.IsDir() {
 			return ufserrors.NewPathError("mkdir", name, fmt.Errorf("%q is not a directory: %w", name, fs.ErrExist))
 		}
@@ -370,9 +409,6 @@ func (o *FS) MkdirAll(name string, perm fs.FileMode) error {
 func (o *FS) Remove(name string) error {
 	if err := o.check("remove", name); err != nil {
 		return err
-	}
-	if len(o.layers) == 1 {
-		return o.layers[0].Remove(name)
 	}
 	if name == pathutil.CwdPath {
 		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
@@ -406,9 +442,6 @@ func (o *FS) Remove(name string) error {
 func (o *FS) RemoveAll(name string) error {
 	if err := o.check("removeall", name); err != nil {
 		return err
-	}
-	if len(o.layers) == 1 {
-		return o.layers[0].RemoveAll(name)
 	}
 	seq := o.addTombstone(name)
 	if err := o.layers[0].RemoveAll(name); err != nil {

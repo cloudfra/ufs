@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	_ "github.com/cloudfra/ufs/drivers/core" // memory:
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -116,7 +117,7 @@ func assertNotExist(t *testing.T, fsys ufs.ReadFS, name string) {
 }
 
 func TestOverlayDriver(t *testing.T) {
-	for _, n := range []int{1, 2, 3} {
+	for _, n := range []int{2, 3} {
 		t.Run(fmt.Sprintf("%d layers", n), func(t *testing.T) {
 			ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
 				o, err := New(newMemLayers(t, n)...)
@@ -129,9 +130,13 @@ func TestOverlayDriver(t *testing.T) {
 	}
 }
 
-func TestNewRequiresLayers(t *testing.T) {
-	if _, err := New(); err == nil {
-		t.Error("New() = nil error, want an error")
+func TestNewRequiresTwoLayers(t *testing.T) {
+	for n := range 2 {
+		layers := newMemLayers(t, n)
+		if o, err := New(layers...); err == nil {
+			t.Errorf("New(%d layers) = nil error, want an error", n)
+			_ = o.Close()
+		}
 	}
 }
 
@@ -490,22 +495,6 @@ func TestFailedRemoveDropsTombstone(t *testing.T) {
 	assertContent(t, o, "f", "")
 }
 
-func TestSingleLayerPassesThrough(t *testing.T) {
-	layer := newMem(t, "memory://only")
-	writeFile(t, layer, "d/f", "x")
-	o := mustNew(t, layer)
-	if err := o.Remove("d/f"); err != nil {
-		t.Fatal(err)
-	}
-	if o.Hidden("d/f") {
-		t.Error("Hidden(d/f) = true; a single layer needs no tombstones")
-	}
-	if err := o.RemoveAll("d"); err != nil {
-		t.Fatal(err)
-	}
-	assertNotExist(t, o, "d")
-}
-
 func TestStringAndURI(t *testing.T) {
 	o := mustNew(t, newMemLayers(t, 2)...)
 	if got, want := o.String(), "overlay("+o.Layer(0).String()+", "+o.Layer(1).String()+")"; got != want {
@@ -532,4 +521,63 @@ func TestReadLink(t *testing.T) {
 	if _, err := o.ReadLink("missing"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("ReadLink(missing) = %v, want fs.ErrNotExist", err)
 	}
+}
+
+// TestOpenDirectoryOnlyInTopLayerIsNotMerged verifies that a directory that
+// layer 0 alone has is returned as layer 0 opened it, and that a directory
+// that more than one layer has is the merged listing.
+func TestOpenDirectoryOnlyInTopLayerIsNotMerged(t *testing.T) {
+	layers := newMemLayers(t, 2)
+	writeFile(t, layers[0], "only/a", "a")
+	writeFile(t, layers[0], "both/a", "a")
+	writeFile(t, layers[1], "both/b", "b")
+	writeFile(t, layers[1], "below/c", "c")
+	o := mustNew(t, layers...)
+
+	for _, tc := range []struct {
+		name       string
+		wantMerged bool
+		want       []string
+	}{
+		{name: "only", wantMerged: false, want: []string{"a"}},
+		{name: "both", wantMerged: true, want: []string{"a", "b"}},
+		{name: "below", wantMerged: true, want: []string{"c"}},
+	} {
+		f, err := o.Open(tc.name)
+		if err != nil {
+			t.Fatalf("Open(%q) = %v", tc.name, err)
+		}
+		_, merged := f.(*dirFile)
+		if merged != tc.wantMerged {
+			t.Errorf("Open(%q) returned %T, merged = %t, want %t", tc.name, f, merged, tc.wantMerged)
+		}
+		entries, err := f.(fs.ReadDirFile).ReadDir(-1)
+		if err != nil {
+			t.Fatalf("ReadDir(%q) = %v", tc.name, err)
+		}
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		if !slices.Equal(names, tc.want) {
+			t.Errorf("Open(%q) lists %v, want %v", tc.name, names, tc.want)
+		}
+		ufsTesting.Must(t, f.Close())
+	}
+}
+
+// TestTopLayerIgnoresTombstones verifies that a path that layer 0 has is
+// visible whatever the tombstones say, because layer 0 is never hidden.
+func TestTopLayerIgnoresTombstones(t *testing.T) {
+	layers := newMemLayers(t, 2)
+	writeFile(t, layers[1], "f", "lower")
+	o := mustNew(t, layers...)
+
+	ufsTesting.Must(t, o.Remove("f"))
+	assertNotExist(t, o, "f")
+	writeFile(t, o, "f", "again")
+	if !o.Hidden("f") {
+		t.Fatal("Hidden(f) = false, want the tombstone to still be recorded")
+	}
+	assertContent(t, o, "f", "again")
 }

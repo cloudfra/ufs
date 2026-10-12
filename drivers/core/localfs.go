@@ -42,7 +42,7 @@ var (
 )
 
 func init() {
-	ufs.Register(ufs.NewDriver("local", newLocalFS, isLocalFSUri, 10000, true, true))
+	ufs.Register(ufs.NewDriver("local", newLocalFS, isLocalFSUri, ufs.PriorityFallback, true, true))
 }
 
 type localFSInterface interface {

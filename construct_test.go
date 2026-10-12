@@ -135,7 +135,7 @@ func TestNewKeepsUFSParameters(t *testing.T) {
 			return newBaseFS(ctx, "memory:")
 		}, func(name string) bool {
 			return strings.HasPrefix(name, scheme)
-		}, 1, false, true))
+		}, PriorityDefault, false, true))
 	})
 	host := ufsTesting.RandomString(12)
 

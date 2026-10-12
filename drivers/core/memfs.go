@@ -48,7 +48,7 @@ var (
 )
 
 func init() {
-	ufs.Register(ufs.NewDriver("memory", newMemFS, isMemFSUri, 1, true, true))
+	ufs.Register(ufs.NewDriver("memory", newMemFS, isMemFSUri, ufs.PriorityDefault, true, true))
 }
 
 // memNode holds the stored state for one file or directory.

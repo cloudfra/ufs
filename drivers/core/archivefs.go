@@ -43,10 +43,10 @@ var (
 func init() {
 	archiveDriver := ufs.NewDriver("archive", func(ctx context.Context, name string) (ufs.WriteFS, error) {
 		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
-	}, isArchiveFSUri, 1, true, false)
+	}, isArchiveFSUri, ufs.PriorityDefault, true, false)
 	archiveDriver.CreateFromFileFunc = newArchiveFSFromFile
 	ufs.Register(archiveDriver)
-	ufs.Register(ufs.NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, 10000, true, false))
+	ufs.Register(ufs.NewDriver("http-archive", newTempMountRemoteArchiveFS, isTempMountRemoteArchiveURI, ufs.PriorityDefault, true, false))
 }
 
 func isArchiveFSUri(name string) bool {

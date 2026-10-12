@@ -37,7 +37,7 @@ func init() {
 		Name:       "bolt",
 		CreateFunc: newBoltFS,
 		MatchFunc:  isBoltFSUri,
-		Priority:   1,
+		Priority:   ufs.PriorityDefault,
 		Standard:   true,
 		ReadWrite:  true,
 	})

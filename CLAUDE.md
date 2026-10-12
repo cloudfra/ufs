@@ -61,12 +61,12 @@ Dispatches to the appropriate implementation based on URI scheme:
 
 | Scheme        | Implementation   | Struct    | Type     | Status  | Behavior                                                 |
 |:--------------|:-----------------|:----------|:---------|:--------|:---------------------------------------------------------|
-| null://       | nullfs.go        | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
-| memory:       | memfs.go         | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
-| file:///...   | localfs.go       | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
+| null://       | drivers/core/    | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
+| memory:       | drivers/core/    | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
+| file:///...   | drivers/core/    | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
 | git://...     | drivers/gitfs/   | --        | ro       | Impl.   | Reads from a git repo (clones on first open; blank-import drivers/gitfs) |
-| archive://    | archivefs.go     | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
+| archive://    | drivers/core/    | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
 | bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
 
 ### Layering / nesting
@@ -79,20 +79,55 @@ Creates a URI that mounts additional file systems at specific paths inside a bas
 The result is nestFS (nestfs.go) which dispatches reads/writes based on mount path
 prefix.
 
-A temporary local-mount wrapper (tempMountFS in tempmountfs.go) provides writable
+A temporary local-mount wrapper (tempMountFS in drivers/core/tempmountfs.go, created with core.NewTempMountFS) provides writable
 scratch space on top of any read-only FS for implementations that need it.
 
-### Addon wrappers
+### Decorators (`drivers/decorators/` subpackages)
 
-Wrappers modify the behavior of an existing FS. They are configured via
-`MountSpecOptions` fields (YAML mount specs) or applied programmatically.
-Wrappers are applied in a fixed order by `applyWrappers()` in construct.go:
-ReadOnly → FaultInjector → (future wrappers).
+Decorators wrap an existing FS to change its behavior. Like drivers, they live
+outside the base package, import `ufs` (never the reverse) and register
+themselves in `init()` via `ufs.RegisterDecorator`; callers blank-import the
+package to enable its option.
 
-| Wrapper        | File           | Constructor       | Config type   | Behavior                                          |
-|:---------------|:---------------|:------------------|:--------------|:--------------------------------------------------|
-| ReadOnly       | readonlyfs.go  | ReadOnly(inner)   | bool          | Returns fs.ErrPermission for all write ops        |
-| FaultInjector  | faultfs.go     | FaultInjector()   | FaultConfig   | Injects configurable latency and random errors    |
+```go
+func NewDecorator[T any](name string, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator
+func DecodeOptions[T any](raw any) (T, error)
+func AppendURIOption(u *url.URL, name string, options any) (*url.URL, error)
+```
+
+`MountSpec.Options` is an ordered list (`[]MountOption`); each entry is a
+single-key mapping of a decorator name to that decorator's configuration:
+
+```yaml
+options:
+  - readOnly: true
+  - fault:
+      errorRate: 0.25
+```
+
+Names are lower camelCase, validated and checked for collisions at register
+time, and matched by an exact (case-sensitive) map lookup. `registrar.decorate()`
+(register.go) fails on an entry with no registered decorator or one listed
+twice, decodes each entry into the decorator's options type `T` via
+`DecodeOptions` (YAML struct tags; `T` may implement `yaml.Unmarshaler` to
+accept several shapes), and applies the decorators in list order: the first
+wraps the source, the last is the outermost layer.
+
+A decorator's `URI()` must call `AppendURIOption` on the URI of the FS it
+wraps. That records the decorator in the reserved `options` query parameter
+(the same list in YAML flow form, e.g. `options=[{readOnly: true}]`), which
+`New` reads back to re-apply the decorators in order, so the URI round-trips.
+`options`, like `ro`, is therefore not usable as a mount point in a URI. The
+same holds for names that start with `ufs.` (e.g. `ufs.checksum`): they are
+parameters for the driver and stay with the base URI.
+
+The fstab `ro` option and the implicit read-only null root both map to the
+`readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
+
+| Option    | Package                        | Options type         | Behavior                                       |
+|:----------|:-------------------------------|:---------------------|:-----------------------------------------------|
+| readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`) | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner) |
+| fault     | drivers/decorators/faultfs     | faultfs.Options      | Injects configurable latency and random errors |
 
 ### Host mount (`host` subpackage)
 
@@ -127,6 +162,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/common/writelog/ | writelog.FS records writes to any FS into a Log (MemoryLog, FileLog); Apply replays them, atomically via BatchWriter |
+| drivers/core/            | Built-in backends; registers file://, archive://, http(s):// archives, memory:, null: and angry: on import. The base package registers no driver itself |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
 | drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |
@@ -141,14 +177,15 @@ code with no `ufs` dependency goes in `internal/`.
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
-| op.go                 | High-level ops — Rsync copies files between FSes                    |
+| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
+| internal/archive/     | archive.New opens archives as fs.FS; only mholt/archives importer   |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
+| internal/hashutil/    | New creates a hash by algorithm name; Checksum verifies digests     |
 | internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
 | internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
 | internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
-| localfs_notify.go     | Watcher impl for localFS — recursive fsnotify with path translation |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
 

@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -43,16 +44,27 @@ const (
 	bufferDisk
 )
 
+const (
+	// archiveDirExt is the suffix of the virtual directory that holds the
+	// content of an archive: a.zip is listed at a.zip.d.
+	archiveDirExt = ".d"
+
+	// archiveURIPrefix is put in front of the host path of an archive to open
+	// it through the archive driver.
+	archiveURIPrefix = "archive://"
+)
+
 // FSArgs holds optional parameters for constructing a nestFS.
 type FSArgs struct {
 	BufMode bufferMode
 }
 
 var (
-	_ FS               = (*nestFS)(nil)
-	_ fs.GlobFS        = (*nestFS)(nil)
-	_ realAbsPathGet   = (*nestFS)(nil)
-	_ DeviceInfoGetter = (*mountMap)(nil)
+	_ FS                  = (*nestFS)(nil)
+	_ fs.GlobFS           = (*nestFS)(nil)
+	_ AbsPathGetter       = (*nestFS)(nil)
+	_ MountedArchiveDirFS = (*nestFS)(nil)
+	_ DeviceInfoGetter    = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -213,15 +225,18 @@ func makeMountMap(baseName string) *mountMap {
 // nestFS is a wrapper for a base FS that supports automatic mounting of archives.
 // This means that any archive can opened and read automatically. Archives are revealed via $filename.d name pattern.
 type nestFS struct {
-	fsys   FS
+	fsys   WriteFS
 	ctx    context.Context
 	mounts *mountMap
 	args   FSArgs
 }
 
-func (fsys *nestFS) getAbsPath(name string) (string, error) {
-	if rfs, ok := fsys.fsys.(*localFS); ok {
-		return rfs.getAbsPath(name)
+func (fsys *nestFS) GetAbsPath(name string) (string, error) {
+	if err := fsys.validPath(absPathOp, name); err != nil {
+		return "", err
+	}
+	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
+		return rfs.GetAbsPath(name)
 	}
 	return "", realAbsPathNotSupported(fsys, name)
 }
@@ -244,7 +259,7 @@ func (fsys *nestFS) URI() (*url.URL, error) {
 		if strings.HasSuffix(p, archiveDirExt) {
 			continue
 		}
-		if mu, err := mfs.URI(); mu != nil && err != nil {
+		if mu, err := mfs.URI(); mu != nil && err == nil {
 			vals.Set(p, mu.String())
 		}
 	}
@@ -272,11 +287,12 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
+	notExist := err != nil
 	appendEntry := map[string]fs.DirEntry{}
 
 	dirs := fsys.mounts.getDirectoryList(name)
 	for _, dir := range dirs {
-		if strings.HasSuffix(dir, archiveDirExt) && isMountableArchivePath(strings.TrimSuffix(dir, archiveDirExt)) {
+		if strings.HasSuffix(dir, archiveDirExt) && archive.IsMountablePath(strings.TrimSuffix(dir, archiveDirExt)) {
 			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
 			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
 				fsys.mounts.remove(path.Join(name, dir))
@@ -286,8 +302,14 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 		appendEntry[dir] = makeVirtualDirEntry(dir)
 	}
 
+	if notExist && len(appendEntry) == 0 {
+		// The directory is missing from the base file system and no mount
+		// lives below it, so it does not exist here either.
+		return nil, err
+	}
+
 	for _, entry := range entries {
-		if isMountableArchivePath(entry.Name()) {
+		if archive.IsMountablePath(entry.Name()) {
 			mountName := entry.Name() + ".d"
 			appendEntry[mountName] = &virtualDirEntry{
 				name: mountName,
@@ -301,6 +323,10 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 		delete(appendEntry, entry.Name())
 	}
 
+	// The base file system may hand out a slice that it keeps, as archives
+	// do with their index, so the virtual entries go into a copy: appending
+	// to and sorting the original would change the next listing.
+	entries = slices.Grow(slices.Clone(entries), len(appendEntry))
 	for _, entry := range appendEntry {
 		entries = append(entries, entry)
 	}
@@ -311,14 +337,21 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	return entries, nil
 }
 
+// isMountParent reports whether a file system is mounted somewhere below
+// name. Such a directory exists in this file system even when the base file
+// system has no entry for it.
+func (fsys *nestFS) isMountParent(name string) bool {
+	return len(fsys.mounts.getDirectoryList(name)) > 0
+}
+
 func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 	return fsys.mounts.put(name, mountedFS)
 }
 
-// isMountedArchiveDir reports whether name (a full path within this FS) is a
+// IsMountedArchiveDir reports whether name (a full path within this FS) is a
 // virtual directory backed by a mounted archive. It returns true only when:
 //   - name ends with archiveDirExt
-//   - the trimmed name satisfies isMountableArchivePath
+//   - the trimmed name satisfies archive.IsMountablePath
 //   - the archive file is not confirmed absent; any Stat error other than
 //     ErrNotExist is treated as "file likely exists" so that a permission-denied
 //     error does not cause Walk to descend and trigger a mount failure
@@ -327,12 +360,12 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 // same FS, nestFS's path routing always redirects access through the archive
 // (see getFSAndSubpath). The real directory is unreachable via this FS
 // regardless of what this method returns; that is a nestFS limitation.
-func (fsys *nestFS) isMountedArchiveDir(name string) bool {
-	if !strings.HasSuffix(name, archiveDirExt) {
+func (fsys *nestFS) IsMountedArchiveDir(name string) bool {
+	if !strings.HasSuffix(name, archiveDirExt) || !fs.ValidPath(name) {
 		return false
 	}
 	archiveName := strings.TrimSuffix(name, archiveDirExt)
-	if !isMountableArchivePath(archiveName) {
+	if !archive.IsMountablePath(archiveName) {
 		return false
 	}
 	_, err := fsys.Stat(archiveName)
@@ -344,14 +377,21 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		return maybeFS, nil
 	}
 	ctx := fsys.ctx
-	lfs, ok := fsys.fsys.(*localFS)
-	var newFS *archiveFS
-	if ok {
-		absName, err := lfs.getAbsPath(name)
-		if err != nil {
-			return nil, ufserrors.NewPathError("mount", name, err)
+	// A base file system that has a host path for the archive opens it by that
+	// path, any other one through an open file.
+	var absName string
+	var onHost bool
+	if hostFS, ok := fsys.fsys.(AbsPathGetter); ok {
+		hostPath, err := hostFS.GetAbsPath(name)
+		if err == nil {
+			absName = hostPath
+			onHost = true
 		}
-		newFS, err = newArchiveFSFromLocalFS(ctx, absName)
+	}
+	var newFS WriteFS
+	if onHost {
+		var err error
+		newFS, err = newBaseFS(ctx, archiveURIPrefix+absName)
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
@@ -360,7 +400,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		if err != nil {
 			return nil, ufserrors.NewPathError("mount", name, err)
 		}
-		newFS, err = newArchiveFSFromFile(ctx, f)
+		newFS, err = newBaseFSFromFile(ctx, archiveURIPrefix+name, f)
 		if err != nil {
 			return nil, ufserrors.Join(ufserrors.NewPathError("mount", name, err), f.Close())
 		}
@@ -416,6 +456,9 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 
 	f, err := mountFS.fsys.Open(subName)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
+			return makeReadDirFile(mountFS, subName), nil
+		}
 		return nil, err
 	}
 
@@ -517,7 +560,11 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
-		return cFsys.Stat(subName)
+		info, err := cFsys.Stat(subName)
+		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
+			return makeVirtualDirEntry(path.Base(subName)), nil
+		}
+		return info, err
 	}
 	f, err := mountFS.Open(subName)
 	if err != nil {
@@ -575,7 +622,11 @@ func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
-		return cFsys.Lstat(subName)
+		info, err := cFsys.Lstat(subName)
+		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
+			return makeVirtualDirEntry(path.Base(subName)), nil
+		}
+		return info, err
 	}
 	return mountFS.Stat(subName)
 }

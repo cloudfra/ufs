@@ -35,7 +35,7 @@ func testBoltFSURI(t *testing.T) string {
 	return boltFSPrefix + filepath.Join(t.TempDir(), "test.db")
 }
 
-func newTestBoltFS(t *testing.T) ufs.FS {
+func newTestBoltFS(t *testing.T) ufs.WriteFS {
 	t.Helper()
 	fsys, err := makeBoltFS(testBoltFSURI(t))
 	if err != nil {
@@ -195,7 +195,7 @@ func TestBoltFileSeek(t *testing.T) {
 // bytes or extending the file), not always append to the end. Mirrors
 // TestMemFileWriteAtOffset (memfs_test.go).
 func TestBoltFileWriteAtOffset(t *testing.T) {
-	newFile := func(t *testing.T, fsys ufs.FS, name, initial string) ufs.File {
+	newFile := func(t *testing.T, fsys ufs.WriteFS, name, initial string) ufs.File {
 		t.Helper()
 		f, err := fsys.Create(name)
 		if err != nil {

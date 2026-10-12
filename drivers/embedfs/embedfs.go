@@ -123,6 +123,6 @@ func (fsys *embedFS) RemoveAll(name string) error {
 // label returned by [ufs.FS.String]; it is typically the mount path or a
 // description of the embedded content. Read operations delegate directly to
 // the embed.FS; all write operations return [fs.ErrPermission].
-func New(name string, fsys embed.FS) ufs.FS {
+func New(name string, fsys embed.FS) ufs.WriteFS {
 	return &embedFS{name: name, fsys: fsys}
 }

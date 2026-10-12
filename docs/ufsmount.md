@@ -55,13 +55,14 @@ for details.
 ## Usage
 
 ```text
-ufsmount -uri <source> -mount <path>
+ufsmount -uri <source> -mount <path> [-verbose]
 ```
 
 | Flag     | Required | Description                                             |
 |----------|----------|---------------------------------------------------------|
 | `-uri`   | yes      | URI (or path) of the virtual file system to mount.      |
 | `-mount` | yes      | Directory on the host where the FS will appear.         |
+| `-verbose` | no     | Log every FUSE/ProjFS callback, for debugging.          |
 
 The process runs in the foreground. Press `Ctrl-C` or send `SIGTERM` to
 unmount and exit. You can also unmount externally:
@@ -109,7 +110,7 @@ ls /mnt/scratch              # note.txt
 
 After stopping `ufsmount`, the data is gone.
 
-### Mount a GCS bucket (read-only)
+### Mount a GCS bucket
 
 ```bash
 mkdir -p /mnt/bucket
@@ -123,8 +124,8 @@ ls /mnt/bucket
 cat /mnt/bucket/data/report.csv
 ```
 
-GCS mounts are read-only. Attempting to create or modify files will
-return a permission error.
+On Linux the bucket is writable if your credentials allow it: files
+created under the mount become objects in the bucket.
 
 ### Mount a GCS prefix
 

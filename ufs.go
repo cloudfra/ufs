@@ -133,6 +133,9 @@ type RenameFileFS interface {
 //
 // Read-only backends commonly include the query parameter ro=true to indicate
 // the underlying scheme is read-only.
+//
+// Decorators record themselves, in the order they were applied, in the options
+// query parameter via [AppendURIOption] so that [New] applies them again.
 type URIGet interface {
 	// URI returns the canonical identifier for this file system as a [*url.URL].
 	//
@@ -224,14 +227,15 @@ type WriteFS interface {
 type FS interface {
 	WriteFS
 
+	// Copy copies the file at srcPath to dstPath.
 	// Copy(srcPath, dstPath string) error
 	// TODO: Implement RenameFS
 }
 
 // ListFilenames is an optional interface that a file system may implement to
 // return all file paths under a directory without building an intermediate
-// [fs.FileInfo] slice, reducing memory usage for large trees. [ListFiles] will
-// use this interface when available.
+// [fs.FileInfo] slice, reducing memory usage for large trees. ops.ListFiles
+// uses this interface when available.
 type ListFilenames interface {
 	// ListFilenames returns the paths of all files (not directories) under dir,
 	// in unspecified order, with reduced allocations.
@@ -239,7 +243,7 @@ type ListFilenames interface {
 }
 
 // ForEachFileInfoIter is an optional interface for streaming [fs.FileInfo]
-// values without building a full slice. [ForEachFileInfo] uses this when the
+// values without building a full slice. ops.ForEachFileInfo uses this when the
 // file system implements it.
 type ForEachFileInfoIter interface {
 	// ForEachFileInfo calls f for each file (not directory) under dir. If f
@@ -248,7 +252,7 @@ type ForEachFileInfoIter interface {
 }
 
 // ForEachFilenameIter is an optional interface for streaming file names without
-// building a full slice. [ForEachFilename] uses this when the file system
+// building a full slice. ops.ForEachFilename uses this when the file system
 // implements it.
 type ForEachFilenameIter interface {
 	// ForEachFilename calls f for each file path (not directory) under dir. If f
@@ -294,4 +298,20 @@ type Watcher interface {
 type OpenFileFS interface {
 	// OpenFile is the generalized open call; most users will use Open or Create instead.
 	OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error)
+}
+
+// MountedArchiveDirFS is an optional interface implemented by file systems
+// that expose the contents of an archive as a virtual directory next to the
+// archive file, such as "data.zip.d" for "data.zip". Walkers such as
+// ops.Walk use it to skip those directories.
+//
+// A file system that wraps another one should forward the method, otherwise
+// the wrapped file system's archive directories look like ordinary ones.
+type MountedArchiveDirFS interface {
+	// IsMountedArchiveDir reports whether name, a path of a directory in this
+	// file system that satisfies [fs.ValidPath], is a virtual directory backed
+	// by an archive rather than a directory of the underlying file system. It
+	// reports false for an invalid path, and true when it cannot tell whether
+	// the archive exists, so that a walker does not descend into it.
+	IsMountedArchiveDir(name string) bool
 }

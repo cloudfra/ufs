@@ -16,6 +16,7 @@ package ufs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -27,6 +28,46 @@ import (
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	// readOnlyOption is the [MountSpec] option that the fstab "ro" option and
+	// the implicit root map to. It is served by drivers/decorators/readonlyfs.
+	readOnlyOption = "readOnly"
+
+	// roQueryParam is the URI query parameter that marks a read-only file
+	// system; it is not a mount point.
+	roQueryParam = "ro"
+
+	// optionsQueryParam is the URI query parameter that holds the decorators
+	// of a file system, in the order they are applied; it is not a mount
+	// point. Its value is the options list of a [MountSpec] in YAML flow form.
+	optionsQueryParam = "options"
+
+	// ufsQueryParamPrefix starts the name of a URI query parameter that is
+	// addressed to ufs or one of its drivers, such as [URLQueryParamChecksum].
+	// Such a parameter belongs to the file system whose URI carries it; it is
+	// not a mount point.
+	ufsQueryParamPrefix = "ufs."
+
+	// embedFSPrefix is the scheme of drivers/embedfs, which has no URI-based
+	// constructor.
+	embedFSPrefix = "embed://"
+
+	// defaultRootSource is the file system used as the root when none is
+	// given. It is served by the null file system in drivers/core.
+	defaultRootSource = "null:"
+
+	// mountOp is the operation reported in errors from mounting a file system.
+	mountOp = "mount"
+
+	// fstab mount options.
+	fstabReadOnly  = "ro"
+	fstabReadWrite = "rw"
+	fstabDefaults  = "defaults"
+
+	// fstabNoMountPoint is the fstab mount point that designates the root.
+	fstabNoMountPoint = "none"
 )
 
 // CreateURI constructs a URI understood by [New] that layers additional file
@@ -121,6 +162,12 @@ func nameToURI(name string) (*url.URL, error) {
 //   - A local path pointing to a recognized archive (.zip, .tar, .tar.gz, etc.)
 //     is mounted read-only through the archive's contents.
 //
+// Every scheme is served by a driver that registers itself when its package
+// is imported; the base package registers none. file://, bare paths, archives,
+// memory://, null:// and angry:// come from
+// github.com/cloudfra/ufs/drivers/core, which archive auto-mounting (below)
+// needs as well.
+//
 // # Alternative input formats
 //
 // In addition to URIs, name may be an fstab-format string or a YAML document.
@@ -132,8 +179,9 @@ func nameToURI(name string) (*url.URL, error) {
 //	null://     cache  auto  ro  0  0
 //
 // The mount point ".", "/", or "none" designates the root filesystem. Leading
-// slashes on other mount points are stripped. The "ro" option wraps the FS with
-// [ReadOnly]; "rw" and "defaults" are recognized but leave the FS writable.
+// slashes on other mount points are stripped. The "ro" option is shorthand for
+// the readOnly decorator; "rw" and "defaults" are recognized but leave the FS
+// writable.
 // Comment lines (starting with #) and blank lines are ignored.
 //
 // YAML (flat list of [MountSpec] entries):
@@ -143,10 +191,22 @@ func nameToURI(name string) (*url.URL, error) {
 //   - source: "null://"
 //     mountPoint: "cache"
 //     options:
-//     readOnly: true
+//   - readOnly: true
+//   - fault:
+//     errorRate: 0.1
+//
+// options is a list. Each entry is the case-sensitive name of a [Decorator]
+// and its configuration. Decorators are applied in the order listed: the first
+// wraps the source and each later one wraps the one before it, so the last
+// entry is the outermost layer.
+// Decorators register themselves when their package is imported, e.g.
+// github.com/cloudfra/ufs/drivers/decorators/readonlyfs (readOnly) and
+// github.com/cloudfra/ufs/drivers/decorators/faultfs (fault). A section that
+// matches no registered decorator is an error.
 //
 // If no entry has a root mount point (".", "/", "none", or empty), a read-only
-// null:// filesystem is used as the root.
+// null:// filesystem is used as the root, which needs the readOnly decorator
+// and github.com/cloudfra/ufs/drivers/core, the home of the null file system.
 //
 // # Nested mounts and archive auto-mounting
 //
@@ -156,19 +216,29 @@ func nameToURI(name string) (*url.URL, error) {
 // contents. No explicit configuration is required.
 //
 // Use [CreateURI] to pre-configure additional mount points before calling New.
-func New(ctx context.Context, name string) (FS, error) {
+func New(ctx context.Context, name string) (WriteFS, error) {
 	if specs := parseMountSpec(name); specs != nil {
 		return newFromMountSpec(ctx, specs)
 	}
 	u, err := url.Parse(name)
 	if err == nil {
+		query := u.Query()
 		baseURI := *u
 		baseURI.RawQuery = ""
 		baseURI.Fragment = ""
+		// The decorators of the base and the parameters addressed to ufs
+		// travel with it; every other query parameter is a mount point.
+		baseQuery := url.Values{}
+		for param, values := range query {
+			if param == optionsQueryParam || strings.HasPrefix(param, ufsQueryParamPrefix) {
+				baseQuery[param] = values
+			}
+		}
+		baseURI.RawQuery = baseQuery.Encode()
 		nFS, err := openNestFS(ctx, baseURI.String())
 		if err == nil {
-			for mountPath, mountURI := range u.Query() {
-				if mountPath == "ro" {
+			for mountPath, mountURI := range query {
+				if mountPath == roQueryParam || baseQuery.Has(mountPath) {
 					continue
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])
@@ -182,13 +252,20 @@ func New(ctx context.Context, name string) (FS, error) {
 			return nFS, nil
 		}
 	}
-	return openNestFS(ctx, name)
+	nFS, err := openNestFS(ctx, name)
+	if err != nil {
+		// Not "return openNestFS(...)": a nil *nestFS in the WriteFS result
+		// would be a non-nil interface.
+		return nil, err
+	}
+	return nFS, nil
 }
 
-// openNestFS opens name via newBaseFS and wraps the result in a nestFS layer.
-// It returns the concrete *nestFS so callers can add mounts via addMount.
+// openNestFS opens name via newDecoratedFS and wraps the result in a nestFS
+// layer. It returns the concrete *nestFS so callers can add mounts via
+// addMount.
 func openNestFS(ctx context.Context, name string) (*nestFS, error) {
-	fsys, err := newBaseFS(ctx, name)
+	fsys, err := newDecoratedFS(ctx, name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -208,8 +285,8 @@ type FSBuilder struct {
 
 type fsBuildMount struct {
 	path string
-	uri  string // non-empty for URI mounts
-	fsys FS     // non-nil for FS mounts
+	uri  string  // non-empty for URI mounts
+	fsys WriteFS // non-nil for FS mounts
 }
 
 // NewFSBuilder creates a builder rooted at the given URI string. An empty
@@ -227,7 +304,7 @@ func (b *FSBuilder) Mount(path, uri string) *FSBuilder {
 
 // MountFS adds a pre-built [FS] as a mount at path. It returns the builder
 // for chaining. Pre-built mounts cannot be serialized by [FSBuilder.BuildURI].
-func (b *FSBuilder) MountFS(path string, fsys FS) *FSBuilder {
+func (b *FSBuilder) MountFS(path string, fsys WriteFS) *FSBuilder {
 	b.mounts = append(b.mounts, fsBuildMount{path: path, fsys: fsys})
 	return b
 }
@@ -237,7 +314,7 @@ func (b *FSBuilder) MountFS(path string, fsys FS) *FSBuilder {
 func (b *FSBuilder) Build(ctx context.Context) (FS, error) {
 	rootName := b.name
 	if rootName == "" {
-		rootName = nullFSPrefix
+		rootName = defaultRootSource
 	}
 	nFS, err := openNestFS(ctx, rootName)
 	if err != nil {
@@ -266,7 +343,7 @@ func (b *FSBuilder) Build(ctx context.Context) (FS, error) {
 func (b *FSBuilder) BuildURI() (string, error) {
 	rootName := b.name
 	if rootName == "" {
-		rootName = nullFSPrefix
+		rootName = defaultRootSource
 	}
 	nested := make(map[string]string, len(b.mounts))
 	for _, m := range b.mounts {
@@ -278,20 +355,38 @@ func (b *FSBuilder) BuildURI() (string, error) {
 	return CreateURI(rootName, nested)
 }
 
-func newBaseFS(ctx context.Context, name string) (FS, error) {
+func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 	// drivers/embedfs wraps a Go embed.FS directly and has no URI-based
 	// constructor; give a clear error instead of an unhelpful "not found".
-	if strings.HasPrefix(name, "embed://") {
-		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("embed:// file systems must be created with drivers/embedfs.New, not New(): %w", fs.ErrInvalid))
+	if strings.HasPrefix(name, embedFSPrefix) {
+		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("embed:// file systems must be created with drivers/embedfs.New, not New(): %w", fs.ErrInvalid))
 	}
 	r := getRegistrar()
-	driver, err := r.match(name)
+	driver, err := r.matchDriver(name)
 	if err != nil {
 		// Drivers outside this package (drivers/...) register their scheme only
 		// when imported, so a missing blank import looks like an unknown path.
-		return nil, ufserrors.NewPathError("mount", name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
+		return nil, ufserrors.NewPathError(mountOp, name, fmt.Errorf("%q is not a valid mount path for %s; if it needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, runtime.GOOS, err))
 	}
 	fsys, err := r.create(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
+	}
+	return fsys, nil
+}
+
+// newBaseFSFromFile opens the file system held by the open file with the driver
+// that matches name. The returned file system owns file and closes it on
+// Close; on error file is left open.
+func newBaseFSFromFile(ctx context.Context, name string, file fs.File) (WriteFS, error) {
+	driver, err := getRegistrar().matchDriver(name)
+	if err != nil {
+		return nil, fmt.Errorf("%q needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, err)
+	}
+	if driver.CreateFromFileFunc == nil {
+		return nil, fmt.Errorf("driver %q cannot mount %q from an open file, %w", driver.Name, name, errors.ErrUnsupported)
+	}
+	fsys, err := driver.CreateFromFileFunc(ctx, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount %q with driver %q, %w", name, driver.Name, err)
 	}
@@ -301,17 +396,43 @@ func newBaseFS(ctx context.Context, name string) (FS, error) {
 // MountSpec describes a single mount entry with a source URI, a mount point,
 // and mount options.
 type MountSpec struct {
-	Source     string           `yaml:"source"`
-	MountPoint string           `yaml:"mountPoint"`
-	Options    MountSpecOptions `yaml:"options"`
+	Source     string `yaml:"source"`
+	MountPoint string `yaml:"mountPoint"`
+	// Options lists the decorators wrapped around the mounted file system,
+	// in the order they are applied: the first wraps the source and the last
+	// is the outermost layer.
+	Options []MountOption `yaml:"options"`
 }
 
-// MountSpecOptions holds options that apply to a [MountSpec] entry.
-// Each wrapper is represented by a typed pointer field; nil means the
-// wrapper is not applied.
-type MountSpecOptions struct {
-	ReadOnly bool         `yaml:"readOnly"`
-	Fault    *FaultConfig `yaml:"fault,omitempty"`
+// MountOption configures one decorator of a [MountSpec]. In YAML it is a
+// mapping with a single key, the decorator's name, whose value is the
+// decorator's configuration:
+//
+//   - readOnly: true
+//   - fault:
+//     errorRate: 0.1
+type MountOption struct {
+	// Name is the name of a registered [Decorator], see [RegisterDecorator].
+	Name string
+
+	// Config is the decorator's raw configuration, see [DecodeOptions].
+	Config any
+}
+
+// UnmarshalYAML reads the single-key mapping form of a [MountOption].
+func (o *MountOption) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode || len(node.Content) != 2 {
+		return fmt.Errorf("line %d: a mount option must be a mapping with a single decorator name", node.Line)
+	}
+	if err := node.Content[0].Decode(&o.Name); err != nil {
+		return err
+	}
+	return node.Content[1].Decode(&o.Config)
+}
+
+// MarshalYAML writes the single-key mapping form of a [MountOption].
+func (o MountOption) MarshalYAML() (any, error) {
+	return map[string]any{o.Name: o.Config}, nil
 }
 
 func parseMountSpec(input string) []MountSpec {
@@ -357,13 +478,14 @@ func parseFstabMountSpec(input string) ([]MountSpec, error) {
 			return nil, fmt.Errorf("fstab: line %d has unrecognized options %q", i+1, options)
 		}
 
-		specs = append(specs, MountSpec{
+		spec := MountSpec{
 			Source:     fields[0],
 			MountPoint: normalizeMountPoint(fields[1]),
-			Options: MountSpecOptions{
-				ReadOnly: hasFstabOption(options, "ro"),
-			},
-		})
+		}
+		if hasFstabOption(options, fstabReadOnly) {
+			spec.Options = []MountOption{{Name: readOnlyOption, Config: true}}
+		}
+		specs = append(specs, spec)
 	}
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("fstab: no mount entries")
@@ -374,7 +496,7 @@ func parseFstabMountSpec(input string) ([]MountSpec, error) {
 func isFstabOptions(s string) bool {
 	for opt := range strings.SplitSeq(s, ",") {
 		switch opt {
-		case "ro", "rw", "defaults":
+		case fstabReadOnly, fstabReadWrite, fstabDefaults:
 			return true
 		}
 	}
@@ -392,7 +514,7 @@ func hasFstabOption(s, option string) bool {
 
 func normalizeMountPoint(mp string) string {
 	mp = strings.TrimPrefix(mp, "/")
-	if mp == "" || mp == "none" {
+	if mp == "" || mp == fstabNoMountPoint {
 		return pathutil.CwdPath
 	}
 	return mp
@@ -400,28 +522,33 @@ func normalizeMountPoint(mp string) string {
 
 // defaultRootSpec is used when no root mount point is provided.
 var defaultRootSpec = MountSpec{
-	Source:     nullFSPrefix,
+	Source:     defaultRootSource,
 	MountPoint: pathutil.CwdPath,
-	Options:    MountSpecOptions{ReadOnly: true},
+	Options:    []MountOption{{Name: readOnlyOption, Config: true}},
 }
 
-// applyWrappers applies the configured wrapper layers from opts to fsys.
-// Wrappers are applied in a fixed order: ReadOnly first, then FaultInjector.
-func applyWrappers(fsys FS, opts MountSpecOptions) (FS, error) {
-	var err error
-	if opts.ReadOnly {
-		fsys = ReadOnly(fsys)
+// newDecoratedFS opens name via newBaseFS and wraps it with the decorators in
+// the options query parameter of name, if any, followed by those in opts.
+func newDecoratedFS(ctx context.Context, name string, opts []MountOption) (WriteFS, error) {
+	name, uriOpts, err := splitURIOptions(name)
+	if err != nil {
+		return nil, ufserrors.NewPathError(mountOp, name, err)
 	}
-	if !opts.Fault.isZero() {
-		fsys, err = newFaultFS(fsys, *opts.Fault)
-		if err != nil {
-			return nil, err
-		}
+	if len(uriOpts) > 0 {
+		opts = append(uriOpts, opts...)
+	}
+	baseFS, err := newBaseFS(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	fsys, err := getRegistrar().decorate(ctx, baseFS, opts)
+	if err != nil {
+		return nil, ufserrors.Join(ufserrors.NewPathError(mountOp, name, err), baseFS.Close())
 	}
 	return fsys, nil
 }
 
-func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
+func newFromMountSpec(ctx context.Context, specs []MountSpec) (WriteFS, error) {
 	var root *MountSpec
 	var mounts []MountSpec
 	for i := range specs {
@@ -435,24 +562,16 @@ func newFromMountSpec(ctx context.Context, specs []MountSpec) (FS, error) {
 		root = &defaultRootSpec
 	}
 
-	baseFS, err := newBaseFS(ctx, root.Source)
-	if err != nil {
-		return nil, err
-	}
-	rootFS, err := applyWrappers(baseFS, root.Options)
+	rootFS, err := newDecoratedFS(ctx, root.Source, root.Options)
 	if err != nil {
 		return nil, err
 	}
 	nFS := makeNestFS(ctx, rootFS)
 
 	for _, m := range mounts {
-		mountBaseFS, err := newBaseFS(ctx, m.Source)
+		mountFS, err := newDecoratedFS(ctx, m.Source, m.Options)
 		if err != nil {
 			return nil, ufserrors.Join(err, nFS.Close())
-		}
-		mountFS, err := applyWrappers(mountBaseFS, m.Options)
-		if err != nil {
-			return nil, err
 		}
 		mountNestFS := makeNestFS(ctx, mountFS)
 		if err := nFS.addMount(m.MountPoint, mountNestFS); err != nil {

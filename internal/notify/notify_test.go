@@ -82,7 +82,9 @@ func TestPublishRespectsPrefix(t *testing.T) {
 	b.Publish(opCreate, "other/b.txt")
 	b.Publish(opCreate, "dirsibling/c.txt")
 
-	// Give the non-matching events a chance to (wrongly) arrive.
+	// Delivery is asynchronous: wait for the matching event, then give the
+	// non-matching ones a chance to (wrongly) arrive.
+	ufsTesting.WaitFor(t, waitTimeout, func() bool { return len(c.snapshot()) >= 1 })
 	time.Sleep(20 * time.Millisecond)
 	got := c.snapshot()
 	if len(got) != 1 || got[0].path != "dir/a.txt" {
@@ -266,6 +268,34 @@ func TestConcurrentCloseIsSafe(t *testing.T) {
 	for range 10 {
 		wg.Go(func() {
 			ufsTesting.ValidateClose(t, sub)()
+		})
+	}
+	wg.Wait()
+}
+
+// TestPublishConcurrentWithSubscriptionClose guards against Publish reading
+// the subscription list while a closing subscription rewrites it. It only
+// fails under the race detector.
+func TestPublishConcurrentWithSubscriptionClose(t *testing.T) {
+	t.Parallel()
+	b := New()
+	defer ufsTesting.ValidateClose(t, b)()
+
+	const workers, iterations = 4, 200
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for range iterations {
+				sub := b.Subscribe(t.Context(), ".", func(Op, string) {})
+				if err := sub.Close(); err != nil {
+					t.Errorf("Close() = %v, want nil", err)
+				}
+			}
+		})
+		wg.Go(func() {
+			for range iterations {
+				b.Publish(opCreate, "a.txt")
+			}
 		})
 	}
 	wg.Wait()

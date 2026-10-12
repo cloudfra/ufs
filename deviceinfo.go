@@ -16,25 +16,24 @@ package ufs
 
 import (
 	"fmt"
-	"io/fs"
 	"maps"
 	"path"
 	"strings"
 )
 
 var (
-	// defaultDeviceInfo is returned when the backing device is not known.
+	// DefaultDeviceInfo is returned when the backing device is not known.
 	//
 	// This signals to ufs that the FS should be treated as unoptimized for features such as parallel directory walking.
-	defaultDeviceInfo = DeviceInfo{
+	DefaultDeviceInfo = DeviceInfo{
 		name:        "default",
 		deviceType:  "unknown",
 		threadCount: 1,
 	}
 
-	// defaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
-	defaultDeviceMap = DeviceMap{
-		".": defaultDeviceInfo,
+	// DefaultDeviceMap is the default response when a device mapping is not explicitly configured for FS.
+	DefaultDeviceMap = DeviceMap{
+		".": DefaultDeviceInfo,
 	}
 )
 
@@ -63,6 +62,17 @@ func NewDeviceInfo(name string, deviceType string, threadCount int, remote bool)
 		threadCount: threadCount,
 		remote:      remote,
 	}
+}
+
+// Name returns the name of the device as specified by the OS or the ufs
+// implementation.
+func (info DeviceInfo) Name() string {
+	return info.name
+}
+
+// DeviceType returns the type of device that backs the file system.
+func (info DeviceInfo) DeviceType() string {
+	return info.deviceType
 }
 
 // String representation of DeviceInfo.
@@ -95,7 +105,7 @@ func (dm DeviceMap) combine(mountPath string, incoming DeviceMap) DeviceMap {
 
 	for k, nested := range incoming {
 		fullPath := path.Join(mountPath, k)
-		parent := combined.parent(fullPath)
+		parent := combined.Parent(fullPath)
 		if nested.name != parent.name {
 			combined[fullPath] = nested
 		}
@@ -104,8 +114,8 @@ func (dm DeviceMap) combine(mountPath string, incoming DeviceMap) DeviceMap {
 	return combined
 }
 
-// parent returns the DeviceInfo of mountPath's nearest ancestor in dm.
-func (dm DeviceMap) parent(mountPath string) DeviceInfo {
+// Parent returns the DeviceInfo of mountPath's nearest ancestor in dm.
+func (dm DeviceMap) Parent(mountPath string) DeviceInfo {
 	longest := "."
 	for k := range dm {
 		if k == "." {
@@ -124,11 +134,4 @@ type DeviceInfoGetter interface {
 	//
 	// The root of the FS has the key ".".
 	GetDeviceInfo() DeviceMap
-}
-
-func getDeviceInfoOrDefault(fsys fs.FS) DeviceMap {
-	if diFsys, ok := fsys.(DeviceInfoGetter); ok {
-		return diFsys.GetDeviceInfo()
-	}
-	return defaultDeviceMap
 }

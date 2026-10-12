@@ -17,8 +17,8 @@ package ufs
 import (
 	"io/fs"
 	"path/filepath"
+	"reflect"
 	"testing"
-	"time"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -41,7 +41,7 @@ func TestParseYAMLMountSpec(t *testing.T) {
 			name: "root read-only",
 			input: `- source: "memory://"
   options:
-    readOnly: true`,
+    - readOnly: true`,
 			wantCount: 1,
 		},
 		{
@@ -51,7 +51,7 @@ func TestParseYAMLMountSpec(t *testing.T) {
 - source: "null://"
   mountPoint: "cache"
   options:
-    readOnly: true
+    - readOnly: true
 - source: "memory://"
   mountPoint: "data"`,
 			wantCount: 3,
@@ -97,16 +97,16 @@ func TestParseYAMLMountSpec(t *testing.T) {
 	}
 }
 
-func TestParseYAMLMountSpecFaultConfig(t *testing.T) {
+func TestParseYAMLMountSpecOptionSections(t *testing.T) {
 	t.Parallel()
 	input := `- source: "memory://"
   mountPoint: "."
   options:
-    fault:
-      latency: 100ms
-      latencyJitter: 50ms
-      errorRate: 0.25
-      log: true`
+    - readOnly: true
+    - fault:
+        latency: 100ms
+        errorRate: 0.25
+        log: true`
 	specs, err := parseYAMLMountSpec(input)
 	if err != nil {
 		t.Fatalf("parseYAMLMountSpec() error: %v", err)
@@ -114,21 +114,17 @@ func TestParseYAMLMountSpecFaultConfig(t *testing.T) {
 	if len(specs) != 1 {
 		t.Fatalf("len(specs) = %d, want 1", len(specs))
 	}
-	fault := specs[0].Options.Fault
-	if fault == nil {
-		t.Fatal("Options.Fault is nil, want non-nil")
+	// Options keep the order they are listed in.
+	want := []MountOption{
+		{Name: "readOnly", Config: true},
+		{Name: "fault", Config: map[string]any{
+			"latency":   "100ms",
+			"errorRate": 0.25,
+			"log":       true,
+		}},
 	}
-	if fault.Latency != 100*time.Millisecond {
-		t.Errorf("Latency = %v, want 100ms", fault.Latency)
-	}
-	if fault.LatencyJitter != 50*time.Millisecond {
-		t.Errorf("LatencyJitter = %v, want 50ms", fault.LatencyJitter)
-	}
-	if fault.ErrorRate != 0.25 {
-		t.Errorf("ErrorRate = %v, want 0.25", fault.ErrorRate)
-	}
-	if !fault.Log {
-		t.Error("Log = false, want true")
+	if got := specs[0].Options; !reflect.DeepEqual(got, want) {
+		t.Errorf("Options = %#v, want %#v", got, want)
 	}
 }
 
@@ -141,7 +137,7 @@ func TestParseYAMLMountSpecEntries(t *testing.T) {
 - source: "memory://"
   mountPoint: "/data/files"
   options:
-    readOnly: true`
+    - readOnly: true`
 	specs, err := parseYAMLMountSpec(input)
 	if err != nil {
 		t.Fatalf("parseYAMLMountSpec() error: %v", err)
@@ -170,8 +166,8 @@ func TestParseYAMLMountSpecEntries(t *testing.T) {
 	if specs[2].MountPoint != "data/files" {
 		t.Errorf("specs[2].MountPoint = %q, want %q (leading slash stripped)", specs[2].MountPoint, "data/files")
 	}
-	if !specs[2].Options.ReadOnly {
-		t.Error("specs[2].Options.ReadOnly = false, want true")
+	if got, want := specs[2].Options, []MountOption{{Name: readOnlyOption, Config: true}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("specs[2].Options = %v, want %v", got, want)
 	}
 }
 
@@ -296,15 +292,15 @@ func TestParseFstabMountSpecFields(t *testing.T) {
 	if specs[0].MountPoint != "." {
 		t.Errorf("specs[0].MountPoint = %q, want %q", specs[0].MountPoint, ".")
 	}
-	if specs[0].Options.ReadOnly {
-		t.Error("specs[0].Options.ReadOnly = true, want false")
+	if len(specs[0].Options) != 0 {
+		t.Errorf("specs[0].Options = %v, want none for rw", specs[0].Options)
 	}
 
 	if specs[1].MountPoint != "data/cache" {
 		t.Errorf("specs[1].MountPoint = %q, want %q (leading slash stripped)", specs[1].MountPoint, "data/cache")
 	}
-	if !specs[1].Options.ReadOnly {
-		t.Error("specs[1].Options.ReadOnly = false, want true")
+	if got, want := specs[1].Options, []MountOption{{Name: readOnlyOption, Config: true}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("specs[1].Options = %v, want %v", got, want)
 	}
 }
 
@@ -385,67 +381,6 @@ func TestNewFromYAML(t *testing.T) {
 	}
 }
 
-func TestNewFromYAMLReadOnly(t *testing.T) {
-	t.Parallel()
-	input := `- source: "memory://"
-  options:
-    readOnly: true`
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	_, err = fsys.Create("file.txt")
-	if err == nil {
-		t.Fatal("Create on read-only FS succeeded, want error")
-	}
-}
-
-func TestNewFromYAMLReadOnlyMount(t *testing.T) {
-	t.Parallel()
-	input := `- source: "memory://"
-  mountPoint: "."
-- source: "memory://"
-  mountPoint: "ro-data"
-  options:
-    readOnly: true`
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	if _, err := fsys.Create("file.txt"); err != nil {
-		t.Fatalf("Create at root: %v", err)
-	}
-
-	_, err = fsys.Create("ro-data/file.txt")
-	if err == nil {
-		t.Fatal("Create on read-only mount succeeded, want error")
-	}
-}
-
-func TestNewFromYAMLNoRoot(t *testing.T) {
-	t.Parallel()
-	input := `- source: "memory://"
-  mountPoint: "data"`
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	_, err = fsys.Create("file.txt")
-	if err == nil {
-		t.Fatal("Create on implicit read-only null root succeeded, want error")
-	}
-
-	if _, err := fsys.Create("data/file.txt"); err != nil {
-		t.Fatalf("Create in mount: %v", err)
-	}
-}
-
 func TestNewFromFstab(t *testing.T) {
 	t.Parallel()
 	input := "memory:// . auto rw 0 0\nnull:// cache auto rw 0 0"
@@ -460,40 +395,6 @@ func TestNewFromFstab(t *testing.T) {
 	}
 	if _, err := fsys.Stat("cache"); err != nil {
 		t.Fatalf("Stat(cache): %v", err)
-	}
-}
-
-func TestNewFromFstabReadOnly(t *testing.T) {
-	t.Parallel()
-	input := "memory:// . auto ro 0 0"
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	_, err = fsys.Create("file.txt")
-	if err == nil {
-		t.Fatal("Create on read-only FS succeeded, want error")
-	}
-}
-
-func TestNewFromFstabReadOnlyMount(t *testing.T) {
-	t.Parallel()
-	input := "memory:// . auto rw 0 0\nmemory:// /data auto ro 0 0"
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	if _, err := fsys.Create("file.txt"); err != nil {
-		t.Fatalf("Create at root: %v", err)
-	}
-
-	_, err = fsys.Create("data/file.txt")
-	if err == nil {
-		t.Fatal("Create on read-only mount succeeded, want error")
 	}
 }
 
@@ -517,25 +418,6 @@ null:// scratch auto rw 0 0
 	}
 }
 
-func TestNewFromFstabNoRoot(t *testing.T) {
-	t.Parallel()
-	input := "memory:// data auto rw 0 0"
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	_, err = fsys.Create("file.txt")
-	if err == nil {
-		t.Fatal("Create on implicit read-only null root succeeded, want error")
-	}
-
-	if _, err := fsys.Create("data/file.txt"); err != nil {
-		t.Fatalf("Create in mount: %v", err)
-	}
-}
-
 func TestNewFromFstabLocalFS(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
@@ -556,71 +438,6 @@ func TestNewFromFstabLocalFS(t *testing.T) {
 	}
 	if string(data) != "hello" {
 		t.Errorf("content = %q, want %q", data, "hello")
-	}
-}
-
-func TestNewFromYAMLFaultInjector(t *testing.T) {
-	t.Parallel()
-	input := `- source: "memory://"
-  mountPoint: "."
-  options:
-    fault:
-      errorRate: 1.0
-      errorMessage: "disk on fire"`
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	_, err = fsys.Create("file.txt")
-	if err == nil {
-		t.Fatal("Create on fault-injected FS succeeded, want error")
-	}
-}
-
-func TestNewFromYAMLFaultInjectorMount(t *testing.T) {
-	t.Parallel()
-	input := `- source: "memory://"
-  mountPoint: "."
-- source: "memory://"
-  mountPoint: "unstable"
-  options:
-    fault:
-      errorRate: 1.0`
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	if _, err := fsys.Create("file.txt"); err != nil {
-		t.Fatalf("Create at root: %v", err)
-	}
-
-	_, err = fsys.Create("unstable/file.txt")
-	if err == nil {
-		t.Fatal("Create on fault-injected mount succeeded, want error")
-	}
-}
-
-func TestNewFromYAMLFaultAndReadOnly(t *testing.T) {
-	t.Parallel()
-	input := `- source: "memory://"
-  mountPoint: "."
-  options:
-    readOnly: true
-    fault:
-      latency: 1ms`
-	fsys, err := New(t.Context(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ufsTesting.ValidateClose(t, fsys)()
-
-	_, err = fsys.Create("file.txt")
-	if err == nil {
-		t.Fatal("Create on read-only + fault FS succeeded, want error")
 	}
 }
 

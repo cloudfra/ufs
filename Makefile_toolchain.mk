@@ -17,9 +17,9 @@ include Makefile_core.mk
 # https://github.com/rhysd/actionlint/releases
 ACTIONLINT_VERSION=latest
 # https://github.com/docker/compose/releases
-DOCKERCOMPOSE_VERSION = 5.5.1
+DOCKERCOMPOSE_VERSION = 5.6.0
 # https://developer.hashicorp.com/terraform/install
-TERRAFORM_VERSION = 1.16.3
+TERRAFORM_VERSION = 1.16.5
 # https://github.com/cloudfra/certtool/releases
 CERTTOOL_VERSION = 0.6.0
 # https://github.com/hadolint/hadolint/releases
@@ -35,13 +35,13 @@ GOVULNCHECK_VERSION = 1.8.0
 # https://github.com/mgechev/revive/releases
 REVIVE_VERSION=latest
 # https://github.com/rvben/rumdl/releases
-RUMDL_VERSION = 0.2.75
+RUMDL_VERSION = 0.2.78
 # https://github.com/koalaman/shellcheck/releases
 SHELLCHECK_VERSION = 0.11.0
 # https://github.com/terraform-linters/tflint/releases
 TFLINT_VERSION = latest
 # https://github.com/aquasecurity/trivy/releases
-TRIVY_VERSION = 0.74.0
+TRIVY_VERSION = 0.75.0
 # https://github.com/goptics/vizb/releases
 VIZB_VERSION = 0.21.0
 # https://developer.android.com/ndk/downloads

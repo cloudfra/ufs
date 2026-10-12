@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 // Not implemented FUSE operations (ufs has no support for these):
@@ -103,22 +105,33 @@ func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer,
 		return nil, err
 	}
 
+	hostServer := &fuseHostServer{server: server}
 	go func() {
 		<-ctx.Done()
-		if err := server.Unmount(); err != nil {
+		if err := hostServer.Close(); err != nil {
 			slog.DebugContext(ctx, "fuse mount server is unmounting volume", "error", err)
 		}
 	}()
 
-	return &fuseHostServer{server: server}, nil
+	return hostServer, nil
 }
 
 type fuseHostServer struct {
 	server *fuse.Server
+
+	// fuse.Server.Unmount is not safe to call from two goroutines, and both
+	// Close and the context watcher in mount call it.
+	unmountOnce sync.Once
+	unmountErr  error
 }
 
+// Close unmounts the file system. It is safe to call more than once and from
+// any goroutine; every call returns the result of the first.
 func (s *fuseHostServer) Close() error {
-	return s.server.Unmount()
+	s.unmountOnce.Do(func() {
+		s.unmountErr = s.server.Unmount()
+	})
+	return s.unmountErr
 }
 
 func (s *fuseHostServer) Wait() {
@@ -349,6 +362,9 @@ func fuseErrno(err error) syscall.Errno {
 	}
 	if errors.Is(err, fs.ErrClosed) {
 		return syscall.EBADF
+	}
+	if errors.Is(err, ufserrors.ErrDirNotEmpty) {
+		return syscall.ENOTEMPTY
 	}
 	if errno, ok := errors.AsType[syscall.Errno](err); ok {
 		return errno

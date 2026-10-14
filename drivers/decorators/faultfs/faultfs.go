@@ -34,7 +34,10 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ ufs.WriteFS = (*faultFS)(nil)
+var (
+	_ ufs.WriteFS    = (*faultFS)(nil)
+	_ ufs.OpenFileFS = (*faultFS)(nil)
+)
 
 const (
 	optionName = "fault"
@@ -200,6 +203,15 @@ func (fsys *faultFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 	return fsys.inner.Open(name)
+}
+
+// OpenFile implements [ufs.OpenFileFS]. It injects faults as Open does and
+// then forwards to the wrapped file system.
+func (fsys *faultFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
+	if err := fsys.maybeInjectFault("open", name); err != nil {
+		return nil, err
+	}
+	return ufs.OpenFile(fsys.inner, name, flag, perm)
 }
 
 func (fsys *faultFS) Close() error {

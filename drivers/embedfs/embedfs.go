@@ -22,11 +22,15 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ ufs.WriteFS = (*embedFS)(nil)
+var (
+	_ ufs.WriteFS    = (*embedFS)(nil)
+	_ ufs.OpenFileFS = (*embedFS)(nil)
+)
 
 type embedFS struct {
 	name string
@@ -89,6 +93,13 @@ func (fsys *embedFS) ReadLink(name string) (string, error) {
 	}
 	// embed.FS contains no symlinks.
 	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
+}
+
+// OpenFile implements [ufs.OpenFileFS] with [polyfill.OpenFile]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *embedFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *embedFS) Create(name string) (ufs.File, error) {

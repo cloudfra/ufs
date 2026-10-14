@@ -50,6 +50,7 @@ is github.com/cloudfra/ufs.
 | ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
 | FS         | Read-write; extends ReadFS with Create, MkdirAll                             |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
+| OpenFileFS | Optional; OpenFile with os.O_* flags. Call ufs.OpenFile, which falls back to the drivers/polyfill behavior |
 
 ### Factory
 
@@ -165,6 +166,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
 | drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |
+| drivers/polyfill/        | Implements optional interfaces from the required methods: polyfill.OpenFile (read-only, or write by truncation) |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
@@ -187,6 +189,24 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
+
+### OpenFile (`openfile.go`, `drivers/polyfill/`)
+
+```go
+func OpenFile(fsys ReadFS, name string, flag int, perm fs.FileMode) (fs.File, error)          // package ufs
+func OpenFile(fsys ufs.ReadFS, name string, flag int, perm fs.FileMode) (fs.File, error)      // package polyfill
+```
+
+Every driver, decorator and nestFS implements `OpenFileFS`. `polyfill.OpenFile`
+builds it from `Open`, `Stat` and `Create` alone: a read-only open, or a write
+with `O_TRUNC` (which is `Create`); any other flag (no `O_TRUNC`, `O_APPEND`,
+`O_EXCL`) fails with `errors.ErrUnsupported`. localFS (and tempMountFS, so
+gitfs) honors every flag through `os.Root.OpenFile`; the other drivers call
+`polyfill.OpenFile` from their `OpenFile` method. Wrappers forward with
+`ufs.OpenFile`, which calls the wrapped file system's `OpenFile` and behaves
+like the polyfill when it has none. The base package cannot import
+`drivers/polyfill`, so both share `fsutil.OpenFilePolyfill` in `internal/`. New
+drivers run `OpenFile` (or `OpenFileAllFlags`) from `drivers/testing`.
 
 ### Conventions
 

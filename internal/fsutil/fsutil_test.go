@@ -70,3 +70,27 @@ func TestStringRoot(t *testing.T) {
 		t.Errorf("String(os.Root) = %q, want %q", got, dir)
 	}
 }
+
+func TestIsWriteFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		flag int
+		want bool
+	}{
+		{name: "O_RDONLY", flag: os.O_RDONLY, want: false},
+		{name: "O_RDONLY|O_SYNC", flag: os.O_RDONLY | os.O_SYNC, want: false},
+		{name: "O_WRONLY", flag: os.O_WRONLY, want: true},
+		{name: "O_RDWR", flag: os.O_RDWR, want: true},
+		{name: "O_RDONLY|O_CREATE", flag: os.O_RDONLY | os.O_CREATE, want: true},
+		{name: "O_RDONLY|O_TRUNC", flag: os.O_RDONLY | os.O_TRUNC, want: true},
+		{name: "O_RDONLY|O_APPEND", flag: os.O_RDONLY | os.O_APPEND, want: true},
+		{name: "O_RDONLY|O_EXCL", flag: os.O_RDONLY | os.O_EXCL, want: true},
+		{name: "O_WRONLY|O_CREATE|O_TRUNC", flag: os.O_WRONLY | os.O_CREATE | os.O_TRUNC, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsWriteFlag(tc.flag); got != tc.want {
+				t.Errorf("IsWriteFlag(%#x) = %t, want %t", tc.flag, got, tc.want)
+			}
+		})
+	}
+}

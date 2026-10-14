@@ -18,11 +18,12 @@ import (
 	"errors"
 	"io/fs"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs"
-	_ "github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/core"
 )
 
 const (
@@ -62,6 +63,55 @@ func TestReadOnlyWriteOperationsReturnPermissionDenied(t *testing.T) {
 				t.Errorf("%s returned %v, want fs.ErrPermission", tc.name, err)
 			}
 		})
+	}
+}
+
+func TestReadOnlyOpenFile(t *testing.T) {
+	t.Parallel()
+	inner := core.MakeMemFS("memory://test")
+	f, err := inner.Create("a.txt")
+	if err != nil {
+		t.Fatalf("Create(a.txt) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("content"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+	fsys := New(inner)
+	defer func() {
+		if err := fsys.Close(); err != nil {
+			t.Errorf("Close() = %v, want nil", err)
+		}
+	}()
+
+	rf, err := ufs.OpenFile(fsys, "a.txt", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(O_RDONLY) = %v, want nil", err)
+	}
+	if err := rf.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil", err)
+	}
+
+	for _, flag := range []int{
+		os.O_WRONLY,
+		os.O_RDWR,
+		os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
+		os.O_WRONLY | os.O_APPEND,
+		os.O_RDONLY | os.O_CREATE,
+		os.O_RDONLY | os.O_TRUNC,
+	} {
+		if f, err := ufs.OpenFile(fsys, "a.txt", flag, fs.ModePerm); !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("OpenFile(%#x) = %v, %v, want %v", flag, f, err, fs.ErrPermission)
+		}
+	}
+	if data, err := inner.ReadFile("a.txt"); err != nil || string(data) != "content" {
+		t.Errorf("ReadFile(a.txt) = %q, %v, want content, nil", data, err)
+	}
+
+	if _, err := ufs.OpenFile(fsys, "../a.txt", os.O_WRONLY, fs.ModePerm); !errors.Is(err, fs.ErrInvalid) {
+		t.Errorf("OpenFile(../a.txt) = %v, want %v", err, fs.ErrInvalid)
 	}
 }
 

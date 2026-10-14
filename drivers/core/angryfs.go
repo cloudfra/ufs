@@ -31,8 +31,9 @@ const (
 )
 
 var (
-	_ ufs.WriteFS = (*angryFS)(nil)
-	_ fs.GlobFS   = (*angryFS)(nil)
+	_ ufs.WriteFS    = (*angryFS)(nil)
+	_ ufs.OpenFileFS = (*angryFS)(nil)
+	_ fs.GlobFS      = (*angryFS)(nil)
 
 	errAngry = fs.ErrInvalid
 
@@ -83,6 +84,13 @@ func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	return nil, ufserrors.NewPathError("stat", name, errAngry)
+}
+
+// OpenFile implements [ufs.OpenFileFS] with [ufs.OpenFilePolyfill]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *angryFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
+	return ufs.OpenFilePolyfill(fsys, name, flag, perm)
 }
 
 func (fsys *angryFS) Create(name string) (ufs.File, error) {

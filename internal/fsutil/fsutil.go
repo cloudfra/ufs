@@ -22,6 +22,17 @@ import (
 	"reflect"
 )
 
+// AccessModeMask selects the access mode (O_RDONLY, O_WRONLY or O_RDWR) of
+// the flag of an OpenFile call.
+const AccessModeMask = os.O_RDONLY | os.O_WRONLY | os.O_RDWR
+
+// IsWriteFlag reports whether flag, the flag of an OpenFile call, asks for
+// more than reading an existing file: write access, or creating, truncating
+// or appending to the file.
+func IsWriteFlag(flag int) bool {
+	return flag&AccessModeMask != os.O_RDONLY || flag&(os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_EXCL) != 0
+}
+
 // String returns a human-readable description of fsys for use in String
 // methods and error messages. It prefers fsys.String when fsys implements
 // [fmt.Stringer] and is not a typed nil, falls back to the root directory name

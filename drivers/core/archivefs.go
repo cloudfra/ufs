@@ -34,7 +34,8 @@ const (
 )
 
 var (
-	_ ufs.WriteFS = (*archiveFS)(nil)
+	_ ufs.WriteFS    = (*archiveFS)(nil)
+	_ ufs.OpenFileFS = (*archiveFS)(nil)
 
 	archiveDeviceInfo    = ufs.NewDeviceInfo("archive", "archive", 1, false)
 	archiveDeviceInfoMap = ufs.NewDeviceMap(archiveDeviceInfo)
@@ -95,6 +96,13 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	return fsys.fsys.Stat(name)
+}
+
+// OpenFile implements [ufs.OpenFileFS] with [ufs.OpenFilePolyfill]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *archiveFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
+	return ufs.OpenFilePolyfill(fsys, name, flag, perm)
 }
 
 func (fsys *archiveFS) Create(name string) (ufs.File, error) {

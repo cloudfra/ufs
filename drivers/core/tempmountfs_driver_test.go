@@ -23,12 +23,14 @@ import (
 )
 
 func TestTempMountFS(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+	createFSFunc := func(t *testing.T) ufs.WriteFS {
 		name := "temp://test"
 		fsys, err := core.NewTempMountFS(t.Context(), name, func(string) error { return nil })
 		if err != nil {
 			t.Fatalf("cannot create tempMountFS %q, %s", name, err)
 		}
 		return fsys
-	})
+	}
+	ufsdriversTesting.WriteFS(t, createFSFunc)
+	ufsdriversTesting.OpenFileAllFlags(t, createFSFunc)
 }

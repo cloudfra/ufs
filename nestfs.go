@@ -31,6 +31,7 @@ import (
 	"sync"
 
 	"github.com/cloudfra/ufs/internal/archive"
+	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -61,6 +62,7 @@ type FSArgs struct {
 
 var (
 	_ FS                  = (*nestFS)(nil)
+	_ OpenFileFS          = (*nestFS)(nil)
 	_ fs.GlobFS           = (*nestFS)(nil)
 	_ AbsPathGetter       = (*nestFS)(nil)
 	_ MountedArchiveDirFS = (*nestFS)(nil)
@@ -470,6 +472,29 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 	}
 
 	return wrapFile(f, true, mountFS.args.BufMode)
+}
+
+// OpenFile implements [OpenFileFS]. A read-only open is Open. Any other open
+// is forwarded with [OpenFile] to the file system that name is mounted in, so
+// the flags it supports are the flags that file system supports.
+func (fsys *nestFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
+	if !fsutil.IsWriteFlag(flag) {
+		return fsys.Open(name)
+	}
+	if err := fsys.validPath("open", name); err != nil {
+		return nil, err
+	}
+
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := OpenFile(mountFS.fsys, subName, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return wrapFile(f, false, mountFS.args.BufMode)
 }
 
 func (fsys *nestFS) Close() error {

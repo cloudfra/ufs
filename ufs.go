@@ -294,9 +294,19 @@ type Watcher interface {
 	Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error)
 }
 
-// OpenFileFS provides OpenFile extension for WriteFS.
+// OpenFileFS is an optional interface for opening a file with flags, as
+// [os.OpenFile] does. Every file system that [New] returns implements it, as
+// does every driver of this module. Call [OpenFile] rather than asserting for
+// it, so that a file system that does not implement it still works.
 type OpenFileFS interface {
-	// OpenFile is the generalized open call; most users will use Open or Create instead.
+	// OpenFile is the generalized open call; most users will use Open or
+	// Create instead. It opens the file at name with flag, a combination of
+	// the O_* constants of package os, and uses perm for a file that it
+	// creates. A file opened for writing implements [File].
+	//
+	// Not every file system can honor every flag. One that can only read a
+	// file and replace it uses [OpenFilePolyfill], and fails the combinations
+	// it cannot honor with an error that wraps [errors.ErrUnsupported].
 	OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error)
 }
 

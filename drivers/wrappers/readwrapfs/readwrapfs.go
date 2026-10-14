@@ -27,7 +27,10 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ ufs.ReadFS = (*readWrapFS)(nil)
+var (
+	_ ufs.ReadFS     = (*readWrapFS)(nil)
+	_ ufs.OpenFileFS = (*readWrapFS)(nil)
+)
 
 type readWrapFS struct {
 	fsys fs.FS
@@ -70,6 +73,12 @@ func (fsys *readWrapFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 	return fsys.fsys.Open(name)
+}
+
+// OpenFile implements [ufs.OpenFileFS] with [ufs.OpenFilePolyfill]. The file
+// system is read-only, so only a read-only open succeeds.
+func (fsys *readWrapFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
+	return ufs.OpenFilePolyfill(fsys, name, flag, perm)
 }
 
 func (fsys *readWrapFS) Close() error {

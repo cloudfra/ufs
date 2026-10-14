@@ -50,6 +50,7 @@ is github.com/cloudfra/ufs.
 | ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
 | FS         | Read-write; extends ReadFS with Create, MkdirAll                             |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
+| OpenFileFS | Optional; OpenFile with os.O_* flags. Call ufs.OpenFile, which falls back to ufs.OpenFilePolyfill |
 
 ### Factory
 
@@ -187,6 +188,22 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
+
+### OpenFile (`openfile.go`)
+
+```go
+func OpenFile(fsys ReadFS, name string, flag int, perm fs.FileMode) (fs.File, error)
+func OpenFilePolyfill(fsys ReadFS, name string, flag int, perm fs.FileMode) (fs.File, error)
+```
+
+Every driver, decorator and nestFS implements `OpenFileFS`. `OpenFilePolyfill`
+builds it from `Open` and `Create` alone: a read-only open, or a write with
+`O_TRUNC` (which is `Create`); any other flag (no `O_TRUNC`, `O_APPEND`,
+`O_EXCL`) fails with `errors.ErrUnsupported`. localFS (and tempMountFS, so
+gitfs) honors every flag through `os.Root.OpenFile`; the other drivers use the
+polyfill. Wrappers forward with `ufs.OpenFile` so a wrapped file system
+without the method still works. New drivers run `OpenFile` (or
+`OpenFileAllFlags`) from `drivers/testing`.
 
 ### Conventions
 

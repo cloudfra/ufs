@@ -305,7 +305,8 @@ type OpenFileFS interface {
 	// creates. A file opened for writing implements [File].
 	//
 	// Not every file system can honor every flag. One that can only read a
-	// file and replace it uses [OpenFilePolyfill], and fails the combinations
+	// file and replace it uses OpenFile of
+	// github.com/cloudfra/ufs/drivers/polyfill, and fails the combinations
 	// it cannot honor with an error that wraps [errors.ErrUnsupported].
 	OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error)
 }

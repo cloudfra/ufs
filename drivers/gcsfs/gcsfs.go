@@ -34,6 +34,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"google.golang.org/api/googleapi"
@@ -366,11 +367,11 @@ func (fsys *gcsFS) Close() error {
 	return fsys.client.Close()
 }
 
-// OpenFile implements [ufs.OpenFileFS] with [ufs.OpenFilePolyfill]: it opens a
+// OpenFile implements [ufs.OpenFileFS] with [polyfill.OpenFile]: it opens a
 // file to read it or to replace it, and fails any other flag with
 // [errors.ErrUnsupported].
 func (fsys *gcsFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
-	return ufs.OpenFilePolyfill(fsys, name, flag, perm)
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *gcsFS) Create(name string) (ufs.File, error) {

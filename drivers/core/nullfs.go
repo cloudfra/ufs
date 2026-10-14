@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -155,11 +156,11 @@ func (fsys *nullFS) Close() error {
 	return nil
 }
 
-// OpenFile implements [ufs.OpenFileFS] with [ufs.OpenFilePolyfill]: it opens a
+// OpenFile implements [ufs.OpenFileFS] with [polyfill.OpenFile]: it opens a
 // file to read it or to replace it, and fails any other flag with
 // [errors.ErrUnsupported].
 func (fsys *nullFS) OpenFile(name string, flag int, perm fs.FileMode) (fs.File, error) {
-	return ufs.OpenFilePolyfill(fsys, name, flag, perm)
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *nullFS) Create(name string) (ufs.File, error) {

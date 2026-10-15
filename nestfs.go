@@ -812,11 +812,11 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		return ufserrors.NewLinkError(renameOp, oldPath, newPath, err)
 	}
 
-	src, err := fsys.renameLevels(oldPath)
+	src, err := fsys.mountLevels(oldPath)
 	if err != nil {
 		return linkErr(err)
 	}
-	dst, err := fsys.renameLevels(newPath)
+	dst, err := fsys.mountLevels(newPath)
 	if err != nil {
 		return linkErr(err)
 	}
@@ -832,16 +832,16 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		return linkErr(fmt.Errorf("archive content cannot be changed, %w", fs.ErrPermission))
 	}
 
-	var unmount []renameLevel
+	var unmount []mountLevel
 	for _, level := range src {
 		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
 			if !isArchiveMountPath(mountPath) {
 				return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrPermission))
 			}
-			unmount = append(unmount, renameLevel{level.fsys, mountPath})
+			unmount = append(unmount, mountLevel{level.fsys, mountPath})
 		}
 		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
-			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
+			unmount = append(unmount, mountLevel{level.fsys, level.name + archiveDirExt})
 		}
 	}
 	for _, level := range dst {
@@ -851,10 +851,10 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 			}
 			// The rename fails if newPath exists, so on success an archive
 			// mounted below it is left from a removed one.
-			unmount = append(unmount, renameLevel{level.fsys, mountPath})
+			unmount = append(unmount, mountLevel{level.fsys, mountPath})
 		}
 		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
-			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
+			unmount = append(unmount, mountLevel{level.fsys, level.name + archiveDirExt})
 		}
 	}
 	if archive.IsMountablePath(dstLeaf.name) {
@@ -933,32 +933,32 @@ func (fsys *nestFS) Release() error {
 	return fsys.mounts.releaseAll()
 }
 
-// renameLevel is a nestFS that a path passes through and the path within it.
-type renameLevel struct {
+// mountLevel is a nestFS that a path passes through and the path within it.
+type mountLevel struct {
 	fsys *nestFS
 	name string
 }
 
-// renameLevels returns each nestFS that name passes through, from fsys to the
+// mountLevels returns each nestFS that name passes through, from fsys to the
 // one whose file system holds name. Unlike getFSAndSubpath it also descends
 // into a nestFS mounted as a file system (as [FSBuilder.MountFS] allows), so
 // the file system of the last level is not a nestFS and has no mounts or
 // archive directories of its own.
-func (fsys *nestFS) renameLevels(name string) ([]renameLevel, error) {
-	levels := []renameLevel{{fsys, name}}
+func (fsys *nestFS) mountLevels(name string) ([]mountLevel, error) {
+	levels := []mountLevel{{fsys, name}}
 	for current := fsys; ; {
 		next, subName, err := current.getFSAndSubpath(name)
 		if err != nil {
 			return nil, err
 		}
 		if next != current {
-			levels = append(levels, renameLevel{next, subName})
+			levels = append(levels, mountLevel{next, subName})
 		}
 		inner, ok := next.fsys.(*nestFS)
 		if !ok {
 			return levels, nil
 		}
-		levels = append(levels, renameLevel{inner, subName})
+		levels = append(levels, mountLevel{inner, subName})
 		current, name = inner, subName
 	}
 }

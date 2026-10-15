@@ -14,7 +14,7 @@ require (
 	cloud.google.com/go/storage v1.69.0
 	github.com/dustin/go-humanize v1.1.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/fsouza/fake-gcs-server v1.55.1
+	github.com/fsouza/fake-gcs-server v1.56.1
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0
@@ -74,7 +74,6 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
-	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/klauspost/pgzip v1.2.7 // indirect
 	github.com/minio/minlz v1.2.2 // indirect
 	github.com/nwaples/rardecode/v2 v2.4.1 // indirect

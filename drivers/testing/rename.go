@@ -32,6 +32,7 @@ import (
 var renameTree = map[string]string{
 	"r/a/f.txt":     "f",
 	"r/a/sub/g.txt": "g",
+	"r/b/empty.txt": "",
 	"r/b/h.txt":     "h",
 	"r/c.txt":       "c",
 }
@@ -53,25 +54,31 @@ func Rename(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
 				name:    "File",
 				oldPath: "r/c.txt",
 				newPath: "r/d.txt",
-				want:    map[string]string{"r/a/f.txt": "f", "r/a/sub/g.txt": "g", "r/b/h.txt": "h", "r/d.txt": "c"},
+				want:    map[string]string{"r/a/f.txt": "f", "r/a/sub/g.txt": "g", "r/b/empty.txt": "", "r/b/h.txt": "h", "r/d.txt": "c"},
 			},
 			{
 				name:    "FileToOtherDir",
 				oldPath: "r/c.txt",
 				newPath: "r/b/c.txt",
-				want:    map[string]string{"r/a/f.txt": "f", "r/a/sub/g.txt": "g", "r/b/h.txt": "h", "r/b/c.txt": "c"},
+				want:    map[string]string{"r/a/f.txt": "f", "r/a/sub/g.txt": "g", "r/b/empty.txt": "", "r/b/h.txt": "h", "r/b/c.txt": "c"},
 			},
 			{
 				name:    "FileFromSubDir",
 				oldPath: "r/a/sub/g.txt",
 				newPath: "r/g.txt",
-				want:    map[string]string{"r/a/f.txt": "f", "r/b/h.txt": "h", "r/c.txt": "c", "r/g.txt": "g"},
+				want:    map[string]string{"r/a/f.txt": "f", "r/b/empty.txt": "", "r/b/h.txt": "h", "r/c.txt": "c", "r/g.txt": "g"},
+			},
+			{
+				name:    "EmptyFile",
+				oldPath: "r/b/empty.txt",
+				newPath: "r/empty.txt",
+				want:    map[string]string{"r/a/f.txt": "f", "r/a/sub/g.txt": "g", "r/b/h.txt": "h", "r/c.txt": "c", "r/empty.txt": ""},
 			},
 			{
 				name:    "Dir",
 				oldPath: "r/a",
 				newPath: "r/b/a2",
-				want:    map[string]string{"r/b/a2/f.txt": "f", "r/b/a2/sub/g.txt": "g", "r/b/h.txt": "h", "r/c.txt": "c"},
+				want:    map[string]string{"r/b/a2/f.txt": "f", "r/b/a2/sub/g.txt": "g", "r/b/empty.txt": "", "r/b/h.txt": "h", "r/c.txt": "c"},
 			},
 		}
 		for _, tc := range moves {

@@ -339,3 +339,52 @@ func TestMountConformanceRsyncArchive(t *testing.T) {
 		}
 	})
 }
+
+// TestMountConformanceRename renames a file and a directory through the mount
+// and checks that the backing file system has them under their new names.
+func TestMountConformanceRename(t *testing.T) {
+	t.Parallel()
+	mountConformanceRun(t, func(t *testing.T, backend mountBackend) {
+		srcDir := t.TempDir()
+		if err := osutil.WriteFile(filepath.Join(srcDir, "a.txt"), []byte("a")); err != nil {
+			t.Fatal(err)
+		}
+		if err := osutil.MkdirAll(filepath.Join(srcDir, "dir")); err != nil {
+			t.Fatal(err)
+		}
+		if err := osutil.WriteFile(filepath.Join(srcDir, "dir", "f.txt"), []byte("f")); err != nil {
+			t.Fatal(err)
+		}
+
+		fsys, err := ufs.New(t.Context(), srcDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(validateClose(t, fsys))
+
+		m := backend.mount(t, fsys)
+
+		renames := []struct {
+			oldPath, newPath string
+			file, want       string
+		}{
+			{oldPath: "a.txt", newPath: "b.txt", file: "b.txt", want: "a"},
+			{oldPath: "dir", newPath: "moved", file: "moved/f.txt", want: "f"},
+		}
+		for _, tc := range renames {
+			if err := osutil.Rename(filepath.Join(m.mountDir, tc.oldPath), filepath.Join(m.mountDir, tc.newPath)); err != nil {
+				t.Fatalf("Rename(%q, %q) = %v", tc.oldPath, tc.newPath, err)
+			}
+			if data, err := fs.ReadFile(fsys, tc.file); err != nil || string(data) != tc.want {
+				t.Errorf("backing ReadFile(%q) = %q, %v, want %q", tc.file, data, err, tc.want)
+			}
+			if _, err := fsys.Stat(tc.oldPath); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("backing Stat(%q) = %v, want %v", tc.oldPath, err, fs.ErrNotExist)
+			}
+			data, err := osutil.ReadFile(filepath.Join(m.mountDir, filepath.FromSlash(tc.file)))
+			if err != nil || string(data) != tc.want {
+				t.Errorf("mount ReadFile(%q) = %q, %v, want %q", tc.file, data, err, tc.want)
+			}
+		}
+	})
+}

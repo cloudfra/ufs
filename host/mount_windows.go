@@ -492,7 +492,16 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 	)...)
 
 	switch notification {
-	case prjNotificationPreDelete, prjNotificationPreRename:
+	case prjNotificationPreRename:
+		s := serverFromContext(callbackData)
+		hr := s.preRename(callbackData.FilePathName, destinationFileName)
+		slog.Debug("projfs: Notification rename",
+			"path", projfsPath(callbackData.FilePathName),
+			"destinationFileName", destName,
+			"result", hresultName(hr),
+		)
+		return hr
+	case prjNotificationPreDelete:
 		slog.Debug("projfs: Notification denying operation",
 			"path", projfsPath(callbackData.FilePathName),
 			"notification", notificationName(notification),
@@ -506,6 +515,24 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 		"result", "S_OK",
 	)
 	return 0
+}
+
+// preRename renames oldName to newName, both relative to the virtualization
+// root, in the backing file system with [ufs.Rename], before ProjFS moves its
+// local copy; a failure denies the rename. It is denied when the backing file
+// system is read-only and when either name is outside the virtualization root,
+// where ProjFS passes an empty name. Like [ufs.Rename], it never replaces an
+// existing file, and a file that only exists locally cannot be renamed.
+func (s *projfsMountServer) preRename(oldName, newName utf16Str) uintptr {
+	wfs, ok := s.fsys.(ufs.WriteFS)
+	if !ok || oldName == nil || newName == nil {
+		return hresultAccessDenied
+	}
+	oldPath, newPath := projfsPath(oldName), projfsPath(newName)
+	if oldPath == "" || newPath == "" {
+		return hresultAccessDenied
+	}
+	return projfsHRESULT(ufs.Rename(wfs, oldPath, newPath))
 }
 
 func cancelCommandCB(callbackData *prjCallbackData) uintptr {

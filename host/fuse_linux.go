@@ -19,9 +19,11 @@ package host
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
+	"math/rand/v2"
 	"path"
 	"sync"
 	"syscall"
@@ -37,7 +39,7 @@ import (
 
 // Not implemented FUSE operations (ufs has no support for these):
 //   - Setattr  (chmod, chown, truncate, utimes)
-//   - Rename
+//   - Rename with RENAME_EXCHANGE or RENAME_WHITEOUT
 //   - Link     (hard links)
 //   - Symlink
 //   - Xattr    (getxattr, setxattr, listxattr, removexattr)
@@ -56,13 +58,14 @@ type roFuseNode interface {
 }
 
 // rwFuseNode extends roFuseNode with write operations: file creation, directory
-// creation, file deletion, and directory removal.
+// creation, file deletion, directory removal, and renaming.
 type rwFuseNode interface {
 	roFuseNode
 	fusefs.NodeCreater
 	fusefs.NodeMkdirer
 	fusefs.NodeUnlinker
 	fusefs.NodeRmdirer
+	fusefs.NodeRenamer
 }
 
 // fuseFileHandler provides read, write, and release operations on an open file
@@ -73,6 +76,10 @@ type fuseFileHandler interface {
 	fusefs.FileReleaser
 }
 
+// renameNoReplace is the rename flag RENAME_NOREPLACE, which go-fuse does not
+// name.
+const renameNoReplace = 0x1
+
 var (
 	fuseAttrTimeout = time.Second
 
@@ -81,10 +88,7 @@ var (
 )
 
 func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error) {
-	root := &fuseNode{
-		fsys: fsys,
-		path: pathutil.CwdPath,
-	}
+	root := &fuseNode{fsys: fsys}
 
 	// TODO: Accept mount options (e.g. forwarding the URI query parameter
 	// "debug" to enable fuse.MountOptions.Debug) so callers can tune behavior.
@@ -138,27 +142,33 @@ func (s *fuseHostServer) Wait() {
 	s.server.Wait()
 }
 
-// fuseNode adapts a ufs.ReadFS path to go-fuse's InodeEmbedder.
+// fuseNode adapts a ufs.ReadFS path to go-fuse's InodeEmbedder. Its path is
+// read from the inode tree rather than stored, so that it follows a rename of
+// the node or of a directory above it.
 type fuseNode struct {
 	fusefs.Inode
 	fsys ufs.ReadFS
-	path string
+}
+
+// fsPath returns the path of n in fsys.
+func (n *fuseNode) fsPath() string {
+	if p := n.Path(nil); p != "" {
+		return p
+	}
+	return pathutil.CwdPath
 }
 
 func (n *fuseNode) childPath(name string) string {
-	return path.Join(n.path, name)
+	return path.Join(n.fsPath(), name)
 }
 
-func (n *fuseNode) newChild(ctx context.Context, childPath string, fi fs.FileInfo) *fusefs.Inode {
-	child := &fuseNode{
-		fsys: n.fsys,
-		path: childPath,
-	}
+func (n *fuseNode) newChild(ctx context.Context, fi fs.FileInfo) *fusefs.Inode {
+	child := &fuseNode{fsys: n.fsys}
 	return n.NewPersistentInode(ctx, child, fusefs.StableAttr{Mode: fuseMode(fi.Mode())})
 }
 
 func (n *fuseNode) Getattr(_ context.Context, _ fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	fi, err := n.fsys.Stat(n.path)
+	fi, err := n.fsys.Stat(n.fsPath())
 	if err != nil {
 		return fuseErrno(err)
 	}
@@ -172,13 +182,13 @@ func (n *fuseNode) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 	if err != nil {
 		return nil, fuseErrno(err)
 	}
-	child := n.newChild(ctx, childPath, fi)
+	child := n.newChild(ctx, fi)
 	fuseAttrFromFileInfo(fi, &out.Attr)
 	return child, 0
 }
 
 func (n *fuseNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) {
-	entries, err := n.fsys.ReadDir(n.path)
+	entries, err := n.fsys.ReadDir(n.fsPath())
 	if err != nil {
 		return nil, fuseErrno(err)
 	}
@@ -198,7 +208,7 @@ func (n *fuseNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) 
 
 func (n *fuseNode) Open(_ context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if flags&(syscall.O_WRONLY|syscall.O_RDWR|syscall.O_TRUNC) != 0 {
-		wfs, ok := n.fsys.(ufs.FS)
+		wfs, ok := n.fsys.(ufs.WriteFS)
 		if !ok {
 			return nil, 0, syscall.EROFS
 		}
@@ -207,13 +217,13 @@ func (n *fuseNode) Open(_ context.Context, flags uint32) (fusefs.FileHandle, uin
 		if flags&syscall.O_TRUNC == 0 {
 			return nil, 0, syscall.ENOTSUP
 		}
-		f, err := wfs.Create(n.path)
+		f, err := wfs.Create(n.fsPath())
 		if err != nil {
 			return nil, 0, fuseErrno(err)
 		}
 		return &fuseFileHandle{file: f}, 0, 0
 	}
-	f, err := n.fsys.Open(n.path)
+	f, err := n.fsys.Open(n.fsPath())
 	if err != nil {
 		return nil, 0, fuseErrno(err)
 	}
@@ -221,7 +231,7 @@ func (n *fuseNode) Open(_ context.Context, flags uint32) (fusefs.FileHandle, uin
 }
 
 func (n *fuseNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
-	target, err := n.fsys.ReadLink(n.path)
+	target, err := n.fsys.ReadLink(n.fsPath())
 	if err != nil {
 		return nil, fuseErrno(err)
 	}
@@ -229,7 +239,7 @@ func (n *fuseNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, out *fuse.EntryOut) (*fusefs.Inode, fusefs.FileHandle, uint32, syscall.Errno) {
-	wfs, ok := n.fsys.(ufs.FS)
+	wfs, ok := n.fsys.(ufs.WriteFS)
 	if !ok {
 		return nil, nil, 0, syscall.EROFS
 	}
@@ -245,13 +255,13 @@ func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, 
 		}
 		return nil, nil, 0, fuseErrno(statErr)
 	}
-	child := n.newChild(ctx, childPath, fi)
+	child := n.newChild(ctx, fi)
 	fuseAttrFromFileInfo(fi, &out.Attr)
 	return child, &fuseFileHandle{file: f}, 0, 0
 }
 
 func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
-	wfs, ok := n.fsys.(ufs.FS)
+	wfs, ok := n.fsys.(ufs.WriteFS)
 	if !ok {
 		return nil, syscall.EROFS
 	}
@@ -268,13 +278,13 @@ func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fus
 	if err != nil {
 		return nil, fuseErrno(err)
 	}
-	child := n.newChild(ctx, childPath, fi)
+	child := n.newChild(ctx, fi)
 	fuseAttrFromFileInfo(fi, &out.Attr)
 	return child, 0
 }
 
 func (n *fuseNode) Unlink(_ context.Context, name string) syscall.Errno {
-	wfs, ok := n.fsys.(ufs.FS)
+	wfs, ok := n.fsys.(ufs.WriteFS)
 	if !ok {
 		return syscall.EROFS
 	}
@@ -282,11 +292,95 @@ func (n *fuseNode) Unlink(_ context.Context, name string) syscall.Errno {
 }
 
 func (n *fuseNode) Rmdir(_ context.Context, name string) syscall.Errno {
-	wfs, ok := n.fsys.(ufs.FS)
+	wfs, ok := n.fsys.(ufs.WriteFS)
 	if !ok {
 		return syscall.EROFS
 	}
 	return fuseErrno(wfs.Remove(n.childPath(name)))
+}
+
+// Rename moves name to newName in newParent. Without RENAME_NOREPLACE an
+// existing newName is replaced, as rename(2) does (see renameReplacing).
+// RENAME_EXCHANGE and RENAME_WHITEOUT are not supported.
+func (n *fuseNode) Rename(ctx context.Context, name string, newParent fusefs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
+	wfs, ok := n.fsys.(ufs.WriteFS)
+	if !ok {
+		return syscall.EROFS
+	}
+	parent, ok := newParent.(*fuseNode)
+	if !ok {
+		return syscall.EXDEV
+	}
+	oldPath, newPath := n.childPath(name), parent.childPath(newName)
+	switch flags {
+	case 0:
+		return fuseErrno(renameReplacing(ctx, wfs, oldPath, newPath))
+	case renameNoReplace:
+		return fuseErrno(ufs.Rename(wfs, oldPath, newPath))
+	default:
+		return syscall.EINVAL
+	}
+}
+
+// renameReplacing renames oldPath to newPath as rename(2) does: an existing
+// newPath is replaced when it is a file and oldPath is too, or when it is an
+// empty directory and oldPath is a directory. Renaming a path to itself does
+// nothing.
+//
+// [ufs.Rename] never replaces, so an existing file is first renamed aside and
+// removed once the rename succeeds, or renamed back if it fails, and an empty
+// directory is removed and made again if the rename fails. Unlike rename(2)
+// this is not atomic: newPath is missing for a moment.
+func renameReplacing(ctx context.Context, fsys ufs.WriteFS, oldPath, newPath string) error {
+	err := ufs.Rename(fsys, oldPath, newPath)
+	if !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	newInfo, statErr := fsys.Lstat(newPath)
+	if statErr != nil {
+		// Not an existing newPath, such as a parent of newPath that is a file.
+		return err
+	}
+	oldInfo, statErr := fsys.Lstat(oldPath)
+	if statErr != nil {
+		return statErr
+	}
+	switch {
+	case oldPath == newPath:
+		return nil
+	case oldInfo.IsDir() && !newInfo.IsDir():
+		return syscall.ENOTDIR
+	case !oldInfo.IsDir() && newInfo.IsDir():
+		return syscall.EISDIR
+	case newInfo.IsDir():
+		entries, err := fsys.ReadDir(newPath)
+		if err != nil {
+			return err
+		}
+		if len(entries) > 0 {
+			return syscall.ENOTEMPTY
+		}
+		if err := fsys.Remove(newPath); err != nil {
+			return err
+		}
+		if err := ufs.Rename(fsys, oldPath, newPath); err != nil {
+			return ufserrors.Join(err, fsys.MkdirAll(newPath, newInfo.Mode().Perm()))
+		}
+		return nil
+	}
+
+	aside := path.Join(path.Dir(newPath), fmt.Sprintf(".%s.ufs-rename-%016x", path.Base(newPath), rand.Uint64())) //nolint:gosec // a unique name, not a secret
+	if err := ufs.Rename(fsys, newPath, aside); err != nil {
+		return err
+	}
+	if err := ufs.Rename(fsys, oldPath, newPath); err != nil {
+		return ufserrors.Join(err, ufs.Rename(fsys, aside, newPath))
+	}
+	if err := fsys.Remove(aside); err != nil {
+		// The rename itself succeeded, so it is not reported as failed.
+		slog.WarnContext(ctx, "cannot remove the file replaced by a rename", "path", aside, "error", err)
+	}
+	return nil
 }
 
 // fuseFileHandle wraps a ufs file for go-fuse.

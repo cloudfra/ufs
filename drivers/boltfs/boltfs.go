@@ -826,8 +826,7 @@ func (fsys *boltFS) Rename(oldPath, newPath string) error {
 		if err != nil {
 			return err
 		}
-		srcDir := srcParent.Bucket(srcKey)
-		srcRecord := srcParent.Get(srcKey)
+		srcDir, srcRecord := lookupEntry(srcParent, srcKey)
 		if srcDir == nil && srcRecord == nil {
 			return fs.ErrNotExist
 		}
@@ -835,17 +834,20 @@ func (fsys *boltFS) Rename(oldPath, newPath string) error {
 		if err != nil {
 			return err
 		}
-		if dstParent.Bucket(dstKey) != nil || dstParent.Get(dstKey) != nil {
+		if dstDir, dstRecord := lookupEntry(dstParent, dstKey); dstDir != nil || dstRecord != nil {
 			return fs.ErrExist
 		}
 
 		if srcDir == nil {
+			// A file: its record moves as it is.
 			moved = append(moved, oldPath)
 			if err := dstParent.Put(dstKey, bytes.Clone(srcRecord)); err != nil {
 				return err
 			}
 			return srcParent.Delete(srcKey)
 		}
+		// A directory: its bucket, with everything below it, is copied and
+		// then deleted, as bbolt cannot move a bucket.
 		if err := collectPaths(srcDir, oldPath, &moved); err != nil {
 			return err
 		}
@@ -867,6 +869,17 @@ func (fsys *boltFS) Rename(oldPath, newPath string) error {
 		fsys.notify(ufs.NotifyCreate, newPath+oldKey[len(oldPath):])
 	}
 	return nil
+}
+
+// lookupEntry returns the bucket of the directory or the record of the file
+// named key in parent. At most one is non-nil: bbolt's Get returns nil for a
+// key that holds a bucket, and a record is never empty, as it always holds a
+// modification time. Both are nil when key does not exist.
+func lookupEntry(parent *bolt.Bucket, key []byte) (dir *bolt.Bucket, record []byte) {
+	if dir = parent.Bucket(key); dir != nil {
+		return dir, nil
+	}
+	return nil, parent.Get(key)
 }
 
 // copyBucket copies every key of src, and every bucket below it, into dst.

@@ -243,6 +243,10 @@ type nestFS struct {
 	ctx    context.Context
 	mounts *mountMap
 	args   FSArgs
+
+	// inArchive is set on the mount of an archive's content, which cannot be
+	// changed.
+	inArchive bool
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
@@ -421,6 +425,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	}
 
 	wrapped := makeNestFS(ctx, newFS)
+	wrapped.inArchive = true
 	if err := fsys.addMount(name+archiveDirExt, wrapped); err != nil {
 		return nil, err
 	}
@@ -669,9 +674,17 @@ func (fsys *nestFS) RemoveAll(name string) error {
 
 // Rename moves oldPath to newPath. Within one mounted file system it uses
 // [Rename] on that file system; between two it copies and then removes
-// oldPath. A mount point, or a directory with a mount below it, cannot be
-// moved or replaced. Archives mounted at or below oldPath, or left mounted
-// for newPath, are unmounted, and are mounted again when next opened.
+// oldPath. Paths are resolved through nested mounts, including a nestFS
+// mounted as a file system, down to the file system that holds them, so a
+// copy never includes the mounts or archive content below oldPath.
+//
+// It fails with [fs.ErrPermission] for a mount point, a directory with a
+// mount below it, or a path inside a mounted archive, and with [fs.ErrExist]
+// when newPath is a directory that only exists because a mount is below it,
+// or when newPath is an archive whose content directory (newPath plus ".d")
+// already exists, which the archive would hide. Archives mounted at or below
+// oldPath, or left mounted from a removed newPath, are unmounted and mounted
+// again when next opened.
 func (fsys *nestFS) Rename(oldPath, newPath string) error {
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
 		return err
@@ -679,47 +692,106 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 	if fsys.fsys == nil {
 		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrClosed)
 	}
+	linkErr := func(err error) error {
+		return ufserrors.NewLinkError(renameOp, oldPath, newPath, err)
+	}
 
-	srcFS, srcName, err := fsys.getFSAndSubpath(oldPath)
+	src, err := fsys.renameLevels(oldPath)
 	if err != nil {
-		return err
+		return linkErr(err)
 	}
-	dstFS, dstName, err := fsys.getFSAndSubpath(newPath)
+	dst, err := fsys.renameLevels(newPath)
 	if err != nil {
-		return err
+		return linkErr(err)
 	}
-	if pathutil.IsCwd(srcName) || pathutil.IsCwd(dstName) {
+	srcLeaf, dstLeaf := src[len(src)-1], dst[len(dst)-1]
+	if srcLeaf.fsys.fsys == nil || dstLeaf.fsys.fsys == nil {
+		return linkErr(fs.ErrClosed)
+	}
+	if pathutil.IsCwd(srcLeaf.name) || pathutil.IsCwd(dstLeaf.name) {
 		// oldPath or newPath is the root of a mount.
-		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrPermission)
+		return linkErr(fs.ErrPermission)
+	}
+	if srcLeaf.fsys.inArchive || dstLeaf.fsys.inArchive {
+		return linkErr(fmt.Errorf("archive content cannot be changed, %w", fs.ErrPermission))
 	}
 
-	archiveMounts := srcFS.mounts.mountsUnder(srcName)
-	for _, mountPath := range archiveMounts {
-		if !isArchiveMountPath(mountPath) {
-			return ufserrors.NewLinkError(renameOp, oldPath, newPath, fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrPermission))
+	var unmount []renameLevel
+	for _, level := range src {
+		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
+			if !isArchiveMountPath(mountPath) {
+				return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrPermission))
+			}
+			unmount = append(unmount, renameLevel{level.fsys, mountPath})
+		}
+		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
+			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
 		}
 	}
-	if srcFS.mounts.getMount(srcName+archiveDirExt) != nil {
-		archiveMounts = append(archiveMounts, srcName+archiveDirExt)
+	for _, level := range dst {
+		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
+			if !isArchiveMountPath(mountPath) {
+				return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrExist))
+			}
+			// The rename fails if newPath exists, so on success an archive
+			// mounted below it is left from a removed one.
+			unmount = append(unmount, renameLevel{level.fsys, mountPath})
+		}
+		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
+			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
+		}
 	}
-	if len(dstFS.mounts.mountsUnder(dstName)) > 0 {
-		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrExist)
+	if archive.IsMountablePath(dstLeaf.name) {
+		contentDir := dstLeaf.name + archiveDirExt
+		if _, err := dstLeaf.fsys.fsys.Lstat(contentDir); err == nil {
+			return linkErr(fmt.Errorf("%q would be hidden by the archive, %w", contentDir, fs.ErrExist))
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return linkErr(err)
+		}
 	}
 
-	if srcFS == dstFS {
-		err = Rename(srcFS.fsys, srcName, dstName)
+	if srcLeaf.fsys == dstLeaf.fsys {
+		err = Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
 	} else {
-		err = renameByCopy(srcFS.fsys, srcName, dstFS.fsys, dstName)
+		err = renameByCopy(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)
 	}
 	if err != nil {
-		return err
+		return linkErr(err)
 	}
-	for _, mountPath := range archiveMounts {
-		srcFS.mounts.remove(mountPath)
+	for _, mount := range unmount {
+		mount.fsys.mounts.remove(mount.name)
 	}
-	// newPath did not exist, so an archive still mounted for it is stale.
-	dstFS.mounts.remove(dstName + archiveDirExt)
 	return nil
+}
+
+// renameLevel is a nestFS that a path passes through and the path within it.
+type renameLevel struct {
+	fsys *nestFS
+	name string
+}
+
+// renameLevels returns each nestFS that name passes through, from fsys to the
+// one whose file system holds name. Unlike getFSAndSubpath it also descends
+// into a nestFS mounted as a file system (as [FSBuilder.MountFS] allows), so
+// the file system of the last level is not a nestFS and has no mounts or
+// archive directories of its own.
+func (fsys *nestFS) renameLevels(name string) ([]renameLevel, error) {
+	levels := []renameLevel{{fsys, name}}
+	for current := fsys; ; {
+		next, subName, err := current.getFSAndSubpath(name)
+		if err != nil {
+			return nil, err
+		}
+		if next != current {
+			levels = append(levels, renameLevel{next, subName})
+		}
+		inner, ok := next.fsys.(*nestFS)
+		if !ok {
+			return levels, nil
+		}
+		levels = append(levels, renameLevel{inner, subName})
+		current, name = inner, subName
+	}
 }
 
 // isArchiveMountPath reports whether the mount path mountPath is where nestFS

@@ -92,6 +92,19 @@ func ValidateRename(oldPath, newPath string) error {
 	return nil
 }
 
+// ValidateFileName checks that name can be the path of a file: it returns an
+// [fs.PathError] for op wrapping [fs.ErrInvalid] if name is not an
+// [fs.ValidPath] or is the root, which is always a directory.
+func ValidateFileName(op, name string) error {
+	if err := Validate(op, name); err != nil {
+		return err
+	}
+	if IsCwd(name) {
+		return ufserrors.NewPathError(op, name, fmt.Errorf("the root is a directory, %w", fs.ErrInvalid))
+	}
+	return nil
+}
+
 // CoerceUnix replaces Windows separators in name with Unix separators.
 func CoerceUnix(name string) string {
 	return strings.ReplaceAll(name, WindowsSeparator, UnixSeparator)

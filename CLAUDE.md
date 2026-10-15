@@ -242,6 +242,22 @@ with `pathutil.ValidateFileName` and writes each file with MkdirAll + Create
 (not atomic, Perm ignored). Writing one file this way is the single-operation
 WriteFile. New drivers are covered by `BatchCreate` in `drivers/testing`.
 
+memFS writes a batch under its lock with an undo log. boltFS writes it in one
+transaction through `batchCommitter` (drivers/boltfs/batch.go), a group commit:
+a lone writer commits at once, and writers that arrive during a commit share
+the next one (unlike `bolt.DB.Batch`, which waits up to MaxBatchDelay). A
+failing request in a shared commit is retried alone so it fails only itself.
+nestFS does not implement `BatchCreateFS` (mounts are not atomic together);
+`ufs.BatchCreate` instead resolves every file with `mountLevels` first
+(refusing archive content, mount points and names above a mount before
+writing anything), splits the batch by backing file system, and writes each
+part with its BatchCreate (atomic per part) or file by file, in order of the
+first file; an error stops later parts. Archives mounted for replaced files
+are unmounted.
+The telemetry decorator forwards it (and Watch) only when the wrapped FS has
+it, via separate wrapper types; `fault` and `readOnly` do not forward it yet,
+so they use the fallback.
+
 ### Conventions
 
 * Keep structs private; expose construction via the public New() factory.

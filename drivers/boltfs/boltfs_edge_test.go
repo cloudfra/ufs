@@ -21,7 +21,9 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -266,5 +268,169 @@ func TestBoltFSURIAndString(t *testing.T) {
 	defer ufsTesting.ValidateClose(t, reopened)()
 	if got, err := reopened.ReadFile("a.txt"); err != nil || string(got) != "hello" {
 		t.Errorf("ReadFile(a.txt) after reopening %q = (%q, %v), want (%q, nil)", u, got, err, "hello")
+	}
+}
+
+func TestParseBoltOptions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		query   string
+		want    boltOptions
+		wantErr bool
+	}{
+		{query: ""},
+		{query: "ufs.nosync=true", want: boltOptions{noSync: true}},
+		{query: "ufs.nosync=1&ufs.nofreelistsync=true", want: boltOptions{noSync: true, noFreelistSync: true}},
+		{query: "ufs.nosync=false", want: boltOptions{}},
+		{query: "ufs.nosync=true&ufs.nosync=false", want: boltOptions{noSync: true}},
+		{query: "ufs.nostatistics=true&ufs.readonly=true", want: boltOptions{noStatistics: true, readOnly: true}},
+		{query: "ufs.timeout=5s", want: boltOptions{timeout: 5 * time.Second}},
+		{query: "ufs.timeout=0", want: boltOptions{timeout: 0}},
+		{query: "ufs.timeout=-1s", wantErr: true},
+		{query: "ufs.timeout=soon", wantErr: true},
+		{query: "ufs.nosync=yes", wantErr: true},
+		{query: "ufs.sync=true", wantErr: true},
+		{query: "nosync=true", wantErr: true},
+		{query: "ufs.nosync=%zz", wantErr: true},
+	}
+	for _, tc := range tests {
+		if tc.want.timeout == 0 && !strings.Contains(tc.query, timeoutParam) {
+			tc.want.timeout = defaultTimeout
+		}
+		got, err := parseBoltOptions(tc.query)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("parseBoltOptions(%q) = %+v, want an error", tc.query, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("parseBoltOptions(%q) = %v, want nil", tc.query, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("parseBoltOptions(%q) = %+v, want %+v", tc.query, got, tc.want)
+		}
+	}
+}
+
+// TestBoltFSURIOptions checks that ufs.nosync and ufs.nofreelistsync reach the
+// database through ufs.New and are kept by the URI, which reopens the same
+// database with them.
+func TestBoltFSURIOptions(t *testing.T) {
+	t.Parallel()
+	dbPath := filepath.ToSlash(filepath.Join(t.TempDir(), "o.db"))
+	fsys, err := ufs.New(t.Context(), boltFSPrefix+dbPath+"?ufs.nosync=true&ufs.nofreelistsync=true&ufs.nostatistics=true&ufs.timeout=5s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ufsdriversTesting.WriteFile(t, fsys, "a.txt", "hello")
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for param, want := range map[string]string{noSyncParam: "true", noFreelistSyncParam: "true", noStatisticsParam: "true", timeoutParam: "5s"} {
+		if got := u.Query().Get(param); got != want {
+			t.Errorf("URI() %s = %q, want %q (URI %s)", param, got, want, u)
+		}
+	}
+	ufsTesting.ValidateClose(t, fsys)()
+
+	reopened, err := makeBoltFS(boltFSPrefix + "//" + pathutil.CoerceUnix(dbPath) + "?" + u.RawQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, reopened)()
+	if !reopened.db.NoSync || !reopened.db.NoFreelistSync {
+		t.Errorf("db NoSync = %t, NoFreelistSync = %t, want both true", reopened.db.NoSync, reopened.db.NoFreelistSync)
+	}
+	if want := (boltOptions{noSync: true, noFreelistSync: true, noStatistics: true, timeout: 5 * time.Second}); reopened.opts != want {
+		t.Errorf("opts = %+v, want %+v", reopened.opts, want)
+	}
+	ufsTesting.AssertContains(t, reopened, "a.txt", "hello")
+}
+
+func TestBoltFSDefaultOptions(t *testing.T) {
+	t.Parallel()
+	fsys, err := makeBoltFS(testBoltFSURI(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	if fsys.db.NoSync || fsys.db.NoFreelistSync {
+		t.Errorf("db NoSync = %t, NoFreelistSync = %t, want both false", fsys.db.NoSync, fsys.db.NoFreelistSync)
+	}
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.RawQuery != "" {
+		t.Errorf("URI() = %s, want no query", u)
+	}
+}
+
+func TestMakeBoltFSInvalidOptions(t *testing.T) {
+	t.Parallel()
+	for _, query := range []string{"ufs.nosync=maybe", "ufs.unknown=true", "other=true"} {
+		name := testBoltFSURI(t) + "?" + query
+		fsys, err := makeBoltFS(name)
+		if !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("makeBoltFS(%q) = %v, want %v", name, err, fs.ErrInvalid)
+		}
+		if err == nil {
+			ufsTesting.ValidateClose(t, fsys)()
+		}
+	}
+}
+
+// TestBoltFSReadOnly checks that ufs.readonly opens an existing database for
+// reading only, by several file systems at once, and refuses every write.
+func TestBoltFSReadOnly(t *testing.T) {
+	t.Parallel()
+	uri := testBoltFSURI(t)
+	writer, err := makeBoltFS(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ufsdriversTesting.WriteFile(t, writer, "dir/a.txt", "a")
+	ufsTesting.ValidateClose(t, writer)()
+
+	readers := make([]*boltFS, 2)
+	for i := range readers {
+		readers[i], err = makeBoltFS(uri + "?" + readOnlyParam + "=true")
+		if err != nil {
+			t.Fatalf("reader %d: %v", i, err)
+		}
+		defer ufsTesting.ValidateClose(t, readers[i])()
+	}
+	fsys := readers[0]
+	ufsTesting.AssertContains(t, fsys, "dir/a.txt", "a")
+	if u, err := fsys.URI(); err != nil || u.Query().Get(readOnlyParam) != "true" {
+		t.Errorf("URI() = %v, %v, want %s=true", u, err, readOnlyParam)
+	}
+
+	writes := map[string]func() error{
+		"Create": func() error {
+			_, err := fsys.Create("b.txt")
+			return err
+		},
+		"MkdirAll":  func() error { return fsys.MkdirAll("new", fs.ModePerm) },
+		"Remove":    func() error { return fsys.Remove("dir/a.txt") },
+		"RemoveAll": func() error { return fsys.RemoveAll("dir") },
+		"Rename":    func() error { return fsys.Rename("dir/a.txt", "dir/b.txt") },
+	}
+	for name, write := range writes {
+		if err := write(); !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("%s() = %v, want %v", name, err, fs.ErrPermission)
+		}
+	}
+	ufsTesting.AssertContains(t, readers[1], "dir/a.txt", "a")
+}
+
+func TestBoltFSReadOnlyMissing(t *testing.T) {
+	t.Parallel()
+	if fsys, err := makeBoltFS(testBoltFSURI(t) + "?" + readOnlyParam + "=true"); err == nil {
+		ufsTesting.ValidateClose(t, fsys)()
+		t.Error("makeBoltFS() of a missing database read-only succeeded, want an error")
 	}
 }

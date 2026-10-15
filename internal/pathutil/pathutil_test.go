@@ -786,3 +786,29 @@ func TestValidateRename(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateFileName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		wantErr error
+	}{
+		{name: "a"},
+		{name: "a/b.txt"},
+		{name: ".", wantErr: fs.ErrInvalid},
+		{name: "", wantErr: fs.ErrInvalid},
+		{name: "../a", wantErr: fs.ErrInvalid},
+		{name: "/a", wantErr: fs.ErrInvalid},
+		{name: "a/", wantErr: fs.ErrInvalid},
+	}
+	for _, tc := range tests {
+		err := ValidateFileName("op", tc.name)
+		if !errors.Is(err, tc.wantErr) || (err == nil) != (tc.wantErr == nil) {
+			t.Errorf("ValidateFileName(%q) = %v, want %v", tc.name, err, tc.wantErr)
+		}
+		var pathErr *fs.PathError
+		if err != nil && (!errors.As(err, &pathErr) || pathErr.Op != "op" || pathErr.Path != tc.name) {
+			t.Errorf("ValidateFileName(%q) = %#v, want an *fs.PathError for op and the name", tc.name, err)
+		}
+	}
+}

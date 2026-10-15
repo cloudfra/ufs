@@ -48,7 +48,8 @@ is github.com/cloudfra/ufs.
 | ReadFile   | Read-only file; wraps fs.File                                                |
 | File       | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter               |
 | ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
-| FS         | Read-write; extends ReadFS with Create, MkdirAll                             |
+| WriteFS    | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll          |
+| FS         | What New's nestFS provides; extends WriteFS with Rename (RenameFileFS)       |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
 
 ### Factory
@@ -142,6 +143,13 @@ file system. On Linux this uses FUSE via go-fuse/v2; on Windows it uses ProjFS.
 Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 (never the reverse) and only uses its exported API (e.g. `ufs.CwdPath`).
 
+Writes are enabled when the mounted FS is a `ufs.WriteFS` (not `ufs.FS`, so
+drivers without a native Rename stay writable). Renames go through
+`ufs.Rename`: FUSE replaces an existing destination as rename(2) does (moving
+it aside first, not atomic) unless RENAME_NOREPLACE is set, and FUSE nodes take
+their path from the inode tree so they follow renames. ProjFS forwards
+PRE_RENAME within the root to the backing FS and still denies deletes.
+
 | File (in host/)        | Purpose                                                          |
 |:-----------------------|:-----------------------------------------------------------------|
 | host.go                | Platform-agnostic MountServer interface and Mount function       |
@@ -187,6 +195,26 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
+
+### Rename (`rename.go`)
+
+```go
+func Rename(fsys WriteFS, oldPath, newPath string) error
+```
+
+`RenameFileFS` is optional for drivers; `ufs.Rename` calls it when present and
+otherwise copies and removes (not atomic, loses modes). `pathutil.ValidateRename`
+holds the shared argument checks, and errors other than an invalid path are
+`*os.LinkError`. localFS (and tempMountFS) use `os.Root.Rename`, memFS moves
+its nodes, boltFS moves buckets in one transaction, and read-only drivers and
+`readOnly` return `fs.ErrPermission`; gcsFS uses the copy fallback. nestFS
+resolves both paths through every mount level (including a nestFS mounted with
+`FSBuilder.MountFS`) down to the backing FS, renames within one with
+`ufs.Rename` and across two by copying (so mounts and archive content are never
+copied), refuses to move or replace a mount point or change archive content,
+refuses an archive name whose `.d` directory exists, and unmounts archives at
+or below `oldPath` and stale ones at `newPath`. New drivers are covered by
+`Rename` in `drivers/testing`.
 
 ### Conventions
 

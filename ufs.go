@@ -106,12 +106,16 @@ type CopyFileFS interface {
 }
 
 // RenameFileFS is an optional interface that a file system may implement to support
-// file and directory renaming. It is embedded in [FS], so every writable backend
-// must implement it.
+// file and directory renaming. It is embedded in [FS], so every [FS] supports
+// it; call [Rename] to rename within any [WriteFS].
 type RenameFileFS interface {
 	// Rename moves a file or directory from oldPath to newPath. It returns an
-	// error wrapping [fs.ErrNotExist] if oldPath does not exist, or an error if
-	// newPath already exists. Renaming the root (".") returns [fs.ErrPermission].
+	// error wrapping [fs.ErrNotExist] if oldPath does not exist, one wrapping
+	// [fs.ErrExist] if newPath already exists, and one wrapping
+	// [fs.ErrInvalid] if newPath is below oldPath. Renaming to or from the
+	// root (".") returns [fs.ErrPermission]. Missing parent directories of
+	// newPath are handled as Create handles them. Errors other than for an
+	// invalid path are [*os.LinkError] values.
 	//
 	// Rename is not guaranteed to be atomic; some backends may implement it as
 	// a copy-and-delete operation. Callers should not assume that the file at
@@ -221,15 +225,14 @@ type WriteFS interface {
 }
 
 // FS is the top-level file system interface returned by the public
-// constructors. It extends [WriteFS] and will add file copying
-// ([CopyFileFS]) and renaming ([RenameFileFS]); until those are implemented
-// it is equivalent to [WriteFS]. Every concrete value is a *nestFS.
+// constructors. It extends [WriteFS] with renaming ([RenameFileFS]) and will
+// add file copying ([CopyFileFS]). Every concrete value is a *nestFS.
 type FS interface {
 	WriteFS
+	RenameFileFS
 
 	// Copy copies the file at srcPath to dstPath.
 	// Copy(srcPath, dstPath string) error
-	// TODO: Implement RenameFS
 }
 
 // ListFilenames is an optional interface that a file system may implement to

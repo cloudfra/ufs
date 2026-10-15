@@ -747,3 +747,42 @@ func FuzzIsCwdImpliesIsDirName(f *testing.F) {
 		}
 	})
 }
+
+func TestValidateRename(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		oldPath, newPath string
+		wantErr          error
+		wantPathError    bool
+	}{
+		{oldPath: "a", newPath: "b"},
+		{oldPath: "a/b", newPath: "a"},
+		{oldPath: "a", newPath: "ab/c"},
+		{oldPath: "a", newPath: "a"},
+		{oldPath: "../a", newPath: "b", wantErr: fs.ErrInvalid, wantPathError: true},
+		{oldPath: "a", newPath: "/b", wantErr: fs.ErrInvalid, wantPathError: true},
+		{oldPath: ".", newPath: "b", wantErr: fs.ErrPermission},
+		{oldPath: "a", newPath: ".", wantErr: fs.ErrPermission},
+		{oldPath: "a", newPath: "a/b", wantErr: fs.ErrInvalid},
+		{oldPath: "a/b", newPath: "a/b/c/d", wantErr: fs.ErrInvalid},
+	}
+	for _, tc := range tests {
+		err := ValidateRename(tc.oldPath, tc.newPath)
+		if tc.wantErr == nil {
+			if err != nil {
+				t.Errorf("ValidateRename(%q, %q) = %v, want nil", tc.oldPath, tc.newPath, err)
+			}
+			continue
+		}
+		if !errors.Is(err, tc.wantErr) {
+			t.Errorf("ValidateRename(%q, %q) = %v, want %v", tc.oldPath, tc.newPath, err, tc.wantErr)
+		}
+		var pathErr *fs.PathError
+		var linkErr *os.LinkError
+		if tc.wantPathError && !errors.As(err, &pathErr) {
+			t.Errorf("ValidateRename(%q, %q) = %T, want *fs.PathError", tc.oldPath, tc.newPath, err)
+		} else if !tc.wantPathError && !errors.As(err, &linkErr) {
+			t.Errorf("ValidateRename(%q, %q) = %T, want *os.LinkError", tc.oldPath, tc.newPath, err)
+		}
+	}
+}

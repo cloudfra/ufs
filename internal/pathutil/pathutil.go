@@ -71,6 +71,27 @@ func Validate(op string, name string) error {
 	return nil
 }
 
+// ValidateRename checks the arguments of a rename from oldPath to newPath. It
+// returns an [fs.PathError] wrapping [fs.ErrInvalid] if either is not an
+// [fs.ValidPath], an [os.LinkError] wrapping [fs.ErrPermission] if either is
+// the root, and one wrapping [fs.ErrInvalid] if newPath is below oldPath,
+// since a directory cannot be moved into itself.
+func ValidateRename(oldPath, newPath string) error {
+	if err := Validate("rename", oldPath); err != nil {
+		return err
+	}
+	if err := Validate("rename", newPath); err != nil {
+		return err
+	}
+	if IsCwd(oldPath) || IsCwd(newPath) {
+		return ufserrors.NewLinkError("rename", oldPath, newPath, fs.ErrPermission)
+	}
+	if strings.HasPrefix(newPath, oldPath+UnixSeparator) {
+		return ufserrors.NewLinkError("rename", oldPath, newPath, fmt.Errorf("cannot move %q into itself, %w", oldPath, fs.ErrInvalid))
+	}
+	return nil
+}
+
 // CoerceUnix replaces Windows separators in name with Unix separators.
 func CoerceUnix(name string) string {
 	return strings.ReplaceAll(name, WindowsSeparator, UnixSeparator)

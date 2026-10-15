@@ -35,6 +35,7 @@ func FS(t *testing.T, createFSFunc func(t *testing.T) ufs.FS) {
 	MkdirAll(t, createWriteFSFunc)
 	ReadFile(t, createWriteFSFunc)
 	DirFileConflicts(t, createWriteFSFunc)
+	Rename(t, createWriteFSFunc)
 	ReadFS(t, func(t *testing.T) ufs.ReadFS {
 		return createFSFunc(t)
 	})

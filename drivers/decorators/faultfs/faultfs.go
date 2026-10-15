@@ -268,3 +268,15 @@ func (fsys *faultFS) RemoveAll(name string) error {
 	}
 	return fsys.inner.RemoveAll(name)
 }
+
+// Rename injects a fault for oldPath and then renames with [ufs.Rename], which
+// copies and removes when the wrapped file system has no Rename.
+func (fsys *faultFS) Rename(oldPath, newPath string) error {
+	if err := pathutil.Validate("rename", newPath); err != nil {
+		return err
+	}
+	if err := fsys.maybeInjectFault("rename", oldPath); err != nil {
+		return err
+	}
+	return ufs.Rename(fsys.inner, oldPath, newPath)
+}

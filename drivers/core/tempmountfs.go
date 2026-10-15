@@ -90,6 +90,10 @@ func (fsys *tempMountFS) Stat(name string) (fs.FileInfo, error) {
 	return fsys.lfs.Stat(name)
 }
 
+func (fsys *tempMountFS) Rename(oldPath, newPath string) error {
+	return ufs.Rename(fsys.lfs, oldPath, newPath)
+}
+
 func (fsys *tempMountFS) Glob(pattern string) ([]string, error) {
 	return globutil.GlobFS(fsys, pattern)
 }

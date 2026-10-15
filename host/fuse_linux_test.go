@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/cloudfra/ufs"
@@ -69,23 +70,120 @@ func testMount(t *testing.T, fsys ufs.ReadFS) string {
 
 func TestFuseNodeChildPath(t *testing.T) {
 	t.Parallel()
+	// A node outside an inode tree is the root.
+	n := &fuseNode{}
+	if got := n.fsPath(); got != "." {
+		t.Errorf("fsPath() = %q, want %q", got, ".")
+	}
+	if got := n.childPath("file.txt"); got != "file.txt" {
+		t.Errorf("childPath(%q) = %q, want %q", "file.txt", got, "file.txt")
+	}
+}
+
+// failRenameFS fails the renames from the path fail.
+type failRenameFS struct {
+	ufs.WriteFS
+	fail string
+}
+
+var errRenameFailed = errors.New("rename failed")
+
+func (fsys failRenameFS) Rename(oldPath, newPath string) error {
+	if oldPath == fsys.fail {
+		return errRenameFailed
+	}
+	return ufs.Rename(fsys.WriteFS, oldPath, newPath)
+}
+
+func TestRenameReplacing(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
-		parent string
-		child  string
-		want   string
+		name             string
+		oldPath, newPath string
+		failRename       string
+		wantErr          error
+		want             map[string]string
 	}{
-		{".", "file.txt", "file.txt"},
-		{"", "file.txt", "file.txt"},
-		{"dir", "file.txt", "dir/file.txt"},
-		{"a/b", "c", "a/b/c"},
-		{"top", "sub", "top/sub"},
+		{
+			name: "New", oldPath: "a.txt", newPath: "new.txt",
+			want: map[string]string{"new.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
+		{
+			name: "ReplaceFile", oldPath: "a.txt", newPath: "b.txt",
+			want: map[string]string{"b.txt": "a", "full/f.txt": "f"},
+		},
+		{
+			name: "ReplaceEmptyDir", oldPath: "full", newPath: "empty",
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "empty/f.txt": "f"},
+		},
+		{
+			name: "Self", oldPath: "a.txt", newPath: "a.txt",
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
+		{
+			name: "NonEmptyDir", oldPath: "empty", newPath: "full", wantErr: syscall.ENOTEMPTY,
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
+		{
+			name: "FileOverDir", oldPath: "a.txt", newPath: "empty", wantErr: syscall.EISDIR,
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
+		{
+			name: "DirOverFile", oldPath: "full", newPath: "b.txt", wantErr: syscall.ENOTDIR,
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
+		{
+			name: "MissingSource", oldPath: "x.txt", newPath: "b.txt", wantErr: fs.ErrNotExist,
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
+		{
+			name: "FailedRenameRestoresFile", oldPath: "a.txt", newPath: "b.txt", failRename: "a.txt", wantErr: errRenameFailed,
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
+		{
+			name: "FailedRenameRestoresDir", oldPath: "full", newPath: "empty", failRename: "full", wantErr: errRenameFailed,
+			want: map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"},
+		},
 	}
 	for _, tc := range tests {
-		n := &fuseNode{path: tc.parent}
-		got := n.childPath(tc.child)
-		if got != tc.want {
-			t.Errorf("fuseNode{path:%q}.childPath(%q) = %q, want %q", tc.parent, tc.child, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			base, err := ufs.New(t.Context(), "memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(validateClose(t, base))
+			for _, dir := range []string{"empty", "full"} {
+				if err := base.MkdirAll(dir, fs.ModePerm); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for name, content := range map[string]string{"a.txt": "a", "b.txt": "b", "full/f.txt": "f"} {
+				if err := writeFile(base, name, content); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			err = renameReplacing(t.Context(), failRenameFS{base, tc.failRename}, tc.oldPath, tc.newPath)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("renameReplacing(%q, %q) = %v, want %v", tc.oldPath, tc.newPath, err, tc.wantErr)
+			}
+			got := map[string]string{}
+			err = fs.WalkDir(base, ".", func(name string, d fs.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return err
+				}
+				data, err := fs.ReadFile(base, name)
+				got[name] = string(data)
+				return err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("files diff(-want,+got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -345,6 +443,77 @@ func TestMountRemoveDir(t *testing.T) {
 	}
 	if _, err := osutil.Stat(dirPath); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat after remove: got %v, want ErrNotExist", err)
+	}
+}
+
+// TestMountRename renames through the mount: a file, a file over another, and
+// a directory whose child was looked up before, which must then be found
+// under its new path.
+func TestMountRename(t *testing.T) {
+	t.Parallel()
+	fsys, err := ufs.New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(validateClose(t, fsys))
+	if err := fsys.MkdirAll("dir", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"a.txt": "a", "b.txt": "b", "dir/f.txt": "f"} {
+		if err := writeFile(fsys, name, content); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mountDir := testMount(t, fsys)
+	if err := osutil.Rename(filepath.Join(mountDir, "a.txt"), filepath.Join(mountDir, "c.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := osutil.Rename(filepath.Join(mountDir, "c.txt"), filepath.Join(mountDir, "b.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := fs.ReadFile(fsys, "b.txt"); err != nil || string(data) != "a" {
+		t.Errorf("ReadFile(b.txt) = %q, %v, want %q", data, err, "a")
+	}
+	for _, name := range []string{"a.txt", "c.txt"} {
+		if _, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
+		}
+	}
+
+	if _, err := osutil.Stat(filepath.Join(mountDir, "dir", "f.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := osutil.Rename(filepath.Join(mountDir, "dir"), filepath.Join(mountDir, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := osutil.ReadFile(filepath.Join(mountDir, "moved", "f.txt"))
+	if err != nil || string(data) != "f" {
+		t.Errorf("ReadFile(moved/f.txt) = %q, %v, want %q", data, err, "f")
+	}
+	if _, err := fsys.Stat("dir"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(dir) = %v, want %v", err, fs.ErrNotExist)
+	}
+}
+
+func TestMountReadOnlyRename(t *testing.T) {
+	t.Parallel()
+	fsys, err := ufs.New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(validateClose(t, fsys))
+	if err := writeFile(fsys, "keep.txt", "x"); err != nil {
+		t.Fatal(err)
+	}
+
+	mountDir := testMount(t, &fuseReadOnlyFS{fsys})
+	err = osutil.Rename(filepath.Join(mountDir, "keep.txt"), filepath.Join(mountDir, "moved.txt"))
+	if !errors.Is(err, syscall.EROFS) {
+		t.Errorf("Rename on read-only mount = %v, want %v", err, syscall.EROFS)
+	}
+	if _, err := fsys.Stat("keep.txt"); err != nil {
+		t.Errorf("Stat(keep.txt) after failed rename = %v", err)
 	}
 }
 

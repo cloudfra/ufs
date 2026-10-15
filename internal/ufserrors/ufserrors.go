@@ -19,6 +19,7 @@ package ufserrors
 import (
 	"errors"
 	"io/fs"
+	"os"
 )
 
 // ErrDirNotEmpty is returned when removing a directory that still has
@@ -31,6 +32,24 @@ func NewPathError(op string, name string, err error) error {
 		Op:   op,
 		Path: name,
 		Err:  err,
+	}
+}
+
+// NewLinkError returns an [os.LinkError] for op from oldName to newName, the
+// error [os.Rename] returns. An [*fs.PathError] or [*os.LinkError] err is
+// unwrapped first, since the link error already names the paths.
+func NewLinkError(op, oldName, newName string, err error) error {
+	switch e := err.(type) {
+	case *fs.PathError:
+		err = e.Err
+	case *os.LinkError:
+		err = e.Err
+	}
+	return &os.LinkError{
+		Op:  op,
+		Old: oldName,
+		New: newName,
+		Err: err,
 	}
 }
 

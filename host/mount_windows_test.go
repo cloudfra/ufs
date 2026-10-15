@@ -252,6 +252,29 @@ func TestMountReadOnlyRemove(t *testing.T) {
 	}
 }
 
+func TestMountReadOnlyRename(t *testing.T) {
+	t.Parallel()
+	fsys, err := ufs.New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(validateClose(t, fsys))
+	if err := writeFile(fsys, "keep.txt", "x"); err != nil {
+		t.Fatal(err)
+	}
+
+	mountDir := testProjFSMount(t, &projfsReadOnlyFS{fsys})
+	if err := osutil.Rename(filepath.Join(mountDir, "keep.txt"), filepath.Join(mountDir, "moved.txt")); err == nil {
+		t.Fatal("rename on read-only mount succeeded, want access denied")
+	}
+	if _, err := fsys.Stat("keep.txt"); err != nil {
+		t.Errorf("Stat(keep.txt) after failed rename = %v", err)
+	}
+	if _, err := osutil.Stat(filepath.Join(mountDir, "keep.txt")); err != nil {
+		t.Errorf("Stat(keep.txt) on mount after failed rename = %v", err)
+	}
+}
+
 // --- Integration test — end-to-end mount and read-back verification ---
 
 func TestProjFSMountReadBack(t *testing.T) {

@@ -48,6 +48,11 @@ func Remove(name string) error {
 	return os.Remove(filepath.Clean(name))
 }
 
+// Rename renames (moves) oldName to newName.
+func Rename(oldName, newName string) error {
+	return os.Rename(filepath.Clean(oldName), filepath.Clean(newName))
+}
+
 // RemoveAll removes name and any children it contains.
 func RemoveAll(name string) error {
 	return os.RemoveAll(filepath.Clean(name))

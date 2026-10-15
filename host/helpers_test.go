@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -33,6 +34,21 @@ func validateClose(tb testing.TB, closer io.Closer) func() {
 			}
 		}
 	}
+}
+
+// writeFile creates name in fsys holding content.
+func writeFile(fsys ufs.WriteFS, name, content string) (err error) {
+	f, err := fsys.Create(name)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+	_, err = f.WriteString(content)
+	return err
 }
 
 // testAssetsFilesDir is the directory of files that were archived into

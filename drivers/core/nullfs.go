@@ -222,6 +222,11 @@ func (fsys *nullFS) Remove(name string) error {
 	return nil
 }
 
+// Rename discards the rename, as nullFS discards every write.
+func (fsys *nullFS) Rename(oldPath, newPath string) error {
+	return pathutil.ValidateRename(oldPath, newPath)
+}
+
 func (fsys *nullFS) RemoveAll(name string) error {
 	if err := pathutil.Validate("removeall", name); err != nil {
 		return err

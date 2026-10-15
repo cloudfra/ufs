@@ -138,6 +138,13 @@ func (fsys *angryFS) Remove(name string) error {
 	return ufserrors.NewPathError("remove", name, errAngry)
 }
 
+func (fsys *angryFS) Rename(oldPath, newPath string) error {
+	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
+		return err
+	}
+	return ufserrors.NewLinkError("rename", oldPath, newPath, errAngry)
+}
+
 func (fsys *angryFS) RemoveAll(name string) error {
 	if err := pathutil.Validate("removeall", name); err != nil {
 		return err

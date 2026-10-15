@@ -432,3 +432,40 @@ func TestMemWatchFSClose(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 }
+
+func TestMemWatchRename(t *testing.T) {
+	fsys := makeMemFS("memory:")
+	if err := fsys.MkdirAll("a", fs.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Create("a/f.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ufsTesting.Must(t, f.Close())
+
+	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	closer, err := fsys.Watch(ctx, ".", ec.Hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, closer)()
+
+	if err := fsys.Rename("a", "b"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []eventtest.Event[ufs.NotifyOp]{
+		{Op: ufs.NotifyRename, Path: "a"},
+		{Op: ufs.NotifyRename, Path: "a/f.txt"},
+		{Op: ufs.NotifyCreate, Path: "b"},
+		{Op: ufs.NotifyCreate, Path: "b/f.txt"},
+	} {
+		ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
+			return ev == want
+		})
+	}
+}

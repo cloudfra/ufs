@@ -16,6 +16,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -30,6 +31,7 @@ import (
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 const (
@@ -170,6 +172,33 @@ func (fsys *localFS) RemoveAll(name string) error {
 		return err
 	}
 	return fsys.osFS.RemoveAll(name)
+}
+
+// Rename moves oldPath to newPath with os.Root.Rename, which would replace an
+// existing newPath, so newPath is checked first. A newPath that is oldPath
+// under another spelling, as on a case-insensitive disk, is allowed.
+func (fsys *localFS) Rename(oldPath, newPath string) error {
+	if err := validLocalPath("rename", oldPath); err != nil {
+		return err
+	}
+	if err := validLocalPath("rename", newPath); err != nil {
+		return err
+	}
+	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
+		return err
+	}
+	if newInfo, err := fsys.osFS.Lstat(newPath); err == nil {
+		oldInfo, err := fsys.osFS.Lstat(oldPath)
+		if err != nil {
+			return ufserrors.NewLinkError("rename", oldPath, newPath, err)
+		}
+		if oldPath == newPath || !os.SameFile(oldInfo, newInfo) {
+			return ufserrors.NewLinkError("rename", oldPath, newPath, fs.ErrExist)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return ufserrors.NewLinkError("rename", oldPath, newPath, err)
+	}
+	return fsys.osFS.Rename(oldPath, newPath)
 }
 
 func (fsys *localFS) Glob(pattern string) ([]string, error) {

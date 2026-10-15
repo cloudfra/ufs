@@ -105,6 +105,13 @@ func (fsys *embedFS) MkdirAll(name string, _ fs.FileMode) error {
 	return ufserrors.NewPathError("mkdir", name, fmt.Errorf("embedFS is read-only, cannot create directory %q: %w", name, fs.ErrPermission))
 }
 
+func (fsys *embedFS) Rename(oldPath, newPath string) error {
+	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
+		return err
+	}
+	return ufserrors.NewLinkError("rename", oldPath, newPath, fmt.Errorf("embedFS is read-only, cannot rename %q: %w", oldPath, fs.ErrPermission))
+}
+
 func (fsys *embedFS) Remove(name string) error {
 	if err := pathutil.Validate("remove", name); err != nil {
 		return err

@@ -29,6 +29,18 @@
 // The equivalent bolt:///path/to/data.db form is also accepted; it is the form
 // the file system's URI method returns.
 //
+// Query parameters configure the database, and the URI method keeps them:
+//
+//	fsys, err := ufs.New(ctx, "bolt:/path/to/cache.db?ufs.nosync=true")
+//
+// The parameters are:
+//
+//   - ufs.nosync=true skips the fsync after each commit. Writes are much
+//     faster, but a crash or power loss can lose recent writes or corrupt the
+//     database, so it suits data that can be rebuilt, such as a cache.
+//   - ufs.nofreelistsync=true does not write the freelist on commit, which
+//     makes commits cheaper and opening the database slower.
+//
 // Directories are nested buckets and files are key/value entries in their
 // parent directory's bucket. Writes to an open file are buffered in memory
 // and committed to the database, in a single transaction, when the file is
@@ -47,6 +59,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,6 +98,61 @@ const (
 	boltFSPrefix = boltFSScheme + ":"
 )
 
+const (
+	// noSyncParam is the URI query parameter for bolt.Options.NoSync.
+	noSyncParam = "ufs.nosync"
+
+	// noFreelistSyncParam is the URI query parameter for
+	// bolt.Options.NoFreelistSync.
+	noFreelistSyncParam = "ufs.nofreelistsync"
+)
+
+// boltOptions are the database options that a bolt: URI sets.
+type boltOptions struct {
+	noSync         bool
+	noFreelistSync bool
+}
+
+// parseBoltOptions reads the options from the query of a bolt: URI. It
+// fails for a parameter it does not know, so that a misspelled option is not
+// ignored.
+func parseBoltOptions(rawQuery string) (boltOptions, error) {
+	var opts boltOptions
+	query, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return opts, fmt.Errorf("cannot parse the query %q, %w", rawQuery, err)
+	}
+	for key, values := range query {
+		var target *bool
+		switch key {
+		case noSyncParam:
+			target = &opts.noSync
+		case noFreelistSyncParam:
+			target = &opts.noFreelistSync
+		default:
+			return opts, fmt.Errorf("unknown parameter %q, want %s or %s, %w", key, noSyncParam, noFreelistSyncParam, fs.ErrInvalid)
+		}
+		value, err := strconv.ParseBool(values[len(values)-1])
+		if err != nil {
+			return opts, fmt.Errorf("parameter %s=%q is not a bool, %w", key, values[len(values)-1], fs.ErrInvalid)
+		}
+		*target = value
+	}
+	return opts, nil
+}
+
+// query returns the URI query that sets opts.
+func (opts boltOptions) query() string {
+	query := url.Values{}
+	if opts.noSync {
+		query.Set(noSyncParam, "true")
+	}
+	if opts.noFreelistSync {
+		query.Set(noFreelistSyncParam, "true")
+	}
+	return query.Encode()
+}
+
 func isBoltFSUri(name string) bool {
 	return strings.HasPrefix(name, boltFSPrefix)
 }
@@ -108,6 +176,7 @@ type boltFS struct {
 	mu      sync.RWMutex
 	name    string
 	absPath string
+	opts    boltOptions
 	db      *bolt.DB
 
 	notifyBus *notify.Bus
@@ -346,7 +415,7 @@ func (fsys *boltFS) GetDeviceInfo() ufs.DeviceMap {
 // URI returns the bolt:///abs/path form of the database path, which
 // makeBoltFS accepts, so the URI reopens the same database.
 func (fsys *boltFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: boltFSScheme, Path: pathutil.CoerceUnix(fsys.absPath)}, nil
+	return &url.URL{Scheme: boltFSScheme, Path: pathutil.CoerceUnix(fsys.absPath), RawQuery: fsys.opts.query()}, nil
 }
 
 func (fsys *boltFS) String() string {
@@ -981,6 +1050,11 @@ func makeBoltFS(name string) (*boltFS, error) {
 	if !ok {
 		return nil, fmt.Errorf("%q does not contain the scheme, %q", name, boltFSPrefix)
 	}
+	localPath, rawQuery, _ := strings.Cut(localPath, "?")
+	opts, err := parseBoltOptions(rawQuery)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bolt URI %q, %w", name, err)
+	}
 	// bolt:///abs/path (the form URI returns) has an empty authority.
 	localPath = strings.TrimPrefix(localPath, "//")
 	if localPath == "" {
@@ -990,12 +1064,12 @@ func makeBoltFS(name string) (*boltFS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve %q, %w", localPath, err)
 	}
-	// TODO: plumb bolt.Options (Timeout, ReadOnly, NoSync, NoFreelistSync,
-	// etc.) and the file mode through query parameters on the bolt: URI
-	// instead of hardcoding them here, mirroring how other backends (e.g.
-	// nestFS mounts) take configuration via the URI.
+	// TODO: take more of bolt.Options (Timeout, ReadOnly) and the file mode
+	// from the URI query, as NoSync and NoFreelistSync are.
 	db, err := bolt.Open(absPath, osutil.DefaultFilePermissions, &bolt.Options{
-		Timeout: time.Minute,
+		Timeout:        time.Minute,
+		NoSync:         opts.noSync,
+		NoFreelistSync: opts.noFreelistSync,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cannot open bolt file %q, %w", name, err)
@@ -1019,6 +1093,7 @@ func makeBoltFS(name string) (*boltFS, error) {
 	return &boltFS{
 		name:      name,
 		absPath:   absPath,
+		opts:      opts,
 		db:        db,
 		notifyBus: notify.New(),
 	}, nil

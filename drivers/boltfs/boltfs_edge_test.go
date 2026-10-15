@@ -268,3 +268,98 @@ func TestBoltFSURIAndString(t *testing.T) {
 		t.Errorf("ReadFile(a.txt) after reopening %q = (%q, %v), want (%q, nil)", u, got, err, "hello")
 	}
 }
+
+func TestParseBoltOptions(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		query   string
+		want    boltOptions
+		wantErr bool
+	}{
+		{query: ""},
+		{query: "ufs.nosync=true", want: boltOptions{noSync: true}},
+		{query: "ufs.nosync=1&ufs.nofreelistsync=true", want: boltOptions{noSync: true, noFreelistSync: true}},
+		{query: "ufs.nosync=false", want: boltOptions{}},
+		{query: "ufs.nosync=true&ufs.nosync=false", want: boltOptions{}},
+		{query: "ufs.nosync=yes", wantErr: true},
+		{query: "ufs.sync=true", wantErr: true},
+		{query: "nosync=true", wantErr: true},
+		{query: "ufs.nosync=%zz", wantErr: true},
+	}
+	for _, tc := range tests {
+		got, err := parseBoltOptions(tc.query)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("parseBoltOptions(%q) = %v, want error %t", tc.query, err, tc.wantErr)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("parseBoltOptions(%q) = %+v, want %+v", tc.query, got, tc.want)
+		}
+	}
+}
+
+// TestBoltFSURIOptions checks that ufs.nosync and ufs.nofreelistsync reach the
+// database through ufs.New and are kept by the URI, which reopens the same
+// database with them.
+func TestBoltFSURIOptions(t *testing.T) {
+	t.Parallel()
+	dbPath := filepath.ToSlash(filepath.Join(t.TempDir(), "o.db"))
+	fsys, err := ufs.New(t.Context(), boltFSPrefix+dbPath+"?ufs.nosync=true&ufs.nofreelistsync=true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ufsdriversTesting.WriteFile(t, fsys, "a.txt", "hello")
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, param := range []string{noSyncParam, noFreelistSyncParam} {
+		if got := u.Query().Get(param); got != "true" {
+			t.Errorf("URI() %s = %q, want true (URI %s)", param, got, u)
+		}
+	}
+	ufsTesting.ValidateClose(t, fsys)()
+
+	reopened, err := makeBoltFS(boltFSPrefix + "//" + pathutil.CoerceUnix(dbPath) + "?" + u.RawQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, reopened)()
+	if !reopened.db.NoSync || !reopened.db.NoFreelistSync {
+		t.Errorf("db NoSync = %t, NoFreelistSync = %t, want both true", reopened.db.NoSync, reopened.db.NoFreelistSync)
+	}
+	ufsTesting.AssertContains(t, reopened, "a.txt", "hello")
+}
+
+func TestBoltFSDefaultOptions(t *testing.T) {
+	t.Parallel()
+	fsys, err := makeBoltFS(testBoltFSURI(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	if fsys.db.NoSync || fsys.db.NoFreelistSync {
+		t.Errorf("db NoSync = %t, NoFreelistSync = %t, want both false", fsys.db.NoSync, fsys.db.NoFreelistSync)
+	}
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.RawQuery != "" {
+		t.Errorf("URI() = %s, want no query", u)
+	}
+}
+
+func TestMakeBoltFSInvalidOptions(t *testing.T) {
+	t.Parallel()
+	for _, query := range []string{"ufs.nosync=maybe", "ufs.unknown=true"} {
+		name := testBoltFSURI(t) + "?" + query
+		fsys, err := makeBoltFS(name)
+		if !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("makeBoltFS(%q) = %v, want %v", name, err, fs.ErrInvalid)
+		}
+		if err == nil {
+			ufsTesting.ValidateClose(t, fsys)()
+		}
+	}
+}

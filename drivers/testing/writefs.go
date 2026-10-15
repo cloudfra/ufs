@@ -41,6 +41,7 @@ func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteF
 	InvalidPathsForWriteFS(t, createFSFunc)
 	Create(t, createFSFunc)
 	Rename(t, createFSFunc)
+	BatchCreateWithBuckets(t, createFSFunc)
 	Conventions(t, createFSFunc)
 	// TODO: gcsfs is broken here.
 	// Close(t, createFSFunc)
@@ -73,6 +74,7 @@ func writeFS(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	Close(t, createFSFunc)
 	Create(t, createFSFunc)
 	Rename(t, createFSFunc)
+	BatchCreate(t, createFSFunc)
 	Conventions(t, createFSFunc)
 	readFS(t, func(t *testing.T) ufs.ReadFS {
 		return createFSFunc(t)

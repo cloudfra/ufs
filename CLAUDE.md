@@ -51,6 +51,7 @@ is github.com/cloudfra/ufs.
 | WriteFS    | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll          |
 | FS         | What New's nestFS provides; extends WriteFS with Rename (RenameFileFS)       |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
+| BatchCreateFS | Optional; writes several whole files atomically via BatchCreate         |
 
 ### Factory
 
@@ -68,7 +69,7 @@ Dispatches to the appropriate implementation based on URI scheme:
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
 | git://...     | drivers/gitfs/   | --        | ro       | Impl.   | Reads from a git repo (clones on first open; blank-import drivers/gitfs) |
 | archive://    | drivers/core/    | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
-| bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package  |
+| bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package; `ufs.nosync`, `ufs.nofreelistsync`, `ufs.nostatistics`, `ufs.readonly`, `ufs.timeout` query params set bolt.Options (parsed with httputil.ParseURI) |
 
 ### Layering / nesting
 
@@ -216,6 +217,20 @@ copied), refuses to move or replace a mount point or change archive content,
 refuses an archive name whose `.d` directory exists, and unmounts archives at
 or below `oldPath` and stale ones at `newPath`. New drivers are covered by
 `Rename` in `drivers/testing`.
+
+### BatchCreate (`batch.go`)
+
+```go
+func BatchCreate(fsys WriteFS, files ...BatchFile) error
+```
+
+`BatchCreateFS` is optional and only for file systems that can write a batch
+atomically (all files or none, readers never see part of it), such as one
+database transaction; implementations may commit concurrent batches together.
+`ufs.BatchCreate` calls it when present and otherwise validates every name
+with `pathutil.ValidateFileName` and writes each file with MkdirAll + Create
+(not atomic, Perm ignored). Writing one file this way is the single-operation
+WriteFile. New drivers are covered by `BatchCreate` in `drivers/testing`.
 
 ### Conventions
 

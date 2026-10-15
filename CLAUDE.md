@@ -129,6 +129,7 @@ The fstab `ro` option and the implicit read-only null root both map to the
 |:----------|:-------------------------------|:---------------------|:-----------------------------------------------|
 | readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`) | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner) |
 | fault     | drivers/decorators/faultfs     | faultfs.Options      | Injects configurable latency and random errors |
+| telemetry | drivers/decorators/telemetryfs | telemetryfs.Options (bare bool or `traces:`/`metrics:`) | Reports an OpenTelemetry span and a duration histogram per FS operation via the global providers |
 
 ### Host mount (`host` subpackage)
 

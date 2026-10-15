@@ -40,6 +40,14 @@
 //     database, so it suits data that can be rebuilt, such as a cache.
 //   - ufs.nofreelistsync=true does not write the freelist on commit, which
 //     makes commits cheaper and opening the database slower.
+//   - ufs.nostatistics=true turns off bolt's transaction statistics, which
+//     saves a little work on every transaction.
+//   - ufs.readonly=true opens the database read-only with a shared lock, so
+//     that several processes can read it at once; every write fails with
+//     [fs.ErrPermission]. The database must already exist. The readOnly
+//     decorator, by contrast, wraps a database opened for writing.
+//   - ufs.timeout=5s sets how long opening waits for the file lock that
+//     another process holds; the default is one minute, and 0 waits forever.
 //
 // Directories are nested buckets and files are key/value entries in their
 // parent directory's bucket. Writes to an open file are buffered in memory
@@ -68,6 +76,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
+	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -105,50 +114,88 @@ const (
 	// noFreelistSyncParam is the URI query parameter for
 	// bolt.Options.NoFreelistSync.
 	noFreelistSyncParam = "ufs.nofreelistsync"
+
+	// noStatisticsParam is the URI query parameter for
+	// bolt.Options.NoStatistics.
+	noStatisticsParam = "ufs.nostatistics"
+
+	// readOnlyParam is the URI query parameter for bolt.Options.ReadOnly.
+	readOnlyParam = "ufs.readonly"
+
+	// timeoutParam is the URI query parameter for bolt.Options.Timeout.
+	timeoutParam = "ufs.timeout"
+
+	// defaultTimeout is how long opening waits for the file lock when the
+	// URI does not set timeoutParam.
+	defaultTimeout = time.Minute
 )
 
 // boltOptions are the database options that a bolt: URI sets.
 type boltOptions struct {
 	noSync         bool
 	noFreelistSync bool
+	noStatistics   bool
+	readOnly       bool
+	timeout        time.Duration
 }
 
-// parseBoltOptions reads the options from the query of a bolt: URI. It
-// fails for a parameter it does not know, so that a misspelled option is not
-// ignored.
+// boolParams maps each bool parameter to its field of boltOptions.
+var boolParams = map[string]func(*boltOptions) *bool{
+	noSyncParam:         func(o *boltOptions) *bool { return &o.noSync },
+	noFreelistSyncParam: func(o *boltOptions) *bool { return &o.noFreelistSync },
+	noStatisticsParam:   func(o *boltOptions) *bool { return &o.noStatistics },
+	readOnlyParam:       func(o *boltOptions) *bool { return &o.readOnly },
+}
+
+// parseBoltOptions reads the options from the query of a bolt: URI with
+// httputil.ParseURI, which extracts the "ufs." parameters. It fails for a
+// parameter it does not know, so that a misspelled option is not ignored.
+// Only the query is parsed, so that a path that is not a valid URL path,
+// such as one holding "%" or "#", still names its file.
 func parseBoltOptions(rawQuery string) (boltOptions, error) {
-	var opts boltOptions
-	query, err := url.ParseQuery(rawQuery)
-	if err != nil {
-		return opts, fmt.Errorf("cannot parse the query %q, %w", rawQuery, err)
+	opts := boltOptions{timeout: defaultTimeout}
+	if rawQuery == "" {
+		return opts, nil
 	}
-	for key, values := range query {
-		var target *bool
-		switch key {
-		case noSyncParam:
-			target = &opts.noSync
-		case noFreelistSyncParam:
-			target = &opts.noFreelistSync
-		default:
-			return opts, fmt.Errorf("unknown parameter %q, want %s or %s, %w", key, noSyncParam, noFreelistSyncParam, fs.ErrInvalid)
+	rest, params, err := httputil.ParseURI("?" + rawQuery)
+	if err != nil {
+		return opts, fmt.Errorf("%w, %w", err, fs.ErrInvalid)
+	}
+	if rest.RawQuery != "" {
+		return opts, fmt.Errorf("unknown parameters %q, only ufs. parameters are accepted, %w", rest.RawQuery, fs.ErrInvalid)
+	}
+	for key, value := range params {
+		if field, ok := boolParams[key]; ok {
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				return opts, fmt.Errorf("parameter %s=%q is not a bool, %w", key, value, fs.ErrInvalid)
+			}
+			*field(&opts) = b
+			continue
 		}
-		value, err := strconv.ParseBool(values[len(values)-1])
-		if err != nil {
-			return opts, fmt.Errorf("parameter %s=%q is not a bool, %w", key, values[len(values)-1], fs.ErrInvalid)
+		if key != timeoutParam {
+			return opts, fmt.Errorf("unknown parameter %q, %w", key, fs.ErrInvalid)
 		}
-		*target = value
+		timeout, err := time.ParseDuration(value)
+		if err != nil || timeout < 0 {
+			return opts, fmt.Errorf("parameter %s=%q is not a duration of 0 or more, %w", key, value, fs.ErrInvalid)
+		}
+		opts.timeout = timeout
 	}
 	return opts, nil
 }
 
-// query returns the URI query that sets opts.
+// query returns the URI query that sets the options of opts that differ from
+// the defaults.
 func (opts boltOptions) query() string {
 	query := url.Values{}
-	if opts.noSync {
-		query.Set(noSyncParam, "true")
+	for key, field := range boolParams {
+		if *field(&opts) {
+			query.Set(key, "true")
+		}
 	}
-	if opts.noFreelistSync {
-		query.Set(noFreelistSyncParam, "true")
+	if opts.timeout != defaultTimeout {
+		query.Set(timeoutParam, opts.timeout.String())
 	}
 	return query.Encode()
 }
@@ -449,12 +496,15 @@ func (fsys *boltFS) view(fn func(tx *bolt.Tx) error) error {
 }
 
 // update runs fn in a read-write transaction against the live bolt
-// database, returning fs.ErrClosed if the file system has already been
-// closed.
+// database. It returns fs.ErrClosed if the file system has already been
+// closed, and fs.ErrPermission if it was opened with ufs.readonly.
 func (fsys *boltFS) update(fn func(tx *bolt.Tx) error) error {
 	db, err := fsys.liveDB()
 	if err != nil {
 		return err
+	}
+	if fsys.opts.readOnly {
+		return fmt.Errorf("opened with %s=true, %w", readOnlyParam, fs.ErrPermission)
 	}
 	return db.Update(fn)
 }
@@ -1064,17 +1114,27 @@ func makeBoltFS(name string) (*boltFS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve %q, %w", localPath, err)
 	}
-	// TODO: take more of bolt.Options (Timeout, ReadOnly) and the file mode
-	// from the URI query, as NoSync and NoFreelistSync are.
+	// TODO: take the file mode from the URI query too.
 	db, err := bolt.Open(absPath, osutil.DefaultFilePermissions, &bolt.Options{
-		Timeout:        time.Minute,
+		Timeout:        opts.timeout,
 		NoSync:         opts.noSync,
 		NoFreelistSync: opts.noFreelistSync,
+		NoStatistics:   opts.noStatistics,
+		ReadOnly:       opts.readOnly,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cannot open bolt file %q, %w", name, err)
 	}
-	if err := db.Update(func(tx *bolt.Tx) error {
+	if opts.readOnly {
+		// A read-only database cannot be initialized, so it must already be
+		// one that this driver wrote.
+		if err := db.View(func(tx *bolt.Tx) error {
+			_, err := rootBucket(tx)
+			return err
+		}); err != nil {
+			return nil, ufserrors.Join(fmt.Errorf("cannot open bolt file %q read-only, %w", name, err), db.Close())
+		}
+	} else if err := db.Update(func(tx *bolt.Tx) error {
 		bkt, err := tx.CreateBucketIfNotExists(selfKey)
 		if err != nil {
 			return err

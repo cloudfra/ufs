@@ -68,7 +68,7 @@ Dispatches to the appropriate implementation based on URI scheme:
 | gs://...      | drivers/gcsfs/   | gcsFS     | ro       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
 | git://...     | drivers/gitfs/   | --        | ro       | Impl.   | Reads from a git repo (clones on first open; blank-import drivers/gitfs) |
 | archive://    | drivers/core/    | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
-| bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package; `?ufs.nosync=true` / `ufs.nofreelistsync=true` set bolt.Options |
+| bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package; `ufs.nosync`, `ufs.nofreelistsync`, `ufs.nostatistics`, `ufs.readonly`, `ufs.timeout` query params set bolt.Options (parsed with httputil.ParseURI) |
 
 ### Layering / nesting
 

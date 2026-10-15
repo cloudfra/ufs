@@ -813,6 +813,78 @@ func (fsys *boltFS) RemoveAll(name string) error {
 	return nil
 }
 
+// Rename moves oldPath, and everything below it, to newPath in a single
+// transaction, so it is atomic. Missing parent directories of newPath are
+// created as Create does.
+func (fsys *boltFS) Rename(oldPath, newPath string) error {
+	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
+		return err
+	}
+	var moved []string
+	err := fsys.update(func(tx *bolt.Tx) error {
+		srcParent, srcKey, err := lookupParent(tx, oldPath)
+		if err != nil {
+			return err
+		}
+		srcDir := srcParent.Bucket(srcKey)
+		srcRecord := srcParent.Get(srcKey)
+		if srcDir == nil && srcRecord == nil {
+			return fs.ErrNotExist
+		}
+		dstParent, dstKey, err := parentBucket(tx, newPath)
+		if err != nil {
+			return err
+		}
+		if dstParent.Bucket(dstKey) != nil || dstParent.Get(dstKey) != nil {
+			return fs.ErrExist
+		}
+
+		if srcDir == nil {
+			moved = append(moved, oldPath)
+			if err := dstParent.Put(dstKey, bytes.Clone(srcRecord)); err != nil {
+				return err
+			}
+			return srcParent.Delete(srcKey)
+		}
+		if err := collectPaths(srcDir, oldPath, &moved); err != nil {
+			return err
+		}
+		moved = append(moved, oldPath)
+		dstDir, err := dstParent.CreateBucket(dstKey)
+		if err != nil {
+			return err
+		}
+		if err := copyBucket(srcDir, dstDir); err != nil {
+			return err
+		}
+		return srcParent.DeleteBucket(srcKey)
+	})
+	if err != nil {
+		return ufserrors.NewLinkError("rename", oldPath, newPath, err)
+	}
+	for _, oldKey := range moved {
+		fsys.notify(ufs.NotifyRename, oldKey)
+		fsys.notify(ufs.NotifyCreate, newPath+oldKey[len(oldPath):])
+	}
+	return nil
+}
+
+// copyBucket copies every key of src, and every bucket below it, into dst.
+// Keys and values are cloned, as bbolt requires them to stay valid until the
+// transaction ends.
+func copyBucket(src, dst *bolt.Bucket) error {
+	return src.ForEach(func(k, v []byte) error {
+		if v != nil {
+			return dst.Put(bytes.Clone(k), bytes.Clone(v))
+		}
+		child, err := dst.CreateBucket(k)
+		if err != nil {
+			return err
+		}
+		return copyBucket(src.Bucket(k), child)
+	})
+}
+
 // isEmptyDir reports whether the directory bucket bkt has no children. Every
 // directory bucket holds its own selfKey record, so it is empty when that is
 // the only key; at most two keys are inspected.

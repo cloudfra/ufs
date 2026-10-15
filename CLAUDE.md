@@ -48,7 +48,8 @@ is github.com/cloudfra/ufs.
 | ReadFile   | Read-only file; wraps fs.File                                                |
 | File       | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter               |
 | ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
-| FS         | Read-write; extends ReadFS with Create, MkdirAll                             |
+| WriteFS    | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll          |
+| FS         | What New's nestFS provides; extends WriteFS with Rename (RenameFileFS)       |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
 
 ### Factory
@@ -187,6 +188,22 @@ code with no `ufs` dependency goes in `internal/`.
 | internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
+
+### Rename (`rename.go`)
+
+```go
+func Rename(fsys WriteFS, oldPath, newPath string) error
+```
+
+`RenameFileFS` is optional for drivers; `ufs.Rename` calls it when present and
+otherwise copies and removes (not atomic, loses modes). `pathutil.ValidateRename`
+holds the shared argument checks, and errors other than an invalid path are
+`*os.LinkError`. localFS (and tempMountFS) use `os.Root.Rename`, memFS moves
+its nodes, boltFS moves buckets in one transaction, and read-only drivers and
+`readOnly` return `fs.ErrPermission`; gcsFS uses the copy fallback. nestFS
+renames within a mount with `ufs.Rename` and across mounts by copying, refuses
+to move or replace a mount point, and unmounts archives below `oldPath`. New
+drivers are covered by `Rename` in `drivers/testing`.
 
 ### Conventions
 

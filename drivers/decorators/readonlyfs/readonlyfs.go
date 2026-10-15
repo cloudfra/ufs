@@ -88,7 +88,7 @@ func (fsys *readOnlyFS) IsMountedArchiveDir(name string) bool {
 }
 
 // New wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
-// Remove, RemoveAll) always return [fs.ErrPermission]. All read operations
+// Remove, RemoveAll, Rename) always return [fs.ErrPermission]. All read operations
 // delegate to inner unchanged.
 func New(inner ufs.ReadFS) ufs.WriteFS {
 	return &readOnlyFS{
@@ -133,6 +133,13 @@ func (fsys *readOnlyFS) Remove(name string) error {
 		return err
 	}
 	return ufserrors.NewPathError("remove", name, fs.ErrPermission)
+}
+
+func (fsys *readOnlyFS) Rename(oldPath, newPath string) error {
+	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
+		return err
+	}
+	return ufserrors.NewLinkError("rename", oldPath, newPath, fs.ErrPermission)
 }
 
 func (fsys *readOnlyFS) RemoveAll(name string) error {

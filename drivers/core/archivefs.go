@@ -145,6 +145,13 @@ func (fsys *archiveFS) Remove(name string) error {
 	return ufserrors.NewPathError("remove", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
+func (fsys *archiveFS) Rename(oldPath, newPath string) error {
+	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
+		return err
+	}
+	return ufserrors.NewLinkError("rename", oldPath, newPath, fmt.Errorf("archiveFS mounts are read-only, cannot rename %q, %w", oldPath, fs.ErrPermission))
+}
+
 func (fsys *archiveFS) RemoveAll(name string) error {
 	if err := pathutil.Validate("removeall", name); err != nil {
 		return err

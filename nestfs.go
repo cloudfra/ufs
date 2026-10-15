@@ -156,6 +156,20 @@ func (m *mountMap) getMatchesBySubPath(name string) map[string]*nestFS {
 	return matches
 }
 
+// mountsUnder returns the paths of the mounts at or below name.
+func (m *mountMap) mountsUnder(name string) []string {
+	name = path.Clean(name)
+	var found []string
+	m.mu.RLock()
+	for mountPath := range m.m {
+		if _, ok := pathutil.RemovePrefix(mountPath, name); ok {
+			found = append(found, mountPath)
+		}
+	}
+	m.mu.RUnlock()
+	return found
+}
+
 func (m *mountMap) getMount(name string) *nestFS {
 	name = path.Clean(name)
 	m.mu.RLock()
@@ -651,6 +665,68 @@ func (fsys *nestFS) RemoveAll(name string) error {
 		return err
 	}
 	return mountFS.fsys.RemoveAll(subName)
+}
+
+// Rename moves oldPath to newPath. Within one mounted file system it uses
+// [Rename] on that file system; between two it copies and then removes
+// oldPath. A mount point, or a directory with a mount below it, cannot be
+// moved or replaced. Archives mounted at or below oldPath, or left mounted
+// for newPath, are unmounted, and are mounted again when next opened.
+func (fsys *nestFS) Rename(oldPath, newPath string) error {
+	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
+		return err
+	}
+	if fsys.fsys == nil {
+		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrClosed)
+	}
+
+	srcFS, srcName, err := fsys.getFSAndSubpath(oldPath)
+	if err != nil {
+		return err
+	}
+	dstFS, dstName, err := fsys.getFSAndSubpath(newPath)
+	if err != nil {
+		return err
+	}
+	if pathutil.IsCwd(srcName) || pathutil.IsCwd(dstName) {
+		// oldPath or newPath is the root of a mount.
+		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrPermission)
+	}
+
+	archiveMounts := srcFS.mounts.mountsUnder(srcName)
+	for _, mountPath := range archiveMounts {
+		if !isArchiveMountPath(mountPath) {
+			return ufserrors.NewLinkError(renameOp, oldPath, newPath, fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrPermission))
+		}
+	}
+	if srcFS.mounts.getMount(srcName+archiveDirExt) != nil {
+		archiveMounts = append(archiveMounts, srcName+archiveDirExt)
+	}
+	if len(dstFS.mounts.mountsUnder(dstName)) > 0 {
+		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrExist)
+	}
+
+	if srcFS == dstFS {
+		err = Rename(srcFS.fsys, srcName, dstName)
+	} else {
+		err = renameByCopy(srcFS.fsys, srcName, dstFS.fsys, dstName)
+	}
+	if err != nil {
+		return err
+	}
+	for _, mountPath := range archiveMounts {
+		srcFS.mounts.remove(mountPath)
+	}
+	// newPath did not exist, so an archive still mounted for it is stale.
+	dstFS.mounts.remove(dstName + archiveDirExt)
+	return nil
+}
+
+// isArchiveMountPath reports whether the mount path mountPath is where nestFS
+// mounts an archive, rather than a mount from the URI.
+func isArchiveMountPath(mountPath string) bool {
+	archiveName, ok := strings.CutSuffix(mountPath, archiveDirExt)
+	return ok && archive.IsMountablePath(archiveName)
 }
 
 func (fsys *nestFS) Glob(pattern string) ([]string, error) {

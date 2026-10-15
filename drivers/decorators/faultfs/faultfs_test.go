@@ -115,6 +115,44 @@ func TestFaultInjectorDelegatesWhenNoFaults(t *testing.T) {
 	if err := fsys.RemoveAll("subdir"); err != nil {
 		t.Errorf("RemoveAll(subdir) = %v, want nil", err)
 	}
+	if err := ufs.Rename(fsys, "a.txt", "b.txt"); err != nil {
+		t.Errorf("Rename(a.txt, b.txt) = %v, want nil", err)
+	}
+}
+
+// TestFaultInjectorRenameMoves checks that Rename reaches the wrapped file
+// system when no fault is injected.
+func TestFaultInjectorRenameMoves(t *testing.T) {
+	t.Parallel()
+
+	inner, err := ufs.New(t.Context(), "memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys, err := newFaultFS(inner, Options{Latency: time.Nanosecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	f, err := fsys.Create("a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("a"); err != nil {
+		t.Fatal(err)
+	}
+	ufsTesting.Must(t, f.Close())
+
+	if err := ufs.Rename(fsys, "a.txt", "b.txt"); err != nil {
+		t.Fatalf("Rename(a.txt, b.txt) = %v, want nil", err)
+	}
+	if data, err := fsys.ReadFile("b.txt"); err != nil || string(data) != "a" {
+		t.Errorf("ReadFile(b.txt) = %q, %v, want %q, nil", data, err, "a")
+	}
+	if _, err := fsys.Stat("a.txt"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(a.txt) = %v, want %v", err, fs.ErrNotExist)
+	}
 }
 
 func TestFaultInjectorAlwaysErrors(t *testing.T) {
@@ -143,6 +181,7 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 		{"MkdirAll", func() error { return fsys.MkdirAll("subdir", fs.ModePerm) }},
 		{"Remove", func() error { return fsys.Remove("a.txt") }},
 		{"RemoveAll", func() error { return fsys.RemoveAll("subdir") }},
+		{"Rename", func() error { return ufs.Rename(fsys, "a.txt", "b.txt") }},
 	}
 
 	for _, tc := range tests {
@@ -366,6 +405,12 @@ func TestFaultInjectorInvalidPaths(t *testing.T) {
 			}
 			if err := fsys.RemoveAll(badPath); err == nil {
 				t.Errorf("RemoveAll(%q) returned nil error, want error", badPath)
+			}
+			if err := ufs.Rename(fsys, badPath, "a.txt"); err == nil {
+				t.Errorf("Rename(%q, a.txt) returned nil error, want error", badPath)
+			}
+			if err := ufs.Rename(fsys, "a.txt", badPath); err == nil {
+				t.Errorf("Rename(a.txt, %q) returned nil error, want error", badPath)
 			}
 		})
 	}

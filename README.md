@@ -204,6 +204,7 @@ outermost layer. Blank-import a decorator's package to enable it.
 |:-----------|:--------------------------------|:---------------------------------------------------------------------------------------------|
 | `readOnly` | `drivers/decorators/readonlyfs` | Every write returns `fs.ErrPermission`. The fstab `ro` option maps to it.                    |
 | `fault`    | `drivers/decorators/faultfs`    | Injects latency and random errors, to test how your code copes with slow or failing storage. |
+| `telemetry` | `drivers/decorators/telemetryfs` | Reports an OpenTelemetry span and a duration measurement for each file system operation. |
 
 ```yaml
 - source: "memory:"

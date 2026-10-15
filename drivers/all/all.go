@@ -31,6 +31,7 @@
 //   - readOnly from [github.com/cloudfra/ufs/drivers/decorators/readonlyfs],
 //     also needed by the fstab ro option and the implicit read-only root
 //   - fault from [github.com/cloudfra/ufs/drivers/decorators/faultfs]
+//   - telemetry from [github.com/cloudfra/ufs/drivers/decorators/telemetryfs]
 //
 // The base package registers no driver itself. Packages that register
 // nothing, such as [github.com/cloudfra/ufs/drivers/embedfs], are not
@@ -44,10 +45,11 @@
 package all
 
 import (
-	_ "github.com/cloudfra/ufs/drivers/boltfs"                // registers bolt:
-	_ "github.com/cloudfra/ufs/drivers/core"                  // registers file://, archive://, memory:, null: and angry:
-	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"    // registers the fault mount option
-	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs" // registers the readOnly mount option
-	_ "github.com/cloudfra/ufs/drivers/gcsfs"                 // registers gs://
-	_ "github.com/cloudfra/ufs/drivers/gitfs"                 // registers git repository URIs
+	_ "github.com/cloudfra/ufs/drivers/boltfs"                 // registers bolt:
+	_ "github.com/cloudfra/ufs/drivers/core"                   // registers file://, archive://, memory:, null: and angry:
+	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"     // registers the fault mount option
+	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs"  // registers the readOnly mount option
+	_ "github.com/cloudfra/ufs/drivers/decorators/telemetryfs" // registers the telemetry mount option
+	_ "github.com/cloudfra/ufs/drivers/gcsfs"                  // registers gs://
+	_ "github.com/cloudfra/ufs/drivers/gitfs"                  // registers git repository URIs
 )

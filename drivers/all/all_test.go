@@ -144,6 +144,21 @@ func TestFaultDecoratorRegistered(t *testing.T) {
 	}
 }
 
+func TestTelemetryDecoratorRegistered(t *testing.T) {
+	spec := memorySpec("[{telemetry: true}]")
+	fsys, err := ufs.New(t.Context(), spec)
+	if err != nil {
+		t.Fatalf("ufs.New(%q) = %v, want nil", spec, err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	// With no OpenTelemetry SDK installed the decorator reports nowhere and
+	// leaves the file system as it is.
+	if _, err := fsys.Stat("."); err != nil {
+		t.Errorf("Stat(.) = %v, want nil", err)
+	}
+}
+
 // TestDecoratorsCompose checks that both decorators are usable on one mount,
 // as they are when a binary imports this package.
 func TestDecoratorsCompose(t *testing.T) {

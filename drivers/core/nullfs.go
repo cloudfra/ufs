@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -36,7 +37,7 @@ const (
 )
 
 var (
-	_ ufs.File       = (*nullFile)(nil)
+	_ types.File     = (*nullFile)(nil)
 	_ ufs.WriteFS    = (*nullFS)(nil)
 	_ fs.GlobFS      = (*nullFS)(nil)
 	_ fs.ReadDirFile = (*nullReadDirFile)(nil)
@@ -154,7 +155,7 @@ func (fsys *nullFS) Close() error {
 	return nil
 }
 
-func (fsys *nullFS) Create(name string) (ufs.File, error) {
+func (fsys *nullFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

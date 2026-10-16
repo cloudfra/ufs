@@ -38,7 +38,7 @@ var (
 // subscription are dropped rather than blocking [Bus.Publish].
 const QueueSize = 256
 
-// Op describes the kind of change observed on a path. It mirrors ufs.NotifyOp
+// Op describes the kind of change observed on a path. It mirrors types.NotifyOp
 // (a plain int conversion at the caller) so this package has no dependency on
 // ufs itself.
 type Op int

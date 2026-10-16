@@ -24,20 +24,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
+
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
-var _ ufs.Watcher = (*localFS)(nil)
+var _ types.Watcher = (*localFS)(nil)
 
 // Watch implements [Watcher] for local file systems. It recursively watches
 // name and all nested directories using github.com/fsnotify/fsnotify,
 // translating OS-native absolute paths back to root-relative, forward-slash
 // paths before invoking hook.
-func (fsys *localFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
+func (fsys *localFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
 	if err := validLocalPath("watch", name); err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook
 type localWatcher struct {
 	fsys      *localFS
 	watcher   *fsnotify.Watcher
-	hook      ufs.NotifyHook
+	hook      types.NotifyHook
 	cancel    context.CancelFunc
 	absRoot   string
 	watchRoot string
@@ -159,10 +160,11 @@ func (lw *localWatcher) loop(ctx context.Context) {
 				return
 			}
 			lw.handleEvent(ev)
-		case _, ok := <-lw.watcher.Errors:
+		case err, ok := <-lw.watcher.Errors:
 			if !ok {
 				return
 			}
+			slog.WarnContext(ctx, "fsnotify watcher error", "error", err)
 		}
 	}
 }
@@ -209,18 +211,18 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	lw.hook(op, rel)
 }
 
-func convertOp(op fsnotify.Op) (ufs.NotifyOp, bool) {
+func convertOp(op fsnotify.Op) (types.NotifyOp, bool) {
 	switch {
 	case op.Has(fsnotify.Create):
-		return ufs.NotifyCreate, true
+		return types.NotifyCreate, true
 	case op.Has(fsnotify.Write):
-		return ufs.NotifyWrite, true
+		return types.NotifyWrite, true
 	case op.Has(fsnotify.Remove):
-		return ufs.NotifyRemove, true
+		return types.NotifyRemove, true
 	case op.Has(fsnotify.Rename):
-		return ufs.NotifyRename, true
+		return types.NotifyRename, true
 	case op.Has(fsnotify.Chmod):
-		return ufs.NotifyChmod, true
+		return types.NotifyChmod, true
 	default:
 		return 0, false
 	}

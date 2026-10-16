@@ -19,16 +19,17 @@ import (
 	"io/fs"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // batchRecorderFS implements BatchCreateFS by recording its batches.
 type batchRecorderFS struct {
 	WriteFS
-	batches [][]BatchFile
+	batches [][]types.BatchFile
 }
 
-func (fsys *batchRecorderFS) BatchCreate(files []BatchFile) error {
+func (fsys *batchRecorderFS) BatchCreate(files []types.BatchFile) error {
 	fsys.batches = append(fsys.batches, files)
 	return nil
 }
@@ -38,7 +39,7 @@ func TestBatchCreateUsesBatchCreateFS(t *testing.T) {
 	base := mustBaseFS(t, "memory://")
 	t.Cleanup(ufsTesting.ValidateClose(t, base))
 	fsys := &batchRecorderFS{WriteFS: base}
-	files := []BatchFile{{Name: "a/b.txt", Data: []byte("b")}, {Name: "c.txt"}}
+	files := []types.BatchFile{{Name: "a/b.txt", Data: []byte("b")}, {Name: "c.txt"}}
 	if err := BatchCreate(fsys, files...); err != nil {
 		t.Fatalf("BatchCreate() = %v, want nil", err)
 	}
@@ -58,8 +59,8 @@ func TestBatchCreateFallbackError(t *testing.T) {
 	ufsTesting.Must(t, fsys.MkdirAll("dir", fs.ModePerm))
 
 	err := BatchCreate(fsys,
-		BatchFile{Name: "a.txt", Data: []byte("a")},
-		BatchFile{Name: "dir", Data: []byte("dir")},
+		types.BatchFile{Name: "a.txt", Data: []byte("a")},
+		types.BatchFile{Name: "dir", Data: []byte("dir")},
 	)
 	var pathErr *fs.PathError
 	if !errors.As(err, &pathErr) || pathErr.Op != batchCreateOp || pathErr.Path != "dir" {

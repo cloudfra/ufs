@@ -21,17 +21,18 @@ import (
 	"path"
 	"strings"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ Watcher = (*nestFS)(nil)
+var _ types.Watcher = (*nestFS)(nil)
 
-// Watch implements [Watcher] by delegating to the underlying FS if it supports
-// the [Watcher] interface. Returns [fs.ErrInvalid] if the underlying FS does
+// Watch implements [types.Watcher] by delegating to the underlying FS if it supports
+// the [types.Watcher] interface. Returns [fs.ErrInvalid] if the underlying FS does
 // not support watching. When name is inside a mount, the paths passed to hook
 // are still relative to the root of this file system.
-func (fsys *nestFS) Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error) {
+func (fsys *nestFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
 	if err := fsys.validPath("watch", name); err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func (fsys *nestFS) Watch(ctx context.Context, name string, hook NotifyHook) (io
 		return nil, err
 	}
 
-	w, ok := mountFS.fsys.(Watcher)
+	w, ok := mountFS.fsys.(types.Watcher)
 	if !ok {
 		return nil, ufserrors.NewPathError("watch", name, fs.ErrInvalid)
 	}
@@ -50,7 +51,7 @@ func (fsys *nestFS) Watch(ctx context.Context, name string, hook NotifyHook) (io
 	// to this file system's root when the backend is mounted below it.
 	if prefix := mountPrefix(name, subName); prefix != "" {
 		inner := hook
-		hook = func(op NotifyOp, eventPath string) {
+		hook = func(op types.NotifyOp, eventPath string) {
 			inner(op, path.Join(prefix, eventPath))
 		}
 	}

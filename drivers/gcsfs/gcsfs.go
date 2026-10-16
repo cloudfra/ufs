@@ -34,6 +34,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"google.golang.org/api/googleapi"
@@ -48,7 +49,7 @@ const (
 
 var (
 	_ ufs.WriteFS = (*gcsFS)(nil)
-	_ ufs.File    = (*gcsFile)(nil)
+	_ types.File  = (*gcsFile)(nil)
 )
 
 func init() {
@@ -365,7 +366,7 @@ func (fsys *gcsFS) Close() error {
 	return fsys.client.Close()
 }
 
-func (fsys *gcsFS) Create(name string) (ufs.File, error) {
+func (fsys *gcsFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

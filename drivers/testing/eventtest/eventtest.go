@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package eventtest provides an [EventCollector] for tests of ufs.Watcher
+// Package eventtest provides an [EventCollector] for tests of types.Watcher
 // implementations: it records the notifications a Watch delivers so tests can
 // wait for and assert on them.
 //
@@ -39,7 +39,7 @@ type Event[Op any] struct {
 // EventCollector records change notifications delivered to [EventCollector.Hook]
 // so tests can wait for and assert on them. It is safe for concurrent use.
 //
-// Op is the notification operation type (ufs.NotifyOp). It is a type
+// Op is the notification operation type (types.NotifyOp). It is a type
 // parameter because this package is imported by the ufs package's own tests
 // and so cannot import ufs.
 type EventCollector[Op any] struct {
@@ -54,7 +54,7 @@ func NewEventCollector[Op any]() *EventCollector[Op] {
 }
 
 // Hook records a notification. Its method value has the signature of a
-// ufs.NotifyHook, so it can be passed directly to Watch.
+// types.NotifyHook, so it can be passed directly to Watch.
 func (c *EventCollector[Op]) Hook(op Op, path string) {
 	c.mu.Lock()
 	c.events = append(c.events, Event[Op]{Op: op, Path: path})

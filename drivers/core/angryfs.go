@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -85,7 +86,7 @@ func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
 	return nil, ufserrors.NewPathError("stat", name, errAngry)
 }
 
-func (fsys *angryFS) Create(name string) (ufs.File, error) {
+func (fsys *angryFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

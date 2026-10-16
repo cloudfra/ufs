@@ -18,6 +18,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -134,7 +135,7 @@ func mustNestFS(tb testing.TB, name string) FS {
 
 // mustNullFile returns a file of the null file system. It implements File
 // itself, so the file wrappers pass it through as is.
-func mustNullFile(tb testing.TB) File {
+func mustNullFile(tb testing.TB) types.File {
 	tb.Helper()
 	f, err := mustBaseFS(tb, "null:").Create("test.txt")
 	if err != nil {

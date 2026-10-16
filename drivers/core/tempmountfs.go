@@ -21,6 +21,7 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -62,7 +63,7 @@ func (fsys *tempMountFS) Close() error {
 	return ufserrors.Join(closeErr, cleanupErr)
 }
 
-func (fsys *tempMountFS) Create(name string) (ufs.File, error) {
+func (fsys *tempMountFS) Create(name string) (types.File, error) {
 	return fsys.lfs.Create(name)
 }
 

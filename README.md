@@ -256,12 +256,13 @@ except `ufs.AbsPath`:
 
 ### Change notifications
 
-Backends that implement `ufs.Watcher` (local disk, memory, BoltDB and GCS)
+Backends that implement `types.Watcher` from `github.com/cloudfra/ufs/drivers/types`
+(local disk, memory, BoltDB and GCS)
 report changes under a directory and everything below it:
 
 ```go
-if w, ok := fsys.(ufs.Watcher); ok {
-  stop, err := w.Watch(ctx, ".", func(op ufs.NotifyOp, name string) {
+if w, ok := fsys.(types.Watcher); ok {
+  stop, err := w.Watch(ctx, ".", func(op types.NotifyOp, name string) {
     log.Println("changed:", name)
   })
   if err != nil {

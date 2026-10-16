@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -39,7 +40,7 @@ const (
 )
 
 var (
-	_ ufs.File         = (*os.File)(nil)
+	_ types.File       = (*os.File)(nil)
 	_ localFSInterface = (*localFS)(nil)
 )
 
@@ -87,7 +88,7 @@ func (fsys *localFS) Close() error {
 	return fsys.osFS.Close()
 }
 
-func (fsys *localFS) Create(name string) (ufs.File, error) {
+func (fsys *localFS) Create(name string) (types.File, error) {
 	if err := validLocalPath("create", name); err != nil {
 		return nil, err
 	}

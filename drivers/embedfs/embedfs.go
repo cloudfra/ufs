@@ -22,6 +22,7 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -91,7 +92,7 @@ func (fsys *embedFS) ReadLink(name string) (string, error) {
 	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
 }
 
-func (fsys *embedFS) Create(name string) (ufs.File, error) {
+func (fsys *embedFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

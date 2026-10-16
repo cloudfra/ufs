@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -60,11 +61,11 @@ type FSArgs struct {
 }
 
 var (
-	_ FS                  = (*nestFS)(nil)
-	_ fs.GlobFS           = (*nestFS)(nil)
-	_ AbsPathGetter       = (*nestFS)(nil)
-	_ MountedArchiveDirFS = (*nestFS)(nil)
-	_ DeviceInfoGetter    = (*mountMap)(nil)
+	_ FS                        = (*nestFS)(nil)
+	_ fs.GlobFS                 = (*nestFS)(nil)
+	_ AbsPathGetter             = (*nestFS)(nil)
+	_ types.MountedArchiveDirFS = (*nestFS)(nil)
+	_ DeviceInfoGetter          = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -504,7 +505,7 @@ func (fsys *nestFS) Close() error {
 	return ufserrors.Join(mountErr, baseErr)
 }
 
-func (fsys *nestFS) Create(name string) (File, error) {
+func (fsys *nestFS) Create(name string) (types.File, error) {
 	if err := fsys.validPath("create", name); err != nil {
 		return nil, err
 	}
@@ -880,7 +881,7 @@ func makeNestReadDirFile(fsys *nestFS, name string, rdf fs.ReadDirFile) *nestRea
 	}
 }
 
-var _ File = (*nestFile)(nil)
+var _ types.File = (*nestFile)(nil)
 
 // nestFile wraps an fs.File and polyfills any methods from the File interface
 // that the underlying implementation does not provide.
@@ -1003,8 +1004,8 @@ func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 // f, polyfilling any missing methods. When readOnly is true, Write and
 // WriteString always return fs.ErrInvalid. mode selects in-memory or disk-backed
 // buffering for Seek/ReadAt polyfills.
-func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
-	if full, ok := f.(File); ok {
+func wrapFile(f fs.File, readOnly bool, mode bufferMode) (types.File, error) {
+	if full, ok := f.(types.File); ok {
 		return full, nil
 	}
 	nf := &nestFile{File: f}
@@ -1043,12 +1044,12 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 
 // wrapReadOnlyFSFile returns f unchanged if it already satisfies File.
 // Otherwise it wraps f for read-only use with in-memory buffering.
-func wrapReadOnlyFSFile(f fs.File) (File, error) {
+func wrapReadOnlyFSFile(f fs.File) (types.File, error) {
 	return wrapFile(f, true, bufferMemory)
 }
 
 // wrapFSFile returns f unchanged if it already satisfies File. Otherwise it
 // wraps f for read-write use with in-memory buffering.
-func wrapFSFile(f fs.File) (File, error) {
+func wrapFSFile(f fs.File) (types.File, error) {
 	return wrapFile(f, false, bufferMemory)
 }

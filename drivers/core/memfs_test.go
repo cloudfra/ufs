@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -264,7 +265,7 @@ func TestMemFileReadAt(t *testing.T) {
 // File embeds: Write must write at the current offset (overwriting existing
 // bytes or extending the file), not always append to the end.
 func TestMemFileWriteAtOffset(t *testing.T) {
-	newFile := func(t *testing.T, name, initial string) ufs.File {
+	newFile := func(t *testing.T, name, initial string) types.File {
 		t.Helper()
 		fsys, err := newMemFS(t.Context(), "memory://test")
 		if err != nil {
@@ -280,7 +281,7 @@ func TestMemFileWriteAtOffset(t *testing.T) {
 		return f
 	}
 
-	readAll := func(t *testing.T, f ufs.File) string {
+	readAll := func(t *testing.T, f types.File) string {
 		t.Helper()
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			t.Fatal(err)

@@ -28,6 +28,7 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -280,7 +281,7 @@ type closeErrorFS struct {
 	err error
 }
 
-func (fsys *closeErrorFS) Create(name string) (ufs.File, error) {
+func (fsys *closeErrorFS) Create(name string) (types.File, error) {
 	f, err := fsys.WriteFS.Create(name)
 	if err != nil {
 		return nil, err
@@ -289,7 +290,7 @@ func (fsys *closeErrorFS) Create(name string) (ufs.File, error) {
 }
 
 type closeErrorFile struct {
-	ufs.File
+	types.File
 	err error
 }
 
@@ -1006,6 +1007,51 @@ func TestRemoveAllFallback(t *testing.T) {
 
 	if err := RemoveAll(&noRemoverFS{inner}, "dir"); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("RemoveAll on non-Remover FS = %v, want ErrPermission", err)
+	}
+}
+
+// removeOnlyFS exposes only types.RemoveFS and removeAllOnlyFS only
+// types.RemoveAllFS, so Remove and RemoveAll must each need just their own
+// interface.
+type (
+	removeOnlyFS struct {
+		fs.FS
+		r ufs.WriteFS
+	}
+	removeAllOnlyFS struct {
+		fs.FS
+		r ufs.WriteFS
+	}
+)
+
+func (f *removeOnlyFS) Remove(name string) error       { return f.r.Remove(name) }
+func (f *removeAllOnlyFS) RemoveAll(name string) error { return f.r.RemoveAll(name) }
+
+func TestRemoveSingleMethodInterfaces(t *testing.T) {
+	fsys := setupRemoveFS(t)
+
+	removeOnly := &removeOnlyFS{FS: fsys, r: fsys}
+	if err := Remove(removeOnly, "a.txt"); err != nil {
+		t.Errorf("Remove on a RemoveFS = %v, want nil", err)
+	}
+	if err := RemoveAll(removeOnly, "dir"); !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("RemoveAll on a RemoveFS without RemoveAll = %v, want ErrPermission", err)
+	}
+
+	removeAllOnly := &removeAllOnlyFS{FS: fsys, r: fsys}
+	if err := Remove(removeAllOnly, "dir/b.txt"); !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("Remove on a RemoveAllFS without Remove = %v, want ErrPermission", err)
+	}
+	if err := RemoveAll(removeAllOnly, "dir"); err != nil {
+		t.Errorf("RemoveAll on a RemoveAllFS = %v, want nil", err)
+	}
+
+	files, err := ListFiles(fsys, pathutil.CwdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Errorf("files left after Remove and RemoveAll = %v, want none", files)
 	}
 }
 

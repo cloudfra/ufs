@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -145,9 +146,9 @@ func (fsys *faultFS) GetDeviceInfo() ufs.DeviceMap {
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see
-// [ufs.MountedArchiveDirFS].
+// [types.MountedArchiveDirFS].
 func (fsys *faultFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.inner.(ufs.MountedArchiveDirFS)
+	m, ok := fsys.inner.(types.MountedArchiveDirFS)
 	return ok && m.IsMountedArchiveDir(name)
 }
 
@@ -241,7 +242,7 @@ func (fsys *faultFS) ReadLink(name string) (string, error) {
 	return fsys.inner.ReadLink(name)
 }
 
-func (fsys *faultFS) Create(name string) (ufs.File, error) {
+func (fsys *faultFS) Create(name string) (types.File, error) {
 	if err := fsys.maybeInjectFault("create", name); err != nil {
 		return nil, err
 	}

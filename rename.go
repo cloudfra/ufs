@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"path"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -28,13 +29,13 @@ import (
 const renameOp = "rename"
 
 // Rename moves the file or directory at oldPath to newPath within fsys, as
-// described by [RenameFileFS]. It calls fsys.Rename when fsys implements
-// [RenameFileFS]. Otherwise it copies oldPath to newPath and then removes
+// described by [types.RenameFileFS]. It calls fsys.Rename when fsys implements
+// [types.RenameFileFS]. Otherwise it copies oldPath to newPath and then removes
 // oldPath, which is not atomic and does not keep file modes or modification
 // times. If the copy fails, the partial copy is removed. Symbolic links and
 // other special files cannot be copied and fail with [errors.ErrUnsupported].
 func Rename(fsys WriteFS, oldPath, newPath string) error {
-	if r, ok := fsys.(RenameFileFS); ok {
+	if r, ok := fsys.(types.RenameFileFS); ok {
 		return r.Rename(oldPath, newPath)
 	}
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {

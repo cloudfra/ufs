@@ -58,6 +58,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -67,9 +68,9 @@ import (
 )
 
 var (
-	_ ufs.WriteFS      = (*telemetryFS)(nil)
-	_ ufs.RenameFileFS = (*telemetryFS)(nil)
-	_ ufs.Watcher      = (*watchTelemetryFS)(nil)
+	_ ufs.WriteFS        = (*telemetryFS)(nil)
+	_ types.RenameFileFS = (*telemetryFS)(nil)
+	_ types.Watcher      = (*watchTelemetryFS)(nil)
 )
 
 const (
@@ -244,15 +245,15 @@ type telemetryFS struct {
 }
 
 // watchTelemetryFS is the decorator for a file system that implements
-// [ufs.Watcher]. It is a separate type so that the decorator only claims to
+// [types.Watcher]. It is a separate type so that the decorator only claims to
 // watch when the file system it wraps does.
 type watchTelemetryFS struct {
 	*telemetryFS
-	watcher ufs.Watcher
+	watcher types.Watcher
 }
 
 // Watch forwards to the wrapped file system. It is not reported.
-func (fsys *watchTelemetryFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
+func (fsys *watchTelemetryFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
 	return fsys.watcher.Watch(ctx, name, hook)
 }
 
@@ -300,7 +301,7 @@ func newTelemetryFS(ctx context.Context, inner ufs.WriteFS, cfg Options, tracerP
 		fsys.duration = duration
 	}
 
-	if w, ok := inner.(ufs.Watcher); ok {
+	if w, ok := inner.(types.Watcher); ok {
 		return &watchTelemetryFS{telemetryFS: fsys, watcher: w}, nil
 	}
 	return fsys, nil
@@ -320,9 +321,9 @@ func (fsys *telemetryFS) GetDeviceInfo() ufs.DeviceMap {
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see
-// [ufs.MountedArchiveDirFS].
+// [types.MountedArchiveDirFS].
 func (fsys *telemetryFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.inner.(ufs.MountedArchiveDirFS)
+	m, ok := fsys.inner.(types.MountedArchiveDirFS)
 	return ok && m.IsMountedArchiveDir(name)
 }
 
@@ -426,7 +427,7 @@ func (fsys *telemetryFS) ReadLink(name string) (string, error) {
 	return target, err
 }
 
-func (fsys *telemetryFS) Create(name string) (ufs.File, error) {
+func (fsys *telemetryFS) Create(name string) (types.File, error) {
 	span, start := fsys.begin(opCreate)
 	f, err := fsys.inner.Create(name)
 	fsys.end(opCreate, name, span, start, err)

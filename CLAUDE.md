@@ -42,16 +42,30 @@ is github.com/cloudfra/ufs.
 
 ### Core interfaces (`ufs.go`)
 
+`ufs.go` keeps only the interfaces that depend on package ufs itself:
+
 | Interface  | What it wraps / adds                                                         |
 |:-----------|:-----------------------------------------------------------------------------|
-| FileInfo   | Name, Size, Mode, ModTime, IsDir, Type, Sys                                  |
-| ReadFile   | Read-only file; wraps fs.File                                                |
-| File       | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter               |
-| ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
-| WriteFS    | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll          |
-| FS         | What New's nestFS provides; extends WriteFS with Rename (RenameFileFS)       |
-| Watcher    | Optional; recursive directory change notifications via Watch                 |
-| BatchCreateFS | Optional; writes several whole files atomically via BatchCreate         |
+| ReadFS     | Read-only FS; fs.FS plus Close, ReadDir, ReadFile, ReadLink, Stat, String, DeviceInfoGetter, types.URIGet |
+| WriteFS    | Read-write; extends ReadFS with types.CreateFS, MkdirAllFS, RemoveFS, RemoveAllFS |
+| FS         | What New's nestFS provides; extends WriteFS with types.RenameFileFS          |
+
+`DeviceInfoGetter` (deviceinfo.go) also stays, since it returns ufs's
+`DeviceMap`. Every other interface and value type lives in `drivers/types`,
+which depends only on the standard library, so it is the one `drivers/`
+package the base package imports:
+
+| File in drivers/types | Types                                                                  |
+|:----------------------|:-----------------------------------------------------------------------|
+| file.go               | FileInfo, ReadFile, File (read-write; ReaderAt, Seek, StringWriter)    |
+| write.go              | CreateFS, MkdirAllFS, RemoveFS, RemoveAllFS (one per WriteFS method), OpenFileFS, RenameFileFS, CopyFileFS |
+| batch.go              | BatchFile, BatchCreateFS (optional; atomic multi-file write)           |
+| notify.go             | NotifyOp and its constants, NotifyHook, Watcher (optional; recursive change notifications) |
+| iter.go               | ListFilenames, ForEachFileInfoIter, ForEachFilenameIter               |
+| uri.go, path.go       | URIGet; ExternalPathGet, MountedArchiveDirFS                           |
+
+Code that needs a single operation, such as `ops.Remove`, asserts just that
+interface.
 
 ### Factory
 
@@ -175,6 +189,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
 | drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |
+| drivers/types/           | Interfaces and value types shared by ufs and drivers (all but ReadFS, WriteFS, FS, DeviceInfoGetter); stdlib-only, imported by ufs |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;

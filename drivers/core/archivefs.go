@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -97,7 +98,7 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	return fsys.fsys.Stat(name)
 }
 
-func (fsys *archiveFS) Create(name string) (ufs.File, error) {
+func (fsys *archiveFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

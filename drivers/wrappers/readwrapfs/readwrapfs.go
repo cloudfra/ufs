@@ -22,6 +22,7 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -38,14 +39,14 @@ func (fsys *readWrapFS) GetDeviceInfo() ufs.DeviceMap {
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see
-// [ufs.MountedArchiveDirFS].
+// [types.MountedArchiveDirFS].
 func (fsys *readWrapFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.fsys.(ufs.MountedArchiveDirFS)
+	m, ok := fsys.fsys.(types.MountedArchiveDirFS)
 	return ok && m.IsMountedArchiveDir(name)
 }
 
 func (fsys *readWrapFS) URI() (*url.URL, error) {
-	if ug, ok := fsys.fsys.(ufs.URIGet); ok {
+	if ug, ok := fsys.fsys.(types.URIGet); ok {
 		u, err := ug.URI()
 		if err != nil {
 			return nil, err

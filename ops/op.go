@@ -24,6 +24,7 @@ import (
 	"path"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -78,11 +79,11 @@ func Copy(srcFS fs.FS, srcFilename string, destFS ufs.WriteFS, destFilename stri
 
 // ForEachFilename calls f for each file path (not directory) under dir,
 // streaming results without building an intermediate slice. If fsys implements
-// [ufs.ForEachFilenameIter], its native implementation is used directly; otherwise
+// [types.ForEachFilenameIter], its native implementation is used directly; otherwise
 // the paths are collected via [fs.WalkDir] and iterated. f receives paths
 // relative to dir. The walk stops and returns the first non-nil error from f.
 func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
-	lf, ok := fsys.(ufs.ForEachFilenameIter)
+	lf, ok := fsys.(types.ForEachFilenameIter)
 	if ok {
 		return lf.ForEachFilename(dir, f)
 	}
@@ -96,10 +97,10 @@ func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
 
 // ForEachFileInfo calls f for each file (not directory) under dir, providing
 // its [fs.FileInfo]. It is the typed companion to [ForEachFilename] and prefers
-// a native [ufs.ForEachFileInfoIter] implementation when available, falling back to
+// a native [types.ForEachFileInfoIter] implementation when available, falling back to
 // [fs.WalkDir]. The walk stops and returns the first non-nil error from f.
 func ForEachFileInfo(fsys fs.FS, dir string, f func(fs.FileInfo) error) error {
-	lf, ok := fsys.(ufs.ForEachFileInfoIter)
+	lf, ok := fsys.(types.ForEachFileInfoIter)
 	if ok {
 		return lf.ForEachFileInfo(dir, f)
 	}
@@ -149,7 +150,7 @@ type WalkArgs struct {
 // whose base names match any [WalkArgs.ExcludeDirectory] glob are skipped
 // entirely. The walk stops and returns the first non-nil error from f.
 func Walk(fsys fs.FS, dir string, args WalkArgs, f func(string) error) error {
-	adc, ok := fsys.(ufs.MountedArchiveDirFS)
+	adc, ok := fsys.(types.MountedArchiveDirFS)
 	return fs.WalkDir(fsys, dir, func(name string, d fs.DirEntry, err error) error {
 		if pathutil.IsCwd(name) {
 			return nil
@@ -182,12 +183,12 @@ func List(fsys fs.FS, dir string) ([]string, error) {
 }
 
 // ListFiles returns the paths of all files (excluding directories) under dir in
-// lexical order. If fsys implements [ufs.ListFilenames], its native implementation
+// lexical order. If fsys implements [types.ListFilenames], its native implementation
 // is used to avoid building intermediate [fs.FileInfo] values.
 //
 // This method may take a long time since it may traverse a large file system and build a large slice of paths in memory.
 func ListFiles(fsys fs.FS, dir string) ([]string, error) {
-	lf, ok := fsys.(ufs.ListFilenames)
+	lf, ok := fsys.(types.ListFilenames)
 	if ok {
 		return lf.ListFilenames(dir)
 	}
@@ -214,10 +215,10 @@ func list(fsys fs.FS, dir string, includeDirs bool) ([]string, error) {
 }
 
 // Remove removes the file or empty directory at name in fsys.
-// If fsys implements [ufs.RemoveFileFS], its Remove method is used directly.
+// If fsys implements [types.RemoveFS], its Remove method is used directly.
 // Otherwise Remove returns [fs.ErrPermission] wrapped in an [fs.PathError].
 func Remove(fsys fs.FS, name string) error {
-	r, ok := fsys.(ufs.RemoveFileFS)
+	r, ok := fsys.(types.RemoveFS)
 	if !ok {
 		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
 	}
@@ -225,10 +226,10 @@ func Remove(fsys fs.FS, name string) error {
 }
 
 // RemoveAll removes name and everything beneath it in fsys.
-// If fsys implements [ufs.RemoveFileFS], its RemoveAll method is used directly.
+// If fsys implements [types.RemoveAllFS], its RemoveAll method is used directly.
 // Otherwise RemoveAll returns [fs.ErrPermission] wrapped in an [fs.PathError].
 func RemoveAll(fsys fs.FS, name string) error {
-	r, ok := fsys.(ufs.RemoveFileFS)
+	r, ok := fsys.(types.RemoveAllFS)
 	if !ok {
 		return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
 	}

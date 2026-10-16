@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	_ "github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -576,7 +577,7 @@ func TestFaultInjectorForwardsIsMountedArchiveDir(t *testing.T) {
 			if err != nil {
 				t.Fatalf("newFaultFS() = %v, want nil", err)
 			}
-			got := fsys.(ufs.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
+			got := fsys.(types.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
 			if got != tc.want {
 				t.Errorf("IsMountedArchiveDir() = %t, want %t", got, tc.want)
 			}

@@ -23,6 +23,7 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -81,9 +82,9 @@ type readOnlyFS struct {
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see
-// [ufs.MountedArchiveDirFS].
+// [types.MountedArchiveDirFS].
 func (fsys *readOnlyFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.ReadFS.(ufs.MountedArchiveDirFS)
+	m, ok := fsys.ReadFS.(types.MountedArchiveDirFS)
 	return ok && m.IsMountedArchiveDir(name)
 }
 
@@ -114,7 +115,7 @@ func (fsys *readOnlyFS) String() string {
 	return fsutil.String(fsys.ReadFS)
 }
 
-func (fsys *readOnlyFS) Create(name string) (ufs.File, error) {
+func (fsys *readOnlyFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

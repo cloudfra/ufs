@@ -27,6 +27,7 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -584,7 +585,7 @@ func TestTelemetryForwardsIsMountedArchiveDir(t *testing.T) {
 			t.Parallel()
 			fsys := newRecorder().wrap(t.Context(), t, tc.inner, both)
 			defer ufsTesting.ValidateClose(t, fsys)()
-			got := fsys.(ufs.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
+			got := fsys.(types.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
 			if got != tc.want {
 				t.Errorf("IsMountedArchiveDir() = %t, want %t", got, tc.want)
 			}
@@ -598,7 +599,7 @@ type watchFS struct {
 	watched []string
 }
 
-func (fsys *watchFS) Watch(_ context.Context, name string, _ ufs.NotifyHook) (io.Closer, error) {
+func (fsys *watchFS) Watch(_ context.Context, name string, _ types.NotifyHook) (io.Closer, error) {
 	fsys.watched = append(fsys.watched, name)
 	return io.NopCloser(nil), nil
 }
@@ -612,11 +613,11 @@ func TestTelemetryForwardsWatch(t *testing.T) {
 	inner := &watchFS{WriteFS: core.MakeMemFS(memFSName)}
 	fsys := newRecorder().wrap(t.Context(), t, inner, both)
 	defer ufsTesting.ValidateClose(t, fsys)()
-	w, ok := fsys.(ufs.Watcher)
+	w, ok := fsys.(types.Watcher)
 	if !ok {
-		t.Fatalf("%T is not a ufs.Watcher, want it to forward Watch", fsys)
+		t.Fatalf("%T is not a types.Watcher, want it to forward Watch", fsys)
 	}
-	if _, err := w.Watch(t.Context(), "dir", func(ufs.NotifyOp, string) {}); err != nil {
+	if _, err := w.Watch(t.Context(), "dir", func(types.NotifyOp, string) {}); err != nil {
 		t.Fatalf("Watch(dir) = %v, want nil", err)
 	}
 	if len(inner.watched) != 1 || inner.watched[0] != "dir" {
@@ -625,8 +626,8 @@ func TestTelemetryForwardsWatch(t *testing.T) {
 
 	plain := newRecorder().wrap(t.Context(), t, struct{ ufs.WriteFS }{core.MakeMemFS(memFSName)}, both)
 	defer ufsTesting.ValidateClose(t, plain)()
-	if _, ok := plain.(ufs.Watcher); ok {
-		t.Errorf("%T is a ufs.Watcher, want none when the inner file system is not", plain)
+	if _, ok := plain.(types.Watcher); ok {
+		t.Errorf("%T is a types.Watcher, want none when the inner file system is not", plain)
 	}
 }
 

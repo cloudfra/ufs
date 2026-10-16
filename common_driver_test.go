@@ -19,6 +19,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 // init registers the driver for the URI "test-tempmount:", which opens an
@@ -26,7 +27,7 @@ import (
 // themselves, because it imports ufs.
 func init() {
 	const name = "test-tempmount"
-	ufs.Register(ufs.NewDriver(name, func(ctx context.Context, _ string) (ufs.WriteFS, error) {
+	ufs.Register(ufs.NewDriver(name, func(ctx context.Context, _ string) (types.WriteFS, error) {
 		return core.NewTempMountFS(ctx, "test://", func(string) error { return nil })
 	}, func(uri string) bool {
 		return uri == name+":"

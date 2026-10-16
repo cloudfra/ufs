@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	_ "github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -34,7 +35,7 @@ const (
 )
 
 // newInner returns the file system that the tests decorate.
-func newInner(t *testing.T) ufs.WriteFS {
+func newInner(t *testing.T) types.WriteFS {
 	t.Helper()
 	fsys, err := ufs.New(t.Context(), nullFSPrefix)
 	if err != nil {
@@ -495,7 +496,7 @@ func TestOptionsDecode(t *testing.T) {
 
 // uriFS overrides the URI reported by the file system it embeds.
 type uriFS struct {
-	ufs.WriteFS
+	types.WriteFS
 	u   *url.URL
 	err error
 }
@@ -550,7 +551,7 @@ func TestFaultInjectorURI(t *testing.T) {
 
 // archiveDirFS reports every name as an archive directory.
 type archiveDirFS struct {
-	ufs.WriteFS
+	types.WriteFS
 }
 
 func (archiveDirFS) IsMountedArchiveDir(string) bool { return true }
@@ -565,18 +566,18 @@ func TestFaultInjectorForwardsIsMountedArchiveDir(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name  string
-		inner ufs.WriteFS
+		inner types.WriteFS
 		want  bool
 	}{
 		{name: "forwards", inner: archiveDirFS{inner}, want: true},
-		{name: "no_archive_dirs", inner: struct{ ufs.WriteFS }{inner}, want: false},
+		{name: "no_archive_dirs", inner: struct{ types.WriteFS }{inner}, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fsys, err := newFaultFS(tc.inner, Options{})
 			if err != nil {
 				t.Fatalf("newFaultFS() = %v, want nil", err)
 			}
-			got := fsys.(ufs.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
+			got := fsys.(types.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
 			if got != tc.want {
 				t.Errorf("IsMountedArchiveDir() = %t, want %t", got, tc.want)
 			}

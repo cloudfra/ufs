@@ -19,12 +19,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // closeCounter tracks how many times Close was called on a FS.
 type closeCounter struct {
-	WriteFS
+	types.WriteFS
 	count atomic.Int32
 }
 
@@ -39,7 +40,7 @@ func (c *closeCounter) closed() int {
 
 // failCloser wraps a FS so that Close always returns an error.
 type failCloser struct {
-	WriteFS
+	types.WriteFS
 	count atomic.Int32
 }
 

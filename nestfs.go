@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -60,11 +61,11 @@ type FSArgs struct {
 }
 
 var (
-	_ FS                  = (*nestFS)(nil)
-	_ fs.GlobFS           = (*nestFS)(nil)
-	_ AbsPathGetter       = (*nestFS)(nil)
-	_ MountedArchiveDirFS = (*nestFS)(nil)
-	_ DeviceInfoGetter    = (*mountMap)(nil)
+	_ FS                        = (*nestFS)(nil)
+	_ fs.GlobFS                 = (*nestFS)(nil)
+	_ AbsPathGetter             = (*nestFS)(nil)
+	_ types.MountedArchiveDirFS = (*nestFS)(nil)
+	_ types.DeviceInfoGetter    = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -84,11 +85,11 @@ type mountMap struct {
 	baseName string
 }
 
-func (m *mountMap) GetDeviceInfo() DeviceMap {
-	combined := DeviceMap{}
+func (m *mountMap) GetDeviceInfo() types.DeviceMap {
+	combined := types.DeviceMap{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combined.combine(mountPoint, fsys.GetDeviceInfo())
+		combined = combined.Combine(mountPoint, fsys.GetDeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -239,7 +240,7 @@ func makeMountMap(baseName string) *mountMap {
 // nestFS is a wrapper for a base FS that supports automatic mounting of archives.
 // This means that any archive can opened and read automatically. Archives are revealed via $filename.d name pattern.
 type nestFS struct {
-	fsys   WriteFS
+	fsys   types.WriteFS
 	ctx    context.Context
 	mounts *mountMap
 	args   FSArgs
@@ -259,9 +260,9 @@ func (fsys *nestFS) GetAbsPath(name string) (string, error) {
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
-func (fsys *nestFS) GetDeviceInfo() DeviceMap {
+func (fsys *nestFS) GetDeviceInfo() types.DeviceMap {
 	base := fsys.fsys.GetDeviceInfo()
-	return base.combine("", fsys.mounts.GetDeviceInfo())
+	return base.Combine("", fsys.mounts.GetDeviceInfo())
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {
@@ -406,7 +407,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 			onHost = true
 		}
 	}
-	var newFS WriteFS
+	var newFS types.WriteFS
 	if onHost {
 		var err error
 		newFS, err = newBaseFS(ctx, archiveURIPrefix+absName)
@@ -504,7 +505,7 @@ func (fsys *nestFS) Close() error {
 	return ufserrors.Join(mountErr, baseErr)
 }
 
-func (fsys *nestFS) Create(name string) (File, error) {
+func (fsys *nestFS) Create(name string) (types.File, error) {
 	if err := fsys.validPath("create", name); err != nil {
 		return nil, err
 	}
@@ -824,7 +825,7 @@ func NewNestFS(ctx context.Context, name string) (FS, error) {
 }
 
 // WrapNestFS wraps fsys in a nested file system with no additional mounts.
-func WrapNestFS(ctx context.Context, fsys WriteFS) FS {
+func WrapNestFS(ctx context.Context, fsys types.WriteFS) FS {
 	return makeNestFS(ctx, fsys)
 }
 
@@ -836,7 +837,7 @@ func newNestFS(ctx context.Context, name string) (FS, error) {
 	return makeNestFS(ctx, fsys), nil
 }
 
-func makeNestFS(ctx context.Context, fsys WriteFS, args ...FSArgs) *nestFS {
+func makeNestFS(ctx context.Context, fsys types.WriteFS, args ...FSArgs) *nestFS {
 	var a FSArgs
 	if len(args) > 0 {
 		a = args[0]
@@ -880,7 +881,7 @@ func makeNestReadDirFile(fsys *nestFS, name string, rdf fs.ReadDirFile) *nestRea
 	}
 }
 
-var _ File = (*nestFile)(nil)
+var _ types.File = (*nestFile)(nil)
 
 // nestFile wraps an fs.File and polyfills any methods from the File interface
 // that the underlying implementation does not provide.
@@ -1003,8 +1004,8 @@ func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 // f, polyfilling any missing methods. When readOnly is true, Write and
 // WriteString always return fs.ErrInvalid. mode selects in-memory or disk-backed
 // buffering for Seek/ReadAt polyfills.
-func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
-	if full, ok := f.(File); ok {
+func wrapFile(f fs.File, readOnly bool, mode bufferMode) (types.File, error) {
+	if full, ok := f.(types.File); ok {
 		return full, nil
 	}
 	nf := &nestFile{File: f}
@@ -1043,12 +1044,12 @@ func wrapFile(f fs.File, readOnly bool, mode bufferMode) (File, error) {
 
 // wrapReadOnlyFSFile returns f unchanged if it already satisfies File.
 // Otherwise it wraps f for read-only use with in-memory buffering.
-func wrapReadOnlyFSFile(f fs.File) (File, error) {
+func wrapReadOnlyFSFile(f fs.File) (types.File, error) {
 	return wrapFile(f, true, bufferMemory)
 }
 
 // wrapFSFile returns f unchanged if it already satisfies File. Otherwise it
 // wraps f for read-write use with in-memory buffering.
-func wrapFSFile(f fs.File) (File, error) {
+func wrapFSFile(f fs.File) (types.File, error) {
 	return wrapFile(f, false, bufferMemory)
 }

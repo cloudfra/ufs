@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package types
 
 import (
 	"fmt"
@@ -89,10 +89,10 @@ func NewDeviceMap(root DeviceInfo) DeviceMap {
 	return DeviceMap{".": root}
 }
 
-// combine merges dm with incoming, whose paths are relative to mountPath, and
+// Combine merges dm with incoming, whose paths are relative to mountPath, and
 // returns the result. An incoming path is dropped as redundant when it names
 // the same device as its nearest ancestor already in dm.
-func (dm DeviceMap) combine(mountPath string, incoming DeviceMap) DeviceMap {
+func (dm DeviceMap) Combine(mountPath string, incoming DeviceMap) DeviceMap {
 	if len(incoming) == 0 {
 		if len(dm) == 0 {
 			return DeviceMap{}

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -130,7 +131,7 @@ func TestNewKeepsUFSParameters(t *testing.T) {
 	// one registered by the first run serves the later runs too.
 	const scheme = "ufsparams-test://"
 	ufsParamsDriverOnce.Do(func() {
-		Register(NewDriver("ufsparams-test", func(ctx context.Context, name string) (WriteFS, error) {
+		Register(NewDriver("ufsparams-test", func(ctx context.Context, name string) (types.WriteFS, error) {
 			ufsParamsDriverNames.Store(name, true)
 			return newBaseFS(ctx, "memory:")
 		}, func(name string) bool {
@@ -670,12 +671,12 @@ func TestNewSiblingMountsAccess(t *testing.T) {
 			if len(tt.wantEqualPaths) > 1 {
 				first, err := fsys.ReadFile(tt.wantEqualPaths[0])
 				if err != nil {
-					t.Fatalf("ReadFile(%q) = %v", tt.wantEqualPaths[0], err)
+					t.Fatalf("types.ReadFile(%q) = %v", tt.wantEqualPaths[0], err)
 				}
 				for _, p := range tt.wantEqualPaths[1:] {
 					got, err := fsys.ReadFile(p)
 					if err != nil {
-						t.Fatalf("ReadFile(%q) = %v", p, err)
+						t.Fatalf("types.ReadFile(%q) = %v", p, err)
 					}
 					if string(first) != string(got) {
 						t.Errorf("%q and %q have different content: %q vs %q", tt.wantEqualPaths[0], p, first, got)

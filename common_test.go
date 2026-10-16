@@ -18,6 +18,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -28,7 +29,7 @@ const tempMountTestURI = "test-tempmount:"
 
 type fsTestCase struct {
 	name       string
-	createFS   func(tb testing.TB) WriteFS
+	createFS   func(tb testing.TB) types.WriteFS
 	wantString string
 }
 
@@ -36,7 +37,7 @@ var (
 	readWriteFSTestCaseList = []fsTestCase{
 		{
 			name: "localFS",
-			createFS: func(tb testing.TB) WriteFS {
+			createFS: func(tb testing.TB) types.WriteFS {
 				fsys := mustBaseFS(tb, tb.TempDir())
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
@@ -49,7 +50,7 @@ var (
 		},
 		{
 			name: "tempMountFS",
-			createFS: func(tb testing.TB) WriteFS {
+			createFS: func(tb testing.TB) types.WriteFS {
 				fsys := mustBaseFS(tb, tempMountTestURI)
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
@@ -62,7 +63,7 @@ var (
 		},
 		{
 			name: "memFS",
-			createFS: func(tb testing.TB) WriteFS {
+			createFS: func(tb testing.TB) types.WriteFS {
 				fsys := mustBaseFS(tb, "memory:")
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
@@ -78,7 +79,7 @@ var (
 	readOnlyFSTestCaseList = []fsTestCase{
 		{
 			name: "nullFS",
-			createFS: func(tb testing.TB) WriteFS {
+			createFS: func(tb testing.TB) types.WriteFS {
 				fsys := mustBaseFS(tb, "null:")
 				tb.Cleanup(func() {
 					if err := fsys.Close(); err != nil {
@@ -103,7 +104,7 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 		result[idx*2] = tc
 		result[idx*2+1] = fsTestCase{
 			name: "nestFS." + tc.name,
-			createFS: func(tb testing.TB) WriteFS {
+			createFS: func(tb testing.TB) types.WriteFS {
 				return makeNestFS(ctx, tc.createFS(tb))
 			},
 		}
@@ -112,17 +113,17 @@ func appendNestFSTestCase(tcl []fsTestCase) []fsTestCase {
 }
 
 // mustBaseFS opens name as a base file system: the file system of the
-// registered driver that matches name, as is. The WriteFS it returns is not
+// registered driver that matches name, as is. The types.WriteFS it returns is not
 // wrapped in a nestFS, so it has no mounts and no archive directories; use
 // mustNestFS for the file system that New returns.
-func mustBaseFS(tb testing.TB, name string) WriteFS {
+func mustBaseFS(tb testing.TB, name string) types.WriteFS {
 	tb.Helper()
 	return mustFS(tb, newBaseFS, name)
 }
 
 // mustNestFS opens name as New does: the base file system for name wrapped
 // in a nestFS. It returns an FS, which only a nestFS implements, where
-// mustBaseFS returns a WriteFS.
+// mustBaseFS returns a types.WriteFS.
 func mustNestFS(tb testing.TB, name string) FS {
 	tb.Helper()
 	fsys, err := newNestFS(tb.Context(), name)
@@ -132,9 +133,9 @@ func mustNestFS(tb testing.TB, name string) FS {
 	return fsys
 }
 
-// mustNullFile returns a file of the null file system. It implements File
+// mustNullFile returns a file of the null file system. It implements types.File
 // itself, so the file wrappers pass it through as is.
-func mustNullFile(tb testing.TB) File {
+func mustNullFile(tb testing.TB) types.File {
 	tb.Helper()
 	f, err := mustBaseFS(tb, "null:").Create("test.txt")
 	if err != nil {
@@ -143,7 +144,7 @@ func mustNullFile(tb testing.TB) File {
 	return f
 }
 
-func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (WriteFS, error), name string) WriteFS {
+func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (types.WriteFS, error), name string) types.WriteFS {
 	tb.Helper()
 
 	fsys, err := newFSFunc(tb.Context(), name)

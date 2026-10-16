@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -39,17 +40,17 @@ func TestAssets(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		createFS func(tb testing.TB) (WriteFS, error)
+		createFS func(tb testing.TB) (types.WriteFS, error)
 	}{
 		{
 			name: "localFS",
-			createFS: func(tb testing.TB) (WriteFS, error) {
+			createFS: func(tb testing.TB) (types.WriteFS, error) {
 				return newBaseFS(tb.Context(), testAssetsFilesDir)
 			},
 		},
 		{
 			name: "memFS",
-			createFS: func(tb testing.TB) (WriteFS, error) {
+			createFS: func(tb testing.TB) (types.WriteFS, error) {
 				fsys, err := newBaseFS(tb.Context(), "memory://")
 				if err != nil {
 					return nil, err
@@ -65,7 +66,7 @@ func TestAssets(t *testing.T) {
 		},
 		{
 			name: "archiveFS",
-			createFS: func(tb testing.TB) (WriteFS, error) {
+			createFS: func(tb testing.TB) (types.WriteFS, error) {
 				zipPath := ufsTesting.ZipDir(tb, testAssetsFilesDir)
 				return newBaseFS(tb.Context(), archiveURIPrefix+zipPath)
 			},
@@ -85,10 +86,10 @@ func TestAssets(t *testing.T) {
 				t.Run(filePath, func(t *testing.T) {
 					got, err := fs.ReadFile(fsys, filePath)
 					if err != nil {
-						t.Fatalf("ReadFile(%q) = %v, want nil", filePath, err)
+						t.Fatalf("types.ReadFile(%q) = %v, want nil", filePath, err)
 					}
 					if !bytes.Equal(got, wantData) {
-						t.Errorf("ReadFile(%q): got %d bytes, want %d bytes", filePath, len(got), len(wantData))
+						t.Errorf("types.ReadFile(%q): got %d bytes, want %d bytes", filePath, len(got), len(wantData))
 					}
 				})
 			}
@@ -97,7 +98,7 @@ func TestAssets(t *testing.T) {
 }
 
 // copyFSToFS copies all files and directories from src into dst.
-func copyFSToFS(src fs.FS, dst WriteFS) error {
+func copyFSToFS(src fs.FS, dst types.WriteFS) error {
 	return fs.WalkDir(src, pathutil.CwdPath, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || p == pathutil.CwdPath {
 			return err
@@ -110,7 +111,7 @@ func copyFSToFS(src fs.FS, dst WriteFS) error {
 }
 
 // copyFileForTest copies the file name from src to the same path in dst.
-func copyFileForTest(src fs.FS, dst WriteFS, name string) error {
+func copyFileForTest(src fs.FS, dst types.WriteFS, name string) error {
 	data, err := fs.ReadFile(src, name)
 	if err != nil {
 		return err

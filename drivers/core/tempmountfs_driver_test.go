@@ -17,13 +17,13 @@ package core_test
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestTempMountFS(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+	ufsdriversTesting.WriteFS(t, func(t *testing.T) types.WriteFS {
 		name := "temp://test"
 		fsys, err := core.NewTempMountFS(t.Context(), name, func(string) error { return nil })
 		if err != nil {

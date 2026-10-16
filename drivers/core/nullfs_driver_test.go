@@ -17,9 +17,9 @@ package core_test
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestNullFSDriver(t *testing.T) {
@@ -27,10 +27,10 @@ func TestNullFSDriver(t *testing.T) {
 	// anything, so the write tests that check the result (MkdirAll, ReadFile,
 	// Create, ReadDir, ...) do not apply. Only the read suite and the
 	// invalid-path checks for write operations do.
-	createFSFunc := func(_ *testing.T) ufs.WriteFS {
+	createFSFunc := func(_ *testing.T) types.WriteFS {
 		return core.MakeNullFS("null://test")
 	}
-	ufsdriversTesting.ReadFS(t, func(t *testing.T) ufs.ReadFS {
+	ufsdriversTesting.ReadFS(t, func(t *testing.T) types.ReadFS {
 		return createFSFunc(t)
 	})
 	ufsdriversTesting.InvalidPathsForWriteFS(t, createFSFunc)

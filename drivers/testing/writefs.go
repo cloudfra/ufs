@@ -27,6 +27,7 @@ import (
 	"testing/fstest"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -35,7 +36,7 @@ import (
 
 // WriteFSWithBuckets runs the write conformance suite for bucket-backed file
 // systems (such as object stores) that lack full directory semantics.
-func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	MkdirAllWithBuckets(t, createFSFunc)
 	ReadFile(t, createFSFunc)
 	InvalidPathsForWriteFS(t, createFSFunc)
@@ -45,12 +46,12 @@ func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteF
 	Conventions(t, createFSFunc)
 	// TODO: gcsfs is broken here.
 	// Close(t, createFSFunc)
-	readFS(t, func(t *testing.T) ufs.ReadFS {
+	readFS(t, func(t *testing.T) types.ReadFS {
 		return createFSFunc(t)
 	})
 	/*
 		TODO: This should work.
-			writeFS(t, func(t *testing.T) ufs.WriteFS {
+			writeFS(t, func(t *testing.T) types.WriteFS {
 				return ufs.WrapNestFS(t.Context(), createFSFunc(t))
 			})
 	*/
@@ -58,14 +59,14 @@ func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteF
 
 // WriteFS runs the write conformance suite against file systems returned by
 // createFSFunc.
-func WriteFS(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+func WriteFS(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	writeFS(t, createFSFunc)
-	writeFS(t, func(t *testing.T) ufs.WriteFS {
+	writeFS(t, func(t *testing.T) types.WriteFS {
 		return ufs.WrapNestFS(t.Context(), createFSFunc(t))
 	})
 }
 
-func writeFS(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+func writeFS(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	MkdirAll(t, createFSFunc)
 	ReadFile(t, createFSFunc)
 	DirFileConflicts(t, createFSFunc)
@@ -76,14 +77,14 @@ func writeFS(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 	Rename(t, createFSFunc)
 	BatchCreate(t, createFSFunc)
 	Conventions(t, createFSFunc)
-	readFS(t, func(t *testing.T) ufs.ReadFS {
+	readFS(t, func(t *testing.T) types.ReadFS {
 		return createFSFunc(t)
 	})
 }
 
 // ReadDir verifies that fs.ReadDirFS and fs.ReadDirFile return the expected
 // entries for a created directory tree.
-func ReadDir(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+func ReadDir(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	t.Run("ReadDir", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -157,7 +158,7 @@ func ReadDir(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 
 // ReadWriteFiles creates a file system named name via newFSFunc, writes a set
 // of files, and verifies they can be read back.
-func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name string) (ufs.WriteFS, error), name string) {
+func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name string) (types.WriteFS, error), name string) {
 	t.Helper()
 	fsys := mustWriteFS(t, newFSFunc, name)
 
@@ -233,7 +234,7 @@ func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name strin
 // Conventions copies the ufs test assets into the file system with
 // [ops.Rsync] and verifies the result satisfies the [fstest.TestFS]
 // conventions for every copied file.
-func Conventions(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+func Conventions(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	t.Run("Conventions", func(t *testing.T) {
 		t.Parallel()
 		srcFS := ufsTesting.TestAssetsFS()
@@ -306,7 +307,7 @@ func wantDirTree(leaves []string, leafEntries ...string) map[string][]string {
 // MkdirAll verifies that MkdirAll creates every missing directory in a path,
 // that each one is reported as a directory and listed by its parent next to
 // its siblings, and that repeating the call on existing directories succeeds.
-func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	t.Run("MkdirAll", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -329,7 +330,7 @@ func MkdirAll(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
 // which have no real directories: MkdirAll must succeed, and once a file is
 // created in each leaf every parent directory must exist and list its
 // siblings.
-func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.WriteFS) {
+func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	t.Run("MkdirAllWithBuckets", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -352,7 +353,7 @@ func MkdirAllWithBuckets(t *testing.T, createFSFunc func(t *testing.T) ufs.Write
 }
 
 // ReadFile verifies that data written to a file can be read back.
-func ReadFile(t *testing.T, createFSFunc func(*testing.T) ufs.WriteFS) {
+func ReadFile(t *testing.T, createFSFunc func(*testing.T) types.WriteFS) {
 	t.Run("ReadFile", func(t *testing.T) {
 		t.Parallel()
 		wantData := ufsTesting.RandomString(100)
@@ -390,21 +391,21 @@ func ReadFile(t *testing.T, createFSFunc func(*testing.T) ufs.WriteFS) {
 // example localFS surfaces the OS's ENOTDIR/EISDIR).
 var dirFileConflictCases = []struct {
 	name    string
-	op      func(fsys ufs.WriteFS) error
+	op      func(fsys types.WriteFS) error
 	wantErr error
 	wantOp  string
 }{
-	{name: "create_on_dir", op: func(fsys ufs.WriteFS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_on_root", op: func(fsys ufs.WriteFS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_under_file", op: func(fsys ufs.WriteFS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "create_deep_under_file", op: func(fsys ufs.WriteFS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "mkdirall_on_file", op: func(fsys ufs.WriteFS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-	{name: "mkdirall_under_file", op: func(fsys ufs.WriteFS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "create_on_dir", op: func(fsys types.WriteFS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_on_root", op: func(fsys types.WriteFS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_under_file", op: func(fsys types.WriteFS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "create_deep_under_file", op: func(fsys types.WriteFS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "mkdirall_on_file", op: func(fsys types.WriteFS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "mkdirall_under_file", op: func(fsys types.WriteFS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
 }
 
 // newDirFileConflictFS returns a file system from createFS containing the
 // directories dir and dir/sub and the regular file dir/file.
-func newDirFileConflictFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS) ufs.WriteFS {
+func newDirFileConflictFS(t *testing.T, createFS func(*testing.T) types.WriteFS) types.WriteFS {
 	t.Helper()
 	fsys := createFS(t)
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
@@ -427,7 +428,7 @@ func newDirFileConflictFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS) u
 // DirFileConflicts verifies that every WriteFS rejects Create and
 // MkdirAll calls that would replace a directory with a file or place anything
 // under a regular file, and that a rejected call leaves the tree unchanged.
-func DirFileConflicts(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
+func DirFileConflicts(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	t.Run("DirFileConflicts", func(t *testing.T) {
 		t.Parallel()
 		for _, tc := range dirFileConflictCases {
@@ -469,7 +470,7 @@ func DirFileConflicts(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
 
 // Close verifies that Close can be called repeatedly and that every operation
 // on a closed file system returns fs.ErrClosed.
-func Close(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
+func Close(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	t.Run("Close", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFS(t)
@@ -535,7 +536,7 @@ func Close(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
 	})
 }
 
-func mustWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (ufs.WriteFS, error), name string) ufs.WriteFS {
+func mustWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (types.WriteFS, error), name string) types.WriteFS {
 	tb.Helper()
 
 	fsys, err := newFSFunc(tb.Context(), name)
@@ -549,7 +550,7 @@ func mustWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (ufs.Wri
 	return fsys
 }
 
-func mkdirForTest(tb testing.TB, fsys ufs.WriteFS, dirs ...string) {
+func mkdirForTest(tb testing.TB, fsys types.WriteFS, dirs ...string) {
 	tb.Helper()
 	dir := path.Join(dirs...)
 	if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
@@ -558,31 +559,31 @@ func mkdirForTest(tb testing.TB, fsys ufs.WriteFS, dirs ...string) {
 }
 
 // InvalidPathsForWriteFS verifies that write operations reject invalid paths.
-func InvalidPathsForWriteFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
+func InvalidPathsForWriteFS(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	tests := []struct {
 		name   string
 		wantOp string
-		op     func(fsys ufs.WriteFS, path string) error
+		op     func(fsys types.WriteFS, path string) error
 	}{
 		{
 			name:   "Create",
 			wantOp: "create",
-			op:     func(fsys ufs.WriteFS, path string) error { _, err := fsys.Create(path); return err },
+			op:     func(fsys types.WriteFS, path string) error { _, err := fsys.Create(path); return err },
 		},
 		{
 			name:   "MkdirAll",
 			wantOp: "mkdir",
-			op:     func(fsys ufs.WriteFS, path string) error { return fsys.MkdirAll(path, fs.ModePerm) },
+			op:     func(fsys types.WriteFS, path string) error { return fsys.MkdirAll(path, fs.ModePerm) },
 		},
 		{
 			name:   "Remove",
 			wantOp: "remove",
-			op:     func(fsys ufs.WriteFS, path string) error { return fsys.Remove(path) },
+			op:     func(fsys types.WriteFS, path string) error { return fsys.Remove(path) },
 		},
 		{
 			name:   "RemoveAll",
 			wantOp: "removeall",
-			op:     func(fsys ufs.WriteFS, path string) error { return fsys.RemoveAll(path) },
+			op:     func(fsys types.WriteFS, path string) error { return fsys.RemoveAll(path) },
 		},
 	}
 	for _, tc := range tests {
@@ -608,7 +609,7 @@ func InvalidPathsForWriteFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS)
 
 // Create verifies that files created and written in nested directories can be
 // read back via ReadFile, Open, and Lstat, and are not reported as symlinks.
-func Create(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
+func Create(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	t.Run("Create", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFS(t)

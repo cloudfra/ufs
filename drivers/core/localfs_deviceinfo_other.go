@@ -16,8 +16,10 @@
 
 package core
 
-import "github.com/cloudfra/ufs"
+import (
+	"github.com/cloudfra/ufs/drivers/types"
+)
 
-func (fsys *localFS) GetDeviceInfo() ufs.DeviceMap {
-	return ufs.DefaultDeviceMap
+func (fsys *localFS) GetDeviceInfo() types.DeviceMap {
+	return types.DefaultDeviceMap
 }

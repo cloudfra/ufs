@@ -22,23 +22,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/testing/eventtest"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-// TestBoltWatchCreateWriteClose verifies that, unlike memFS, a ufs.NotifyWrite
+// TestBoltWatchCreateWriteClose verifies that, unlike memFS, a types.NotifyWrite
 // event is only delivered once the writer is Closed: WriteString alone only
 // buffers content in memory and must not touch the bolt database or fire a
 // notification.
 func TestBoltWatchCreateWriteClose(t *testing.T) {
 	fsys := newTestBoltFS(t)
 
-	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.(ufs.Watcher).Watch(ctx, ".", ec.Hook)
+	closer, err := fsys.(types.Watcher).Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,8 +49,8 @@ func TestBoltWatchCreateWriteClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyCreate && ev.Path == "hello.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyCreate && ev.Path == "hello.txt"
 	})
 
 	if _, err := f.WriteString("updated"); err != nil {
@@ -59,37 +59,37 @@ func TestBoltWatchCreateWriteClose(t *testing.T) {
 
 	// WriteString alone must not persist to the database or notify.
 	time.Sleep(100 * time.Millisecond)
-	if ec.HasEvent(func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyWrite && ev.Path == "hello.txt"
+	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyWrite && ev.Path == "hello.txt"
 	}) {
-		t.Error("received ufs.NotifyWrite before Close(), want it deferred until Close")
+		t.Error("received types.NotifyWrite before Close(), want it deferred until Close")
 	}
 
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyWrite && ev.Path == "hello.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyWrite && ev.Path == "hello.txt"
 	})
 
 	if err := fsys.Remove("hello.txt"); err != nil {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyRemove && ev.Path == "hello.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyRemove && ev.Path == "hello.txt"
 	})
 }
 
 func TestBoltWatchNestedDir(t *testing.T) {
 	fsys := newTestBoltFS(t)
 
-	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.(ufs.Watcher).Watch(ctx, ".", ec.Hook)
+	closer, err := fsys.(types.Watcher).Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,19 +99,19 @@ func TestBoltWatchNestedDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyCreate && ev.Path == "a"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyCreate && ev.Path == "a"
 	})
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyCreate && ev.Path == "a/b"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyCreate && ev.Path == "a/b"
 	})
 
 	if _, err := fsys.Create("a/b/deep.txt"); err != nil {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyCreate && ev.Path == "a/b/deep.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyCreate && ev.Path == "a/b/deep.txt"
 	})
 }
 
@@ -124,11 +124,11 @@ func TestBoltWatchSubdirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.(ufs.Watcher).Watch(ctx, "watched", ec.Hook)
+	closer, err := fsys.(types.Watcher).Watch(ctx, "watched", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +138,8 @@ func TestBoltWatchSubdirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyCreate && ev.Path == "watched/inside.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyCreate && ev.Path == "watched/inside.txt"
 	})
 
 	if _, err := fsys.Create("other/outside.txt"); err != nil {
@@ -148,7 +148,7 @@ func TestBoltWatchSubdirectory(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if ec.HasEvent(func(ev eventtest.Event[ufs.NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "other/outside.txt"
 	}) {
 		t.Error("received event for file outside watched directory")
@@ -158,11 +158,11 @@ func TestBoltWatchSubdirectory(t *testing.T) {
 func TestBoltWatchCloseStopsDelivery(t *testing.T) {
 	fsys := newTestBoltFS(t)
 
-	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.(ufs.Watcher).Watch(ctx, ".", ec.Hook)
+	closer, err := fsys.(types.Watcher).Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestBoltWatchCloseStopsDelivery(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if ec.HasEvent(func(ev eventtest.Event[ufs.NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "after.txt"
 	}) {
 		t.Error("received event after Close()")
@@ -200,11 +200,11 @@ func TestBoltWatchRemoveAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.(ufs.Watcher).Watch(ctx, ".", ec.Hook)
+	closer, err := fsys.(types.Watcher).Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,8 +214,8 @@ func TestBoltWatchRemoveAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyRemove && ev.Path == "dir"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyRemove && ev.Path == "dir"
 	})
 }
 
@@ -226,11 +226,11 @@ func TestBoltWatchCreateOverwrite(t *testing.T) {
 		t.Fatalf("failed to create file: %v", err)
 	}
 
-	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	closer, err := fsys.(ufs.Watcher).Watch(ctx, ".", ec.Hook)
+	closer, err := fsys.(types.Watcher).Watch(ctx, ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,8 +245,8 @@ func TestBoltWatchCreateOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[ufs.NotifyOp]) bool {
-		return ev.Op == ufs.NotifyWrite && ev.Path == "file.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyWrite && ev.Path == "file.txt"
 	})
 }
 
@@ -255,18 +255,18 @@ func TestBoltWatchInvalidPath(t *testing.T) {
 
 	ctx := t.Context()
 
-	if _, err := fsys.(ufs.Watcher).Watch(ctx, "../escape", func(ufs.NotifyOp, string) {}); err == nil {
+	if _, err := fsys.(types.Watcher).Watch(ctx, "../escape", func(types.NotifyOp, string) {}); err == nil {
 		t.Error("Watch with invalid path should fail")
 	}
 
-	if _, err := fsys.(ufs.Watcher).Watch(ctx, "nonexistent", func(ufs.NotifyOp, string) {}); err == nil {
+	if _, err := fsys.(types.Watcher).Watch(ctx, "nonexistent", func(types.NotifyOp, string) {}); err == nil {
 		t.Error("Watch on nonexistent directory should fail")
 	}
 
 	if _, err := fsys.Create("file.txt"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fsys.(ufs.Watcher).Watch(ctx, "file.txt", func(ufs.NotifyOp, string) {}); err == nil {
+	if _, err := fsys.(types.Watcher).Watch(ctx, "file.txt", func(types.NotifyOp, string) {}); err == nil {
 		t.Error("Watch on a file should fail")
 	}
 }
@@ -277,7 +277,7 @@ func TestBoltWatchClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := fsys.(ufs.Watcher).Watch(t.Context(), ".", func(ufs.NotifyOp, string) {}); err == nil {
+	if _, err := fsys.(types.Watcher).Watch(t.Context(), ".", func(types.NotifyOp, string) {}); err == nil {
 		t.Error("Watch on closed FS should fail")
 	}
 }
@@ -285,9 +285,9 @@ func TestBoltWatchClosed(t *testing.T) {
 func TestBoltWatchFSClose(t *testing.T) {
 	fsys := newTestBoltFS(t)
 
-	ec := eventtest.NewEventCollector[ufs.NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 
-	closer, err := fsys.(ufs.Watcher).Watch(t.Context(), ".", ec.Hook)
+	closer, err := fsys.(types.Watcher).Watch(t.Context(), ".", ec.Hook)
 	if err != nil {
 		t.Fatal(err)
 	}

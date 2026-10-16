@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
-func mount(_ context.Context, _ ufs.ReadFS, _ string) (MountServer, error) {
+func mount(_ context.Context, _ types.ReadFS, _ string) (MountServer, error) {
 	return nil, fmt.Errorf("host mount is not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
 }

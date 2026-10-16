@@ -27,6 +27,7 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -62,7 +63,7 @@ func newRecorder() *recorder {
 }
 
 // wrap decorates inner so that it reports to r.
-func (r *recorder) wrap(ctx context.Context, t testing.TB, inner ufs.WriteFS, opts Options) ufs.WriteFS {
+func (r *recorder) wrap(ctx context.Context, t testing.TB, inner types.WriteFS, opts Options) types.WriteFS {
 	t.Helper()
 	fsys, err := newTelemetryFS(ctx, inner, opts, r.tp, r.mp)
 	if err != nil {
@@ -113,7 +114,7 @@ func attrKey(attrs []attribute.KeyValue) string {
 
 // errFS fails every operation with err.
 type errFS struct {
-	ufs.WriteFS
+	types.WriteFS
 	err error
 }
 
@@ -233,7 +234,7 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 
 // noRenameFS hides the Rename of the file system it wraps.
 type noRenameFS struct {
-	ufs.WriteFS
+	types.WriteFS
 }
 
 // TestTelemetryRenameFallback checks that a rename on a file system without
@@ -490,7 +491,7 @@ func TestOptionsDecode(t *testing.T) {
 
 // uriFS overrides the URI reported by the file system it embeds.
 type uriFS struct {
-	ufs.WriteFS
+	types.WriteFS
 	u   *url.URL
 	err error
 }
@@ -562,7 +563,7 @@ func TestTelemetryURI(t *testing.T) {
 
 // archiveDirFS reports every name as an archive directory.
 type archiveDirFS struct {
-	ufs.WriteFS
+	types.WriteFS
 }
 
 func (archiveDirFS) IsMountedArchiveDir(string) bool { return true }
@@ -574,17 +575,17 @@ func TestTelemetryForwardsIsMountedArchiveDir(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name  string
-		inner ufs.WriteFS
+		inner types.WriteFS
 		want  bool
 	}{
 		{name: "forwards", inner: archiveDirFS{core.MakeMemFS(memFSName)}, want: true},
-		{name: "no_archive_dirs", inner: struct{ ufs.WriteFS }{core.MakeMemFS(memFSName)}, want: false},
+		{name: "no_archive_dirs", inner: struct{ types.WriteFS }{core.MakeMemFS(memFSName)}, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			fsys := newRecorder().wrap(t.Context(), t, tc.inner, both)
 			defer ufsTesting.ValidateClose(t, fsys)()
-			got := fsys.(ufs.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
+			got := fsys.(types.MountedArchiveDirFS).IsMountedArchiveDir("data.zip.d")
 			if got != tc.want {
 				t.Errorf("IsMountedArchiveDir() = %t, want %t", got, tc.want)
 			}
@@ -594,11 +595,11 @@ func TestTelemetryForwardsIsMountedArchiveDir(t *testing.T) {
 
 // watchFS records the Watch calls it receives.
 type watchFS struct {
-	ufs.WriteFS
+	types.WriteFS
 	watched []string
 }
 
-func (fsys *watchFS) Watch(_ context.Context, name string, _ ufs.NotifyHook) (io.Closer, error) {
+func (fsys *watchFS) Watch(_ context.Context, name string, _ types.NotifyHook) (io.Closer, error) {
 	fsys.watched = append(fsys.watched, name)
 	return io.NopCloser(nil), nil
 }
@@ -612,28 +613,28 @@ func TestTelemetryForwardsWatch(t *testing.T) {
 	inner := &watchFS{WriteFS: core.MakeMemFS(memFSName)}
 	fsys := newRecorder().wrap(t.Context(), t, inner, both)
 	defer ufsTesting.ValidateClose(t, fsys)()
-	w, ok := fsys.(ufs.Watcher)
+	w, ok := fsys.(types.Watcher)
 	if !ok {
-		t.Fatalf("%T is not a ufs.Watcher, want it to forward Watch", fsys)
+		t.Fatalf("%T is not a types.Watcher, want it to forward Watch", fsys)
 	}
-	if _, err := w.Watch(t.Context(), "dir", func(ufs.NotifyOp, string) {}); err != nil {
+	if _, err := w.Watch(t.Context(), "dir", func(types.NotifyOp, string) {}); err != nil {
 		t.Fatalf("Watch(dir) = %v, want nil", err)
 	}
 	if len(inner.watched) != 1 || inner.watched[0] != "dir" {
 		t.Errorf("inner watched %v, want [dir]", inner.watched)
 	}
 
-	plain := newRecorder().wrap(t.Context(), t, struct{ ufs.WriteFS }{core.MakeMemFS(memFSName)}, both)
+	plain := newRecorder().wrap(t.Context(), t, struct{ types.WriteFS }{core.MakeMemFS(memFSName)}, both)
 	defer ufsTesting.ValidateClose(t, plain)()
-	if _, ok := plain.(ufs.Watcher); ok {
-		t.Errorf("%T is a ufs.Watcher, want none when the inner file system is not", plain)
+	if _, ok := plain.(types.Watcher); ok {
+		t.Errorf("%T is a types.Watcher, want none when the inner file system is not", plain)
 	}
 }
 
 // TestTelemetryFSDriver runs the shared file system tests through the
 // decorator, which must not change how the file system behaves.
 func TestTelemetryFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+	ufsdriversTesting.WriteFS(t, func(t *testing.T) types.WriteFS {
 		return newRecorder().wrap(t.Context(), t, core.MakeMemFS(memFSName), both)
 	})
 }

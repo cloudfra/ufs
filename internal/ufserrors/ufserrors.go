@@ -18,6 +18,7 @@ package ufserrors
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 )
@@ -91,4 +92,9 @@ func Join(errs ...error) error {
 	default:
 		return errors.Join(errs...)
 	}
+}
+
+// NewUnimplemented returns an unimplemented error.
+func NewUnimplemented(fsys fs.FS, op string) error {
+	return fmt.Errorf("%q does not support %q", fsys, op)
 }

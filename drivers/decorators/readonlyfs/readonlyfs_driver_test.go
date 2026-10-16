@@ -17,14 +17,14 @@ package readonlyfs_test
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestReadOnlyFSDriver(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, func(_ *testing.T) ufs.ReadFS {
+	ufsdriversTesting.ReadFS(t, func(_ *testing.T) types.ReadFS {
 		return readonlyfs.New(core.MakeMemFS("memory://test"))
 	})
 }

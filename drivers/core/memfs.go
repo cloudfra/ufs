@@ -29,6 +29,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -40,11 +41,11 @@ const (
 )
 
 var (
-	_ ufs.File       = (*memFile)(nil)
-	_ ufs.WriteFS    = (*memFS)(nil)
+	_ types.File     = (*memFile)(nil)
+	_ types.WriteFS  = (*memFS)(nil)
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
-	_ ufs.Watcher    = (*memFS)(nil)
+	_ types.Watcher  = (*memFS)(nil)
 )
 
 func init() {
@@ -133,7 +134,7 @@ func (f *memFile) syncToFS() {
 
 func (f *memFile) notifyWrite() {
 	if f.fsys != nil {
-		f.fsys.notify(ufs.NotifyWrite, f.Path())
+		f.fsys.notify(types.NotifyWrite, f.Path())
 	}
 }
 
@@ -182,9 +183,9 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-func (fsys *memFS) GetDeviceInfo() ufs.DeviceMap {
-	info := ufs.NewDeviceInfo(fsys.name, "memory", 2, false)
-	return ufs.NewDeviceMap(info)
+func (fsys *memFS) GetDeviceInfo() types.DeviceMap {
+	info := types.NewDeviceInfo(fsys.name, "memory", 2, false)
+	return types.NewDeviceMap(info)
 }
 
 func (fsys *memFS) URI() (*url.URL, error) {
@@ -291,7 +292,7 @@ func (fsys *memFS) Close() error {
 	return err
 }
 
-func (fsys *memFS) Create(name string) (ufs.File, error) {
+func (fsys *memFS) Create(name string) (types.File, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("create", name, fs.ErrClosed)
 	}
@@ -321,9 +322,9 @@ func (fsys *memFS) Create(name string) (ufs.File, error) {
 	fsys.ensureParentsLocked(name, now)
 
 	if existed {
-		fsys.notify(ufs.NotifyWrite, name)
+		fsys.notify(types.NotifyWrite, name)
 	} else {
-		fsys.notify(ufs.NotifyCreate, name)
+		fsys.notify(types.NotifyCreate, name)
 	}
 
 	return &memFile{
@@ -371,7 +372,7 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 		}
 	}
 	for _, p := range created {
-		fsys.notify(ufs.NotifyCreate, p)
+		fsys.notify(types.NotifyCreate, p)
 	}
 	return nil
 }
@@ -575,7 +576,7 @@ func (fsys *memFS) Remove(name string) error {
 		}
 	}
 	delete(fsys.nodes, name)
-	fsys.notify(ufs.NotifyRemove, name)
+	fsys.notify(types.NotifyRemove, name)
 	return nil
 }
 
@@ -594,7 +595,7 @@ func (fsys *memFS) RemoveAll(name string) error {
 		}
 		fsys.mu.Unlock()
 		for _, p := range removed {
-			fsys.notify(ufs.NotifyRemove, p)
+			fsys.notify(types.NotifyRemove, p)
 		}
 		return nil
 	}
@@ -612,7 +613,7 @@ func (fsys *memFS) RemoveAll(name string) error {
 	}
 	fsys.mu.Unlock()
 	for _, p := range removed {
-		fsys.notify(ufs.NotifyRemove, p)
+		fsys.notify(types.NotifyRemove, p)
 	}
 	return nil
 }
@@ -634,8 +635,8 @@ func (fsys *memFS) Rename(oldPath, newPath string) error {
 		return ufserrors.NewLinkError("rename", oldPath, newPath, err)
 	}
 	for _, oldKey := range moved {
-		fsys.notify(ufs.NotifyRename, oldKey)
-		fsys.notify(ufs.NotifyCreate, newPath+oldKey[len(oldPath):])
+		fsys.notify(types.NotifyRename, oldKey)
+		fsys.notify(types.NotifyCreate, newPath+oldKey[len(oldPath):])
 	}
 	return nil
 }
@@ -674,12 +675,12 @@ func (fsys *memFS) renameLocked(oldPath, newPath string) ([]string, error) {
 	return moved, nil
 }
 
-func newMemFS(_ context.Context, name string) (ufs.WriteFS, error) {
+func newMemFS(_ context.Context, name string) (types.WriteFS, error) {
 	return MakeMemFS(name), nil
 }
 
 // MakeMemFS creates a memory FS without a context. (Deprecated; use NewDriver with newMemFS instead.)
-func MakeMemFS(name string) ufs.WriteFS {
+func MakeMemFS(name string) types.WriteFS {
 	return makeMemFS(name)
 }
 
@@ -706,7 +707,7 @@ func isMemFSUri(name string) bool {
 // Watch implements [Watcher] for in-memory file systems. It watches name (a
 // directory) and all nested paths, invoking hook for each mutation performed
 // through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
-func (fsys *memFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
+func (fsys *memFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
 	}
@@ -729,11 +730,11 @@ func (fsys *memFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) 
 	fsys.mu.RUnlock()
 
 	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
-		hook(ufs.NotifyOp(op), path)
+		hook(types.NotifyOp(op), path)
 	}), nil
 }
 
 // notify sends an event to all active watchers.
-func (fsys *memFS) notify(op ufs.NotifyOp, path string) {
+func (fsys *memFS) notify(op types.NotifyOp, path string) {
 	fsys.notifyBus.Publish(notify.Op(op), path)
 }

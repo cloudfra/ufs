@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -39,7 +40,7 @@ const (
 )
 
 var (
-	_ ufs.File         = (*os.File)(nil)
+	_ types.File       = (*os.File)(nil)
 	_ localFSInterface = (*localFS)(nil)
 )
 
@@ -48,7 +49,7 @@ func init() {
 }
 
 type localFSInterface interface {
-	ufs.WriteFS
+	types.WriteFS
 	fs.GlobFS
 	ufs.AbsPathGetter
 }
@@ -87,7 +88,7 @@ func (fsys *localFS) Close() error {
 	return fsys.osFS.Close()
 }
 
-func (fsys *localFS) Create(name string) (ufs.File, error) {
+func (fsys *localFS) Create(name string) (types.File, error) {
 	if err := validLocalPath("create", name); err != nil {
 		return nil, err
 	}
@@ -209,7 +210,7 @@ func (fsys *localFS) Glob(pattern string) ([]string, error) {
 //
 // Deprecated: MakeLocalFS exists only to support the shared driver tests in
 // drivers/testing and will be removed soon. Use New instead.
-func MakeLocalFS(name string) (ufs.WriteFS, error) {
+func MakeLocalFS(name string) (types.WriteFS, error) {
 	fsys, err := makeLocalFS(name)
 	if err != nil {
 		// Not "return makeLocalFS(name)": a nil *localFS in the WriteFS
@@ -234,7 +235,7 @@ func makeLocalFS(name string) (*localFS, error) {
 	}, nil
 }
 
-func newLocalFS(ctx context.Context, name string) (ufs.WriteFS, error) {
+func newLocalFS(ctx context.Context, name string) (types.WriteFS, error) {
 	if archive.IsMountablePath(name) {
 		// The archive is opened by host path, so drop any file: prefix.
 		return newArchiveFSFromLocalFS(ctx, localFSNormalizePath(name))

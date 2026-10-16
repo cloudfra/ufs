@@ -46,7 +46,7 @@ const (
 	// Equivalent to SYMLINK_HANDLING_FOLLOW.
 	SymlinkHandling_SYMLINK_HANDLING_UNSPECIFIED SymlinkHandling = 0
 	// Follow the symbolic link and describe its target. Equivalent to
-	// [ufs.ReadFS.Stat] / [fs.Stat].
+	// [types.ReadFS.Stat] / [fs.Stat].
 	SymlinkHandling_SYMLINK_HANDLING_FOLLOW SymlinkHandling = 1
 	// Do not follow the symbolic link; describe the link itself. Equivalent to
 	// [fs.ReadLinkFS.Lstat].
@@ -308,7 +308,7 @@ func (x *FileAttributes) GetUid() string {
 }
 
 // File is the resource representation of a node (regular file or directory)
-// in a [ufs.ReadFS] tree. It mirrors [ufs.FileInfo].
+// in a [types.ReadFS] tree. It mirrors [types.FileInfo].
 //
 // File names follow [fs.ValidPath]: forward-slash separated, no leading
 // slash, no "." or ".." components. The root directory is always ".".
@@ -397,12 +397,12 @@ func (x *File) GetIsDir() bool {
 // resource (AIP-156): there is exactly one, and it has no name field.
 type FileSystemInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The URI that identifies this file system, as returned by [ufs.ReadFS.URI].
+	// The URI that identifies this file system, as returned by [types.ReadFS.URI].
 	// Can be passed to ufs.New to reconstruct an equivalent file system.
 	// Empty if the file system has no meaningful URI.
 	Uri string `protobuf:"bytes,1,opt,name=uri" json:"uri,omitempty"`
 	// A human-readable description of how the file system is composed, as
-	// returned by [ufs.ReadFS.String]. Intended for debugging and logging, not
+	// returned by [types.ReadFS.String]. Intended for debugging and logging, not
 	// programmatic use.
 	Description   string `protobuf:"bytes,2,opt,name=description" json:"description,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -645,7 +645,7 @@ func (x *ListFilesRequest) GetPageToken() string {
 type ListFilesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The immediate children of the requested parent directory, sorted by
-	// filename, as returned by [ufs.ReadFS.ReadDir].
+	// filename, as returned by [types.ReadFS.ReadDir].
 	Files []*File `protobuf:"bytes,1,rep,name=files" json:"files,omitempty"`
 	// A token that can be sent as page_token to retrieve the next page. Empty
 	// if there are no more files.
@@ -858,7 +858,7 @@ func (x *ReadLinkRequest) GetName() string {
 type ReadLinkResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The destination path of the symbolic link, as returned by
-	// [ufs.ReadFS.ReadLink]. May be relative to the link's directory.
+	// [types.ReadFS.ReadLink]. May be relative to the link's directory.
 	Target        string `protobuf:"bytes,1,opt,name=target" json:"target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -948,58 +948,58 @@ const file_proto_ufs_proto_rawDesc = "" +
 	"\aexecute\x18\x03 \x01(\bR\aexecute\x12\x10\n" +
 	"\x03dir\x18\x04 \x01(\bR\x03dir\x12\x18\n" +
 	"\asymlink\x18\x05 \x01(\bR\asymlink\x12\x14\n" +
-	"\x05group\x18\x06 \x01(\bR\x05group\"\xa6\x03\n" +
-	"\x0eFileAttributes\x120\n" +
-	"\x04name\x18\x01 \x01(\tB\x1c\xe0A\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12(\n" +
-	"\rabsolute_path\x18\x02 \x01(\tB\x03\xe0A\x03R\fabsolutePath\x12\x17\n" +
-	"\x04size\x18\x03 \x01(\x03B\x03\xe0A\x03R\x04size\x12B\n" +
+	"\x05group\x18\x06 \x01(\bR\x05group\"\xae\x03\n" +
+	"\x0eFileAttributes\x121\n" +
+	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
+	"\x14ufs.cloudfra.io/FileR\x04name\x12)\n" +
+	"\rabsolute_path\x18\x02 \x01(\tB\x04\xe2A\x01\x03R\fabsolutePath\x12\x18\n" +
+	"\x04size\x18\x03 \x01(\x03B\x04\xe2A\x01\x03R\x04size\x12C\n" +
 	"\n" +
-	"permission\x18\x04 \x01(\v2\x1d.cloudfra.ufs.FilePermissionsB\x03\xe0A\x03R\n" +
-	"permission\x12@\n" +
-	"\vcreate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\n" +
-	"createTime\x12@\n" +
-	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\n" +
-	"updateTime\x12@\n" +
-	"\vaccess_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\n" +
-	"accessTime\x12\x15\n" +
-	"\x03uid\x18\b \x01(\tB\x03\xe0A\x03R\x03uid\"\xdc\x01\n" +
-	"\x04File\x12\x17\n" +
-	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12\x17\n" +
-	"\x04size\x18\x02 \x01(\x03B\x03\xe0A\x03R\x04size\x12\x17\n" +
-	"\x04mode\x18\x03 \x01(\rB\x03\xe0A\x03R\x04mode\x12:\n" +
-	"\bmod_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampB\x03\xe0A\x03R\amodTime\x12\x1a\n" +
-	"\x06is_dir\x18\x05 \x01(\bB\x03\xe0A\x03R\x05isDir:1\xeaA.\n" +
-	"\x14ufs.cloudfra.io/File\x12\t{path=**}*\x05files2\x04file\"N\n" +
-	"\x0eFileSystemInfo\x12\x15\n" +
-	"\x03uri\x18\x01 \x01(\tB\x03\xe0A\x03R\x03uri\x12%\n" +
-	"\vdescription\x18\x02 \x01(\tB\x03\xe0A\x03R\vdescription\"u\n" +
+	"permission\x18\x04 \x01(\v2\x1d.cloudfra.ufs.FilePermissionsB\x04\xe2A\x01\x03R\n" +
+	"permission\x12A\n" +
+	"\vcreate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampB\x04\xe2A\x01\x03R\n" +
+	"createTime\x12A\n" +
+	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampB\x04\xe2A\x01\x03R\n" +
+	"updateTime\x12A\n" +
+	"\vaccess_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampB\x04\xe2A\x01\x03R\n" +
+	"accessTime\x12\x16\n" +
+	"\x03uid\x18\b \x01(\tB\x04\xe2A\x01\x03R\x03uid\"\xe1\x01\n" +
+	"\x04File\x12\x18\n" +
+	"\x04name\x18\x01 \x01(\tB\x04\xe2A\x01\bR\x04name\x12\x18\n" +
+	"\x04size\x18\x02 \x01(\x03B\x04\xe2A\x01\x03R\x04size\x12\x18\n" +
+	"\x04mode\x18\x03 \x01(\rB\x04\xe2A\x01\x03R\x04mode\x12;\n" +
+	"\bmod_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampB\x04\xe2A\x01\x03R\amodTime\x12\x1b\n" +
+	"\x06is_dir\x18\x05 \x01(\bB\x04\xe2A\x01\x03R\x05isDir:1\xeaA.\n" +
+	"\x14ufs.cloudfra.io/File\x12\t{path=**}*\x05files2\x04file\"P\n" +
+	"\x0eFileSystemInfo\x12\x16\n" +
+	"\x03uri\x18\x01 \x01(\tB\x04\xe2A\x01\x03R\x03uri\x12&\n" +
+	"\vdescription\x18\x02 \x01(\tB\x04\xe2A\x01\x03R\vdescription\"u\n" +
 	"\x0eBoltFileRecord\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\rR\x04mode\x125\n" +
 	"\bmod_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\amodTime\x12\x18\n" +
-	"\acontent\x18\x03 \x01(\fR\acontent\"\x8c\x01\n" +
-	"\x0eGetFileRequest\x120\n" +
-	"\x04name\x18\x01 \x01(\tB\x1c\xe0A\x02\xfaA\x16\n" +
+	"\acontent\x18\x03 \x01(\fR\acontent\"\x8d\x01\n" +
+	"\x0eGetFileRequest\x121\n" +
+	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
 	"\x14ufs.cloudfra.io/FileR\x04name\x12H\n" +
-	"\x10symlink_handling\x18\x02 \x01(\x0e2\x1d.cloudfra.ufs.SymlinkHandlingR\x0fsymlinkHandling\"\x84\x01\n" +
-	"\x10ListFilesRequest\x124\n" +
-	"\x06parent\x18\x01 \x01(\tB\x1c\xe0A\x02\xfaA\x16\n" +
+	"\x10symlink_handling\x18\x02 \x01(\x0e2\x1d.cloudfra.ufs.SymlinkHandlingR\x0fsymlinkHandling\"\x85\x01\n" +
+	"\x10ListFilesRequest\x125\n" +
+	"\x06parent\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
 	"\x14ufs.cloudfra.io/FileR\x06parent\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\"e\n" +
 	"\x11ListFilesResponse\x12(\n" +
 	"\x05files\x18\x01 \x03(\v2\x12.cloudfra.ufs.FileR\x05files\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"q\n" +
-	"\x0fReadFileRequest\x120\n" +
-	"\x04name\x18\x01 \x01(\tB\x1c\xe0A\x02\xfaA\x16\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"r\n" +
+	"\x0fReadFileRequest\x121\n" +
+	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
 	"\x14ufs.cloudfra.io/FileR\x04name\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x03R\x06offset\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x03R\x05limit\"&\n" +
 	"\x10ReadFileResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\"C\n" +
-	"\x0fReadLinkRequest\x120\n" +
-	"\x04name\x18\x01 \x01(\tB\x1c\xe0A\x02\xfaA\x16\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"D\n" +
+	"\x0fReadLinkRequest\x121\n" +
+	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
 	"\x14ufs.cloudfra.io/FileR\x04name\"*\n" +
 	"\x10ReadLinkResponse\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\"\x1a\n" +

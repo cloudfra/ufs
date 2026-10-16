@@ -76,6 +76,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -84,11 +85,11 @@ import (
 )
 
 var (
-	_ ufs.File       = (*boltFile)(nil)
-	_ ufs.WriteFS    = (*boltFS)(nil)
+	_ types.File     = (*boltFile)(nil)
+	_ types.WriteFS  = (*boltFS)(nil)
 	_ fs.GlobFS      = (*boltFS)(nil)
 	_ fs.ReadDirFile = (*boltDirFile)(nil)
-	_ ufs.Watcher    = (*boltFS)(nil)
+	_ types.Watcher  = (*boltFS)(nil)
 
 	// selfKey serves two roles that happen to share the same value: it is the
 	// name of the top-level bolt bucket that represents the root ("." /
@@ -257,7 +258,7 @@ func (f *boltFile) Close() error {
 		f.MarkDirty()
 		return ufserrors.NewPathError("close", name, err)
 	}
-	f.fsys.notify(ufs.NotifyWrite, name)
+	f.fsys.notify(types.NotifyWrite, name)
 	return nil
 }
 
@@ -455,8 +456,8 @@ func listBucket(bkt *bolt.Bucket) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
-func (fsys *boltFS) GetDeviceInfo() ufs.DeviceMap {
-	return ufs.NewDeviceMap(ufs.NewDeviceInfo(fsys.absPath, "bolt", 1, false))
+func (fsys *boltFS) GetDeviceInfo() types.DeviceMap {
+	return types.NewDeviceMap(types.NewDeviceInfo(fsys.absPath, "bolt", 1, false))
 }
 
 // URI returns the bolt:///abs/path form of the database path, which
@@ -587,7 +588,7 @@ func (fsys *boltFS) Close() error {
 	return ufserrors.Join(busErr, err)
 }
 
-func (fsys *boltFS) Create(name string) (ufs.File, error) {
+func (fsys *boltFS) Create(name string) (types.File, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("create", name, fs.ErrClosed)
 	}
@@ -621,9 +622,9 @@ func (fsys *boltFS) Create(name string) (ufs.File, error) {
 	}
 
 	if existed {
-		fsys.notify(ufs.NotifyWrite, name)
+		fsys.notify(types.NotifyWrite, name)
 	} else {
-		fsys.notify(ufs.NotifyCreate, name)
+		fsys.notify(types.NotifyCreate, name)
 	}
 
 	return &boltFile{
@@ -671,7 +672,7 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 		return ufserrors.NewPathError("mkdir", name, err)
 	}
 	for _, p := range created {
-		fsys.notify(ufs.NotifyCreate, p)
+		fsys.notify(types.NotifyCreate, p)
 	}
 	return nil
 }
@@ -882,7 +883,7 @@ func (fsys *boltFS) Remove(name string) error {
 	if err != nil {
 		return ufserrors.NewPathError("remove", name, err)
 	}
-	fsys.notify(ufs.NotifyRemove, name)
+	fsys.notify(types.NotifyRemove, name)
 	return nil
 }
 
@@ -927,7 +928,7 @@ func (fsys *boltFS) RemoveAll(name string) error {
 		return ufserrors.NewPathError("removeall", name, err)
 	}
 	for _, p := range removed {
-		fsys.notify(ufs.NotifyRemove, p)
+		fsys.notify(types.NotifyRemove, p)
 	}
 	return nil
 }
@@ -984,8 +985,8 @@ func (fsys *boltFS) Rename(oldPath, newPath string) error {
 		return ufserrors.NewLinkError("rename", oldPath, newPath, err)
 	}
 	for _, oldKey := range moved {
-		fsys.notify(ufs.NotifyRename, oldKey)
-		fsys.notify(ufs.NotifyCreate, newPath+oldKey[len(oldPath):])
+		fsys.notify(types.NotifyRename, oldKey)
+		fsys.notify(types.NotifyCreate, newPath+oldKey[len(oldPath):])
 	}
 	return nil
 }
@@ -1091,7 +1092,7 @@ func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error
 	return nil
 }
 
-func newBoltFS(_ context.Context, name string) (ufs.WriteFS, error) {
+func newBoltFS(_ context.Context, name string) (types.WriteFS, error) {
 	return makeBoltFS(name)
 }
 
@@ -1159,11 +1160,11 @@ func makeBoltFS(name string) (*boltFS, error) {
 	}, nil
 }
 
-// Watch implements [ufs.Watcher] for bolt-backed file systems. It watches name
+// Watch implements [types.Watcher] for bolt-backed file systems. It watches name
 // (a directory) and all nested paths, invoking hook for each mutation
 // performed through the boltFS API (Create, file Close after a write,
 // Remove, RemoveAll, MkdirAll).
-func (fsys *boltFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook) (io.Closer, error) {
+func (fsys *boltFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
 	}
@@ -1181,11 +1182,11 @@ func (fsys *boltFS) Watch(ctx context.Context, name string, hook ufs.NotifyHook)
 	}
 
 	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
-		hook(ufs.NotifyOp(op), path)
+		hook(types.NotifyOp(op), path)
 	}), nil
 }
 
 // notify sends an event to all active watchers.
-func (fsys *boltFS) notify(op ufs.NotifyOp, path string) {
+func (fsys *boltFS) notify(op types.NotifyOp, path string) {
 	fsys.notifyBus.Publish(notify.Op(op), path)
 }

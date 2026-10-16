@@ -434,7 +434,7 @@ func TestNewFromFstabLocalFS(t *testing.T) {
 
 	data, err := fs.ReadFile(fsys, "test.txt")
 	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+		t.Fatalf("types.ReadFile: %v", err)
 	}
 	if string(data) != "hello" {
 		t.Errorf("content = %q, want %q", data, "hello")

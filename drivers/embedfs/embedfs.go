@@ -22,19 +22,20 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ ufs.WriteFS = (*embedFS)(nil)
+var _ types.WriteFS = (*embedFS)(nil)
 
 type embedFS struct {
 	name string
 	fsys embed.FS
 }
 
-func (fsys *embedFS) GetDeviceInfo() ufs.DeviceMap {
-	return ufs.NewDeviceMap(ufs.NewDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
+func (fsys *embedFS) GetDeviceInfo() types.DeviceMap {
+	return types.NewDeviceMap(types.NewDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
 }
 
 func (fsys *embedFS) URI() (*url.URL, error) {
@@ -91,7 +92,7 @@ func (fsys *embedFS) ReadLink(name string) (string, error) {
 	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
 }
 
-func (fsys *embedFS) Create(name string) (ufs.File, error) {
+func (fsys *embedFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -130,6 +131,6 @@ func (fsys *embedFS) RemoveAll(name string) error {
 // label returned by [ufs.FS.String]; it is typically the mount path or a
 // description of the embedded content. Read operations delegate directly to
 // the embed.FS; all write operations return [fs.ErrPermission].
-func New(name string, fsys embed.FS) ufs.WriteFS {
+func New(name string, fsys embed.FS) types.WriteFS {
 	return &embedFS{name: name, fsys: fsys}
 }

@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -29,20 +30,20 @@ import (
 // BatchCreate when it has one: files are written with their parent
 // directories, replace existing files and earlier entries, and an invalid
 // name fails before anything is written. A batch that fails on a file system
-// that implements [ufs.BatchCreateFS] must write nothing. Its files are kept
+// that implements [types.BatchCreateFS] must write nothing. Its files are kept
 // below "bc", apart from anything a test backend is seeded with.
-func BatchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
+func BatchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	batchCreate(t, createFS, true)
 }
 
 // BatchCreateWithBuckets is [BatchCreate] for bucket-backed file systems,
 // where a file and a directory can share a name, so that conflict is not
 // checked.
-func BatchCreateWithBuckets(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
+func BatchCreateWithBuckets(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	batchCreate(t, createFS, false)
 }
 
-func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflicts bool) {
+func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConflicts bool) {
 	t.Run("BatchCreate", func(t *testing.T) {
 		t.Parallel()
 
@@ -50,9 +51,9 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 			t.Parallel()
 			fsys := newBatchFS(t, createFS)
 			err := ufs.BatchCreate(fsys,
-				ufs.BatchFile{Name: "bc/a.txt", Data: []byte("a")},
-				ufs.BatchFile{Name: "bc/new/dir/b.txt", Data: []byte("b")},
-				ufs.BatchFile{Name: "bc/new/empty.txt"},
+				types.BatchFile{Name: "bc/a.txt", Data: []byte("a")},
+				types.BatchFile{Name: "bc/new/dir/b.txt", Data: []byte("b")},
+				types.BatchFile{Name: "bc/new/empty.txt"},
 			)
 			if err != nil {
 				t.Fatalf("BatchCreate() = %v, want nil", err)
@@ -69,7 +70,7 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 			t.Parallel()
 			fsys := newBatchFS(t, createFS)
 			WriteFile(t, fsys, "bc/x.txt", "old content")
-			if err := ufs.BatchCreate(fsys, ufs.BatchFile{Name: "bc/x.txt", Data: []byte("new")}); err != nil {
+			if err := ufs.BatchCreate(fsys, types.BatchFile{Name: "bc/x.txt", Data: []byte("new")}); err != nil {
 				t.Fatalf("BatchCreate() = %v, want nil", err)
 			}
 			assertBatchFiles(t, fsys, map[string]string{"bc/x.txt": "new"})
@@ -79,8 +80,8 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 			t.Parallel()
 			fsys := newBatchFS(t, createFS)
 			err := ufs.BatchCreate(fsys,
-				ufs.BatchFile{Name: "bc/x.txt", Data: []byte("first")},
-				ufs.BatchFile{Name: "bc/x.txt", Data: []byte("second")},
+				types.BatchFile{Name: "bc/x.txt", Data: []byte("first")},
+				types.BatchFile{Name: "bc/x.txt", Data: []byte("second")},
 			)
 			if err != nil {
 				t.Fatalf("BatchCreate() = %v, want nil", err)
@@ -100,7 +101,7 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 			t.Parallel()
 			fsys := newBatchFS(t, createFS)
 			data := []byte("kept")
-			if err := ufs.BatchCreate(fsys, ufs.BatchFile{Name: "bc/x.txt", Data: data}); err != nil {
+			if err := ufs.BatchCreate(fsys, types.BatchFile{Name: "bc/x.txt", Data: data}); err != nil {
 				t.Fatalf("BatchCreate() = %v, want nil", err)
 			}
 			copy(data, "XXXX")
@@ -118,7 +119,7 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 				name := fmt.Sprintf("bc/w%d/f.txt", i)
 				want[name] = name
 				wg.Go(func() {
-					errs[i] = ufs.BatchCreate(fsys, ufs.BatchFile{Name: name, Data: []byte(name)})
+					errs[i] = ufs.BatchCreate(fsys, types.BatchFile{Name: name, Data: []byte(name)})
 				})
 			}
 			wg.Wait()
@@ -140,8 +141,8 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 				t.Parallel()
 				fsys := newBatchFS(t, createFS)
 				err := ufs.BatchCreate(fsys,
-					ufs.BatchFile{Name: "bc/ok.txt", Data: []byte("ok")},
-					ufs.BatchFile{Name: tc.invalid, Data: []byte("bad")},
+					types.BatchFile{Name: "bc/ok.txt", Data: []byte("ok")},
+					types.BatchFile{Name: tc.invalid, Data: []byte("bad")},
 				)
 				var pathErr *fs.PathError
 				if !errors.Is(err, fs.ErrInvalid) || !errors.As(err, &pathErr) || pathErr.Path != tc.invalid {
@@ -170,8 +171,8 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 				mkdirForTest(t, fsys, "bc/dir")
 				WriteFile(t, fsys, "bc/file.txt", "file")
 				err := ufs.BatchCreate(fsys,
-					ufs.BatchFile{Name: "bc/first.txt", Data: []byte("first")},
-					ufs.BatchFile{Name: tc.conflict, Data: []byte("conflict")},
+					types.BatchFile{Name: "bc/first.txt", Data: []byte("first")},
+					types.BatchFile{Name: tc.conflict, Data: []byte("conflict")},
 				)
 				if err == nil {
 					t.Fatalf("BatchCreate(%q) = nil, want an error", tc.conflict)
@@ -180,7 +181,7 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 					t.Errorf("Stat(bc/dir) = %v, %v, want a directory", info, err)
 				}
 				assertBatchFiles(t, fsys, map[string]string{"bc/file.txt": "file"})
-				if _, ok := fsys.(ufs.BatchCreateFS); !ok {
+				if _, ok := fsys.(types.BatchCreateFS); !ok {
 					return
 				}
 				if _, err := fsys.Stat("bc/first.txt"); !errors.Is(err, fs.ErrNotExist) {
@@ -192,7 +193,7 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 }
 
 // newBatchFS returns a file system from createFS with the directory "bc".
-func newBatchFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS) ufs.WriteFS {
+func newBatchFS(t *testing.T, createFS func(*testing.T) types.WriteFS) types.WriteFS {
 	t.Helper()
 	fsys := createFS(t)
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
@@ -201,7 +202,7 @@ func newBatchFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS) ufs.WriteFS
 }
 
 // assertBatchFiles checks that each file in want has its content.
-func assertBatchFiles(t *testing.T, fsys ufs.WriteFS, want map[string]string) {
+func assertBatchFiles(t *testing.T, fsys types.WriteFS, want map[string]string) {
 	t.Helper()
 	for name, content := range want {
 		data, err := fsys.ReadFile(name)

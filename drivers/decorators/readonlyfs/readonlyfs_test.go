@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	_ "github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 const (
@@ -30,7 +31,7 @@ const (
 )
 
 // newInner returns the file system that the tests decorate.
-func newInner(t *testing.T) ufs.WriteFS {
+func newInner(t *testing.T) types.WriteFS {
 	t.Helper()
 	fsys, err := ufs.New(t.Context(), nullFSPrefix)
 	if err != nil {
@@ -187,7 +188,7 @@ func TestWrap(t *testing.T) {
 
 // uriFS overrides the URI reported by the file system it embeds.
 type uriFS struct {
-	ufs.WriteFS
+	types.WriteFS
 	u   *url.URL
 	err error
 }

@@ -25,7 +25,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -37,7 +37,7 @@ const (
 	testAssetsFilesDir = "../../testing/testassets/files"
 )
 
-func mustArchiveFS(t *testing.T) ufs.WriteFS {
+func mustArchiveFS(t *testing.T) types.WriteFS {
 	t.Helper()
 	fsys, err := newArchiveFSFromLocalFS(context.Background(), testArchive)
 	if err != nil {
@@ -236,7 +236,7 @@ func TestArchiveFSRemoveAll(t *testing.T) {
 
 const testNoDirArchive = "../../testing/testassets/archives/nodir-testassets.zip"
 
-func mustNoDirArchiveFS(t *testing.T) ufs.WriteFS {
+func mustNoDirArchiveFS(t *testing.T) types.WriteFS {
 	t.Helper()
 	fsys, err := newArchiveFSFromLocalFS(context.Background(), testNoDirArchive)
 	if err != nil {
@@ -405,7 +405,7 @@ func createArchiveWithEntries(t *testing.T, entries ...string) string {
 // mustArchiveFromEntries mounts a freshly built zip (from the given entries) as
 // an archiveFS and registers cleanup to close it, mirroring mustArchiveFS and
 // mustNoDirArchiveFS but giving tests full control over the directory entries.
-func mustArchiveFromEntries(t *testing.T, entries ...string) ufs.WriteFS {
+func mustArchiveFromEntries(t *testing.T, entries ...string) types.WriteFS {
 	t.Helper()
 
 	zipPath := createArchiveWithEntries(t, entries...)
@@ -533,38 +533,38 @@ func TestArchiveFSInvalidPaths(t *testing.T) {
 
 	tests := []struct {
 		name string
-		op   func(fsys ufs.WriteFS, path string) error
+		op   func(fsys types.WriteFS, path string) error
 	}{
-		{"Open", func(fsys ufs.WriteFS, path string) error {
+		{"Open", func(fsys types.WriteFS, path string) error {
 			_, err := fsys.Open(path)
 			return err
 		}},
-		{"Create", func(fsys ufs.WriteFS, path string) error {
+		{"Create", func(fsys types.WriteFS, path string) error {
 			_, err := fsys.Create(path)
 			return err
 		}},
-		{"MkdirAll", func(fsys ufs.WriteFS, path string) error {
+		{"MkdirAll", func(fsys types.WriteFS, path string) error {
 			return fsys.MkdirAll(path, fs.ModePerm)
 		}},
-		{"Remove", func(fsys ufs.WriteFS, path string) error {
+		{"Remove", func(fsys types.WriteFS, path string) error {
 			return fsys.Remove(path)
 		}},
-		{"RemoveAll", func(fsys ufs.WriteFS, path string) error {
+		{"RemoveAll", func(fsys types.WriteFS, path string) error {
 			return fsys.RemoveAll(path)
 		}},
-		{"ReadFile", func(fsys ufs.WriteFS, path string) error {
+		{"ReadFile", func(fsys types.WriteFS, path string) error {
 			_, err := fsys.(fs.ReadFileFS).ReadFile(path)
 			return err
 		}},
-		{"ReadDir", func(fsys ufs.WriteFS, path string) error {
+		{"ReadDir", func(fsys types.WriteFS, path string) error {
 			_, err := fsys.(fs.ReadDirFS).ReadDir(path)
 			return err
 		}},
-		{"ReadLink", func(fsys ufs.WriteFS, path string) error {
+		{"ReadLink", func(fsys types.WriteFS, path string) error {
 			_, err := fsys.ReadLink(path)
 			return err
 		}},
-		{"Lstat", func(fsys ufs.WriteFS, path string) error {
+		{"Lstat", func(fsys types.WriteFS, path string) error {
 			_, err := fsys.Lstat(path)
 			return err
 		}},

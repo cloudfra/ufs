@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 // boltFSPrefix and isBoltFSUri mirror boltfs.go, which does not build on
@@ -48,6 +49,6 @@ func init() {
 // its mmap-based storage model has no wasm implementation regardless. The
 // driver is still registered so bolt: URIs fail with this clear error
 // instead of falling through to another driver.
-func newBoltFS(_ context.Context, name string) (ufs.WriteFS, error) {
+func newBoltFS(_ context.Context, name string) (types.WriteFS, error) {
 	return nil, fmt.Errorf("boltFS (%q) is not supported on this platform: go.etcd.io/bbolt does not support GOARCH=wasm", name)
 }

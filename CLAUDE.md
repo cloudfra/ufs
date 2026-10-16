@@ -40,7 +40,7 @@ Run `make test` and `make lint` during development. Run `make presubmit` before 
 `ufs` is a Go library providing a unified virtual file system abstraction. The module
 is github.com/cloudfra/ufs.
 
-### Core interfaces (`ufs.go`)
+### Core interfaces (`drivers/types/types.go`, package `types`)
 
 | Interface  | What it wraps / adds                                                         |
 |:-----------|:-----------------------------------------------------------------------------|
@@ -49,14 +49,14 @@ is github.com/cloudfra/ufs.
 | File       | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter               |
 | ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
 | WriteFS    | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll          |
-| FS         | What New's nestFS provides; extends WriteFS with Rename (RenameFileFS)       |
+| FS         | ufs.FS — extends types.WriteFS with Rename (RenameFileFS); what nestFS and most backends implement |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
 | BatchCreateFS | Optional; writes several whole files atomically via BatchCreate         |
 
 ### Factory
 
 ```go
-func New(ctx context.Context, name string) (FS, error)
+func New(ctx context.Context, name string) (types.WriteFS, error)
 ```
 
 Dispatches to the appropriate implementation based on URI scheme:
@@ -137,7 +137,7 @@ The fstab `ro` option and the implicit read-only null root both map to the
 ```go
 package host // github.com/cloudfra/ufs/host
 
-func Mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error)
+func Mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error)
 ```
 
 Mounts a virtual FS at a host directory so the OS can access it like a regular
@@ -145,7 +145,7 @@ file system. On Linux this uses FUSE via go-fuse/v2; on Windows it uses ProjFS.
 Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 (never the reverse) and only uses its exported API (e.g. `ufs.CwdPath`).
 
-Writes are enabled when the mounted FS is a `ufs.WriteFS` (not `ufs.FS`, so
+Writes are enabled when the mounted FS is a `types.WriteFS` (not `ufs.FS`, so
 drivers without a native Rename stay writable). Renames go through
 `ufs.Rename`: FUSE replaces an existing destination as rename(2) does (moving
 it aside first, not atomic) unless RENAME_NOREPLACE is set, and FUSE nodes take
@@ -156,7 +156,7 @@ PRE_RENAME within the root to the backing FS and still denies deletes.
 |:-----------------------|:-----------------------------------------------------------------|
 | host.go                | Platform-agnostic MountServer interface and Mount function       |
 | host_other.go          | Stub returning "not implemented" on non-Linux/Windows platforms  |
-| fuse_linux.go          | FUSE adapter — bridges ufs.ReadFS/FS to go-fuse InodeEmbedder    |
+| fuse_linux.go          | FUSE adapter — bridges types.ReadFS / ufs.FS to go-fuse InodeEmbedder |
 | mount_windows.go       | ProjFS mount server                                              |
 | projfs_windows.go      | ProjFS syscall bindings                                          |
 | math.go                | Integer clamping helpers for FUSE/ProjFS conversions             |

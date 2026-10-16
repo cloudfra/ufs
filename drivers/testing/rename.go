@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -41,7 +42,7 @@ var renameTree = map[string]string{
 // has one: files and directory trees move with their content, and a missing
 // source, an existing destination, the root, a move into itself and invalid
 // paths fail with the documented errors and change nothing.
-func Rename(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
+func Rename(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	t.Run("Rename", func(t *testing.T) {
 		t.Parallel()
 
@@ -134,7 +135,7 @@ func Rename(t *testing.T, createFS func(*testing.T) ufs.WriteFS) {
 }
 
 // newRenameFS returns a file system from createFS holding renameTree.
-func newRenameFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS) ufs.WriteFS {
+func newRenameFS(t *testing.T, createFS func(*testing.T) types.WriteFS) types.WriteFS {
 	t.Helper()
 	fsys := createFS(t)
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
@@ -148,7 +149,7 @@ func newRenameFS(t *testing.T, createFS func(*testing.T) ufs.WriteFS) ufs.WriteF
 }
 
 // assertRenameTree checks that the files of fsys and their content are want.
-func assertRenameTree(t *testing.T, fsys ufs.WriteFS, want map[string]string) {
+func assertRenameTree(t *testing.T, fsys types.WriteFS, want map[string]string) {
 	t.Helper()
 	got := map[string]string{}
 	err := fs.WalkDir(fsys, "r", func(name string, d fs.DirEntry, err error) error {

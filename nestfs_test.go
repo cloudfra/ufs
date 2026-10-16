@@ -26,6 +26,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -677,7 +678,7 @@ func TestNestFSValidPathClosed(t *testing.T) {
 		t.Errorf("Stat on closed nestFS = %v, want fs.ErrClosed", err)
 	}
 	if _, err := nfs.ReadFile("foo.txt"); !errors.Is(err, fs.ErrClosed) {
-		t.Errorf("ReadFile on closed nestFS = %v, want fs.ErrClosed", err)
+		t.Errorf("types.ReadFile on closed nestFS = %v, want fs.ErrClosed", err)
 	}
 	if _, err := nfs.ReadLink("foo.txt"); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("ReadLink on closed nestFS = %v, want fs.ErrClosed", err)
@@ -746,7 +747,7 @@ func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Polyfill test stubs
 //
-// Each stub implements a different subset of the File interface so tests can
+// Each stub implements a different subset of the types.File interface so tests can
 // verify that wrapReadOnlyFSFile and wrapFSFile delegate or fill in exactly
 // the right methods.
 // ---------------------------------------------------------------------------
@@ -829,7 +830,7 @@ func TestWrapReadOnlyFSFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got != base {
-			t.Error("expected same value; file already satisfies File so no wrapper should be created")
+			t.Error("expected same value; file already satisfies types.File so no wrapper should be created")
 		}
 	})
 
@@ -1015,7 +1016,7 @@ func TestWrapFSFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got != base {
-			t.Error("expected same value; file already satisfies File so no wrapper should be created")
+			t.Error("expected same value; file already satisfies types.File so no wrapper should be created")
 		}
 	})
 
@@ -1121,7 +1122,7 @@ func TestWrapFile(t *testing.T) {
 				t.Fatal(err)
 			}
 			if got != base {
-				t.Errorf("readOnly=%t: expected same value; file already satisfies File", readOnly)
+				t.Errorf("readOnly=%t: expected same value; file already satisfies types.File", readOnly)
 			}
 		}
 	})
@@ -1518,7 +1519,7 @@ func TestNestFSReadDirArchiveInArchiveIsStable(t *testing.T) {
 // noHostPathFS is a file system that implements AbsPathGetter but has no host
 // path for any of its files.
 type noHostPathFS struct {
-	WriteFS
+	types.WriteFS
 }
 
 func (noHostPathFS) GetAbsPath(name string) (string, error) {
@@ -1536,9 +1537,9 @@ func TestNestFSMountArchiveWithoutHostPath(t *testing.T) {
 
 	got, err := fs.ReadFile(nfs, "single-testassets.zip.d/index.html")
 	if err != nil {
-		t.Fatalf("ReadFile() = %v, want nil", err)
+		t.Fatalf("types.ReadFile() = %v, want nil", err)
 	}
 	if len(got) == 0 {
-		t.Error("ReadFile() returned no content")
+		t.Error("types.ReadFile() returned no content")
 	}
 }

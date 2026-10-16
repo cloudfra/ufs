@@ -29,6 +29,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -40,13 +41,13 @@ func requireFUSE(t *testing.T) {
 	}
 }
 
-// fuseReadOnlyFS wraps a ufs.ReadFS so the result does not satisfy the FS
+// fuseReadOnlyFS wraps a types.ReadFS so the result does not satisfy the FS
 // interface, forcing the FUSE adapter to treat the mount as read-only.
 type fuseReadOnlyFS struct {
-	ufs.ReadFS
+	types.ReadFS
 }
 
-func testMount(t *testing.T, fsys ufs.ReadFS) string {
+func testMount(t *testing.T, fsys types.ReadFS) string {
 	t.Helper()
 	requireFUSE(t)
 	mountDir := t.TempDir()
@@ -82,7 +83,7 @@ func TestFuseNodeChildPath(t *testing.T) {
 
 // failRenameFS fails the renames from the path fail.
 type failRenameFS struct {
-	ufs.WriteFS
+	types.WriteFS
 	fail string
 }
 

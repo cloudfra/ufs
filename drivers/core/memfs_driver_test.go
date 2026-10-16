@@ -17,13 +17,13 @@ package core_test
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestMemFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(_ *testing.T) ufs.WriteFS {
+	ufsdriversTesting.WriteFS(t, func(_ *testing.T) types.WriteFS {
 		return core.MakeMemFS("memory://test")
 	})
 }

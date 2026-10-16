@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -34,14 +35,14 @@ const (
 )
 
 var (
-	_ ufs.WriteFS = (*archiveFS)(nil)
+	_ types.WriteFS = (*archiveFS)(nil)
 
-	archiveDeviceInfo    = ufs.NewDeviceInfo("archive", "archive", 1, false)
-	archiveDeviceInfoMap = ufs.NewDeviceMap(archiveDeviceInfo)
+	archiveDeviceInfo    = types.NewDeviceInfo("archive", "archive", 1, false)
+	archiveDeviceInfoMap = types.NewDeviceMap(archiveDeviceInfo)
 )
 
 func init() {
-	archiveDriver := ufs.NewDriver("archive", func(ctx context.Context, name string) (ufs.WriteFS, error) {
+	archiveDriver := ufs.NewDriver("archive", func(ctx context.Context, name string) (types.WriteFS, error) {
 		return newArchiveFSFromLocalFS(ctx, strings.TrimPrefix(name, "archive://"))
 	}, isArchiveFSUri, 1, true, false)
 	archiveDriver.CreateFromFileFunc = newArchiveFSFromFile
@@ -58,7 +59,7 @@ type archiveFS struct {
 	name string
 }
 
-func (fsys *archiveFS) GetDeviceInfo() ufs.DeviceMap {
+func (fsys *archiveFS) GetDeviceInfo() types.DeviceMap {
 	return archiveDeviceInfoMap
 }
 
@@ -97,7 +98,7 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	return fsys.fsys.Stat(name)
 }
 
-func (fsys *archiveFS) Create(name string) (ufs.File, error) {
+func (fsys *archiveFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -162,7 +163,7 @@ func (fsys *archiveFS) RemoveAll(name string) error {
 // newArchiveFSFromLocalFS mounts the archive at the host path name. The result
 // is an interface, so that it is nil, not a nil *archiveFS in an interface,
 // when err is not nil.
-func newArchiveFSFromLocalFS(ctx context.Context, name string) (ufs.WriteFS, error) {
+func newArchiveFSFromLocalFS(ctx context.Context, name string) (types.WriteFS, error) {
 	fsys, err := archive.New(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("cannot mount %q as archiveFS, %w", name, err)
@@ -172,7 +173,7 @@ func newArchiveFSFromLocalFS(ctx context.Context, name string) (ufs.WriteFS, err
 
 // newArchiveFSFromFile mounts the archive held by the open file. The returned
 // archiveFS owns file and closes it on Close; on error file is left open.
-func newArchiveFSFromFile(ctx context.Context, file fs.File) (ufs.WriteFS, error) {
+func newArchiveFSFromFile(ctx context.Context, file fs.File) (types.WriteFS, error) {
 	stat, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -195,7 +196,7 @@ func isTempMountRemoteArchiveURI(name string) bool {
 	return strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://")
 }
 
-func newTempMountRemoteArchiveFS(ctx context.Context, name string) (ufs.WriteFS, error) {
+func newTempMountRemoteArchiveFS(ctx context.Context, name string) (types.WriteFS, error) {
 	tempDir, cleanup, err := osutil.CreateTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()

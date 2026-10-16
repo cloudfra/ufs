@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"path"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -33,8 +34,8 @@ const renameOp = "rename"
 // oldPath, which is not atomic and does not keep file modes or modification
 // times. If the copy fails, the partial copy is removed. Symbolic links and
 // other special files cannot be copied and fail with [errors.ErrUnsupported].
-func Rename(fsys WriteFS, oldPath, newPath string) error {
-	if r, ok := fsys.(RenameFileFS); ok {
+func Rename(fsys types.WriteFS, oldPath, newPath string) error {
+	if r, ok := fsys.(types.RenameFileFS); ok {
 		return r.Rename(oldPath, newPath)
 	}
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
@@ -50,7 +51,7 @@ func Rename(fsys WriteFS, oldPath, newPath string) error {
 // A failed copy is removed. When removing a file from src fails, the copy is
 // removed too, so only the original remains. When removing a directory from
 // src fails, the copy is kept, as part of the original may already be gone.
-func renameByCopy(src WriteFS, oldPath string, dst WriteFS, newPath string) error {
+func renameByCopy(src types.WriteFS, oldPath string, dst types.WriteFS, newPath string) error {
 	info, err := src.Lstat(oldPath)
 	if err != nil {
 		return ufserrors.NewLinkError(renameOp, oldPath, newPath, err)
@@ -78,7 +79,7 @@ func renameByCopy(src WriteFS, oldPath string, dst WriteFS, newPath string) erro
 
 // copyTree copies the file or directory oldPath in src, described by info, to
 // newPath in dst.
-func copyTree(src WriteFS, oldPath string, dst WriteFS, newPath string, info fs.FileInfo) error {
+func copyTree(src types.WriteFS, oldPath string, dst types.WriteFS, newPath string, info fs.FileInfo) error {
 	switch {
 	case info.Mode().IsRegular():
 		return copyFile(src, oldPath, dst, newPath)
@@ -106,7 +107,7 @@ func copyTree(src WriteFS, oldPath string, dst WriteFS, newPath string, info fs.
 }
 
 // copyFile copies the regular file oldPath in src to newPath in dst.
-func copyFile(src WriteFS, oldPath string, dst WriteFS, newPath string) (err error) {
+func copyFile(src types.WriteFS, oldPath string, dst types.WriteFS, newPath string) (err error) {
 	r, err := src.Open(oldPath)
 	if err != nil {
 		return err

@@ -19,12 +19,12 @@ package boltfs
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestBoltFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+	ufsdriversTesting.WriteFS(t, func(t *testing.T) types.WriteFS {
 		name := testBoltFSURI(t)
 		fsys, err := makeBoltFS(name)
 		if err != nil {

@@ -18,13 +18,13 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // checkWriteRead verifies that a file written to fsys reads back.
-func checkWriteRead(t *testing.T, fsys ufs.WriteFS) {
+func checkWriteRead(t *testing.T, fsys types.WriteFS) {
 	t.Helper()
 	const name, want = "hello.txt", "hello"
 	f, err := fsys.Create(name)

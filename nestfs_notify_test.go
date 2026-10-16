@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs/drivers/testing/eventtest"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -33,7 +34,7 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 		}
 	}()
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -51,8 +52,8 @@ func TestNestFSWatchDelegatesToMemFS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyCreate && ev.Path == "test.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyCreate && ev.Path == "test.txt"
 	})
 }
 
@@ -68,7 +69,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 		}
 	}()
 
-	ec := eventtest.NewEventCollector[NotifyOp]()
+	ec := eventtest.NewEventCollector[types.NotifyOp]()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -78,7 +79,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, closer)()
 
-	// File inside the watched subdirectory should be delivered.
+	// types.File inside the watched subdirectory should be delivered.
 	f, err := inner.Create("sub/inside.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -87,11 +88,11 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 		t.Fatalf("failed to close file: %v", err)
 	}
 
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-		return ev.Op == NotifyCreate && ev.Path == "sub/inside.txt"
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Op == types.NotifyCreate && ev.Path == "sub/inside.txt"
 	})
 
-	// File outside should not be delivered.
+	// types.File outside should not be delivered.
 	f, err = inner.Create("outside.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +103,7 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if ec.HasEvent(func(ev eventtest.Event[NotifyOp]) bool {
+	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "outside.txt"
 	}) {
 		t.Error("received event for file outside watched subdirectory")
@@ -118,7 +119,7 @@ func TestNestFSWatchUnsupportedBackend(t *testing.T) {
 		}
 	}()
 
-	_, err := nfs.Watch(t.Context(), ".", func(NotifyOp, string) {})
+	_, err := nfs.Watch(t.Context(), ".", func(types.NotifyOp, string) {})
 	if err == nil {
 		t.Error("Watch on non-watchable backend should fail")
 	}
@@ -147,11 +148,11 @@ func TestNestFSWatchInsideMountReportsRootRelativePaths(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			watcher, ok := fsys.(Watcher)
+			watcher, ok := fsys.(types.Watcher)
 			if !ok {
-				t.Fatalf("%T does not implement Watcher", fsys)
+				t.Fatalf("%T does not implement types.Watcher", fsys)
 			}
-			ec := eventtest.NewEventCollector[NotifyOp]()
+			ec := eventtest.NewEventCollector[types.NotifyOp]()
 			closer, err := watcher.Watch(t.Context(), tc.watch, ec.Hook)
 			if err != nil {
 				t.Fatal(err)
@@ -166,8 +167,8 @@ func TestNestFSWatchInsideMountReportsRootRelativePaths(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[NotifyOp]) bool {
-				return ev.Op == NotifyCreate && ev.Path == tc.wantEvent
+			ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+				return ev.Op == types.NotifyCreate && ev.Path == tc.wantEvent
 			})
 		})
 	}

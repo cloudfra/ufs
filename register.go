@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"sync"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -47,7 +48,7 @@ type Decorator struct {
 
 	// CreateFunc wraps the given file system. The last argument is the raw
 	// value of the decorator's Options section, see [DecodeOptions].
-	CreateFunc func(context.Context, WriteFS, any) (WriteFS, error)
+	CreateFunc func(context.Context, types.WriteFS, any) (types.WriteFS, error)
 }
 
 // Driver is the driver configuration for a file system driver.
@@ -56,7 +57,7 @@ type Driver struct {
 	Name string
 
 	// CreateFunc is invoked when creating an instance of the file system driver.
-	CreateFunc func(context.Context, string) (WriteFS, error)
+	CreateFunc func(context.Context, string) (types.WriteFS, error)
 
 	// MatchFunc returns true if the URI in the string matches a pattern that the driver can handle.
 	MatchFunc func(string) bool
@@ -75,11 +76,11 @@ type Driver struct {
 	// from an open file instead of a name, e.g. for an archive that is stored
 	// inside another file system. The returned file system owns the file and
 	// closes it on Close; on error the file is left open. It is optional.
-	CreateFromFileFunc func(context.Context, fs.File) (WriteFS, error)
+	CreateFromFileFunc func(context.Context, fs.File) (types.WriteFS, error)
 }
 
 // NewDriver builds a Driver configuration for a file system driver, to be passed to Register.
-func NewDriver(name string, createFunc func(context.Context, string) (WriteFS, error), matchFunc func(string) bool, priority int, standard bool, readWrite bool) Driver {
+func NewDriver(name string, createFunc func(context.Context, string) (types.WriteFS, error), matchFunc func(string) bool, priority int, standard bool, readWrite bool) Driver {
 	return Driver{
 		Name:       name,
 		CreateFunc: createFunc,
@@ -94,10 +95,10 @@ func NewDriver(name string, createFunc func(context.Context, string) (WriteFS, e
 // to be passed to RegisterDecorator. T is the decorator's options type; the
 // decorator's Options section is decoded into it with [DecodeOptions] before
 // createFunc is invoked.
-func NewDecorator[T any](name string, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator {
+func NewDecorator[T any](name string, createFunc func(context.Context, types.WriteFS, T) (types.WriteFS, error)) Decorator {
 	return Decorator{
 		Name: name,
-		CreateFunc: func(ctx context.Context, inner WriteFS, raw any) (WriteFS, error) {
+		CreateFunc: func(ctx context.Context, inner types.WriteFS, raw any) (types.WriteFS, error) {
 			opts, err := DecodeOptions[T](raw)
 			if err != nil {
 				return nil, fmt.Errorf("invalid options for file system decorator %q, %w", name, err)
@@ -267,7 +268,7 @@ func (r *registrar) matchDecorator(name string) (Decorator, error) {
 	return decorator, nil
 }
 
-func (r *registrar) create(ctx context.Context, name string) (WriteFS, error) {
+func (r *registrar) create(ctx context.Context, name string) (types.WriteFS, error) {
 	reg, err := r.matchDriver(name)
 	if err != nil {
 		return nil, err
@@ -286,7 +287,7 @@ func (r *registrar) create(ctx context.Context, name string) (WriteFS, error) {
 // must exactly match the name of a registered decorator, and a decorator may
 // be listed only once. On error inner is left open; closing it is up to the
 // caller.
-func (r *registrar) decorate(ctx context.Context, inner WriteFS, opts []MountOption) (WriteFS, error) {
+func (r *registrar) decorate(ctx context.Context, inner types.WriteFS, opts []MountOption) (types.WriteFS, error) {
 	if len(opts) == 0 {
 		return inner, nil
 	}

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 var invalidPaths = []string{
@@ -29,7 +30,7 @@ var invalidPaths = []string{
 // FS runs the full read-write conformance suite against file systems
 // returned by createFSFunc.
 func FS(t *testing.T, createFSFunc func(t *testing.T) ufs.FS) {
-	createWriteFSFunc := func(t *testing.T) ufs.WriteFS {
+	createWriteFSFunc := func(t *testing.T) types.WriteFS {
 		return createFSFunc(t)
 	}
 	MkdirAll(t, createWriteFSFunc)
@@ -37,14 +38,14 @@ func FS(t *testing.T, createFSFunc func(t *testing.T) ufs.FS) {
 	DirFileConflicts(t, createWriteFSFunc)
 	Rename(t, createWriteFSFunc)
 	BatchCreate(t, createWriteFSFunc)
-	ReadFS(t, func(t *testing.T) ufs.ReadFS {
+	ReadFS(t, func(t *testing.T) types.ReadFS {
 		return createFSFunc(t)
 	})
 }
 
 // WriteFile creates name in fsys with content, stopping the test if Create,
 // the write, or Close fails.
-func WriteFile(tb testing.TB, fsys ufs.WriteFS, name, content string) {
+func WriteFile(tb testing.TB, fsys types.WriteFS, name, content string) {
 	tb.Helper()
 	f, err := fsys.Create(name)
 	if err != nil {

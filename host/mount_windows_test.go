@@ -32,6 +32,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
@@ -50,13 +51,13 @@ func requireProjFS(t *testing.T) {
 	}
 }
 
-// projfsReadOnlyFS wraps a ufs.ReadFS so the result does not satisfy the FS
+// projfsReadOnlyFS wraps a types.ReadFS so the result does not satisfy the FS
 // interface, forcing the mount to be treated as read-only.
 type projfsReadOnlyFS struct {
-	ufs.ReadFS
+	types.ReadFS
 }
 
-func testProjFSMount(t *testing.T, fsys ufs.ReadFS) string {
+func testProjFSMount(t *testing.T, fsys types.ReadFS) string {
 	t.Helper()
 	requireProjFS(t)
 	mountDir := t.TempDir()

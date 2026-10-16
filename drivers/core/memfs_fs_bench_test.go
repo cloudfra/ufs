@@ -20,12 +20,12 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // mustMemFS opens the memory file system name and attaches t.Cleanup to close it.
-func mustMemFS(tb testing.TB, name string) ufs.WriteFS {
+func mustMemFS(tb testing.TB, name string) types.WriteFS {
 	tb.Helper()
 	fsys := MakeMemFS(name)
 	tb.Cleanup(func() {

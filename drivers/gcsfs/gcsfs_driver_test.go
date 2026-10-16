@@ -17,13 +17,13 @@ package gcsfs_test
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/gcsfs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestGCSFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFSWithBuckets(t, func(t *testing.T) ufs.WriteFS {
+	ufsdriversTesting.WriteFSWithBuckets(t, func(t *testing.T) types.WriteFS {
 		ctx := t.Context()
 		name := "gs://first"
 		client := gcsfs.CreateFakeGcsBackend(t)

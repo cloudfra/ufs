@@ -33,6 +33,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -87,7 +88,7 @@ var (
 	_ fuseFileHandler = (*fuseFileHandle)(nil)
 )
 
-func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error) {
+func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error) {
 	root := &fuseNode{fsys: fsys}
 
 	// TODO: Accept mount options (e.g. forwarding the URI query parameter
@@ -142,12 +143,12 @@ func (s *fuseHostServer) Wait() {
 	s.server.Wait()
 }
 
-// fuseNode adapts a ufs.ReadFS path to go-fuse's InodeEmbedder. Its path is
+// fuseNode adapts a types.ReadFS path to go-fuse's InodeEmbedder. Its path is
 // read from the inode tree rather than stored, so that it follows a rename of
 // the node or of a directory above it.
 type fuseNode struct {
 	fusefs.Inode
-	fsys ufs.ReadFS
+	fsys types.ReadFS
 }
 
 // fsPath returns the path of n in fsys.
@@ -208,7 +209,7 @@ func (n *fuseNode) Readdir(_ context.Context) (fusefs.DirStream, syscall.Errno) 
 
 func (n *fuseNode) Open(_ context.Context, flags uint32) (fusefs.FileHandle, uint32, syscall.Errno) {
 	if flags&(syscall.O_WRONLY|syscall.O_RDWR|syscall.O_TRUNC) != 0 {
-		wfs, ok := n.fsys.(ufs.WriteFS)
+		wfs, ok := n.fsys.(types.WriteFS)
 		if !ok {
 			return nil, 0, syscall.EROFS
 		}
@@ -239,7 +240,7 @@ func (n *fuseNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, out *fuse.EntryOut) (*fusefs.Inode, fusefs.FileHandle, uint32, syscall.Errno) {
-	wfs, ok := n.fsys.(ufs.WriteFS)
+	wfs, ok := n.fsys.(types.WriteFS)
 	if !ok {
 		return nil, nil, 0, syscall.EROFS
 	}
@@ -261,7 +262,7 @@ func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, 
 }
 
 func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
-	wfs, ok := n.fsys.(ufs.WriteFS)
+	wfs, ok := n.fsys.(types.WriteFS)
 	if !ok {
 		return nil, syscall.EROFS
 	}
@@ -284,7 +285,7 @@ func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fus
 }
 
 func (n *fuseNode) Unlink(_ context.Context, name string) syscall.Errno {
-	wfs, ok := n.fsys.(ufs.WriteFS)
+	wfs, ok := n.fsys.(types.WriteFS)
 	if !ok {
 		return syscall.EROFS
 	}
@@ -292,7 +293,7 @@ func (n *fuseNode) Unlink(_ context.Context, name string) syscall.Errno {
 }
 
 func (n *fuseNode) Rmdir(_ context.Context, name string) syscall.Errno {
-	wfs, ok := n.fsys.(ufs.WriteFS)
+	wfs, ok := n.fsys.(types.WriteFS)
 	if !ok {
 		return syscall.EROFS
 	}
@@ -303,7 +304,7 @@ func (n *fuseNode) Rmdir(_ context.Context, name string) syscall.Errno {
 // existing newName is replaced, as rename(2) does (see renameReplacing).
 // RENAME_EXCHANGE and RENAME_WHITEOUT are not supported.
 func (n *fuseNode) Rename(ctx context.Context, name string, newParent fusefs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
-	wfs, ok := n.fsys.(ufs.WriteFS)
+	wfs, ok := n.fsys.(types.WriteFS)
 	if !ok {
 		return syscall.EROFS
 	}
@@ -331,7 +332,7 @@ func (n *fuseNode) Rename(ctx context.Context, name string, newParent fusefs.Ino
 // removed once the rename succeeds, or renamed back if it fails, and an empty
 // directory is removed and made again if the rename fails. Unlike rename(2)
 // this is not atomic: newPath is missing for a moment.
-func renameReplacing(ctx context.Context, fsys ufs.WriteFS, oldPath, newPath string) error {
+func renameReplacing(ctx context.Context, fsys types.WriteFS, oldPath, newPath string) error {
 	err := ufs.Rename(fsys, oldPath, newPath)
 	if !errors.Is(err, fs.ErrExist) {
 		return err

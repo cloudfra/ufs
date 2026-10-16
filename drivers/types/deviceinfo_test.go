@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package types
 
 import (
 	"testing"
@@ -228,7 +228,7 @@ func TestCombineDeviceInfo(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.src
 			for _, mi := range tc.incoming {
-				got = got.combine(mi.mountPath, mi.incoming)
+				got = got.Combine(mi.mountPath, mi.incoming)
 			}
 			if d := cmp.Diff(tc.want, got, cmpopts.EquateComparable(DeviceInfo{})); d != "" {
 				t.Errorf("got %v, want %v diff(-want,+got):\n %v", got, tc.want, d)

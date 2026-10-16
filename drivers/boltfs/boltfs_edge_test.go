@@ -30,6 +30,7 @@ import (
 	"github.com/cloudfra/ufs"
 	_ "github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -232,7 +233,7 @@ func TestBoltFileOpenedForReadCloseIsNoop(t *testing.T) {
 func TestBoltFSWatchOnFile(t *testing.T) {
 	fsys := newTestBoltFS(t)
 	ufsdriversTesting.WriteFile(t, fsys, "file.txt", "x")
-	_, err := fsys.(ufs.Watcher).Watch(t.Context(), "file.txt", func(ufs.NotifyOp, string) {})
+	_, err := fsys.(types.Watcher).Watch(t.Context(), "file.txt", func(types.NotifyOp, string) {})
 	if !errors.Is(err, fs.ErrInvalid) {
 		t.Errorf("Watch(file.txt) = %v, want fs.ErrInvalid", err)
 	}

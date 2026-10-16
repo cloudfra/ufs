@@ -23,12 +23,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 // tagFS records which decorator produced it and what it wraps, so tests can
 // read back the order in which decorators were applied.
 type tagFS struct {
-	WriteFS
+	types.WriteFS
 	tag string
 }
 
@@ -42,7 +44,7 @@ type tagOptions struct {
 var errTagDecorator = errors.New("tag decorator failed")
 
 func tagDecorator(name string) Decorator {
-	return NewDecorator(name, func(_ context.Context, inner WriteFS, opts tagOptions) (WriteFS, error) {
+	return NewDecorator(name, func(_ context.Context, inner types.WriteFS, opts tagOptions) (types.WriteFS, error) {
 		if opts.Fail {
 			return nil, errTagDecorator
 		}
@@ -51,7 +53,7 @@ func tagDecorator(name string) Decorator {
 }
 
 // tags returns the decorator tags from the outermost wrapper inwards.
-func tags(fsys WriteFS) []string {
+func tags(fsys types.WriteFS) []string {
 	var got []string
 	for {
 		tagged, ok := fsys.(*tagFS)
@@ -63,7 +65,7 @@ func tags(fsys WriteFS) []string {
 	}
 }
 
-func nopDecorate(_ context.Context, inner WriteFS, _ any) (WriteFS, error) {
+func nopDecorate(_ context.Context, inner types.WriteFS, _ any) (types.WriteFS, error) {
 	return inner, nil
 }
 
@@ -174,7 +176,7 @@ func TestRegistrarDecorate(t *testing.T) {
 	t.Parallel()
 	r := newRegistrar()
 	var created atomic.Int64
-	counting := NewDecorator("counting", func(_ context.Context, inner WriteFS, _ tagOptions) (WriteFS, error) {
+	counting := NewDecorator("counting", func(_ context.Context, inner types.WriteFS, _ tagOptions) (types.WriteFS, error) {
 		created.Add(1)
 		return inner, nil
 	})
@@ -381,7 +383,7 @@ func TestRegisterDecorator(t *testing.T) {
 
 // closeTrackFS reports whether the file system created for a mount was closed.
 type closeTrackFS struct {
-	WriteFS
+	types.WriteFS
 	closed *bool
 }
 
@@ -397,7 +399,7 @@ func TestNewFromMountSpecClosesOnDecoratorError(t *testing.T) {
 	Register(Driver{
 		Name:      scheme,
 		MatchFunc: func(name string) bool { return strings.HasPrefix(name, scheme+":") },
-		CreateFunc: func(context.Context, string) (WriteFS, error) {
+		CreateFunc: func(context.Context, string) (types.WriteFS, error) {
 			fsys := &closeTrackFS{WriteFS: mustBaseFS(t, "null:"), closed: &closed[created]}
 			created++
 			return fsys, nil

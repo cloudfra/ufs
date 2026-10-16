@@ -23,20 +23,20 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 const procMountsPath = "/proc/self/mounts"
 
-func (fsys *localFS) GetDeviceInfo() ufs.DeviceMap {
+func (fsys *localFS) GetDeviceInfo() types.DeviceMap {
 	rootPath := fsys.osFS.Name()
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath
 	}
 	f, err := osutil.Open(procMountsPath)
 	if err != nil {
-		return ufs.DefaultDeviceMap
+		return types.DefaultDeviceMap
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -52,7 +52,7 @@ type linuxMountEntry struct {
 	fsType     string
 }
 
-func linuxDeviceMapFromReader(rootPath string, r io.Reader) ufs.DeviceMap {
+func linuxDeviceMapFromReader(rootPath string, r io.Reader) types.DeviceMap {
 	entries := parseLinuxMounts(r)
 	return buildLinuxDeviceMap(rootPath, entries)
 }
@@ -81,8 +81,8 @@ func parseLinuxMounts(r io.Reader) []linuxMountEntry {
 	return entries
 }
 
-func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) ufs.DeviceMap {
-	result := ufs.DeviceMap{".": ufs.DefaultDeviceInfo}
+func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) types.DeviceMap {
+	result := types.DeviceMap{".": types.DefaultDeviceInfo}
 
 	// Find the mount that best covers rootPath (longest prefix match).
 	bestMatchLen := -1
@@ -111,13 +111,13 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) ufs.DeviceM
 	return result
 }
 
-func linuxMakeDeviceInfo(m linuxMountEntry) ufs.DeviceInfo {
+func linuxMakeDeviceInfo(m linuxMountEntry) types.DeviceInfo {
 	dt, tc := linuxDeviceTypeAndThreads(m)
 	name := m.device
 	if name == "none" || name == "" {
 		name = m.fsType
 	}
-	return ufs.NewDeviceInfo(name, dt, tc, false)
+	return types.NewDeviceInfo(name, dt, tc, false)
 }
 
 func linuxDeviceTypeAndThreads(m linuxMountEntry) (string, int) {

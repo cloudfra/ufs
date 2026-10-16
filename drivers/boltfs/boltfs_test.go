@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -35,7 +35,7 @@ func testBoltFSURI(t *testing.T) string {
 	return boltFSPrefix + filepath.Join(t.TempDir(), "test.db")
 }
 
-func newTestBoltFS(t *testing.T) ufs.WriteFS {
+func newTestBoltFS(t *testing.T) types.WriteFS {
 	t.Helper()
 	fsys, err := makeBoltFS(testBoltFSURI(t))
 	if err != nil {
@@ -195,7 +195,7 @@ func TestBoltFileSeek(t *testing.T) {
 // bytes or extending the file), not always append to the end. Mirrors
 // TestMemFileWriteAtOffset (memfs_test.go).
 func TestBoltFileWriteAtOffset(t *testing.T) {
-	newFile := func(t *testing.T, fsys ufs.WriteFS, name, initial string) ufs.File {
+	newFile := func(t *testing.T, fsys types.WriteFS, name, initial string) types.File {
 		t.Helper()
 		f, err := fsys.Create(name)
 		if err != nil {
@@ -207,7 +207,7 @@ func TestBoltFileWriteAtOffset(t *testing.T) {
 		return f
 	}
 
-	readAll := func(t *testing.T, f ufs.File) string {
+	readAll := func(t *testing.T, f types.File) string {
 		t.Helper()
 		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			t.Fatal(err)

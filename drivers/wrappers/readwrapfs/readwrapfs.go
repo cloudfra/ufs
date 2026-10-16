@@ -21,31 +21,31 @@ import (
 	"io/fs"
 	"net/url"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ ufs.ReadFS = (*readWrapFS)(nil)
+var _ types.ReadFS = (*readWrapFS)(nil)
 
 type readWrapFS struct {
 	fsys fs.FS
 }
 
-func (fsys *readWrapFS) GetDeviceInfo() ufs.DeviceMap {
+func (fsys *readWrapFS) GetDeviceInfo() types.DeviceMap {
 	return getDeviceInfoOrDefault(fsys.fsys)
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see
-// [ufs.MountedArchiveDirFS].
+// [types.MountedArchiveDirFS].
 func (fsys *readWrapFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.fsys.(ufs.MountedArchiveDirFS)
+	m, ok := fsys.fsys.(types.MountedArchiveDirFS)
 	return ok && m.IsMountedArchiveDir(name)
 }
 
 func (fsys *readWrapFS) URI() (*url.URL, error) {
-	if ug, ok := fsys.fsys.(ufs.URIGet); ok {
+	if ug, ok := fsys.fsys.(types.URIGet); ok {
 		u, err := ug.URI()
 		if err != nil {
 			return nil, err
@@ -130,13 +130,13 @@ func (fsys *readWrapFS) ReadLink(name string) (string, error) {
 }
 
 // FromFS wraps a standard library [fs.FS] as a read-only [ReadFS].
-func FromFS(fsys fs.FS) ufs.ReadFS {
+func FromFS(fsys fs.FS) types.ReadFS {
 	return &readWrapFS{fsys: fsys}
 }
 
-func getDeviceInfoOrDefault(fsys fs.FS) ufs.DeviceMap {
-	if diFsys, ok := fsys.(ufs.DeviceInfoGetter); ok {
+func getDeviceInfoOrDefault(fsys fs.FS) types.DeviceMap {
+	if diFsys, ok := fsys.(types.DeviceInfoGetter); ok {
 		return diFsys.GetDeviceInfo()
 	}
-	return ufs.DefaultDeviceMap
+	return types.DefaultDeviceMap
 }

@@ -19,13 +19,13 @@ package host
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func init() {
 	mountBackends = append(mountBackends, mountBackend{
 		name: "fuse",
-		mount: func(t *testing.T, fsys ufs.ReadFS) mountSetup {
+		mount: func(t *testing.T, fsys types.ReadFS) mountSetup {
 			t.Helper()
 			return mountSetup{mountDir: testMount(t, fsys)}
 		},

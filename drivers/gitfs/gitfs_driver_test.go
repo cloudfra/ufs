@@ -22,13 +22,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 func TestGitFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFSWithBuckets(t, func(t *testing.T) ufs.WriteFS {
+	ufsdriversTesting.WriteFSWithBuckets(t, func(t *testing.T) types.WriteFS {
 		srcDir, err := osutil.MkdirTemp("", "gitfssrc*.git")
 		if err != nil {
 			t.Fatal(err)

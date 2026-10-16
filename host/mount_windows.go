@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -159,7 +160,7 @@ type projfsEnumSession struct {
 
 // projfsMountServer implements MountServer using ProjFS.
 type projfsMountServer struct {
-	fsys         ufs.ReadFS
+	fsys         types.ReadFS
 	nsCtx        uintptr // PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT
 	enumSessions sync.Map
 	done         chan struct{}
@@ -524,7 +525,7 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 // where ProjFS passes an empty name. Like [ufs.Rename], it never replaces an
 // existing file, and a file that only exists locally cannot be renamed.
 func (s *projfsMountServer) preRename(oldName, newName utf16Str) uintptr {
-	wfs, ok := s.fsys.(ufs.WriteFS)
+	wfs, ok := s.fsys.(types.WriteFS)
 	if !ok || oldName == nil || newName == nil {
 		return hresultAccessDenied
 	}
@@ -540,7 +541,7 @@ func cancelCommandCB(callbackData *prjCallbackData) uintptr {
 	return 0
 }
 
-func mount(ctx context.Context, fsys ufs.ReadFS, mountPath string) (MountServer, error) {
+func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error) {
 	slog.Info("projfs: mount starting",
 		"mountPath", mountPath,
 		"fsysType", fmt.Sprintf("%T", fsys),

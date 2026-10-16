@@ -26,7 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// testOp stands in for ufs.NotifyOp, which this package cannot import.
+// testOp stands in for types.NotifyOp, which this package cannot import.
 type testOp int
 
 const (
@@ -46,7 +46,7 @@ func (f *fatalTB) Fatalf(format string, args ...any) {
 	runtime.Goexit()
 }
 
-// testHook has the same shape as ufs.NotifyHook.
+// testHook has the same shape as types.NotifyHook.
 type testHook func(op testOp, path string)
 
 func TestEventCollectorHookSatisfiesNotifyHookShape(t *testing.T) {

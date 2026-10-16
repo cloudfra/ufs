@@ -19,10 +19,11 @@ import (
 
 	"github.com/cloudfra/ufs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestNestedMemFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) ufs.WriteFS {
+	ufsdriversTesting.WriteFS(t, func(t *testing.T) types.WriteFS {
 		name := "memory://test"
 		fsys, err := ufs.NewNestFS(t.Context(), name)
 		if err != nil {

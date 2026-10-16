@@ -19,11 +19,12 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"gopkg.in/yaml.v3"
 )
 
 // URIOrDefault returns fsys's canonical URI, or value if fsys reports no URI.
-func URIOrDefault(fsys URIGet, value string) string {
+func URIOrDefault(fsys types.URIGet, value string) string {
 	u, err := fsys.URI()
 	if err != nil || u == nil {
 		return value

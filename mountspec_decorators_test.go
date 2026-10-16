@@ -26,6 +26,7 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/core"
 	_ "github.com/cloudfra/ufs/drivers/decorators/faultfs"
 	_ "github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -401,7 +402,7 @@ func TestNewFromYAMLDecoratorOptionErrors(t *testing.T) {
 }
 
 // optionsOf returns the decoded options query parameter of fsys's URI.
-func optionsOf(t *testing.T, fsys ufs.WriteFS) string {
+func optionsOf(t *testing.T, fsys types.WriteFS) string {
 	t.Helper()
 	u, err := fsys.URI()
 	if err != nil || u == nil {
@@ -523,7 +524,7 @@ func TestDecoratedURIRoundTrip(t *testing.T) {
 				t.Errorf("rebuilt URI() = %q, want %q", got, uri)
 			}
 
-			for _, fsys := range []ufs.WriteFS{original, rebuilt} {
+			for _, fsys := range []types.WriteFS{original, rebuilt} {
 				for _, name := range tc.readOnly {
 					if _, err := fsys.Create(name); !errors.Is(err, fs.ErrPermission) {
 						t.Errorf("Create(%q) = %v, want fs.ErrPermission", name, err)

@@ -33,6 +33,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/go-git/go-git/v5"
@@ -75,7 +76,7 @@ func prepareGitDirectory(ctx context.Context, name string, gitURL string) error 
 // New returns a file system with the contents of the git repository name,
 // which must end in ".git". The repository is cloned into a temporary
 // directory that is removed when the file system is closed.
-func New(ctx context.Context, name string) (ufs.WriteFS, error) {
+func New(ctx context.Context, name string) (types.WriteFS, error) {
 	if !isGitFSUri(name) {
 		return nil, fmt.Errorf("%q is not a valid git repository", name)
 	}

@@ -19,11 +19,12 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
 var (
-	_ FileInfo = (*fsInfo)(nil)
+	_ types.FileInfo = (*fsInfo)(nil)
 
 	_ fs.DirEntry = (*virtualDirEntry)(nil)
 	_ fs.FileInfo = (*virtualDirEntry)(nil)
@@ -35,7 +36,7 @@ var (
 
 // NewFileInfo returns a [FileInfo] for the given attributes. The result reports
 // IsDir according to mode.IsDir() and a nil Sys value.
-func NewFileInfo(name string, size int64, mode fs.FileMode, modTime time.Time) FileInfo {
+func NewFileInfo(name string, size int64, mode fs.FileMode, modTime time.Time) types.FileInfo {
 	return &fsInfo{
 		name:    name,
 		size:    size,
@@ -121,7 +122,7 @@ func makeVirtualDirEntry(name string) *virtualDirEntry {
 }
 
 type readDirFile struct {
-	fsys ReadFS
+	fsys types.ReadFS
 	name string
 }
 
@@ -141,7 +142,7 @@ func (rdf *readDirFile) ReadDir(_ int) ([]fs.DirEntry, error) {
 	return rdf.fsys.ReadDir(rdf.name)
 }
 
-func makeReadDirFile(fsys ReadFS, name string) *readDirFile {
+func makeReadDirFile(fsys types.ReadFS, name string) *readDirFile {
 	return &readDirFile{
 		fsys: fsys,
 		name: name,

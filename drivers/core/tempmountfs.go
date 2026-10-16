@@ -21,6 +21,7 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -30,13 +31,13 @@ import (
 var _ localFSInterface = (*tempMountFS)(nil)
 
 type tempMountFS struct {
-	lfs    ufs.WriteFS
+	lfs    types.WriteFS
 	uri    string
 	name   string
 	closer func() error
 }
 
-func (fsys *tempMountFS) GetDeviceInfo() ufs.DeviceMap {
+func (fsys *tempMountFS) GetDeviceInfo() types.DeviceMap {
 	return fsys.lfs.GetDeviceInfo()
 }
 
@@ -62,7 +63,7 @@ func (fsys *tempMountFS) Close() error {
 	return ufserrors.Join(closeErr, cleanupErr)
 }
 
-func (fsys *tempMountFS) Create(name string) (ufs.File, error) {
+func (fsys *tempMountFS) Create(name string) (types.File, error) {
 	return fsys.lfs.Create(name)
 }
 
@@ -108,11 +109,11 @@ func (fsys *tempMountFS) RemoveAll(name string) error {
 
 // NewTempMountFS returns a file system for uri backed by a temporary local
 // directory; prepare is called with the directory path to populate it.
-func NewTempMountFS(ctx context.Context, uri string, prepare func(string) error) (ufs.WriteFS, error) {
+func NewTempMountFS(ctx context.Context, uri string, prepare func(string) error) (types.WriteFS, error) {
 	return newTempMountFS(ctx, uri, prepare)
 }
 
-func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (ufs.WriteFS, error) {
+func newTempMountFS(ctx context.Context, uri string, prepare func(string) error) (types.WriteFS, error) {
 	tempDir, cleanup, err := osutil.CreateTempDirectory()
 	if err != nil {
 		cleanupErr := cleanup()
@@ -133,7 +134,7 @@ func newTempMountFS(ctx context.Context, uri string, prepare func(string) error)
 	return makeTempMountFS(lfs, uri, tempDir, cleanup), nil
 }
 
-func makeTempMountFS(lfs ufs.WriteFS, uri string, name string, closer func() error) *tempMountFS {
+func makeTempMountFS(lfs types.WriteFS, uri string, name string, closer func() error) *tempMountFS {
 	return &tempMountFS{
 		lfs:    lfs,
 		uri:    uri,

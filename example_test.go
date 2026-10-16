@@ -89,7 +89,7 @@ func ExampleNew_null() {
 		return
 	}
 
-	// ReadFile always returns an empty byte slice, not an error.
+	// types.ReadFile always returns an empty byte slice, not an error.
 	data, err := fsys.ReadFile("discard.txt")
 	if err != nil {
 		slog.Error("cannot read file", "error", err)

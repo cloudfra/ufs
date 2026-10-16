@@ -24,6 +24,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	_ "github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
 
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -37,7 +38,7 @@ type mountSetup struct {
 // mountBackend describes a host-mount backend for conformance testing.
 type mountBackend struct {
 	name  string
-	mount func(t *testing.T, fsys ufs.ReadFS) mountSetup
+	mount func(t *testing.T, fsys types.ReadFS) mountSetup
 	skip  func(t *testing.T)
 }
 

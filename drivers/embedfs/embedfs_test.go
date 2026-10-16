@@ -22,18 +22,18 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/cloudfra/ufs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func TestDriverTest(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, func(t *testing.T) ufs.ReadFS {
+	ufsdriversTesting.ReadFS(t, func(t *testing.T) types.ReadFS {
 		return makeTestEmbedFS(t, "ok")
 	})
 }
 
-func makeTestEmbedFS(t *testing.T, name string) ufs.WriteFS {
+func makeTestEmbedFS(t *testing.T, name string) types.WriteFS {
 	t.Helper()
 	fsys := New(name, ufsTesting.TestAssetsFS())
 	t.Cleanup(func() {
@@ -250,18 +250,18 @@ func TestEmbedFSInvalidPaths(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		op   func(fsys ufs.WriteFS, path string) error
+		op   func(fsys types.WriteFS, path string) error
 	}{
-		{"Open", func(fsys ufs.WriteFS, path string) error { _, err := fsys.Open(path); return err }},
-		{"Stat", func(fsys ufs.WriteFS, path string) error { _, err := fsys.Stat(path); return err }},
-		{"Lstat", func(fsys ufs.WriteFS, path string) error { _, err := fsys.Lstat(path); return err }},
-		{"ReadFile", func(fsys ufs.WriteFS, path string) error { _, err := fsys.ReadFile(path); return err }},
-		{"ReadDir", func(fsys ufs.WriteFS, path string) error { _, err := fsys.ReadDir(path); return err }},
-		{"ReadLink", func(fsys ufs.WriteFS, path string) error { _, err := fsys.ReadLink(path); return err }},
-		{"Create", func(fsys ufs.WriteFS, path string) error { _, err := fsys.Create(path); return err }},
-		{"MkdirAll", func(fsys ufs.WriteFS, path string) error { return fsys.MkdirAll(path, fs.ModePerm) }},
-		{"Remove", func(fsys ufs.WriteFS, path string) error { return fsys.Remove(path) }},
-		{"RemoveAll", func(fsys ufs.WriteFS, path string) error { return fsys.RemoveAll(path) }},
+		{"Open", func(fsys types.WriteFS, path string) error { _, err := fsys.Open(path); return err }},
+		{"Stat", func(fsys types.WriteFS, path string) error { _, err := fsys.Stat(path); return err }},
+		{"Lstat", func(fsys types.WriteFS, path string) error { _, err := fsys.Lstat(path); return err }},
+		{"ReadFile", func(fsys types.WriteFS, path string) error { _, err := fsys.ReadFile(path); return err }},
+		{"ReadDir", func(fsys types.WriteFS, path string) error { _, err := fsys.ReadDir(path); return err }},
+		{"ReadLink", func(fsys types.WriteFS, path string) error { _, err := fsys.ReadLink(path); return err }},
+		{"Create", func(fsys types.WriteFS, path string) error { _, err := fsys.Create(path); return err }},
+		{"MkdirAll", func(fsys types.WriteFS, path string) error { return fsys.MkdirAll(path, fs.ModePerm) }},
+		{"Remove", func(fsys types.WriteFS, path string) error { return fsys.Remove(path) }},
+		{"RemoveAll", func(fsys types.WriteFS, path string) error { return fsys.RemoveAll(path) }},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

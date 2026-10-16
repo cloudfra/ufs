@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -84,7 +85,7 @@ func testArchiveServer(t *testing.T) *httptest.Server {
 	return ts
 }
 
-func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) ufs.WriteFS {
+func testDownloadAndMount(t *testing.T, ts *httptest.Server, urlPath string) types.WriteFS {
 	t.Helper()
 	ctx := t.Context()
 	client := ts.Client()

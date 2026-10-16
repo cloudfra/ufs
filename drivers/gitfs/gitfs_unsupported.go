@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 // The driver is registered on aix and wasip1 too, but isGitFSUri never matches
@@ -31,7 +32,7 @@ func init() {
 
 // New reports that gitfs is unavailable on GOOS=aix and GOOS=wasip1, where
 // go-git does not build.
-func New(_ context.Context, name string) (ufs.WriteFS, error) {
+func New(_ context.Context, name string) (types.WriteFS, error) {
 	return nil, fmt.Errorf("cannot mount %q, gitfs is not supported on this operating system", name)
 }
 

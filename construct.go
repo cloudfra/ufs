@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"gopkg.in/yaml.v3"
@@ -216,7 +217,7 @@ func nameToURI(name string) (*url.URL, error) {
 // contents. No explicit configuration is required.
 //
 // Use [CreateURI] to pre-configure additional mount points before calling New.
-func New(ctx context.Context, name string) (WriteFS, error) {
+func New(ctx context.Context, name string) (types.WriteFS, error) {
 	if specs := parseMountSpec(name); specs != nil {
 		return newFromMountSpec(ctx, specs)
 	}
@@ -285,8 +286,8 @@ type FSBuilder struct {
 
 type fsBuildMount struct {
 	path string
-	uri  string  // non-empty for URI mounts
-	fsys WriteFS // non-nil for FS mounts
+	uri  string        // non-empty for URI mounts
+	fsys types.WriteFS // non-nil for FS mounts
 }
 
 // NewFSBuilder creates a builder rooted at the given URI string. An empty
@@ -304,7 +305,7 @@ func (b *FSBuilder) Mount(path, uri string) *FSBuilder {
 
 // MountFS adds a pre-built [FS] as a mount at path. It returns the builder
 // for chaining. Pre-built mounts cannot be serialized by [FSBuilder.BuildURI].
-func (b *FSBuilder) MountFS(path string, fsys WriteFS) *FSBuilder {
+func (b *FSBuilder) MountFS(path string, fsys types.WriteFS) *FSBuilder {
 	b.mounts = append(b.mounts, fsBuildMount{path: path, fsys: fsys})
 	return b
 }
@@ -355,7 +356,7 @@ func (b *FSBuilder) BuildURI() (string, error) {
 	return CreateURI(rootName, nested)
 }
 
-func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
+func newBaseFS(ctx context.Context, name string) (types.WriteFS, error) {
 	// drivers/embedfs wraps a Go embed.FS directly and has no URI-based
 	// constructor; give a clear error instead of an unhelpful "not found".
 	if strings.HasPrefix(name, embedFSPrefix) {
@@ -378,7 +379,7 @@ func newBaseFS(ctx context.Context, name string) (WriteFS, error) {
 // newBaseFSFromFile opens the file system held by the open file with the driver
 // that matches name. The returned file system owns file and closes it on
 // Close; on error file is left open.
-func newBaseFSFromFile(ctx context.Context, name string, file fs.File) (WriteFS, error) {
+func newBaseFSFromFile(ctx context.Context, name string, file fs.File) (types.WriteFS, error) {
 	driver, err := getRegistrar().matchDriver(name)
 	if err != nil {
 		return nil, fmt.Errorf("%q needs a driver from github.com/cloudfra/ufs/drivers, check that the driver package is imported, %w", name, err)
@@ -529,7 +530,7 @@ var defaultRootSpec = MountSpec{
 
 // newDecoratedFS opens name via newBaseFS and wraps it with the decorators in
 // the options query parameter of name, if any, followed by those in opts.
-func newDecoratedFS(ctx context.Context, name string, opts []MountOption) (WriteFS, error) {
+func newDecoratedFS(ctx context.Context, name string, opts []MountOption) (types.WriteFS, error) {
 	name, uriOpts, err := splitURIOptions(name)
 	if err != nil {
 		return nil, ufserrors.NewPathError(mountOp, name, err)
@@ -548,7 +549,7 @@ func newDecoratedFS(ctx context.Context, name string, opts []MountOption) (Write
 	return fsys, nil
 }
 
-func newFromMountSpec(ctx context.Context, specs []MountSpec) (WriteFS, error) {
+func newFromMountSpec(ctx context.Context, specs []MountSpec) (types.WriteFS, error) {
 	var root *MountSpec
 	var mounts []MountSpec
 	for i := range specs {

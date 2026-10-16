@@ -22,13 +22,14 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // noRenameFS hides the Rename method of the file system it wraps, so that
 // [Rename] has to copy and remove.
 type noRenameFS struct {
-	WriteFS
+	types.WriteFS
 }
 
 // failRemoveFS is a noRenameFS whose Remove and RemoveAll fail for the path
@@ -54,7 +55,7 @@ func (fsys failRemoveFS) RemoveAll(name string) error {
 	return fsys.noRenameFS.RemoveAll(name)
 }
 
-func writeTestFile(tb testing.TB, fsys WriteFS, name string, data []byte) {
+func writeTestFile(tb testing.TB, fsys types.WriteFS, name string, data []byte) {
 	tb.Helper()
 	f, err := fsys.Create(name)
 	if err != nil {
@@ -70,11 +71,11 @@ func assertFileContent(tb testing.TB, fsys fs.FS, name, want string) {
 	tb.Helper()
 	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
-		tb.Errorf("ReadFile(%q) = %v, want nil", name, err)
+		tb.Errorf("types.ReadFile(%q) = %v, want nil", name, err)
 		return
 	}
 	if string(data) != want {
-		tb.Errorf("ReadFile(%q) = %q, want %q", name, data, want)
+		tb.Errorf("types.ReadFile(%q) = %q, want %q", name, data, want)
 	}
 }
 

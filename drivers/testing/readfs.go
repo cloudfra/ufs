@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package testing provides shared conformance tests that drivers run against their
-// ufs.ReadFS, ufs.WriteFS, and ufs.FS implementations.
+// types.ReadFS, types.WriteFS, and ufs.FS implementations.
 package testing
 
 import (
@@ -24,11 +24,12 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-func readFS(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
+func readFS(t *testing.T, createFSFunc func(t *testing.T) types.ReadFS) {
 	Constructor(t, createFSFunc)
 	InvalidPathsForReadFS(t, createFSFunc)
 	String(t, createFSFunc)
@@ -36,14 +37,14 @@ func readFS(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
 
 // ReadFS runs the read-only conformance suite, including URI checks, against
 // file systems returned by createFSFunc.
-func ReadFS(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
+func ReadFS(t *testing.T, createFSFunc func(t *testing.T) types.ReadFS) {
 	readFS(t, createFSFunc)
 	URI(t, createFSFunc)
 }
 
 // String verifies that the file system's String method returns a URI-like
 // description containing "//".
-func String(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
+func String(t *testing.T, createFSFunc func(t *testing.T) types.ReadFS) {
 	t.Run("String", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -56,7 +57,7 @@ func String(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
 
 // Constructor verifies that createFSFunc returns a non-nil file system that
 // can be closed repeatedly.
-func Constructor(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
+func Constructor(t *testing.T, createFSFunc func(t *testing.T) types.ReadFS) {
 	t.Run("Constructor", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -70,7 +71,7 @@ func Constructor(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
 }
 
 // URI verifies that the file system reports a URI marked read-only.
-func URI(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
+func URI(t *testing.T, createFSFunc func(t *testing.T) types.ReadFS) {
 	t.Run("URI", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -90,41 +91,41 @@ func URI(t *testing.T, createFSFunc func(t *testing.T) ufs.ReadFS) {
 }
 
 // InvalidPathsForReadFS verifies that read operations reject invalid paths.
-func InvalidPathsForReadFS(t *testing.T, createFS func(*testing.T) ufs.ReadFS) {
+func InvalidPathsForReadFS(t *testing.T, createFS func(*testing.T) types.ReadFS) {
 	tests := []struct {
 		name   string
 		wantOp string
-		op     func(fsys ufs.ReadFS, path string) error
+		op     func(fsys types.ReadFS, path string) error
 	}{
 		{
 			name:   "Open",
 			wantOp: "open",
-			op:     func(fsys ufs.ReadFS, path string) error { _, err := fsys.Open(path); return err },
+			op:     func(fsys types.ReadFS, path string) error { _, err := fsys.Open(path); return err },
 		},
 		{
 			name:   "Stat",
 			wantOp: "stat",
-			op:     func(fsys ufs.ReadFS, path string) error { _, err := fsys.Stat(path); return err },
+			op:     func(fsys types.ReadFS, path string) error { _, err := fsys.Stat(path); return err },
 		},
 		{
 			name:   "Lstat",
 			wantOp: "lstat",
-			op:     func(fsys ufs.ReadFS, path string) error { _, err := fsys.Lstat(path); return err },
+			op:     func(fsys types.ReadFS, path string) error { _, err := fsys.Lstat(path); return err },
 		},
 		{
 			name:   "ReadFile",
 			wantOp: "readfile",
-			op:     func(fsys ufs.ReadFS, path string) error { _, err := fsys.ReadFile(path); return err },
+			op:     func(fsys types.ReadFS, path string) error { _, err := fsys.ReadFile(path); return err },
 		},
 		{
 			name:   "ReadDir",
 			wantOp: "readdir",
-			op:     func(fsys ufs.ReadFS, path string) error { _, err := fsys.ReadDir(path); return err },
+			op:     func(fsys types.ReadFS, path string) error { _, err := fsys.ReadDir(path); return err },
 		},
 		{
 			name:   "ReadLink",
 			wantOp: "readlink",
-			op:     func(fsys ufs.ReadFS, path string) error { _, err := fsys.ReadLink(path); return err },
+			op:     func(fsys types.ReadFS, path string) error { _, err := fsys.ReadLink(path); return err },
 		},
 	}
 	for _, tc := range tests {
@@ -148,7 +149,7 @@ func InvalidPathsForReadFS(t *testing.T, createFS func(*testing.T) ufs.ReadFS) {
 	}
 }
 
-func assertDirFileTreeUnchanged(t *testing.T, fsys ufs.ReadFS) {
+func assertDirFileTreeUnchanged(t *testing.T, fsys types.ReadFS) {
 	t.Helper()
 	for _, name := range []string{pathutil.CwdPath, "dir", "dir/sub"} {
 		if info, err := fsys.Stat(name); err != nil || !info.IsDir() {

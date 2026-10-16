@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"path"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -33,8 +34,8 @@ const batchCreateOp = "batchcreate"
 // Writing a single file with BatchCreate costs one operation on a file system
 // that implements [BatchCreateFS], such as a single transaction, instead of
 // one each for MkdirAll, Create and Close.
-func BatchCreate(fsys WriteFS, files ...BatchFile) error {
-	if b, ok := fsys.(BatchCreateFS); ok {
+func BatchCreate(fsys types.WriteFS, files ...types.BatchFile) error {
+	if b, ok := fsys.(types.BatchCreateFS); ok {
 		return b.BatchCreate(files)
 	}
 	for _, file := range files {
@@ -51,7 +52,7 @@ func BatchCreate(fsys WriteFS, files ...BatchFile) error {
 }
 
 // createBatchFile writes file to fsys with MkdirAll and Create.
-func createBatchFile(fsys WriteFS, file BatchFile) (err error) {
+func createBatchFile(fsys types.WriteFS, file types.BatchFile) (err error) {
 	if dir := path.Dir(file.Name); !pathutil.IsCwd(dir) {
 		if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
 			return err

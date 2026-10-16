@@ -44,11 +44,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// ReadFS exposes the read-only surface of a [ufs.ReadFS] file system over
+// ReadFS exposes the read-only surface of a [types.ReadFS] file system over
 // RPC: metadata lookup, directory listing, symbolic link resolution, and
 // streaming file content.
 //
-// ufs.ReadFS's io.Closer.Close is intentionally not exposed here: it tears
+// types.ReadFS's io.Closer.Close is intentionally not exposed here: it tears
 // down the entire underlying file system (e.g. unmounting or disconnecting
 // a cloud storage client) rather than acting on a single request, and is a
 // server-lifecycle concern rather than a per-client one.
@@ -59,21 +59,21 @@ const (
 // fs.ErrPermission).
 type ReadFSClient interface {
 	// GetFile returns metadata for the file at name. Equivalent to
-	// [ufs.ReadFS.Stat], or [ufs.ReadFS.Lstat] when symlink_handling is
+	// [types.ReadFS.Stat], or [types.ReadFS.Lstat] when symlink_handling is
 	// SYMLINK_HANDLING_NO_FOLLOW.
 	GetFile(ctx context.Context, in *GetFileRequest, opts ...grpc.CallOption) (*File, error)
 	// ListFiles returns the immediate children of a directory. Equivalent to
-	// [ufs.ReadFS.ReadDir].
+	// [types.ReadFS.ReadDir].
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*ListFilesResponse, error)
 	// ReadFile streams the content of the file at name. Equivalent to opening
-	// the file via [ufs.ReadFS.Open] and reading its contents, or
-	// [ufs.ReadFS.ReadFile] when the client buffers the full stream.
+	// the file via [types.ReadFS.Open] and reading its contents, or
+	// [types.ReadFS.ReadFile] when the client buffers the full stream.
 	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ReadFileResponse], error)
 	// ReadLink returns the destination of the symbolic link at name.
-	// Equivalent to [ufs.ReadFS.ReadLink].
+	// Equivalent to [types.ReadFS.ReadLink].
 	ReadLink(ctx context.Context, in *ReadLinkRequest, opts ...grpc.CallOption) (*ReadLinkResponse, error)
 	// GetFileSystemInfo describes the file system itself. Equivalent to
-	// [ufs.ReadFS.URI] and [ufs.ReadFS.String].
+	// [types.ReadFS.URI] and [types.ReadFS.String].
 	GetFileSystemInfo(ctx context.Context, in *GetFileSystemInfoRequest, opts ...grpc.CallOption) (*FileSystemInfo, error)
 }
 
@@ -148,11 +148,11 @@ func (c *readFSClient) GetFileSystemInfo(ctx context.Context, in *GetFileSystemI
 // All implementations must embed UnimplementedReadFSServer
 // for forward compatibility.
 //
-// ReadFS exposes the read-only surface of a [ufs.ReadFS] file system over
+// ReadFS exposes the read-only surface of a [types.ReadFS] file system over
 // RPC: metadata lookup, directory listing, symbolic link resolution, and
 // streaming file content.
 //
-// ufs.ReadFS's io.Closer.Close is intentionally not exposed here: it tears
+// types.ReadFS's io.Closer.Close is intentionally not exposed here: it tears
 // down the entire underlying file system (e.g. unmounting or disconnecting
 // a cloud storage client) rather than acting on a single request, and is a
 // server-lifecycle concern rather than a per-client one.
@@ -163,21 +163,21 @@ func (c *readFSClient) GetFileSystemInfo(ctx context.Context, in *GetFileSystemI
 // fs.ErrPermission).
 type ReadFSServer interface {
 	// GetFile returns metadata for the file at name. Equivalent to
-	// [ufs.ReadFS.Stat], or [ufs.ReadFS.Lstat] when symlink_handling is
+	// [types.ReadFS.Stat], or [types.ReadFS.Lstat] when symlink_handling is
 	// SYMLINK_HANDLING_NO_FOLLOW.
 	GetFile(context.Context, *GetFileRequest) (*File, error)
 	// ListFiles returns the immediate children of a directory. Equivalent to
-	// [ufs.ReadFS.ReadDir].
+	// [types.ReadFS.ReadDir].
 	ListFiles(context.Context, *ListFilesRequest) (*ListFilesResponse, error)
 	// ReadFile streams the content of the file at name. Equivalent to opening
-	// the file via [ufs.ReadFS.Open] and reading its contents, or
-	// [ufs.ReadFS.ReadFile] when the client buffers the full stream.
+	// the file via [types.ReadFS.Open] and reading its contents, or
+	// [types.ReadFS.ReadFile] when the client buffers the full stream.
 	ReadFile(*ReadFileRequest, grpc.ServerStreamingServer[ReadFileResponse]) error
 	// ReadLink returns the destination of the symbolic link at name.
-	// Equivalent to [ufs.ReadFS.ReadLink].
+	// Equivalent to [types.ReadFS.ReadLink].
 	ReadLink(context.Context, *ReadLinkRequest) (*ReadLinkResponse, error)
 	// GetFileSystemInfo describes the file system itself. Equivalent to
-	// [ufs.ReadFS.URI] and [ufs.ReadFS.String].
+	// [types.ReadFS.URI] and [types.ReadFS.String].
 	GetFileSystemInfo(context.Context, *GetFileSystemInfoRequest) (*FileSystemInfo, error)
 	mustEmbedUnimplementedReadFSServer()
 }

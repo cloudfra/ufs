@@ -23,13 +23,14 @@ import (
 	"net/url"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"gopkg.in/yaml.v3"
 )
 
-var _ ufs.WriteFS = (*readOnlyFS)(nil)
+var _ types.WriteFS = (*readOnlyFS)(nil)
 
 const (
 	optionName = "readOnly"
@@ -67,7 +68,7 @@ func init() {
 	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
 }
 
-func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, error) {
+func wrap(_ context.Context, inner types.WriteFS, opts Options) (types.WriteFS, error) {
 	if !opts.Enabled {
 		return inner, nil
 	}
@@ -77,20 +78,20 @@ func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, erro
 // readOnlyFS wraps a [ReadFS] and satisfies [FS] by returning
 // [fs.ErrPermission] for all write operations.
 type readOnlyFS struct {
-	ufs.ReadFS
+	types.ReadFS
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see
-// [ufs.MountedArchiveDirFS].
+// [types.MountedArchiveDirFS].
 func (fsys *readOnlyFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.ReadFS.(ufs.MountedArchiveDirFS)
+	m, ok := fsys.ReadFS.(types.MountedArchiveDirFS)
 	return ok && m.IsMountedArchiveDir(name)
 }
 
 // New wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
 // Remove, RemoveAll, Rename) always return [fs.ErrPermission]. All read operations
 // delegate to inner unchanged.
-func New(inner ufs.ReadFS) ufs.WriteFS {
+func New(inner types.ReadFS) types.WriteFS {
 	return &readOnlyFS{
 		ReadFS: inner,
 	}
@@ -114,7 +115,7 @@ func (fsys *readOnlyFS) String() string {
 	return fsutil.String(fsys.ReadFS)
 }
 
-func (fsys *readOnlyFS) Create(name string) (ufs.File, error) {
+func (fsys *readOnlyFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

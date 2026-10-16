@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -31,13 +32,13 @@ const (
 )
 
 var (
-	_ ufs.WriteFS = (*angryFS)(nil)
-	_ fs.GlobFS   = (*angryFS)(nil)
+	_ types.WriteFS = (*angryFS)(nil)
+	_ fs.GlobFS     = (*angryFS)(nil)
 
 	errAngry = fs.ErrInvalid
 
-	angryDeviceInfo    = ufs.NewDeviceInfo("angry", "angry", 1, false)
-	angryDeviceInfoMap = ufs.NewDeviceMap(angryDeviceInfo)
+	angryDeviceInfo    = types.NewDeviceInfo("angry", "angry", 1, false)
+	angryDeviceInfoMap = types.NewDeviceMap(angryDeviceInfo)
 )
 
 func init() {
@@ -48,7 +49,7 @@ type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) GetDeviceInfo() ufs.DeviceMap {
+func (fsys *angryFS) GetDeviceInfo() types.DeviceMap {
 	return angryDeviceInfoMap
 }
 
@@ -85,7 +86,7 @@ func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
 	return nil, ufserrors.NewPathError("stat", name, errAngry)
 }
 
-func (fsys *angryFS) Create(name string) (ufs.File, error) {
+func (fsys *angryFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -152,7 +153,7 @@ func (fsys *angryFS) RemoveAll(name string) error {
 	return ufserrors.NewPathError("removeall", name, errAngry)
 }
 
-func newAngryFS(_ context.Context, name string) (ufs.WriteFS, error) {
+func newAngryFS(_ context.Context, name string) (types.WriteFS, error) {
 	return makeAngryFS(name), nil
 }
 
@@ -161,7 +162,7 @@ func newAngryFS(_ context.Context, name string) (ufs.WriteFS, error) {
 //
 // Deprecated: MakeAngryFS exists only to support the shared driver tests in
 // drivers/testing and will be removed soon. Use New instead.
-func MakeAngryFS(name string) ufs.WriteFS {
+func MakeAngryFS(name string) types.WriteFS {
 	return makeAngryFS(name)
 }
 

@@ -30,11 +30,12 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ ufs.WriteFS = (*faultFS)(nil)
+var _ types.WriteFS = (*faultFS)(nil)
 
 const (
 	optionName = "fault"
@@ -84,7 +85,7 @@ func init() {
 	ufs.RegisterDecorator(ufs.NewDecorator(optionName, wrap))
 }
 
-func wrap(_ context.Context, inner ufs.WriteFS, opts Options) (ufs.WriteFS, error) {
+func wrap(_ context.Context, inner types.WriteFS, opts Options) (types.WriteFS, error) {
 	if opts.isZero() {
 		return inner, nil
 	}
@@ -117,7 +118,7 @@ func newCryptoRand() (*rand.Rand, error) {
 }
 
 type faultFS struct {
-	inner     ufs.WriteFS
+	inner     types.WriteFS
 	cfg       Options
 	errorRate float64
 	// mu guards rng, which is not safe for concurrent use.
@@ -125,9 +126,9 @@ type faultFS struct {
 	rng *rand.Rand
 }
 
-// newFaultFS wraps inner as a [ufs.WriteFS] that injects configurable latency and
+// newFaultFS wraps inner as a [types.WriteFS] that injects configurable latency and
 // errors. Close always delegates to inner without fault injection.
-func newFaultFS(inner ufs.WriteFS, cfg Options) (ufs.WriteFS, error) {
+func newFaultFS(inner types.WriteFS, cfg Options) (types.WriteFS, error) {
 	rng, err := newCryptoRand()
 	if err != nil {
 		return nil, fmt.Errorf("cannot create faultFS, %w", err)
@@ -140,14 +141,14 @@ func newFaultFS(inner ufs.WriteFS, cfg Options) (ufs.WriteFS, error) {
 	}, nil
 }
 
-func (fsys *faultFS) GetDeviceInfo() ufs.DeviceMap {
+func (fsys *faultFS) GetDeviceInfo() types.DeviceMap {
 	return fsys.inner.GetDeviceInfo()
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see
-// [ufs.MountedArchiveDirFS].
+// [types.MountedArchiveDirFS].
 func (fsys *faultFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.inner.(ufs.MountedArchiveDirFS)
+	m, ok := fsys.inner.(types.MountedArchiveDirFS)
 	return ok && m.IsMountedArchiveDir(name)
 }
 
@@ -241,7 +242,7 @@ func (fsys *faultFS) ReadLink(name string) (string, error) {
 	return fsys.inner.ReadLink(name)
 }
 
-func (fsys *faultFS) Create(name string) (ufs.File, error) {
+func (fsys *faultFS) Create(name string) (types.File, error) {
 	if err := fsys.maybeInjectFault("create", name); err != nil {
 		return nil, err
 	}

@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
@@ -37,7 +37,7 @@ func validateClose(tb testing.TB, closer io.Closer) func() {
 }
 
 // writeFile creates name in fsys holding content.
-func writeFile(fsys ufs.WriteFS, name, content string) (err error) {
+func writeFile(fsys types.WriteFS, name, content string) (err error) {
 	f, err := fsys.Create(name)
 	if err != nil {
 		return err

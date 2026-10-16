@@ -21,7 +21,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -32,7 +32,7 @@ var testMapFS = fstest.MapFS{
 	"dir/another.txt": {Data: []byte("another file")},
 }
 
-func makeTestStdFS(t *testing.T) ufs.ReadFS {
+func makeTestStdFS(t *testing.T) types.ReadFS {
 	t.Helper()
 	fsys := FromFS(testMapFS)
 	t.Cleanup(func() {

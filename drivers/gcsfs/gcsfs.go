@@ -34,6 +34,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"google.golang.org/api/googleapi"
@@ -47,8 +48,8 @@ const (
 )
 
 var (
-	_ ufs.WriteFS = (*gcsFS)(nil)
-	_ ufs.File    = (*gcsFile)(nil)
+	_ types.WriteFS = (*gcsFS)(nil)
+	_ types.File    = (*gcsFile)(nil)
 )
 
 func init() {
@@ -199,9 +200,9 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) GetDeviceInfo() ufs.DeviceMap {
-	info := ufs.NewDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
-	return ufs.NewDeviceMap(info)
+func (fsys *gcsFS) GetDeviceInfo() types.DeviceMap {
+	info := types.NewDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
+	return types.NewDeviceMap(info)
 }
 
 func (fsys *gcsFS) URI() (*url.URL, error) {
@@ -365,7 +366,7 @@ func (fsys *gcsFS) Close() error {
 	return fsys.client.Close()
 }
 
-func (fsys *gcsFS) Create(name string) (ufs.File, error) {
+func (fsys *gcsFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
@@ -512,7 +513,7 @@ func (fsys *gcsFS) RemoveAll(name string) error {
 // New returns a file system for the gs://bucket/dir URI name, authenticating
 // with the default Google Cloud credentials. When no credentials are available
 // it falls back to unauthenticated access, which works for public buckets.
-func New(ctx context.Context, name string) (ufs.WriteFS, error) {
+func New(ctx context.Context, name string) (types.WriteFS, error) {
 	return makeGCSFS(ctx, name)
 }
 
@@ -536,7 +537,7 @@ func makeGCSFS(ctx context.Context, name string) (*gcsFS, error) {
 // NewWithClient returns a file system for the gs://bucket/dir URI name that
 // uses gcsClient for every request, for callers that need custom credentials,
 // endpoints, or options.
-func NewWithClient(ctx context.Context, gcsClient *storage.Client, name string) (ufs.WriteFS, error) {
+func NewWithClient(ctx context.Context, gcsClient *storage.Client, name string) (types.WriteFS, error) {
 	return makeGCSFSWithClient(ctx, gcsClient, name)
 }
 

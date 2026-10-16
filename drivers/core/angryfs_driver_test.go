@@ -17,13 +17,13 @@ package core_test
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
+	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestAngryFSDriver(t *testing.T) {
-	createFSFunc := func(_ *testing.T) ufs.WriteFS {
+	createFSFunc := func(_ *testing.T) types.WriteFS {
 		return core.MakeAngryFS("angry://test")
 	}
 	// ufsdriversTesting.MkdirAll(t, createFSFunc)

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"iter"
 	"net/url"
 	"path"
 	"sort"
@@ -37,6 +38,9 @@ import (
 
 const (
 	memFSPrefix = "memory:"
+
+	// batchCreateOp is the op of the errors of BatchCreate, as in ufs.
+	batchCreateOp = "batchcreate"
 )
 
 var (
@@ -45,6 +49,8 @@ var (
 	_ fs.GlobFS      = (*memFS)(nil)
 	_ fs.ReadDirFile = (*memDirFile)(nil)
 	_ ufs.Watcher    = (*memFS)(nil)
+
+	_ ufs.BatchCreateFS = (*memFS)(nil)
 )
 
 func init() {
@@ -374,6 +380,94 @@ func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {
 		fsys.notify(ufs.NotifyCreate, p)
 	}
 	return nil
+}
+
+// BatchCreate writes every file under one lock, so readers see none or all
+// of them. A file that fails restores every node the batch changed.
+func (fsys *memFS) BatchCreate(files []ufs.BatchFile) error {
+	for _, file := range files {
+		if err := pathutil.ValidateFileName(batchCreateOp, file.Name); err != nil {
+			return err
+		}
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	now := time.Now()
+	type event struct {
+		op   ufs.NotifyOp
+		path string
+	}
+	var events []event
+	// undo holds the node each changed key had before the batch, nil if it
+	// had none.
+	undo := map[string]*memNode{}
+	set := func(key string, node *memNode) {
+		if _, ok := undo[key]; !ok {
+			undo[key] = fsys.nodes[key]
+		}
+		fsys.nodes[key] = node
+	}
+
+	fsys.mu.Lock()
+	if fsys.nodes == nil {
+		fsys.mu.Unlock()
+		return ufserrors.NewPathError(batchCreateOp, files[0].Name, fs.ErrClosed)
+	}
+	for _, file := range files {
+		existing, existed := fsys.nodes[file.Name]
+		var err error
+		if existed && existing.isDir {
+			err = fmt.Errorf("is a directory: %w", fs.ErrInvalid)
+		} else if dir := path.Dir(file.Name); dir != pathutil.CwdPath {
+			err = fsys.checkDirsLocked(dir)
+		}
+		if err != nil {
+			for key, node := range undo {
+				if node == nil {
+					delete(fsys.nodes, key)
+				} else {
+					fsys.nodes[key] = node
+				}
+			}
+			fsys.mu.Unlock()
+			return ufserrors.NewPathError(batchCreateOp, file.Name, err)
+		}
+
+		for dir := range parentDirs(file.Name) {
+			if _, ok := fsys.nodes[dir]; !ok {
+				set(dir, &memNode{name: path.Base(dir), mode: fs.ModeDir | fs.ModePerm, modTime: now, isDir: true})
+				events = append(events, event{ufs.NotifyCreate, dir})
+			}
+		}
+		perm := file.Perm.Perm()
+		if perm == 0 {
+			perm = fs.ModePerm
+		}
+		set(file.Name, &memNode{name: path.Base(file.Name), content: bytes.Clone(file.Data), mode: perm, modTime: now})
+		if existed {
+			events = append(events, event{ufs.NotifyWrite, file.Name})
+		} else {
+			events = append(events, event{ufs.NotifyCreate, file.Name})
+		}
+	}
+	fsys.mu.Unlock()
+	for _, e := range events {
+		fsys.notify(e.op, e.path)
+	}
+	return nil
+}
+
+// parentDirs yields the parent directories of name, outermost first,
+// excluding the root.
+func parentDirs(name string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for i := 0; i < len(name); i++ {
+			if name[i] == '/' && !yield(name[:i]) {
+				return
+			}
+		}
+	}
 }
 
 // checkDirsLocked verifies that name and each of its ancestors, where they

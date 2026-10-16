@@ -170,7 +170,7 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 				mkdirForTest(t, fsys, "bc/dir")
 				WriteFile(t, fsys, "bc/file.txt", "file")
 				err := ufs.BatchCreate(fsys,
-					ufs.BatchFile{Name: "bc/first.txt", Data: []byte("first")},
+					ufs.BatchFile{Name: "bc/new/first.txt", Data: []byte("first")},
 					ufs.BatchFile{Name: tc.conflict, Data: []byte("conflict")},
 				)
 				if err == nil {
@@ -183,8 +183,9 @@ func batchCreate(t *testing.T, createFS func(*testing.T) ufs.WriteFS, dirConflic
 				if _, ok := fsys.(ufs.BatchCreateFS); !ok {
 					return
 				}
-				if _, err := fsys.Stat("bc/first.txt"); !errors.Is(err, fs.ErrNotExist) {
-					t.Errorf("Stat(bc/first.txt) = %v, want %v: a failed batch writes nothing", err, fs.ErrNotExist)
+				// Not even the parent directory of a file before the failure.
+				if _, err := fsys.Stat("bc/new"); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("Stat(bc/new) = %v, want %v: a failed batch writes nothing", err, fs.ErrNotExist)
 				}
 			})
 		}

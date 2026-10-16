@@ -35,10 +35,35 @@ linters:
     - prealloc
     - revive
     - unconvert
+    - depguard
   settings:
     errcheck:
       # Errors must be handled: `_ = f()` and `x, _ := f()` are reported too.
       check-blank: true
+    depguard:
+      rules:
+        no-protobuf-app:
+          files:
+            - "**/internal/tests/depguards/app/**/*.go"
+          deny:
+            - pkg: "google.golang.org/protobuf"
+              desc: "google.golang.org/protobuf is not allowed"
+            - pkg: "github.com/golang/protobuf"
+              desc: "github.com/golang/protobuf is not allowed"
+            - pkg: "github.com/hanwen/go-fuse/v2"
+              desc: "github.com/hanwen/go-fuse/v2 is not allowed"
+            - pkg: "go.etcd.io/bbolt"
+              desc: "go.etcd.io/bbolt is not allowed"
+            - pkg: "go.opentelemetry.io/otel"
+              desc: "go.opentelemetry.io/otel is not allowed"
+            - pkg: "google.golang.org/grpc"
+              desc: "google.golang.org/grpc is not allowed"
+            - pkg: "github.com/grpc-ecosystem/grpc-gateway/v2"
+              desc: "github.com/grpc-ecosystem/grpc-gateway/v2 is not allowed"
+            - pkg: "github.com/go-git/go-git/v5"
+              desc: "github.com/go-git/go-git/v5 is not allowed"
+            - pkg: "cloud.google.com/go/storage"
+              desc: "cloud.google.com/go/storage is not allowed"
   exclusions:
     paths:
       - "build/"

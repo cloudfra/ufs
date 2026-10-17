@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"testing"
+
+	"github.com/cloudfra/ufs/ops"
 )
 
 func BenchmarkForEachFilenameSmall(b *testing.B) {
@@ -24,7 +26,7 @@ func BenchmarkForEachFilenameSmall(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		if err := ForEachFilename(lfs, ".", func(_ string) error {
+		if err := ops.ForEachFilename(lfs, ".", func(_ string) error {
 			count++
 			return nil
 		}); err != nil {
@@ -39,7 +41,7 @@ func BenchmarkForEachFilenameMedium(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		if err := ForEachFilename(lfs, ".", func(_ string) error {
+		if err := ops.ForEachFilename(lfs, ".", func(_ string) error {
 			count++
 			return nil
 		}); err != nil {

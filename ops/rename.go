@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ufs
+package ops
 
 import (
 	"errors"
@@ -29,8 +29,8 @@ import (
 const renameOp = "rename"
 
 // Rename moves the file or directory at oldPath to newPath within fsys, as
-// described by [RenameFileFS]. It calls fsys.Rename when fsys implements
-// [RenameFileFS]. Otherwise it copies oldPath to newPath and then removes
+// described by [types.RenameFileFS]. It calls fsys.Rename when fsys implements
+// [types.RenameFileFS]. Otherwise it copies oldPath to newPath and then removes
 // oldPath, which is not atomic and does not keep file modes or modification
 // times. If the copy fails, the partial copy is removed. Symbolic links and
 // other special files cannot be copied and fail with [errors.ErrUnsupported].
@@ -41,17 +41,17 @@ func Rename(fsys types.WriteFS, oldPath, newPath string) error {
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
 		return err
 	}
-	return renameByCopy(fsys, oldPath, fsys, newPath)
+	return RenameByCopy(fsys, oldPath, fsys, newPath)
 }
 
-// renameByCopy moves oldPath in src to newPath in dst by copying it and then
+// RenameByCopy moves oldPath in src to newPath in dst by copying it and then
 // removing it from src. The paths must have passed pathutil.ValidateRename
 // when src and dst are the same file system.
 //
 // A failed copy is removed. When removing a file from src fails, the copy is
 // removed too, so only the original remains. When removing a directory from
 // src fails, the copy is kept, as part of the original may already be gone.
-func renameByCopy(src types.WriteFS, oldPath string, dst types.WriteFS, newPath string) error {
+func RenameByCopy(src types.WriteFS, oldPath string, dst types.WriteFS, newPath string) error {
 	info, err := src.Lstat(oldPath)
 	if err != nil {
 		return ufserrors.NewLinkError(renameOp, oldPath, newPath, err)

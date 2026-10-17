@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/cloudfra/ufs/ops"
 )
 
 func BenchmarkCopySmall(b *testing.B) {
@@ -41,7 +43,7 @@ func BenchmarkCopySmall(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := Copy(src, "data.bin", dst, "out.bin"); err != nil {
+		if err := ops.Copy(src, "data.bin", dst, "out.bin"); err != nil {
 			b.Fatal(err)
 		}
 		if err := dst.Close(); err != nil {
@@ -71,7 +73,7 @@ func BenchmarkCopyMedium(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := Copy(src, "data.bin", dst, "out.bin"); err != nil {
+		if err := ops.Copy(src, "data.bin", dst, "out.bin"); err != nil {
 			b.Fatal(err)
 		}
 		if err := dst.Close(); err != nil {
@@ -101,7 +103,7 @@ func BenchmarkCopyLarge(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := Copy(src, "data.bin", dst, "out.bin"); err != nil {
+		if err := ops.Copy(src, "data.bin", dst, "out.bin"); err != nil {
 			b.Fatal(err)
 		}
 		if err := dst.Close(); err != nil {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"fmt"
@@ -22,6 +22,7 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -50,11 +51,11 @@ func TestRsync(t *testing.T) {
 			t.Parallel()
 			fsys := fsysTC.createFS(t)
 			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-			if err := Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
+			if err := ops.Rsync(srcFS, fsys, pathutil.CwdPath); err != nil {
 				t.Errorf("rsync failed with error, %s", err)
 			}
 
-			err := ForEachFilename(srcFS, pathutil.CwdPath, func(name string) error {
+			err := ops.ForEachFilename(srcFS, pathutil.CwdPath, func(name string) error {
 				srcData, err := fs.ReadFile(srcFS, name)
 				if err != nil {
 					return fmt.Errorf("cannot read srcFS(%q), %w", name, err)
@@ -86,7 +87,7 @@ func TestRsyncAngry(t *testing.T) {
 	}
 	defer ufsTesting.WantCloseError(t, destFS)()
 
-	if err := Rsync(srcFS, destFS, pathutil.CwdPath); err == nil {
+	if err := ops.Rsync(srcFS, destFS, pathutil.CwdPath); err == nil {
 		t.Error("rsync expected to fail got nil error")
 	}
 }
@@ -100,7 +101,7 @@ func TestRsyncNull(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, destFS)()
 
-	if err := Rsync(srcFS, destFS, pathutil.CwdPath); err != nil {
+	if err := ops.Rsync(srcFS, destFS, pathutil.CwdPath); err != nil {
 		t.Errorf("rsync expected to succeed, failed with error: %s", err)
 	}
 

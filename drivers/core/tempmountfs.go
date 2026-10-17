@@ -26,6 +26,7 @@ import (
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/ops"
 )
 
 var _ localFSInterface = (*tempMountFS)(nil)
@@ -92,7 +93,7 @@ func (fsys *tempMountFS) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (fsys *tempMountFS) Rename(oldPath, newPath string) error {
-	return ufs.Rename(fsys.lfs, oldPath, newPath)
+	return ops.Rename(fsys.lfs, oldPath, newPath)
 }
 
 func (fsys *tempMountFS) Glob(pattern string) ([]string, error) {

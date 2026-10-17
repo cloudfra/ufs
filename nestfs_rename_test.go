@@ -19,72 +19,11 @@ import (
 	"bytes"
 	"errors"
 	"io/fs"
-	"os"
 	"testing"
 
-	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
-
-// noRenameFS hides the Rename method of the file system it wraps, so that
-// [Rename] has to copy and remove.
-type noRenameFS struct {
-	types.WriteFS
-}
-
-// failRemoveFS is a noRenameFS whose Remove and RemoveAll fail for the path
-// fail.
-type failRemoveFS struct {
-	noRenameFS
-	fail string
-}
-
-var errRemove = errors.New("remove failed")
-
-func (fsys failRemoveFS) Remove(name string) error {
-	if name == fsys.fail {
-		return errRemove
-	}
-	return fsys.noRenameFS.Remove(name)
-}
-
-func (fsys failRemoveFS) RemoveAll(name string) error {
-	if name == fsys.fail {
-		return errRemove
-	}
-	return fsys.noRenameFS.RemoveAll(name)
-}
-
-func writeTestFile(tb testing.TB, fsys types.WriteFS, name string, data []byte) {
-	tb.Helper()
-	f, err := fsys.Create(name)
-	if err != nil {
-		tb.Fatalf("Create(%q) = %v", name, err)
-	}
-	if _, err := f.Write(data); err != nil {
-		tb.Fatalf("Write(%q) = %v", name, err)
-	}
-	ufsTesting.Must(tb, f.Close())
-}
-
-func assertFileContent(tb testing.TB, fsys fs.FS, name, want string) {
-	tb.Helper()
-	data, err := fs.ReadFile(fsys, name)
-	if err != nil {
-		tb.Errorf("types.ReadFile(%q) = %v, want nil", name, err)
-		return
-	}
-	if string(data) != want {
-		tb.Errorf("types.ReadFile(%q) = %q, want %q", name, data, want)
-	}
-}
-
-func assertNotExist(tb testing.TB, fsys fs.FS, name string) {
-	tb.Helper()
-	if _, err := fs.Stat(fsys, name); !errors.Is(err, fs.ErrNotExist) {
-		tb.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
-	}
-}
 
 // makeTestZip returns a zip archive holding in.txt with content.
 func makeTestZip(tb testing.TB, content string) []byte {
@@ -99,59 +38,6 @@ func makeTestZip(tb testing.TB, content string) []byte {
 	return buf.Bytes()
 }
 
-func TestRenameByCopy(t *testing.T) {
-	t.Parallel()
-	base := mustBaseFS(t, "memory://")
-	t.Cleanup(ufsTesting.ValidateClose(t, base))
-	fsys := noRenameFS{base}
-	ufsTesting.Must(t, fsys.MkdirAll("a/sub", fs.ModePerm))
-	writeTestFile(t, fsys, "a/f.txt", []byte("f"))
-	writeTestFile(t, fsys, "a/sub/g.txt", []byte("g"))
-	writeTestFile(t, fsys, "c.txt", []byte("c"))
-
-	if err := Rename(fsys, "c.txt", "d.txt"); err != nil {
-		t.Fatalf("Rename(c.txt, d.txt) = %v, want nil", err)
-	}
-	assertFileContent(t, fsys, "d.txt", "c")
-	assertNotExist(t, fsys, "c.txt")
-
-	if err := Rename(fsys, "a", "b"); err != nil {
-		t.Fatalf("Rename(a, b) = %v, want nil", err)
-	}
-	assertFileContent(t, fsys, "b/f.txt", "f")
-	assertFileContent(t, fsys, "b/sub/g.txt", "g")
-	assertNotExist(t, fsys, "a")
-
-	if err := Rename(fsys, "b", "b/sub/b"); !errors.Is(err, fs.ErrInvalid) {
-		t.Errorf("Rename(b, b/sub/b) = %v, want %v", err, fs.ErrInvalid)
-	}
-	assertFileContent(t, fsys, "b/sub/g.txt", "g")
-}
-
-// TestRenameByCopyRemoveFails checks that a failed Remove of a file leaves
-// only the original, and that of a directory keeps the copy.
-func TestRenameByCopyRemoveFails(t *testing.T) {
-	t.Parallel()
-	base := mustBaseFS(t, "memory://")
-	t.Cleanup(ufsTesting.ValidateClose(t, base))
-	ufsTesting.Must(t, base.MkdirAll("a", fs.ModePerm))
-	writeTestFile(t, base, "a/f.txt", []byte("f"))
-	writeTestFile(t, base, "c.txt", []byte("c"))
-	err := Rename(failRemoveFS{noRenameFS{base}, "c.txt"}, "c.txt", "d.txt")
-	var linkErr *os.LinkError
-	if !errors.Is(err, errRemove) || !errors.As(err, &linkErr) {
-		t.Fatalf("Rename(c.txt, d.txt) = %v, want an *os.LinkError for %v", err, errRemove)
-	}
-	assertFileContent(t, base, "c.txt", "c")
-	assertNotExist(t, base, "d.txt")
-
-	if err := Rename(failRemoveFS{noRenameFS{base}, "a"}, "a", "b"); !errors.Is(err, errRemove) {
-		t.Fatalf("Rename(a, b) = %v, want %v", err, errRemove)
-	}
-	assertFileContent(t, base, "a/f.txt", "f")
-	assertFileContent(t, base, "b/f.txt", "f")
-}
-
 func TestNestFSRenameAcrossMounts(t *testing.T) {
 	t.Parallel()
 	fsys, err := New(t.Context(), "memory://?one=memory://&two=memory://")
@@ -162,20 +48,20 @@ func TestNestFSRenameAcrossMounts(t *testing.T) {
 	writeTestFile(t, fsys, "one/dir/sub/g.txt", []byte("g"))
 	writeTestFile(t, fsys, "base.txt", []byte("base"))
 
-	if err := Rename(fsys, "one/dir", "two/moved"); err != nil {
+	if err := ops.Rename(fsys, "one/dir", "two/moved"); err != nil {
 		t.Fatalf("Rename(one/dir, two/moved) = %v, want nil", err)
 	}
 	assertFileContent(t, fsys, "two/moved/f.txt", "f")
 	assertFileContent(t, fsys, "two/moved/sub/g.txt", "g")
 	assertNotExist(t, fsys, "one/dir")
 
-	if err := Rename(fsys, "base.txt", "one/base.txt"); err != nil {
+	if err := ops.Rename(fsys, "base.txt", "one/base.txt"); err != nil {
 		t.Fatalf("Rename(base.txt, one/base.txt) = %v, want nil", err)
 	}
 	assertFileContent(t, fsys, "one/base.txt", "base")
 	assertNotExist(t, fsys, "base.txt")
 
-	if err := Rename(fsys, "one/base.txt", "two/moved/f.txt"); !errors.Is(err, fs.ErrExist) {
+	if err := ops.Rename(fsys, "one/base.txt", "two/moved/f.txt"); !errors.Is(err, fs.ErrExist) {
 		t.Errorf("Rename(one/base.txt, two/moved/f.txt) = %v, want %v", err, fs.ErrExist)
 	}
 	assertFileContent(t, fsys, "one/base.txt", "base")
@@ -198,7 +84,7 @@ func TestNestFSRenameMountPoints(t *testing.T) {
 		{oldPath: "x.txt", newPath: "mnt", wantErr: fs.ErrExist},
 	}
 	for _, tc := range tests {
-		if err := Rename(fsys, tc.oldPath, tc.newPath); !errors.Is(err, tc.wantErr) {
+		if err := ops.Rename(fsys, tc.oldPath, tc.newPath); !errors.Is(err, tc.wantErr) {
 			t.Errorf("Rename(%q, %q) = %v, want %v", tc.oldPath, tc.newPath, err, tc.wantErr)
 		}
 	}
@@ -218,13 +104,13 @@ func TestNestFSRenameArchive(t *testing.T) {
 	writeTestFile(t, fsys, "dir/a.zip", archive)
 	assertFileContent(t, fsys, "dir/a.zip.d/in.txt", "in")
 
-	if err := Rename(fsys, "dir/a.zip", "dir/b.zip"); err != nil {
+	if err := ops.Rename(fsys, "dir/a.zip", "dir/b.zip"); err != nil {
 		t.Fatalf("Rename(dir/a.zip, dir/b.zip) = %v, want nil", err)
 	}
 	assertFileContent(t, fsys, "dir/b.zip.d/in.txt", "in")
 	assertNotExist(t, fsys, "dir/a.zip.d/in.txt")
 
-	if err := Rename(fsys, "dir", "dir2"); err != nil {
+	if err := ops.Rename(fsys, "dir", "dir2"); err != nil {
 		t.Fatalf("Rename(dir, dir2) = %v, want nil", err)
 	}
 	assertFileContent(t, fsys, "dir2/b.zip.d/in.txt", "in")
@@ -236,15 +122,15 @@ func TestNestFSRenameArchive(t *testing.T) {
 	assertFileContent(t, fsys, "old.zip.d/in.txt", "in")
 	ufsTesting.Must(t, fsys.Remove("old.zip"))
 	writeTestFile(t, fsys, "new.zip", other)
-	if err := Rename(fsys, "new.zip", "old.zip"); err != nil {
+	if err := ops.Rename(fsys, "new.zip", "old.zip"); err != nil {
 		t.Fatalf("Rename(new.zip, old.zip) = %v, want nil", err)
 	}
 	assertFileContent(t, fsys, "old.zip.d/in.txt", "other")
 
-	if err := Rename(fsys, "dir2/b.zip.d", "c"); !errors.Is(err, fs.ErrPermission) {
+	if err := ops.Rename(fsys, "dir2/b.zip.d", "c"); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("Rename(dir2/b.zip.d, c) = %v, want %v", err, fs.ErrPermission)
 	}
-	if err := Rename(fsys, "dir2/b.zip.d/in.txt", "in.txt"); !errors.Is(err, fs.ErrPermission) {
+	if err := ops.Rename(fsys, "dir2/b.zip.d/in.txt", "in.txt"); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("Rename(dir2/b.zip.d/in.txt, in.txt) = %v, want %v", err, fs.ErrPermission)
 	}
 	assertNotExist(t, fsys, "in.txt")
@@ -283,19 +169,19 @@ func TestNestFSRenameNestedMounts(t *testing.T) {
 		{oldPath: "m/x.txt", newPath: "m/dir/a.zip.d/x.txt", wantErr: fs.ErrPermission},
 	}
 	for _, tc := range failures {
-		if err := Rename(fsys, tc.oldPath, tc.newPath); !errors.Is(err, tc.wantErr) {
+		if err := ops.Rename(fsys, tc.oldPath, tc.newPath); !errors.Is(err, tc.wantErr) {
 			t.Errorf("Rename(%q, %q) = %v, want %v", tc.oldPath, tc.newPath, err, tc.wantErr)
 		}
 	}
 	assertFileContent(t, fsys, "m/x.txt", "x")
 
-	if err := Rename(fsys, "m/x.txt", "m/n/x.txt"); err != nil {
+	if err := ops.Rename(fsys, "m/x.txt", "m/n/x.txt"); err != nil {
 		t.Fatalf("Rename(m/x.txt, m/n/x.txt) = %v, want nil", err)
 	}
 	assertFileContent(t, fsys, "m/n/x.txt", "x")
 	assertNotExist(t, fsys, "m/x.txt")
 
-	if err := Rename(fsys, "m/dir", "other/dir"); err != nil {
+	if err := ops.Rename(fsys, "m/dir", "other/dir"); err != nil {
 		t.Fatalf("Rename(m/dir, other/dir) = %v, want nil", err)
 	}
 	assertFileContent(t, other, "dir/f.txt", "f")
@@ -329,7 +215,7 @@ func TestNestFSRenameShadowing(t *testing.T) {
 		{oldPath: "x.txt", newPath: "a.zip.d/x.txt", wantErr: fs.ErrPermission},
 	}
 	for _, tc := range failures {
-		if err := Rename(fsys, tc.oldPath, tc.newPath); !errors.Is(err, tc.wantErr) {
+		if err := ops.Rename(fsys, tc.oldPath, tc.newPath); !errors.Is(err, tc.wantErr) {
 			t.Errorf("Rename(%q, %q) = %v, want %v", tc.oldPath, tc.newPath, err, tc.wantErr)
 		}
 	}
@@ -343,7 +229,7 @@ func TestNestFSRenameShadowing(t *testing.T) {
 	ufsTesting.Must(t, fsys.RemoveAll("s"))
 	ufsTesting.Must(t, fsys.MkdirAll("t", fs.ModePerm))
 	writeTestFile(t, fsys, "t/b.zip", makeTestZip(t, "other"))
-	if err := Rename(fsys, "t", "s"); err != nil {
+	if err := ops.Rename(fsys, "t", "s"); err != nil {
 		t.Fatalf("Rename(t, s) = %v, want nil", err)
 	}
 	assertFileContent(t, fsys, "s/b.zip.d/in.txt", "other")
@@ -353,7 +239,7 @@ func TestNestFSRenameClosed(t *testing.T) {
 	t.Parallel()
 	fsys := mustNestFS(t, "memory://")
 	ufsTesting.Must(t, fsys.Close())
-	if err := Rename(fsys, "a", "b"); !errors.Is(err, fs.ErrClosed) {
+	if err := ops.Rename(fsys, "a", "b"); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("Rename(a, b) = %v, want %v", err, fs.ErrClosed)
 	}
 }

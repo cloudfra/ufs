@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"archive/zip"
@@ -27,6 +27,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 )
 
 const testLocalFSName = "../testing/testassets"
@@ -67,7 +68,7 @@ func newAngryFS(name string) (types.WriteFS, error) {
 func testAssetsFS(t *testing.T) fs.FS {
 	t.Helper()
 	srcFS := osutil.DirFS(testLocalFSName)
-	files, err := ListFiles(srcFS, pathutil.CwdPath)
+	files, err := ops.ListFiles(srcFS, pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ListFiles(%q) = %v, want nil", testLocalFSName, err)
 	}

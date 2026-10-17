@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/cloudfra/ufs/ops"
 )
 
 func BenchmarkRsyncSmall(b *testing.B) {
@@ -28,7 +30,7 @@ func BenchmarkRsyncSmall(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := Rsync(src, dst, "."); err != nil {
+		if err := ops.Rsync(src, dst, "."); err != nil {
 			b.Fatal(err)
 		}
 		if err := dst.Close(); err != nil {
@@ -46,7 +48,7 @@ func BenchmarkRsyncMedium(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := Rsync(src, dst, "."); err != nil {
+		if err := ops.Rsync(src, dst, "."); err != nil {
 			b.Fatal(err)
 		}
 		if err := dst.Close(); err != nil {
@@ -64,7 +66,7 @@ func BenchmarkRsyncLarge(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := Rsync(src, dst, "."); err != nil {
+		if err := ops.Rsync(src, dst, "."); err != nil {
 			b.Fatal(err)
 		}
 		if err := dst.Close(); err != nil {

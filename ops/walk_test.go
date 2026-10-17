@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"archive/zip"
@@ -28,6 +28,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -35,7 +36,7 @@ func TestWalk(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+	err := ops.Walk(fsys, pathutil.CwdPath, ops.WalkArgs{}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -52,7 +53,7 @@ func TestWalkExcludeDirectoryNil(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, pathutil.CwdPath, WalkArgs{ExcludeDirectory: nil}, func(name string) error {
+	err := ops.Walk(fsys, pathutil.CwdPath, ops.WalkArgs{ExcludeDirectory: nil}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -69,7 +70,7 @@ func TestWalkExcludeDirectoryExact(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, pathutil.CwdPath, WalkArgs{ExcludeDirectory: []string{"dir"}}, func(name string) error {
+	err := ops.Walk(fsys, pathutil.CwdPath, ops.WalkArgs{ExcludeDirectory: []string{"dir"}}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -86,7 +87,7 @@ func TestWalkExcludeDirectoryGlob(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := Walk(fsys, pathutil.CwdPath, WalkArgs{ExcludeDirectory: []string{"d*"}}, func(name string) error {
+	err := ops.Walk(fsys, pathutil.CwdPath, ops.WalkArgs{ExcludeDirectory: []string{"d*"}}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -103,7 +104,7 @@ func TestWalkIncludeMountedArchiveDefault(t *testing.T) {
 	nfs := setupNestFSWithArchive(t)
 
 	var got []string
-	err := Walk(nfs, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+	err := ops.Walk(nfs, pathutil.CwdPath, ops.WalkArgs{}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -133,7 +134,7 @@ func TestWalkSkipsMountedArchiveThroughWrapper(t *testing.T) {
 			fsys := tc.wrap(t, setupNestFSWithArchive(t))
 
 			var got []string
-			err := Walk(fsys, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+			err := ops.Walk(fsys, pathutil.CwdPath, ops.WalkArgs{}, func(name string) error {
 				got = append(got, name)
 				return nil
 			})
@@ -152,7 +153,7 @@ func TestWalkIncludeMountedArchive(t *testing.T) {
 	nfs := setupNestFSWithArchive(t)
 
 	var got []string
-	err := Walk(nfs, pathutil.CwdPath, WalkArgs{IncludeMountedArchive: true}, func(name string) error {
+	err := ops.Walk(nfs, pathutil.CwdPath, ops.WalkArgs{IncludeMountedArchive: true}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -171,7 +172,7 @@ func TestWalkCallbackError(t *testing.T) {
 	sentinel := errors.New("stop")
 
 	count := 0
-	err := Walk(fsys, pathutil.CwdPath, WalkArgs{}, func(_ string) error {
+	err := ops.Walk(fsys, pathutil.CwdPath, ops.WalkArgs{}, func(_ string) error {
 		count++
 		return sentinel
 	})
@@ -226,7 +227,7 @@ func TestWalkNestFSRegularSubdirNotSkipped(t *testing.T) {
 	})
 
 	var got []string
-	err = Walk(nfs, pathutil.CwdPath, WalkArgs{}, func(name string) error {
+	err = ops.Walk(nfs, pathutil.CwdPath, ops.WalkArgs{}, func(name string) error {
 		got = append(got, name)
 		return nil
 	})

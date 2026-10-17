@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"io/fs"
@@ -20,6 +20,7 @@ import (
 
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -55,7 +56,7 @@ func setupListFS(t *testing.T) types.WriteFS {
 func TestList(t *testing.T) {
 	fsys := setupListFS(t)
 
-	got, err := List(fsys, pathutil.CwdPath)
+	got, err := ops.List(fsys, pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("List() = %v, want nil", err)
 	}
@@ -68,7 +69,7 @@ func TestList(t *testing.T) {
 func TestListSubdir(t *testing.T) {
 	fsys := setupListFS(t)
 
-	got, err := List(fsys, "dir")
+	got, err := ops.List(fsys, "dir")
 	if err != nil {
 		t.Fatalf("List(dir) = %v, want nil", err)
 	}
@@ -83,7 +84,7 @@ func TestListSubdir(t *testing.T) {
 func TestListFiles(t *testing.T) {
 	fsys := setupListFS(t)
 
-	got, err := ListFiles(fsys, pathutil.CwdPath)
+	got, err := ops.ListFiles(fsys, pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ListFiles() = %v, want nil", err)
 	}
@@ -117,7 +118,7 @@ func TestListFilesInterface(t *testing.T) {
 	want := []string{"fast.txt", "path.txt"}
 	fsys := &listFilenamesFS{WriteFS: inner, files: want}
 
-	got, err := ListFiles(fsys, pathutil.CwdPath)
+	got, err := ops.ListFiles(fsys, pathutil.CwdPath)
 	if err != nil {
 		t.Fatalf("ListFiles() via interface = %v, want nil", err)
 	}

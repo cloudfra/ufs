@@ -28,6 +28,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -167,7 +168,7 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 	// Whether memFS supports links is not what is tested here, only that the
 	// call is reported with its outcome.
 	_, readLinkErr := fsys.ReadLink("dir/a.txt")
-	if err := ufs.Rename(fsys, "dir/a.txt", "dir/b.txt"); err != nil {
+	if err := ops.Rename(fsys, "dir/a.txt", "dir/b.txt"); err != nil {
 		t.Errorf("Rename(dir/a.txt, dir/b.txt) = %v, want nil", err)
 	}
 	if err := fsys.Remove("dir/b.txt"); err != nil {
@@ -253,13 +254,13 @@ func TestTelemetryRenameFallback(t *testing.T) {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
 
-	if err := ufs.Rename(fsys, "a.txt", "b.txt"); err != nil {
+	if err := ops.Rename(fsys, "a.txt", "b.txt"); err != nil {
 		t.Fatalf("Rename(a.txt, b.txt) = %v, want nil", err)
 	}
 	if _, err := inner.Stat("b.txt"); err != nil {
 		t.Errorf("Stat(b.txt) = %v, want nil", err)
 	}
-	if err := ufs.Rename(fsys, "a.txt", "c.txt"); !errors.Is(err, fs.ErrNotExist) {
+	if err := ops.Rename(fsys, "a.txt", "c.txt"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Rename(a.txt, c.txt) = %v, want %v", err, fs.ErrNotExist)
 	}
 

@@ -252,6 +252,7 @@ except `ufs.AbsPath`:
 | `ops.ForEachFilename`, `ops.ForEachFileInfo` | Stream the same results without building a slice.                                  |
 | `ops.Walk`                                   | Walk a tree, skipping directories by glob and optionally descending into archives. |
 | `ops.Remove`, `ops.RemoveAll`                | Delete from any file system that supports it.                                      |
+| `ops.Rename`, `ops.RenameByCopy`             | Rename within one file system, or between two by copying.                          |
 | `ufs.AbsPath`                                | Resolve a virtual path to a real path on the host, when there is one.              |
 
 ### Change notifications

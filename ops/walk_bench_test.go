@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"testing"
+
+	"github.com/cloudfra/ufs/ops"
 )
 
 func BenchmarkWalkSmall(b *testing.B) {
@@ -24,7 +26,7 @@ func BenchmarkWalkSmall(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		if err := Walk(lfs, ".", WalkArgs{}, func(_ string) error {
+		if err := ops.Walk(lfs, ".", ops.WalkArgs{}, func(_ string) error {
 			count++
 			return nil
 		}); err != nil {
@@ -39,7 +41,7 @@ func BenchmarkWalkMedium(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		if err := Walk(lfs, ".", WalkArgs{}, func(_ string) error {
+		if err := ops.Walk(lfs, ".", ops.WalkArgs{}, func(_ string) error {
 			count++
 			return nil
 		}); err != nil {
@@ -54,7 +56,7 @@ func BenchmarkWalkWithExcludes(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		count := 0
-		if err := Walk(lfs, ".", WalkArgs{ExcludeDirectory: []string{"d1", "d2"}}, func(_ string) error {
+		if err := ops.Walk(lfs, ".", ops.WalkArgs{ExcludeDirectory: []string{"d1", "d2"}}, func(_ string) error {
 			count++
 			return nil
 		}); err != nil {

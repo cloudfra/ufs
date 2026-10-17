@@ -20,8 +20,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -38,7 +38,7 @@ var renameTree = map[string]string{
 	"r/c.txt":       "c",
 }
 
-// Rename verifies [ufs.Rename], which uses the file system's own Rename when it
+// Rename verifies [ops.Rename], which uses the file system's own Rename when it
 // has one: files and directory trees move with their content, and a missing
 // source, an existing destination, the root, a move into itself and invalid
 // paths fail with the documented errors and change nothing.
@@ -86,7 +86,7 @@ func Rename(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				fsys := newRenameFS(t, createFS)
-				if err := ufs.Rename(fsys, tc.oldPath, tc.newPath); err != nil {
+				if err := ops.Rename(fsys, tc.oldPath, tc.newPath); err != nil {
 					t.Fatalf("Rename(%q, %q) = %v", tc.oldPath, tc.newPath, err)
 				}
 				assertRenameTree(t, fsys, tc.want)
@@ -117,7 +117,7 @@ func Rename(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				fsys := newRenameFS(t, createFS)
-				err := ufs.Rename(fsys, tc.oldPath, tc.newPath)
+				err := ops.Rename(fsys, tc.oldPath, tc.newPath)
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("Rename(%q, %q) = %v, want %v", tc.oldPath, tc.newPath, err, tc.wantErr)
 				}

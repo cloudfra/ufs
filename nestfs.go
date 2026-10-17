@@ -36,6 +36,7 @@ import (
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/ops"
 )
 
 type bufferMode int
@@ -53,6 +54,10 @@ const (
 	// archiveURIPrefix is put in front of the host path of an archive to open
 	// it through the archive driver.
 	archiveURIPrefix = "archive://"
+
+	// renameOp is the operation name recorded in the errors that Rename
+	// returns.
+	renameOp = "rename"
 )
 
 // FSArgs holds optional parameters for constructing a nestFS.
@@ -674,7 +679,7 @@ func (fsys *nestFS) RemoveAll(name string) error {
 }
 
 // Rename moves oldPath to newPath. Within one mounted file system it uses
-// [Rename] on that file system; between two it copies and then removes
+// [ops.Rename] on that file system; between two it copies and then removes
 // oldPath. Paths are resolved through nested mounts, including a nestFS
 // mounted as a file system, down to the file system that holds them, so a
 // copy never includes the mounts or archive content below oldPath.
@@ -752,9 +757,9 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 	}
 
 	if srcLeaf.fsys == dstLeaf.fsys {
-		err = Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
+		err = ops.Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
 	} else {
-		err = renameByCopy(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)
+		err = ops.RenameByCopy(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)
 	}
 	if err != nil {
 		return linkErr(err)

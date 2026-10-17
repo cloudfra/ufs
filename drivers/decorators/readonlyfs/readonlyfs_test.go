@@ -24,6 +24,7 @@ import (
 	"github.com/cloudfra/ufs"
 	_ "github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/ops"
 )
 
 const (
@@ -54,7 +55,7 @@ func TestReadOnlyWriteOperationsReturnPermissionDenied(t *testing.T) {
 		{"MkdirAll", func() error { return fsys.MkdirAll("subdir", fs.ModePerm) }},
 		{"Remove", func() error { return fsys.Remove("a.txt") }},
 		{"RemoveAll", func() error { return fsys.RemoveAll("subdir") }},
-		{"Rename", func() error { return ufs.Rename(fsys, "a.txt", "b.txt") }},
+		{"Rename", func() error { return ops.Rename(fsys, "a.txt", "b.txt") }},
 	}
 
 	for _, tc := range tests {
@@ -88,7 +89,7 @@ func TestReadOnlyWriteOperationsInvalidPath(t *testing.T) {
 			if err := fsys.RemoveAll(badPath); err == nil {
 				t.Errorf("RemoveAll(%q) returned nil error, want error", badPath)
 			}
-			if err := ufs.Rename(fsys, badPath, "a.txt"); err == nil {
+			if err := ops.Rename(fsys, badPath, "a.txt"); err == nil {
 				t.Errorf("Rename(%q, a.txt) returned nil error, want error", badPath)
 			}
 		})

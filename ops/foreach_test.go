@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"errors"
@@ -23,6 +23,7 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -32,7 +33,7 @@ func TestForEachFilename(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var got []string
-	err := ForEachFilename(fsys, pathutil.CwdPath, func(name string) error {
+	err := ops.ForEachFilename(fsys, pathutil.CwdPath, func(name string) error {
 		got = append(got, name)
 		return nil
 	})
@@ -76,7 +77,7 @@ func TestForEachFilenameInterface(t *testing.T) {
 
 	var got []string
 
-	if err := ForEachFilename(fsys, pathutil.CwdPath, func(name string) error {
+	if err := ops.ForEachFilename(fsys, pathutil.CwdPath, func(name string) error {
 		got = append(got, name)
 		return nil
 	}); err != nil {
@@ -92,7 +93,7 @@ func TestForEachFilenameCallbackError(t *testing.T) {
 	sentinel := errors.New("stop")
 
 	count := 0
-	err := ForEachFilename(fsys, pathutil.CwdPath, func(_ string) error {
+	err := ops.ForEachFilename(fsys, pathutil.CwdPath, func(_ string) error {
 		count++
 		return sentinel
 	})
@@ -110,7 +111,7 @@ func TestForEachFileInfo(t *testing.T) {
 	fsys := setupListFS(t)
 
 	var gotNames []string
-	err := ForEachFileInfo(fsys, pathutil.CwdPath, func(info fs.FileInfo) error {
+	err := ops.ForEachFileInfo(fsys, pathutil.CwdPath, func(info fs.FileInfo) error {
 		gotNames = append(gotNames, info.Name())
 		return nil
 	})
@@ -157,7 +158,7 @@ func TestForEachFileInfoInterface(t *testing.T) {
 	fsys := &forEachFileInfoFS{WriteFS: inner, infos: wantInfos}
 
 	var gotNames []string
-	if err := ForEachFileInfo(fsys, pathutil.CwdPath, func(info fs.FileInfo) error {
+	if err := ops.ForEachFileInfo(fsys, pathutil.CwdPath, func(info fs.FileInfo) error {
 		gotNames = append(gotNames, info.Name())
 		return nil
 	}); err != nil {
@@ -174,7 +175,7 @@ func TestForEachFileInfoCallbackError(t *testing.T) {
 	sentinel := errors.New("stop")
 
 	count := 0
-	err := ForEachFileInfo(fsys, pathutil.CwdPath, func(_ fs.FileInfo) error {
+	err := ops.ForEachFileInfo(fsys, pathutil.CwdPath, func(_ fs.FileInfo) error {
 		count++
 		return sentinel
 	})

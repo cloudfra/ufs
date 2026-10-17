@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"bytes"
@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -48,7 +49,7 @@ func BenchmarkListFilesSmall(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := ListFiles(fsys, "."); err != nil {
+		if _, err := ops.ListFiles(fsys, "."); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -76,7 +77,7 @@ func BenchmarkListFilesMedium(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := ListFiles(fsys, "."); err != nil {
+		if _, err := ops.ListFiles(fsys, "."); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -104,7 +105,7 @@ func BenchmarkListFilesLarge(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := ListFiles(fsys, "."); err != nil {
+		if _, err := ops.ListFiles(fsys, "."); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -138,7 +139,7 @@ func BenchmarkListSmall(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := List(fsys, "."); err != nil {
+		if _, err := ops.List(fsys, "."); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -172,7 +173,7 @@ func BenchmarkListMedium(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := List(fsys, "."); err != nil {
+		if _, err := ops.List(fsys, "."); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -199,7 +200,7 @@ func BenchmarkLocalFSListFiles(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		if _, err := ListFiles(lfs, "."); err != nil {
+		if _, err := ops.ListFiles(lfs, "."); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"errors"
@@ -21,16 +21,17 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestRemoveAll(t *testing.T) {
 	fsys := setupRemoveFS(t)
 
-	if err := RemoveAll(fsys, "dir"); err != nil {
+	if err := ops.RemoveAll(fsys, "dir"); err != nil {
 		t.Fatalf("RemoveAll('dir') = %v, want nil", err)
 	}
-	files, err := ListFiles(fsys, pathutil.CwdPath)
+	files, err := ops.ListFiles(fsys, pathutil.CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +45,7 @@ func TestRemoveAllNotExist(t *testing.T) {
 	fsys := setupRemoveFS(t)
 
 	// RemoveAll on a non-existent path must succeed (no-op).
-	if err := RemoveAll(fsys, "ghost"); err != nil {
+	if err := ops.RemoveAll(fsys, "ghost"); err != nil {
 		t.Errorf("RemoveAll(nonexistent) = %v, want nil", err)
 	}
 }
@@ -52,10 +53,10 @@ func TestRemoveAllNotExist(t *testing.T) {
 func TestRemoveAllRoot(t *testing.T) {
 	fsys := setupRemoveFS(t)
 
-	if err := RemoveAll(fsys, pathutil.CwdPath); err != nil {
+	if err := ops.RemoveAll(fsys, pathutil.CwdPath); err != nil {
 		t.Fatalf("RemoveAll('.') = %v, want nil", err)
 	}
-	files, err := ListFiles(fsys, pathutil.CwdPath)
+	files, err := ops.ListFiles(fsys, pathutil.CwdPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestRemoveAllFallback(t *testing.T) {
 		}
 	}()
 
-	if err := RemoveAll(&noRemoverFS{inner}, "dir"); !errors.Is(err, fs.ErrPermission) {
+	if err := ops.RemoveAll(&noRemoverFS{inner}, "dir"); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("RemoveAll on non-Remover FS = %v, want ErrPermission", err)
 	}
 }
@@ -85,7 +86,7 @@ func TestRemoveAllAngry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveAll(fsys, "dir"); err == nil {
+	if err := ops.RemoveAll(fsys, "dir"); err == nil {
 		t.Error("RemoveAll on angry FS succeeded, want error")
 	}
 }
@@ -95,7 +96,7 @@ func TestRemoveAllNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RemoveAll(fsys, "dir"); err != nil {
+	if err := ops.RemoveAll(fsys, "dir"); err != nil {
 		t.Errorf("RemoveAll on nullFS = %v, want nil", err)
 	}
 }

@@ -30,10 +30,10 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 )
 
 // utf16Str is a pointer to a null-terminated UTF-16 string (Windows LPCWSTR).
@@ -519,10 +519,10 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 }
 
 // preRename renames oldName to newName, both relative to the virtualization
-// root, in the backing file system with [ufs.Rename], before ProjFS moves its
+// root, in the backing file system with [ops.Rename], before ProjFS moves its
 // local copy; a failure denies the rename. It is denied when the backing file
 // system is read-only and when either name is outside the virtualization root,
-// where ProjFS passes an empty name. Like [ufs.Rename], it never replaces an
+// where ProjFS passes an empty name. Like [ops.Rename], it never replaces an
 // existing file, and a file that only exists locally cannot be renamed.
 func (s *projfsMountServer) preRename(oldName, newName utf16Str) uintptr {
 	wfs, ok := s.fsys.(types.WriteFS)
@@ -533,7 +533,7 @@ func (s *projfsMountServer) preRename(oldName, newName utf16Str) uintptr {
 	if oldPath == "" || newPath == "" {
 		return hresultAccessDenied
 	}
-	return projfsHRESULT(ufs.Rename(wfs, oldPath, newPath))
+	return projfsHRESULT(ops.Rename(wfs, oldPath, newPath))
 }
 
 func cancelCommandCB(callbackData *prjCallbackData) uintptr {

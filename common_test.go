@@ -16,10 +16,13 @@ package ufs
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // tempMountTestURI opens a tempMountFS. It is served by a driver that only
@@ -156,4 +159,36 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (types.WriteF
 	}
 
 	return fsys
+}
+
+// writeTestFile writes data to name in fsys, closing the file it creates.
+func writeTestFile(tb testing.TB, fsys types.WriteFS, name string, data []byte) {
+	tb.Helper()
+	f, err := fsys.Create(name)
+	if err != nil {
+		tb.Fatalf("Create(%q) = %v", name, err)
+	}
+	if _, err := f.Write(data); err != nil {
+		tb.Fatalf("Write(%q) = %v", name, err)
+	}
+	ufsTesting.Must(tb, f.Close())
+}
+
+func assertFileContent(tb testing.TB, fsys fs.FS, name, want string) {
+	tb.Helper()
+	data, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		tb.Errorf("types.ReadFile(%q) = %v, want nil", name, err)
+		return
+	}
+	if string(data) != want {
+		tb.Errorf("types.ReadFile(%q) = %q, want %q", name, data, want)
+	}
+}
+
+func assertNotExist(tb testing.TB, fsys fs.FS, name string) {
+	tb.Helper()
+	if _, err := fs.Stat(fsys, name); !errors.Is(err, fs.ErrNotExist) {
+		tb.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
+	}
 }

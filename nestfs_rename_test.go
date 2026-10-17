@@ -21,41 +21,9 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
-
-func writeTestFile(tb testing.TB, fsys types.WriteFS, name string, data []byte) {
-	tb.Helper()
-	f, err := fsys.Create(name)
-	if err != nil {
-		tb.Fatalf("Create(%q) = %v", name, err)
-	}
-	if _, err := f.Write(data); err != nil {
-		tb.Fatalf("Write(%q) = %v", name, err)
-	}
-	ufsTesting.Must(tb, f.Close())
-}
-
-func assertFileContent(tb testing.TB, fsys fs.FS, name, want string) {
-	tb.Helper()
-	data, err := fs.ReadFile(fsys, name)
-	if err != nil {
-		tb.Errorf("types.ReadFile(%q) = %v, want nil", name, err)
-		return
-	}
-	if string(data) != want {
-		tb.Errorf("types.ReadFile(%q) = %q, want %q", name, data, want)
-	}
-}
-
-func assertNotExist(tb testing.TB, fsys fs.FS, name string) {
-	tb.Helper()
-	if _, err := fs.Stat(fsys, name); !errors.Is(err, fs.ErrNotExist) {
-		tb.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
-	}
-}
 
 // makeTestZip returns a zip archive holding in.txt with content.
 func makeTestZip(tb testing.TB, content string) []byte {

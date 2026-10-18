@@ -253,7 +253,12 @@ jobs:
 
   build-windows:
     name: "Build Windows"
-    runs-on: ["self-hosted", "windows", "large"]
+    # The `desktop-experience` label selects Windows self-hosted runners
+    # whose image includes the Desktop Experience feature set, which is
+    # where ProjFS (projectedfslib.dll, PrjFlt) exists. Server Core images
+    # lack it, so the ProjFS mount tests skip without this label.
+    # See https://github.com/cloudfra/ufs/issues/432.
+    runs-on: ["self-hosted", "windows", "large", "desktop-experience"]
     permissions:
       contents: read
     timeout-minutes: 45

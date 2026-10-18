@@ -59,6 +59,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/ops"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -455,11 +456,11 @@ func (fsys *telemetryFS) RemoveAll(name string) error {
 	return err
 }
 
-// Rename renames with [ufs.Rename], which copies and removes when the wrapped
+// Rename renames with [ops.Rename], which copies and removes when the wrapped
 // file system has no Rename of its own. The copy is reported as one rename.
 func (fsys *telemetryFS) Rename(oldPath, newPath string) error {
 	span, start := fsys.begin(opRename)
-	err := ufs.Rename(fsys.inner, oldPath, newPath)
+	err := ops.Rename(fsys.inner, oldPath, newPath)
 	fsys.endRename(opRename, oldPath, newPath, span, start, err)
 	return err
 }

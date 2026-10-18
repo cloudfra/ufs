@@ -14,8 +14,8 @@
 
 // Package ops provides file-system operations that work across any standard
 // file system: [Copy], [Rsync], [List], [ListFiles], [ForEachFilename],
-// [ForEachFileInfo], [Walk], [Remove] and [RemoveAll]. Where the source or
-// target implements an optional interface from the types package, the
-// matching native method is used; otherwise the operation falls back to the
-// generic file-system methods.
+// [ForEachFileInfo], [Walk], [Remove], [RemoveAll], [Rename] and
+// [RenameByCopy]. Where the source or target implements an optional interface
+// from the types package, the matching native method is used; otherwise the
+// operation falls back to the generic file-system methods.
 package ops

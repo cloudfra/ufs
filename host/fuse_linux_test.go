@@ -32,6 +32,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/ops"
 )
 
 func requireFUSE(t *testing.T) {
@@ -93,7 +94,7 @@ func (fsys failRenameFS) Rename(oldPath, newPath string) error {
 	if oldPath == fsys.fail {
 		return errRenameFailed
 	}
-	return ufs.Rename(fsys.WriteFS, oldPath, newPath)
+	return ops.Rename(fsys.WriteFS, oldPath, newPath)
 }
 
 func TestRenameReplacing(t *testing.T) {

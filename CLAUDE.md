@@ -147,7 +147,7 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 
 Writes are enabled when the mounted FS is a `types.WriteFS` (not `ufs.FS`, so
 drivers without a native Rename stay writable). Renames go through
-`ufs.Rename`: FUSE replaces an existing destination as rename(2) does (moving
+`ops.Rename`: FUSE replaces an existing destination as rename(2) does (moving
 it aside first, not atomic) unless RENAME_NOREPLACE is set, and FUSE nodes take
 their path from the inode tree so they follow renames. ProjFS forwards
 PRE_RENAME within the root to the backing FS and still denies deletes.
@@ -186,7 +186,7 @@ code with no `ufs` dependency goes in `internal/`.
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
-| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll |
+| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll, Rename |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
 | internal/archive/     | archive.New opens archives as fs.FS; only mholt/archives importer   |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |
@@ -198,13 +198,13 @@ code with no `ufs` dependency goes in `internal/`.
 | testing_test.go       | Shared test harness used by each backend                            |
 | assets_test.go        | Test asset loading helpers                                          |
 
-### Rename (`rename.go`)
+### Rename (`ops/rename.go`)
 
 ```go
 func Rename(fsys WriteFS, oldPath, newPath string) error
 ```
 
-`RenameFileFS` is optional for drivers; `ufs.Rename` calls it when present and
+`RenameFileFS` is optional for drivers; `ops.Rename` calls it when present and
 otherwise copies and removes (not atomic, loses modes). `pathutil.ValidateRename`
 holds the shared argument checks, and errors other than an invalid path are
 `*os.LinkError`. localFS (and tempMountFS) use `os.Root.Rename`, memFS moves
@@ -212,8 +212,8 @@ its nodes, boltFS moves buckets in one transaction, and read-only drivers and
 `readOnly` return `fs.ErrPermission`; gcsFS uses the copy fallback. nestFS
 resolves both paths through every mount level (including a nestFS mounted with
 `FSBuilder.MountFS`) down to the backing FS, renames within one with
-`ufs.Rename` and across two by copying (so mounts and archive content are never
-copied), refuses to move or replace a mount point or change archive content,
+`ops.Rename` and across two by `ops.RenameByCopy` (so mounts and archive
+content are never copied), refuses to move or replace a mount point or change archive content,
 refuses an archive name whose `.d` directory exists, and unmounts archives at
 or below `oldPath` and stale ones at `newPath`. New drivers are covered by
 `Rename` in `drivers/testing`.

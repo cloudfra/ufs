@@ -32,10 +32,10 @@ import (
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/ops"
 )
 
 // Not implemented FUSE operations (ufs has no support for these):
@@ -317,7 +317,7 @@ func (n *fuseNode) Rename(ctx context.Context, name string, newParent fusefs.Ino
 	case 0:
 		return fuseErrno(renameReplacing(ctx, wfs, oldPath, newPath))
 	case renameNoReplace:
-		return fuseErrno(ufs.Rename(wfs, oldPath, newPath))
+		return fuseErrno(ops.Rename(wfs, oldPath, newPath))
 	default:
 		return syscall.EINVAL
 	}
@@ -328,12 +328,12 @@ func (n *fuseNode) Rename(ctx context.Context, name string, newParent fusefs.Ino
 // empty directory and oldPath is a directory. Renaming a path to itself does
 // nothing.
 //
-// [ufs.Rename] never replaces, so an existing file is first renamed aside and
+// [ops.Rename] never replaces, so an existing file is first renamed aside and
 // removed once the rename succeeds, or renamed back if it fails, and an empty
 // directory is removed and made again if the rename fails. Unlike rename(2)
 // this is not atomic: newPath is missing for a moment.
 func renameReplacing(ctx context.Context, fsys types.WriteFS, oldPath, newPath string) error {
-	err := ufs.Rename(fsys, oldPath, newPath)
+	err := ops.Rename(fsys, oldPath, newPath)
 	if !errors.Is(err, fs.ErrExist) {
 		return err
 	}
@@ -364,18 +364,18 @@ func renameReplacing(ctx context.Context, fsys types.WriteFS, oldPath, newPath s
 		if err := fsys.Remove(newPath); err != nil {
 			return err
 		}
-		if err := ufs.Rename(fsys, oldPath, newPath); err != nil {
+		if err := ops.Rename(fsys, oldPath, newPath); err != nil {
 			return ufserrors.Join(err, fsys.MkdirAll(newPath, newInfo.Mode().Perm()))
 		}
 		return nil
 	}
 
 	aside := path.Join(path.Dir(newPath), fmt.Sprintf(".%s.ufs-rename-%016x", path.Base(newPath), rand.Uint64())) //nolint:gosec // a unique name, not a secret
-	if err := ufs.Rename(fsys, newPath, aside); err != nil {
+	if err := ops.Rename(fsys, newPath, aside); err != nil {
 		return err
 	}
-	if err := ufs.Rename(fsys, oldPath, newPath); err != nil {
-		return ufserrors.Join(err, ufs.Rename(fsys, aside, newPath))
+	if err := ops.Rename(fsys, oldPath, newPath); err != nil {
+		return ufserrors.Join(err, ops.Rename(fsys, aside, newPath))
 	}
 	if err := fsys.Remove(aside); err != nil {
 		// The rename itself succeeded, so it is not reported as failed.

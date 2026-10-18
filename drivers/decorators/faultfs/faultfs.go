@@ -33,6 +33,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
+	"github.com/cloudfra/ufs/ops"
 )
 
 var _ types.WriteFS = (*faultFS)(nil)
@@ -270,7 +271,7 @@ func (fsys *faultFS) RemoveAll(name string) error {
 	return fsys.inner.RemoveAll(name)
 }
 
-// Rename injects a fault for oldPath and then renames with [ufs.Rename], which
+// Rename injects a fault for oldPath and then renames with [ops.Rename], which
 // copies and removes when the wrapped file system has no Rename.
 func (fsys *faultFS) Rename(oldPath, newPath string) error {
 	if err := pathutil.Validate("rename", newPath); err != nil {
@@ -279,5 +280,5 @@ func (fsys *faultFS) Rename(oldPath, newPath string) error {
 	if err := fsys.maybeInjectFault("rename", oldPath); err != nil {
 		return err
 	}
-	return ufs.Rename(fsys.inner, oldPath, newPath)
+	return ops.Rename(fsys.inner, oldPath, newPath)
 }

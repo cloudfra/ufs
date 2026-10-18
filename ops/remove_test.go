@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ops
+package ops_test
 
 import (
 	"errors"
@@ -21,6 +21,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/ops"
 )
 
 func setupRemoveFS(t *testing.T) types.WriteFS {
@@ -52,7 +53,7 @@ func setupRemoveFS(t *testing.T) types.WriteFS {
 func TestRemove(t *testing.T) {
 	fsys := setupRemoveFS(t)
 
-	if err := Remove(fsys, "a.txt"); err != nil {
+	if err := ops.Remove(fsys, "a.txt"); err != nil {
 		t.Fatalf("Remove('a.txt') = %v, want nil", err)
 	}
 	if _, err := fsys.Stat("a.txt"); !errors.Is(err, fs.ErrNotExist) {
@@ -63,7 +64,7 @@ func TestRemove(t *testing.T) {
 func TestRemoveNotExist(t *testing.T) {
 	fsys := setupRemoveFS(t)
 
-	err := Remove(fsys, "ghost.txt")
+	err := ops.Remove(fsys, "ghost.txt")
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Remove(nonexistent) = %v, want ErrNotExist", err)
 	}
@@ -72,7 +73,7 @@ func TestRemoveNotExist(t *testing.T) {
 func TestRemoveNonEmptyDir(t *testing.T) {
 	fsys := setupRemoveFS(t)
 
-	err := Remove(fsys, "dir")
+	err := ops.Remove(fsys, "dir")
 	if err == nil {
 		t.Error("Remove(non-empty dir) succeeded, want error")
 	}
@@ -94,7 +95,7 @@ func TestRemoveFallback(t *testing.T) {
 		}
 	}()
 
-	if err := Remove(&noRemoverFS{inner}, "any.txt"); !errors.Is(err, fs.ErrPermission) {
+	if err := ops.Remove(&noRemoverFS{inner}, "any.txt"); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("Remove on non-Remover FS = %v, want ErrPermission", err)
 	}
 }
@@ -104,7 +105,7 @@ func TestRemoveAngry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Remove(fsys, "file.txt"); err == nil {
+	if err := ops.Remove(fsys, "file.txt"); err == nil {
 		t.Error("Remove on angry FS succeeded, want error")
 	}
 }
@@ -114,7 +115,7 @@ func TestRemoveNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Remove(fsys, "file.txt"); err != nil {
+	if err := ops.Remove(fsys, "file.txt"); err != nil {
 		t.Errorf("Remove on nullFS = %v, want nil", err)
 	}
 }

@@ -228,12 +228,21 @@ jobs:
           }
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Detect Desktop Experience
+        id: desktop-experience
+        run: scripts/is-desktop-experience.ps1
       - name: Enable ProjFS
+        # ProjFS is absent from a Server Core image, and the DISM probes in
+        # scripts/enable-projfs.ps1 take minutes there and have been seen to
+        # drop the runner's connection, so only run them on a host that has
+        # the Desktop Experience feature set containing the feature.
+        if: steps.desktop-experience.outputs.desktopExperience == 'true'
         run: scripts/enable-projfs.ps1
       - name: Verify ProjFS
         # TODO(https://github.com/cloudfra/ufs/issues/432): Make this step
         # required once the runners have ProjFS. Their Windows image (Server
-        # Core) does not contain the feature, so this step fails today.
+        # Core) does not contain the feature, so this step is skipped today.
+        if: steps.desktop-experience.outputs.desktopExperience == 'true'
         continue-on-error: true
         run: scripts/verify-projfs.ps1
       - name: Setup Go

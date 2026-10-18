@@ -37,18 +37,17 @@ import (
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
-// requireProjFSEnv names the environment variable that turns a missing ProjFS
-// from a skip into a failure. CI is to set it on runners that have ProjFS, so the
-// ProjFS tests cannot be skipped there without anyone noticing.
-const requireProjFSEnv = "UFS_REQUIRE_PROJFS"
+// enableProjFSTestEnv names the environment variable that opts the ProjFS
+// mount tests in. They are skipped unless it is set, so a host without ProjFS
+// (a Server Core image, for example) is not expected to run them. A host that
+// does set it is expected to have ProjFS, so a failure there fails the test
+// instead of being skipped.
+const enableProjFSTestEnv = "UFS_ENABLE_PROJFS_TEST"
 
 func requireProjFS(t *testing.T) {
 	t.Helper()
-	if err := projfsAvailable(); err != nil {
-		if os.Getenv(requireProjFSEnv) != "" {
-			t.Fatalf("ProjFS not available but %s is set: %v", requireProjFSEnv, err)
-		}
-		t.Skipf("ProjFS not available: %v", err)
+	if os.Getenv(enableProjFSTestEnv) == "" {
+		t.Skipf("set %s to run the ProjFS tests", enableProjFSTestEnv)
 	}
 }
 

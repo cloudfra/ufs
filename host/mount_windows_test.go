@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -397,4 +398,62 @@ func TestProjFSMountReadBack(t *testing.T) {
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(nonexistent) error = %v, want ErrNotExist", err)
 	}
+}
+
+func TestProjFSPlaceholderInfoLayout(t *testing.T) {
+	// Layouts of PRJ_FILE_BASIC_INFO and PRJ_PLACEHOLDER_INFO from
+	// projectedfslib.h. PrjWritePlaceholderInfo validates its size argument
+	// against sizeof(PRJ_PLACEHOLDER_INFO) and fails the call with
+	// ERROR_INSUFFICIENT_BUFFER when it is smaller, so the Go mapping has to
+	// match the C struct byte for byte.
+	t.Run("PRJ_FILE_BASIC_INFO", func(t *testing.T) {
+		var f prjFileBasicInfo
+		fields := []struct {
+			name string
+			got  uintptr
+			want uintptr
+		}{
+			{"IsDirectory", unsafe.Offsetof(f.IsDirectory), 0},
+			{"FileSize", unsafe.Offsetof(f.FileSize), 8},
+			{"CreationTime", unsafe.Offsetof(f.CreationTime), 16},
+			{"LastAccessTime", unsafe.Offsetof(f.LastAccessTime), 24},
+			{"LastWriteTime", unsafe.Offsetof(f.LastWriteTime), 32},
+			{"ChangeTime", unsafe.Offsetof(f.ChangeTime), 40},
+			{"FileAttributes", unsafe.Offsetof(f.FileAttributes), 48},
+		}
+		for _, field := range fields {
+			if field.got != field.want {
+				t.Errorf("%s offset = %d, want %d",
+					field.name, field.got, field.want)
+			}
+		}
+		if got, want := unsafe.Sizeof(f), uintptr(56); got != want {
+			t.Errorf("sizeof(PRJ_FILE_BASIC_INFO) = %d, want %d", got, want)
+		}
+	})
+
+	t.Run("PRJ_PLACEHOLDER_INFO", func(t *testing.T) {
+		var p prjPlaceholderInfo
+		fields := []struct {
+			name string
+			got  uintptr
+			want uintptr
+		}{
+			{"FileBasicInfo", unsafe.Offsetof(p.FileBasicInfo), 0},
+			{"EaInformation", unsafe.Offsetof(p.EaInformation), 56},
+			{"SecurityInformation", unsafe.Offsetof(p.SecurityInformation), 64},
+			{"StreamsInformation", unsafe.Offsetof(p.StreamsInformation), 72},
+			{"VersionInfo", unsafe.Offsetof(p.VersionInfo), 80},
+			{"VariableData", unsafe.Offsetof(p.VariableData), 336},
+		}
+		for _, field := range fields {
+			if field.got != field.want {
+				t.Errorf("%s offset = %d, want %d",
+					field.name, field.got, field.want)
+			}
+		}
+		if got, want := unsafe.Sizeof(p), uintptr(344); got != want {
+			t.Errorf("sizeof(PRJ_PLACEHOLDER_INFO) = %d, want %d", got, want)
+		}
+	})
 }

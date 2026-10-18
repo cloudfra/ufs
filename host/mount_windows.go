@@ -105,7 +105,13 @@ func projfsPath(name utf16Str) string {
 	if name == nil {
 		return pathutil.CwdPath
 	}
-	return strings.ReplaceAll(windows.UTF16PtrToString(name), `\`, "/")
+	p := strings.ReplaceAll(windows.UTF16PtrToString(name), `\`, "/")
+	if p == "" {
+		// ProjFS names the mounted root with an empty path, which is not a
+		// valid fs.ValidPath name; the root is "." for the backing fsys.
+		return pathutil.CwdPath
+	}
+	return p
 }
 
 func cbDataAttrs(callbackData *prjCallbackData) []any {

@@ -133,6 +133,12 @@ type prjPlaceholderInfo struct {
 		OffsetToFirstStreamInfo uint32
 	}
 	VersionInfo prjPlaceholderVersionInfo
+	// VariableData is the start of the variable-length EA / security /
+	// stream data described by the size+offset pairs above. It is part of
+	// the struct, so omitting it makes unsafe.Sizeof smaller than the
+	// sizeof(PRJ_PLACEHOLDER_INFO) that PrjWritePlaceholderInfo requires
+	// and the call fails with ERROR_INSUFFICIENT_BUFFER.
+	VariableData [1]byte
 }
 
 // prjCallbackData maps PRJ_CALLBACK_DATA.

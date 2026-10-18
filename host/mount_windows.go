@@ -491,7 +491,10 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 	if destinationFileName != nil {
 		destName = windows.UTF16PtrToString(destinationFileName)
 	}
-	slog.Debug("projfs: Notification", append(cbDataAttrs(callbackData),
+	// Only the notifications registered in mount() reach this callback, so these
+	// stay at Info: whether a notification arrived at all is the first thing to
+	// check when a denied operation is not denied, and CI does not capture Debug.
+	slog.Info("projfs: Notification", append(cbDataAttrs(callbackData),
 		"notification", notificationName(notification),
 		"notificationRaw", fmt.Sprintf("0x%08X", notification),
 		"isDirectory", isDirectory != 0,
@@ -502,21 +505,21 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 	case prjNotificationPreRename:
 		s := serverFromContext(callbackData)
 		hr := s.preRename(callbackData.FilePathName, destinationFileName)
-		slog.Debug("projfs: Notification rename",
+		slog.Info("projfs: Notification rename",
 			"path", projfsPath(callbackData.FilePathName),
 			"destinationFileName", destName,
 			"result", hresultName(hr),
 		)
 		return hr
 	case prjNotificationPreDelete:
-		slog.Debug("projfs: Notification denying operation",
+		slog.Info("projfs: Notification denying operation",
 			"path", projfsPath(callbackData.FilePathName),
 			"notification", notificationName(notification),
 			"result", "ACCESS_DENIED",
 		)
 		return hresultAccessDenied
 	}
-	slog.Debug("projfs: Notification allowing operation",
+	slog.Info("projfs: Notification allowing operation",
 		"path", projfsPath(callbackData.FilePathName),
 		"notification", notificationName(notification),
 		"result", "S_OK",

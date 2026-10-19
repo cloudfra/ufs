@@ -20,7 +20,7 @@ $ git diff --shortstat v0.16.1..origin/main
  229 files changed, 16945 insertions(+), 5503 deletions(-)
 ```
 
-This release is dominated by a reorganisation of the package layout. The core
+This release is dominated by a reorganization of the package layout. The core
 interfaces move out of the root package into `drivers/types`, the file
 operations move into a new `ops` package, and the in-memory and on-disk
 constructors move into a new `drivers/core` package. **These moves are breaking
@@ -266,7 +266,7 @@ names, err := ops.List(fsys, ".")
 `ufs.RegisterDecorator`, `ufs.NewNestFS`, `ufs.WrapNestFS` and the whole
 `proto` package keep their names and only change in the types they mention.
 
-## Behaviour changes
+## Behavior changes
 
 - `ufs.New` returns a nil file system when it fails, instead of a non-nil
   value alongside the error (`7b24e98 (#440)`).
@@ -280,7 +280,7 @@ names, err := ops.List(fsys, ".")
     (`e6ffc9d (#438)`);
   - more non-public address ranges are blocked (`b22eb5b (#439)`);
   - `ufs.checksum` verifies the downloaded content (`8a08acc (#407)`).
-- Cloning honours the context and reports why a clone failed (`f8e4ade
+- Cloning honors the context and reports why a clone failed (`f8e4ade
   (#442)`).
 - Change notifications: the data race between `notify.Bus.Publish` and
   `Subscription.Close` is fixed (`82bd114 (#370)`), and delivery stops as soon

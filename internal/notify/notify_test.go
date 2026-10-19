@@ -152,17 +152,20 @@ func TestCloseRemovesSubscriptionFromBus(t *testing.T) {
 	}
 }
 
+// TestContextCancellationStopsDelivery publishes right after the context is
+// canceled, before the delivery goroutine has necessarily seen it, and waits
+// for that goroutine to exit: no event published after cancel may reach the
+// hook, however the goroutine is scheduled.
 func TestContextCancellationStopsDelivery(t *testing.T) {
 	t.Parallel()
 	b := New()
 	ctx, cancel := context.WithCancel(t.Context())
 	var c collector
-	b.Subscribe(ctx, ".", c.hook)
+	sub := b.Subscribe(ctx, ".", c.hook)
 
 	cancel()
-	time.Sleep(20 * time.Millisecond)
 	b.Publish(opCreate, "a.txt")
-	time.Sleep(20 * time.Millisecond)
+	<-sub.done
 	if got := c.snapshot(); len(got) != 0 {
 		t.Errorf("events after ctx cancel = %+v, want none", got)
 	}

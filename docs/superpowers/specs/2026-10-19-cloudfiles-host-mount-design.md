@@ -32,15 +32,17 @@ host/                     core, no OS-specific mount code
   registry.go             Backend interface, RegisterBackend
 host/fuse/                Linux FUSE driver (moved from host/fuse_linux.go)
 host/projfs/              Windows ProjFS driver (moved from host/*_windows.go)
-  errors_windows.go       ProjFS error table
+  internal/projfslib/     projectedfslib.dll wrapper: bindings, structs,
+                          constants, error table
 host/cloudfiles/          Windows Cloud Files driver (new)
   backend.go              Backend registration; reports unavailable off Windows
-  syscalls_windows.go     cldapi.dll bindings
-  types_windows.go        cfapi struct layouts and constants
   server_windows.go       mount / unmount lifecycle
   callbacks_windows.go    Cloud Files callbacks
   sync_windows.go         directory watcher and upload queue
-  errors_windows.go       Cloud Files error table
+  internal/cfapi/         cldapi.dll wrapper (new)
+    syscalls_windows.go   bindings
+    types_windows.go      struct layouts and constants
+    errors_windows.go     error table
 host/all/                 blank-imports fuse, projfs and cloudfiles
 host/hosttest/            exported conformance suite and child-process helpers
 internal/hostutil/        integer clamp helpers (today's host/math.go)
@@ -53,6 +55,10 @@ Rules:
   `ufs.Register`.
 - No driver imports another driver. A consumer that imports only
   `host/cloudfiles` compiles and links no ProjFS or FUSE code.
+- Each Win32 API wrapper (`projfslib`, `cfapi`) is its own package, internal
+  to its driver. It holds only the API: bindings, struct layouts, constants
+  and the error table. It knows nothing of ufs (no `host`, `types` or `ops`
+  imports), and the driver code reaches the API only through it.
 - `cmd/ufsmount` imports `host/all`.
 
 ## Core API (`host`)
@@ -198,15 +204,21 @@ Add `-backend auto|fuse|projfs|cloudfiles` (default `auto`), passed through
 
 ## Errors
 
-Each driver has its own `errors_windows.go` holding:
+Each API wrapper has its own `errors_windows.go` (`cfapi`, `projfslib`)
+holding:
 
-- An error type (`cloudfilesError`, `projfsError`) with the operation, the
-  path, and the code. `Error()` gives the operation, path, code name and
-  number, description, and the resolution for that operation. It unwraps to
+- An error type (`cfapi.Error`, `projfslib.Error`) with the API call, the
+  path, and the code. `Error()` gives the call, path, code name and number,
+  description, and the resolution for that call. It unwraps to
   `windows.Errno`, so `errors.Is` matches `fs.ErrNotExist` and the others.
-- A table from code to description and resolutions keyed by operation, with a
-  default. Cloud Files operations: mount, list, read, upload, delete, rename,
-  dehydrate, unmount.
+- A table from code to description and resolutions keyed by the API call
+  that failed, with a default. The call is the context: for example
+  `CfRegisterSyncRoot` and `CfConnectSyncRoot` (mounting),
+  `CfExecute(TRANSFER_PLACEHOLDERS)` (listing), `CfExecute(TRANSFER_DATA)`
+  (reading), `CfSetInSyncState` and `CfConvertToPlaceholder` (uploading),
+  `CfExecute(ACK_DELETE)` / `CfExecute(ACK_RENAME)`, `CfDehydratePlaceholder`,
+  and `CfDisconnectSyncRoot` / `CfUnregisterSyncRoot` (unmounting). The driver
+  wraps these errors with the mount path and the file it was working on.
 - The reverse mapping from Go errors to the NTSTATUS a callback answers with
   (`fs.ErrNotExist` → `STATUS_OBJECT_NAME_NOT_FOUND`, `fs.ErrPermission` →
   `STATUS_ACCESS_DENIED`, `fs.ErrExist` → `STATUS_OBJECT_NAME_COLLISION`,
@@ -224,8 +236,8 @@ Cloud Files table coverage:
   filter (`cldflt`) not running.
 
 Codes come from `golang.org/x/sys/windows` constants. The ProjFS table moves
-from `host/projfs_errors_windows.go` into the same structure, with
-per-operation resolutions added.
+from `host/projfs_errors_windows.go` into `projfslib` in the same structure,
+with per-call resolutions added.
 
 ## Testing
 
@@ -250,8 +262,8 @@ per-operation resolutions added.
 - Unmount leaves the directory empty; an unsynced local file is kept and
   reported.
 - A crashed mount's registration is re-registered.
-- The error table: every entry has a description and a default resolution;
-  messages differ by operation.
+- `cfapi`: struct sizes and field offsets match `cfapi.h`; every error table
+  entry has a description and a default resolution; messages differ by call.
 - The ID map follows renames.
 
 ### `host` and device info (all platforms)
@@ -261,13 +273,15 @@ per-operation resolutions added.
 - `DeviceInfo.Remote()` for Windows `DRIVE_REMOTE` and Linux network file
   systems.
 - Dependency isolation, alongside the existing coredeps test: `host` depends on
-  no driver, and no driver depends on another.
+  no driver, no driver depends on another, and `cfapi` / `projfslib` import
+  nothing from ufs.
 
 ### CI
 
-- `UFS_ENABLE_CLOUDFILES_TEST` gates the Cloud Files mount tests, as
-  `UFS_ENABLE_PROJFS_TEST` gates ProjFS. `build-windows` (desktop-experience)
-  sets both; `build-windows-root` sets neither.
+- The Cloud Files tests always run on Windows: Cloud Files ships with
+  Windows, so there is no opt-in variable. They run on both `build-windows`
+  and `build-windows-root`. (ProjFS keeps `UFS_ENABLE_PROJFS_TEST`, since it
+  is an optional feature.)
 
 ## Risks, verified first on CI
 
@@ -278,7 +292,9 @@ test, and a test that reads from the provider process. It answers:
 2. Does Cloud Files call back for the provider process's own I/O? If not, the
    tests use the `hosttest` child-process helpers.
 3. Can placeholders be removed after the sync root is unregistered?
-4. Do the desktop-experience runners have the `cldflt` filter?
+4. Do both Windows runners have the `cldflt` filter? cfapi is documented as
+   "desktop apps only", and `build-windows-root` runs Server Core. If Server
+   Core lacks it, that comes back for review rather than adding a skip.
 
 A "no" to 1 or 3 changes this design and comes back for review before the
 write path is built.

@@ -155,7 +155,9 @@ func (lw *localWatcher) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case ev, ok := <-lw.watcher.Events:
-			if !ok {
+			// select picks at random when ctx is also done, so check it
+			// again: nothing is delivered once the watch is canceled.
+			if !ok || ctx.Err() != nil {
 				return
 			}
 			lw.handleEvent(ev)

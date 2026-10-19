@@ -605,8 +605,19 @@ func TestMountContextCancel(t *testing.T) {
 		t.Fatalf("Stat before cancel: %v", err)
 	}
 
+	// Canceling unmounts in the background; Wait returns once the FUSE
+	// server has stopped serving, i.e. the volume is unmounted.
 	cancel()
-	time.Sleep(200 * time.Millisecond)
+	unmounted := make(chan struct{})
+	go func() {
+		server.Wait()
+		close(unmounted)
+	}()
+	select {
+	case <-unmounted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("mount was not unmounted within 10s of the context being canceled")
+	}
 
 	entries, err := osutil.ReadDir(mountDir)
 	if err != nil {

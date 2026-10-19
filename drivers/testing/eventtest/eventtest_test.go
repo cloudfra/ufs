@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/cloudfra/ufs/drivers/testing/eventtest"
@@ -65,14 +66,30 @@ func TestEventCollectorWaitForRecorded(t *testing.T) {
 	ec.WaitFor(t, time.Second, func(ev eventtest.Event[testOp]) bool { return ev.Op == opRemove && ev.Path == "b.txt" })
 }
 
+// TestEventCollectorWaitForLaterEvent checks WaitFor keeps waiting through a
+// non-matching event and returns on a matching one recorded after it started
+// waiting. synctest.Wait returns only once WaitFor is blocked, so the events
+// always arrive after it started waiting.
 func TestEventCollectorWaitForLaterEvent(t *testing.T) {
-	ec := eventtest.NewEventCollector[testOp]()
-	go func() {
-		time.Sleep(10 * time.Millisecond)
+	synctest.Test(t, func(t *testing.T) {
+		ec := eventtest.NewEventCollector[testOp]()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[testOp]) bool { return ev.Path == "later.txt" })
+		}()
+
+		synctest.Wait()
 		ec.Hook(opCreate, "unrelated.txt")
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("WaitFor returned on a non-matching event")
+		default:
+		}
 		ec.Hook(opCreate, "later.txt")
-	}()
-	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[testOp]) bool { return ev.Path == "later.txt" })
+		<-done
+	})
 }
 
 func TestEventCollectorWaitForTimeout(t *testing.T) {

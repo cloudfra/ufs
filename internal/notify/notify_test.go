@@ -81,14 +81,17 @@ func TestPublishRespectsPrefix(t *testing.T) {
 	b.Publish(opCreate, "dir/a.txt")
 	b.Publish(opCreate, "other/b.txt")
 	b.Publish(opCreate, "dirsibling/c.txt")
+	// A subscription delivers in publish order, so once this last matching
+	// event arrives, any non-matching event wrongly queued has arrived too.
+	b.Publish(opCreate, "dir/sentinel")
 
-	// Delivery is asynchronous: wait for the matching event, then give the
-	// non-matching ones a chance to (wrongly) arrive.
-	ufsTesting.WaitFor(t, waitTimeout, func() bool { return len(c.snapshot()) >= 1 })
-	time.Sleep(20 * time.Millisecond)
+	ufsTesting.WaitFor(t, waitTimeout, func() bool {
+		got := c.snapshot()
+		return len(got) > 0 && got[len(got)-1].path == "dir/sentinel"
+	})
 	got := c.snapshot()
-	if len(got) != 1 || got[0].path != "dir/a.txt" {
-		t.Errorf("events = %+v, want only [{.. dir/a.txt}]", got)
+	if len(got) != 2 || got[0].path != "dir/a.txt" {
+		t.Errorf("events = %+v, want only [{.. dir/a.txt} {.. dir/sentinel}]", got)
 	}
 }
 
@@ -117,11 +120,12 @@ func TestCloseStopsDelivery(t *testing.T) {
 	b.Publish(opCreate, "a.txt")
 	ufsTesting.WaitFor(t, waitTimeout, func() bool { return len(c.snapshot()) == 1 })
 
+	// Close waits for the delivery goroutine to exit and removes the
+	// subscription from the bus, so nothing can be delivered after it.
 	if err := sub.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
 	b.Publish(opCreate, "b.txt")
-	time.Sleep(20 * time.Millisecond)
 	if got := c.snapshot(); len(got) != 1 {
 		t.Errorf("events after Close() = %+v, want no new events", got)
 	}
@@ -178,12 +182,12 @@ func TestBusCloseStopsEverySubscription(t *testing.T) {
 	b.Subscribe(t.Context(), ".", c1.hook)
 	b.Subscribe(t.Context(), ".", c2.hook)
 
+	// Bus.Close removes every subscription before returning, so Publish
+	// reaches none of them.
 	if err := b.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
-	time.Sleep(20 * time.Millisecond)
 	b.Publish(opCreate, "a.txt")
-	time.Sleep(20 * time.Millisecond)
 
 	if got := c1.snapshot(); len(got) != 0 {
 		t.Errorf("c1 events after Close() = %+v, want none", got)
@@ -247,15 +251,20 @@ func TestPublishDropsWhenQueueFull(t *testing.T) {
 	}
 
 	unblock()
+	// Wait for the queue to drain, then publish a sentinel: delivery is in
+	// order, so once it arrives every wrongly-queued extra event has too.
 	ufsTesting.WaitFor(t, waitTimeout, func() bool { return len(c.snapshot()) >= 1+QueueSize })
-	// Give any wrongly-queued extra events a chance to arrive.
-	time.Sleep(20 * time.Millisecond)
+	b.Publish(opWrite, "sentinel")
+	ufsTesting.WaitFor(t, waitTimeout, func() bool {
+		got := c.snapshot()
+		return got[len(got)-1].path == "sentinel"
+	})
 
 	got := c.snapshot()
-	if len(got) != 1+QueueSize {
-		t.Fatalf("delivered %d events, want %d (1 held + %d queued; %d dropped)", len(got), 1+QueueSize, QueueSize, dropped)
+	if len(got) != 1+QueueSize+1 {
+		t.Fatalf("delivered %d events, want %d (1 held + %d queued + sentinel; %d dropped)", len(got), 1+QueueSize+1, QueueSize, dropped)
 	}
-	for i, ev := range got[1:] {
+	for i, ev := range got[1 : 1+QueueSize] {
 		if want := fmt.Sprintf("q%d", i); ev.path != want {
 			t.Fatalf("event[%d].path = %q, want %q (the first %d queued in order)", i+1, ev.path, want, QueueSize)
 		}

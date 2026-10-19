@@ -230,11 +230,10 @@ func TestWatchCloseStopsDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Close waits for the event loop to exit, so nothing can arrive after it.
 	if err := osutil.WriteFile(filepath.Join(dir, "after.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-
-	time.Sleep(200 * time.Millisecond)
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "after.txt"
@@ -260,18 +259,14 @@ func TestWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ufsTesting.ValidateClose(t, closer)()
 
 	cancel()
-
-	// Give the goroutine time to observe cancellation.
-	time.Sleep(200 * time.Millisecond)
-
 	if err := osutil.WriteFile(filepath.Join(dir, "post_cancel.txt"), []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-
-	time.Sleep(200 * time.Millisecond)
+	// Close waits for the event loop to exit, so any delivery of the event
+	// (a bug) has happened by the time it returns.
+	ufsTesting.ValidateClose(t, closer)()
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "post_cancel.txt"
@@ -368,8 +363,11 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	defer ufsTesting.ValidateClose(t, fsys)()
 
 	var hookCalls atomic.Int64
+	firstEvent := make(chan struct{})
+	var firstOnce sync.Once
 	hook := func(types.NotifyOp, string) {
 		hookCalls.Add(1)
+		firstOnce.Do(func() { close(firstEvent) })
 	}
 
 	closer, err := fsys.Watch(t.Context(), ".", hook)
@@ -386,8 +384,12 @@ func TestWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 		}
 	})
 
-	// Let some events start flowing, then close mid-stream.
-	time.Sleep(5 * time.Millisecond)
+	// Close mid-stream, once events are flowing.
+	select {
+	case <-firstEvent:
+	case <-time.After(eventtest.EventDeadline):
+		t.Fatal("no event delivered before Close")
+	}
 	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}

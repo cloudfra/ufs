@@ -20,7 +20,6 @@ import (
 	"context"
 	"io/fs"
 	"testing"
-	"time"
 
 	"github.com/cloudfra/ufs/drivers/testing/eventtest"
 	"github.com/cloudfra/ufs/drivers/types"
@@ -57,8 +56,15 @@ func TestBoltWatchCreateWriteClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// WriteString alone must not persist to the database or notify.
-	time.Sleep(100 * time.Millisecond)
+	// WriteString alone must not persist to the database or notify. Events
+	// arrive in order, so once the sentinel's create arrives, a write event
+	// for hello.txt would have arrived before it.
+	if _, err := fsys.Create("sentinel.txt"); err != nil {
+		t.Fatal(err)
+	}
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Path == "sentinel.txt"
+	})
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Op == types.NotifyWrite && ev.Path == "hello.txt"
 	}) {
@@ -142,11 +148,17 @@ func TestBoltWatchSubdirectory(t *testing.T) {
 		return ev.Op == types.NotifyCreate && ev.Path == "watched/inside.txt"
 	})
 
+	// Events arrive in order, so once the sentinel inside arrives, an event
+	// for the outside file would have arrived before it.
 	if _, err := fsys.Create("other/outside.txt"); err != nil {
 		t.Fatal(err)
 	}
-
-	time.Sleep(100 * time.Millisecond)
+	if _, err := fsys.Create("watched/sentinel.txt"); err != nil {
+		t.Fatal(err)
+	}
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Path == "watched/sentinel.txt"
+	})
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "other/outside.txt"
@@ -174,11 +186,10 @@ func TestBoltWatchCloseStopsDelivery(t *testing.T) {
 		t.Fatalf("failed to close watcher: %v", err)
 	}
 
+	// Close waits for delivery to stop, so nothing can arrive after it.
 	if _, err := fsys.Create("after.txt"); err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-
-	time.Sleep(200 * time.Millisecond)
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "after.txt"
@@ -291,12 +302,11 @@ func TestBoltWatchFSClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = closer
 
-	// Closing the FS should cancel all watchers.
+	// Closing the FS cancels every watcher: the watcher's own Close, which
+	// waits for its delivery goroutine to exit, must then return.
 	if err := fsys.Close(); err != nil {
 		t.Fatal(err)
 	}
-
-	time.Sleep(100 * time.Millisecond)
+	ufsTesting.ValidateClose(t, closer)()
 }

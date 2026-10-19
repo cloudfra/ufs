@@ -131,12 +131,18 @@ func TestMemWatchSubdirectory(t *testing.T) {
 		return ev.Op == types.NotifyCreate && ev.Path == "watched/inside.txt"
 	})
 
-	// File outside watched directory should not be delivered.
+	// File outside watched directory should not be delivered. Events arrive
+	// in order, so once the sentinel inside arrives, an event for the outside
+	// file would have arrived before it.
 	if _, err := fsys.Create("other/outside.txt"); err != nil {
 		t.Fatal(err)
 	}
-
-	time.Sleep(100 * time.Millisecond)
+	if _, err := fsys.Create("watched/sentinel.txt"); err != nil {
+		t.Fatal(err)
+	}
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Path == "watched/sentinel.txt"
+	})
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "other/outside.txt"
@@ -165,11 +171,10 @@ func TestMemWatchCloseStopsDelivery(t *testing.T) {
 		t.Fatalf("failed to close watcher: %v", err)
 	}
 
+	// Close waits for delivery to stop, so nothing can arrive after it.
 	if _, err := fsys.Create("after.txt"); err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-
-	time.Sleep(200 * time.Millisecond)
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "after.txt"
@@ -188,17 +193,14 @@ func TestMemWatchCtxCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ufsTesting.ValidateClose(t, closer)()
 
 	cancel()
-
-	time.Sleep(200 * time.Millisecond)
-
 	if _, err := fsys.Create("post_cancel.txt"); err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-
-	time.Sleep(200 * time.Millisecond)
+	// Close waits for the delivery goroutine to exit, so any delivery of the
+	// event (a bug) has happened by the time it returns.
+	ufsTesting.ValidateClose(t, closer)()
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "post_cancel.txt"
@@ -326,8 +328,11 @@ func TestMemWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 	fsys := makeMemFS("memory:")
 
 	var hookCalls atomic.Int64
+	firstEvent := make(chan struct{})
+	var firstOnce sync.Once
 	hook := func(types.NotifyOp, string) {
 		hookCalls.Add(1)
+		firstOnce.Do(func() { close(firstEvent) })
 	}
 
 	closer, err := fsys.Watch(t.Context(), ".", hook)
@@ -344,7 +349,12 @@ func TestMemWatchRaceCloseWhileEventsInFlight(t *testing.T) {
 		}
 	})
 
-	time.Sleep(5 * time.Millisecond)
+	// Close once events are flowing.
+	select {
+	case <-firstEvent:
+	case <-time.After(eventtest.EventDeadline):
+		t.Fatal("no event delivered before Close")
+	}
 	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -423,14 +433,13 @@ func TestMemWatchFSClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = closer
 
-	// Closing the FS should cancel all watchers.
+	// Closing the FS cancels every watcher: the watcher's own Close, which
+	// waits for its delivery goroutine to exit, must then return.
 	if err := fsys.Close(); err != nil {
 		t.Fatal(err)
 	}
-
-	time.Sleep(100 * time.Millisecond)
+	ufsTesting.ValidateClose(t, closer)()
 }
 
 func TestMemWatchRename(t *testing.T) {

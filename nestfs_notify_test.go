@@ -18,7 +18,6 @@ import (
 	"context"
 	"io/fs"
 	"testing"
-	"time"
 
 	"github.com/cloudfra/ufs/drivers/testing/eventtest"
 	"github.com/cloudfra/ufs/drivers/types"
@@ -92,7 +91,9 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 		return ev.Op == types.NotifyCreate && ev.Path == "sub/inside.txt"
 	})
 
-	// types.File outside should not be delivered.
+	// A file outside should not be delivered. Events arrive in order, so once
+	// the sentinel inside arrives, an event for the outside file would have
+	// arrived before it.
 	f, err = inner.Create("outside.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -100,8 +101,16 @@ func TestNestFSWatchSubdirectory(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatalf("failed to close file: %v", err)
 	}
-
-	time.Sleep(100 * time.Millisecond)
+	f, err = inner.Create("sub/sentinel.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close file: %v", err)
+	}
+	ec.WaitFor(t, eventtest.EventDeadline, func(ev eventtest.Event[types.NotifyOp]) bool {
+		return ev.Path == "sub/sentinel.txt"
+	})
 
 	if ec.HasEvent(func(ev eventtest.Event[types.NotifyOp]) bool {
 		return ev.Path == "outside.txt"

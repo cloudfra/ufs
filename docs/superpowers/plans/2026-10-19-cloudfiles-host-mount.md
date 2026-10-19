@@ -62,8 +62,9 @@ self-hosted runners.
 Start here in a new session.
 
 - Branch: `cloudfiles-mount` (from `main` at `380b71c`).
-- Issue: see the PR description ("Closes #...").
-- PR: `gh pr list --head cloudfiles-mount`.
+- Issue: <https://github.com/cloudfra/ufs/issues/472> (describes the whole
+  change and the acceptance criteria).
+- PR: `gh pr list --head cloudfiles-mount` (closes #472).
 - Status: spec and this plan are written. **Next task: Task 1.** Tick the
   checkboxes in this file as tasks land and commit the file with the work, so
   the file always shows where to resume.

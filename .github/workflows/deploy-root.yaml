@@ -1,0 +1,51 @@
+# Copyright 2026 Cloudfra
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: CI Root
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-root:
+    runs-on: ["self-hosted", "windows", "root"]
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+      - name: Initialize CI
+        shell: powershell
+        run: ./scripts/Initialize-AdministratorCI.ps1
+      - name: Build Assets
+        run: make assets testassets
+      - name: Download Dependencies
+        run: make deps
+      - name: Test
+        run: make test

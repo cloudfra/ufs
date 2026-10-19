@@ -203,40 +203,6 @@ jobs:
           make DOCKER_PUSH=--push REGISTRY=docker.io/cloudfra images
           make DOCKER_PUSH=--push REGISTRY=ghcr.io/cloudfra images
 
-  build-windows-root:
-    runs-on: ["self-hosted", "windows", "root"]
-    permissions:
-      contents: read
-    timeout-minutes: 20
-    steps:
-      - name: Service Status
-        run: |
-          Get-Service actions.runner.* | Select-Object Name, Status
-      - name: Verify administrator privileges
-        run: |
-          $identity  = [Security.Principal.WindowsIdentity]::GetCurrent()
-          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-          $isAdmin   = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-          Write-Host "Running as: $($identity.Name)"
-          Write-Host "Elevated:   $isAdmin"
-          if (-not $isAdmin) {
-            Write-Error "This job is not running with administrator privileges."
-            exit 1
-          }
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: stable
-          cache: false
-      - name: Build Assets
-        run: make assets testassets
-      - name: Download Dependencies
-        run: make deps
-      - name: Test
-        run: make test
-
   build-windows:
     name: "Build Windows"
     runs-on: ["self-hosted", "windows", "large", "desktop-experience"]

@@ -93,13 +93,12 @@ Start here in a new session.
 ## File Structure
 
 ```text
-drivers/types/deviceinfo.go             + Remote()
-drivers/core/localfs_deviceinfo_linux.go   network fs types remote
-drivers/core/localfs_deviceinfo_windows.go DRIVE_REMOTE remote
+drivers/types/deviceinfo.go             + IsRemote(), DeviceTypeNetwork
+drivers/core/localfs_deviceinfo_linux.go   more network fs types
 host/host.go                            MountServer, Mount, Option, WithBackend
 host/registry.go                        Backend, RegisterBackend, selection
 host/host_test.go                       selection tests with fake backends
-host/hosttest/hosttest.go               Backend, Caps, Run (conformance suite)
+host/hosttest/hosttest.go               Backend, Capabilities, Run (conformance suite)
 host/hosttest/read.go                   read conformance tests (moved)
 host/hosttest/write.go                  write conformance tests (new)
 host/hosttest/childop.go                Main, Remove, Rename, WriteFile (child process)
@@ -130,56 +129,72 @@ CLAUDE.md, docs/ufsmount.md             documentation
 
 ---
 
-### Task 1: DeviceInfo.Remote and network devices
+### Task 1: DeviceInfo.IsRemote from the device type
 
 **Files:**
 
 - Modify: `drivers/types/deviceinfo.go`
-- Modify: `drivers/core/localfs_deviceinfo_linux.go` (function
-  `linuxMakeDeviceInfo`, `linuxDeviceTypeAndThreads`)
-- Modify: `drivers/core/localfs_deviceinfo_windows.go` (`windowsDriveInfo`)
+- Modify: every `types.NewDeviceInfo` caller (drop the last argument):
+  `drivers/core/localfs_deviceinfo_linux.go`, `drivers/core/localfs_deviceinfo_windows.go`,
+  `drivers/core/angryfs.go`, `drivers/core/memfs.go`, `drivers/core/archivefs.go`,
+  `drivers/core/nullfs.go`, `drivers/embedfs/embedfs.go`, `drivers/boltfs/boltfs.go`,
+  `drivers/gcsfs/gcsfs.go` (find them all with
+  `grep -rn 'NewDeviceInfo(' --include='*.go' . | grep -v third_party`, tests included)
+- Modify: `drivers/core/localfs_deviceinfo_linux.go` (`linuxDeviceTypeAndThreads`)
 - Test: `drivers/types/deviceinfo_test.go`,
   `drivers/core/localfs_deviceinfo_linux_test.go`
 
 **Interfaces:**
 
-- Produces: `func (info DeviceInfo) Remote() bool`.
+- Produces:
+
+```go
+const DeviceTypeNetwork = "network"
+func NewDeviceInfo(name string, deviceType string, threadCount int) DeviceInfo // remote parameter removed
+func (info DeviceInfo) IsRemote() bool // deviceType == DeviceTypeNetwork
+```
 
 - [ ] **Step 1: Write the failing tests**
 
 In `drivers/types/deviceinfo_test.go` add:
 
 ```go
-func TestDeviceInfoRemote(t *testing.T) {
+func TestDeviceInfoIsRemote(t *testing.T) {
 	t.Parallel()
-	if NewDeviceInfo("a", "fixed", 1, false).Remote() {
-		t.Error("local device reports Remote() = true")
+	for deviceType, want := range map[string]bool{
+		DeviceTypeNetwork: true,
+		"fixed":           false,
+		"memory":          false,
+		"unknown":         false,
+	} {
+		if got := NewDeviceInfo("d", deviceType, 1).IsRemote(); got != want {
+			t.Errorf("IsRemote() for type %q = %t, want %t", deviceType, got, want)
+		}
 	}
-	if !NewDeviceInfo("gs://b", "network", 1, true).Remote() {
-		t.Error("remote device reports Remote() = false")
-	}
-	if DefaultDeviceInfo.Remote() {
-		t.Error("DefaultDeviceInfo.Remote() = true, want false")
+	if DefaultDeviceInfo.IsRemote() {
+		t.Error("DefaultDeviceInfo.IsRemote() = true, want false")
 	}
 }
 ```
 
 In `drivers/core/localfs_deviceinfo_linux_test.go` add a table test feeding
-`linuxDeviceMapFromReader` one `/proc/mounts` line per network type and
-checking `Remote()` on `["."]`:
+`linuxDeviceMapFromReader` one `/proc/mounts` line per file system type and
+checking `IsRemote()` on `["."]`:
 
 ```go
-func TestLinuxDeviceMapRemote(t *testing.T) {
+func TestLinuxDeviceMapIsRemote(t *testing.T) {
 	t.Parallel()
 	for fsType, want := range map[string]bool{
 		"ext4": false, "tmpfs": false, "nfs": true, "nfs4": true,
-		"cifs": true, "smb3": true, "fuse.sshfs": true, "9p": true,
-		"afs": true, "ceph": true, "glusterfs": true,
+		"cifs": true, "smbfs": true, "smb3": true, "sshfs": true,
+		"fuse.sshfs": true, "fuse.s3fs": true, "fuse.gcsfuse": true,
+		"9p": true, "afs": true, "ceph": true, "glusterfs": true,
+		"fuse.glusterfs": true,
 	} {
 		line := "server:/export /mnt " + fsType + " rw 0 0\n"
 		dm := linuxDeviceMapFromReader("/mnt/data", strings.NewReader(line))
-		if got := dm["."].Remote(); got != want {
-			t.Errorf("%s: Remote() = %t, want %t", fsType, got, want)
+		if got := dm["."].IsRemote(); got != want {
+			t.Errorf("%s: IsRemote() = %t, want %t", fsType, got, want)
 		}
 	}
 }
@@ -187,48 +202,53 @@ func TestLinuxDeviceMapRemote(t *testing.T) {
 
 - [ ] **Step 2: Run to see them fail**
 
-Run: `go test ./drivers/types/ ./drivers/core/ -run 'Remote'`
-Expected: compile error `info.Remote undefined`.
+Run: `go test ./drivers/types/ ./drivers/core/ -run 'IsRemote'`
+Expected: compile errors (`IsRemote` and `DeviceTypeNetwork` undefined, too
+many arguments to `NewDeviceInfo`).
 
 - [ ] **Step 3: Implement**
 
-`drivers/types/deviceinfo.go`, after `DeviceType`:
+`drivers/types/deviceinfo.go`:
 
 ```go
-// Remote reports whether the device is on another machine, so that I/O may
-// be slow and host mounts should not assume local access.
-func (info DeviceInfo) Remote() bool {
-	return info.remote
+// DeviceTypeNetwork is the device type of storage on another machine. Every
+// device of this type is remote (see DeviceInfo.IsRemote).
+const DeviceTypeNetwork = "network"
+```
+
+Remove the `remote` field and the `remote` parameter of `NewDeviceInfo`,
+drop `remote` from `String()`, and add after `DeviceType`:
+
+```go
+// IsRemote reports whether the device is on another machine (its type is
+// DeviceTypeNetwork), so I/O may be slow and host mounts should not assume
+// local access.
+func (info DeviceInfo) IsRemote() bool {
+	return info.deviceType == DeviceTypeNetwork
 }
 ```
 
-`drivers/core/localfs_deviceinfo_linux.go`:
+Drop the last argument of every `NewDeviceInfo` call, and replace the
+`"network"` literals in `gcsfs.go`, `localfs_deviceinfo_windows.go` and
+`localfs_deviceinfo_linux.go` with `types.DeviceTypeNetwork`. In
+`linuxDeviceTypeAndThreads` extend the network case:
 
 ```go
-// linuxNetworkFSTypes are /proc/mounts file system types whose data lives on
-// another machine.
-var linuxNetworkFSTypes = map[string]bool{
-	"nfs": true, "nfs4": true, "cifs": true, "smb3": true, "smbfs": true,
-	"fuse.sshfs": true, "9p": true, "afs": true, "ceph": true,
-	"glusterfs": true, "fuse.glusterfs": true,
-}
+	case "nfs", "nfs4", "cifs", "smbfs", "smb3", "sshfs", "fuse.sshfs",
+		"fuse.s3fs", "fuse.gcsfuse", "9p", "afs", "ceph", "glusterfs",
+		"fuse.glusterfs":
+		return types.DeviceTypeNetwork, 1
 ```
-
-and in `linuxMakeDeviceInfo` replace the final `false` with
-`linuxNetworkFSTypes[m.fsType]`.
-
-`drivers/core/localfs_deviceinfo_windows.go`: in the `DRIVE_REMOTE` case
-change the last argument to `true`.
 
 - [ ] **Step 4: Run tests**
 
-Run: `make test` → PASS. Run `GOOS=windows go vet ./drivers/core/`.
+Run: `make test` → PASS; `GOOS=windows go vet ./drivers/...`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add drivers/types drivers/core
-git commit -m "Report remote devices in DeviceInfo"
+git add drivers
+git commit -m "Derive DeviceInfo.IsRemote from the network device type"
 ```
 
 ---
@@ -296,9 +316,9 @@ func (b fakeBackend) Mount(context.Context, types.ReadFS, string) (MountServer, 
 
 func withBackends(t *testing.T, bs ...Backend) {
 	t.Helper()
-	saved := snapshotBackends()
-	t.Cleanup(func() { restoreBackends(saved) })
-	restoreBackends(nil)
+	saved := getHostMountBackends()
+	t.Cleanup(func() { setHostMountBackends(saved) })
+	setHostMountBackends(nil)
 	for _, b := range bs {
 		RegisterBackend(b)
 	}
@@ -415,7 +435,7 @@ func RegisterBackend(b Backend) {
 	backends[b.Name()] = b
 }
 
-func snapshotBackends() map[string]Backend {
+func getHostMountBackends() map[string]Backend {
 	backendsMu.RLock()
 	defer backendsMu.RUnlock()
 	m := make(map[string]Backend, len(backends))
@@ -425,7 +445,7 @@ func snapshotBackends() map[string]Backend {
 	return m
 }
 
-func restoreBackends(m map[string]Backend) {
+func setHostMountBackends(m map[string]Backend) {
 	backendsMu.Lock()
 	defer backendsMu.Unlock()
 	backends = map[string]Backend{}
@@ -437,7 +457,7 @@ func restoreBackends(m map[string]Backend) {
 // AllLocal reports whether no device backing fsys is remote.
 func AllLocal(fsys types.ReadFS) bool {
 	for _, info := range fsys.GetDeviceInfo() {
-		if info.Remote() {
+		if info.IsRemote() {
 			return false
 		}
 	}
@@ -445,7 +465,7 @@ func AllLocal(fsys types.ReadFS) bool {
 }
 
 func selectBackend(fsys types.ReadFS, name string) (Backend, error) {
-	all := snapshotBackends()
+	all := getHostMountBackends()
 	if name != "" {
 		b, ok := all[name]
 		if !ok {
@@ -573,7 +593,7 @@ git commit -m "Choose host mount drivers from a registry"
 - Produces (package `hosttest`):
 
 ```go
-type Caps struct {
+type Capabilities struct {
 	Write     bool // creates, writes, mkdir and renames reach fsys
 	Delete    bool // deletes through the mount reach fsys (ProjFS denies them)
 	DirRename bool // directories can be renamed through the mount
@@ -582,7 +602,7 @@ type Caps struct {
 type Backend struct {
 	Name  string
 	Mount func(t *testing.T, fsys types.ReadFS) string // returns the mount dir
-	Caps  Caps
+	Capabilities Capabilities
 }
 func Run(t *testing.T, b Backend)            // runs every conformance test as subtests
 func Main(m *testing.M)                       // TestMain helper for child-process ops
@@ -591,7 +611,7 @@ func Remove(ctx context.Context, b Backend, name string) error
 func WriteFile(ctx context.Context, b Backend, name string, data []byte) error
 ```
 
-`Rename`/`Remove`/`WriteFile` run in a child process when `b.Caps.ChildIO`
+`Rename`/`Remove`/`WriteFile` run in a child process when `b.Capabilities.ChildIO`
 is set (Windows only; see `childop_windows.go`) and in-process otherwise.
 
 - [ ] **Step 1: Move the clamp helpers**
@@ -617,14 +637,14 @@ functions `readFile(t, b)`, `stat(t, b)`, `readDir(t, b)`,
 `backend.mount(t, fsys)` with `b.Mount(t, fsys)` (it now returns the mount
 directory string), `m.mountDir` with that string, `hostRename(...)` with
 `Rename(t.Context(), b, ...)`, and `backend.noDirRename` with
-`!b.Caps.DirRename`. `hosttest.go`:
+`!b.Capabilities.DirRename`. `hosttest.go`:
 
 ```go
 // Package hosttest is the conformance suite every host mount driver runs.
 package hosttest
 
-// Caps lists what a driver supports, so Run only runs the tests that apply.
-type Caps struct {
+// Capabilities lists what a driver supports, so Run only runs the tests that apply.
+type Capabilities struct {
 	Write     bool // creates, writes, mkdir and renames reach fsys
 	Delete    bool // deletes through the mount reach fsys (ProjFS denies them)
 	DirRename bool // directories can be renamed through the mount
@@ -635,7 +655,7 @@ type Caps struct {
 type Backend struct {
 	Name  string
 	Mount func(t *testing.T, fsys types.ReadFS) string // mounts fsys, returns the mount directory
-	Caps  Caps
+	Capabilities Capabilities
 }
 
 // Run runs every conformance test against b as parallel subtests.
@@ -658,7 +678,7 @@ func Run(t *testing.T, b Backend) {
 ```
 
 `childop.go` holds `Rename`, `Remove`, `WriteFile` that call `runOp`
-in-process unless `b.Caps.ChildIO`, then `childOp`. `childop_windows.go`
+in-process unless `b.Capabilities.ChildIO`, then `childOp`. `childop_windows.go`
 holds `Main` and `childOp` (the content of today's
 `host/hostop_windows_test.go`, with `hostOpEnv` and the
 `exec.CommandContext(ctx, os.Args[0], ...)` logic, plus a `"write"` op that
@@ -678,13 +698,13 @@ func TestMountConformance(t *testing.T) {
 	hosttest.Run(t, hosttest.Backend{
 		Name:  "fuse",
 		Mount: testMount,
-		Caps:  hosttest.Caps{Write: true, Delete: true, DirRename: true},
+		Capabilities: hosttest.Capabilities{Write: true, Delete: true, DirRename: true},
 	})
 }
 ```
 
 `host/mount_conformance_windows_test.go`: the same with `Name: "projfs"`,
-`Mount: testProjFSMount`, `Caps{Write: true, Delete: false, DirRename: false, ChildIO: true}`
+`Mount: testProjFSMount`, `Capabilities: hosttest.Capabilities{Write: true, Delete: false, DirRename: false, ChildIO: true}`
 and `requireProjFS(t)`. Add `func TestMain(m *testing.M) { hosttest.Main(m) }`
 to a Windows test file, and replace `hostRemove`/`hostRename` calls in
 `host/mount_windows_test.go` with `hosttest.Remove/Rename(t.Context(), projfsBackend, ...)`.
@@ -1714,7 +1734,17 @@ forward slashes; the root is `"."`.
   `identity(s.ids.id(path.Join(dir, name)))` (keep the byte slices alive in a
   local slice until `Execute` returns), flags
   `PlaceholderCreateFlagMarkInSync`, plus
-  `PlaceholderCreateFlagDisableOnDemandPopulation` for files. Send them with
+  `PlaceholderCreateFlagDisableOnDemandPopulation` for files. Skip, with one
+  Warn log per entry naming the path and the reason:
+  - symlinks (`entry.Type()&fs.ModeSymlink != 0`);
+  - a name equal, under `strings.EqualFold`, to one already sent for this
+    directory (first in `ReadDir` order wins);
+  - names Windows cannot hold: `windowsNameValid(name)` returns false for
+    reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`,
+    `LPT1`–`LPT9`, with or without an extension, any case), names ending in
+    `.` or a space, and names containing any of `<>:"|?*` or a control
+    character.
+  Send them with
   one `Execute` (`OperationTypeTransferPlaceholders`, flags
   `TransferPlaceholdersFlagDisableOnDemandPopulation`,
   `PlaceholderTotalCount = len`, `CompletionStatus = STATUS_SUCCESS`). On a
@@ -1727,7 +1757,12 @@ forward slashes; the root is `"."`.
   (`OperationTypeTransferData`, `TransferDataParameters{Buffer, Offset,
   Length, CompletionStatus: STATUS_SUCCESS}`). On a read error, one `Execute`
   over the remaining range with `CompletionStatus = cfapi.NTStatus(err)`.
-  Use a `sync.Pool` of 4 MiB buffers. Track in-flight transfers by
+  Use a `sync.Pool` of 4 MiB buffers. If the backing file ends before
+  `min(RequiredFileOffset+RequiredLength, info.FileSize)` (it shrank after
+  the placeholder was created), fail the rest of the range with
+  `STATUS_CLOUD_FILE_NOT_IN_SYNC` and log at Error that the backing file
+  changed underneath the mount and a remount picks up the new size. Never
+  send data past `info.FileSize`. Track in-flight transfers by
   `info.TransferKey` in a map of `context.CancelFunc`.
 - `cancelFetchData`: cancel the transfer for `info.TransferKey`.
 - Every `OperationInfo` copies `ConnectionKey`, `TransferKey` and
@@ -1855,8 +1890,19 @@ func TestUnmountEmpties(t *testing.T) {
 }
 ```
 
+Also add, in `names_windows_test.go`, a table test for `windowsNameValid`
+(`"a.txt"` true; `"CON"`, `"con.txt"`, `"LPT9"`, `"a."`, `"a "`, `"a:b"`,
+`"a?"`, `"a\x01"` false; `"CONSOLE"` true), and in `spike_windows_test.go`:
+
+- `TestSkipsUnrepresentableNames`: a `memory:` fs holding `A.txt`, `a.txt`,
+  `CON`, `x?` and a symlink `link` → listing the mount shows exactly one of
+  `A.txt`/`a.txt` and none of the others.
+- `TestShrunkBackingFile`: list a 1 MiB file, then truncate it in the backing
+  fs to 10 bytes; reading it through the mount fails (no partial content is
+  returned as if complete) and the log names the file.
+
 Also add `TestMountConformance` running `hosttest.Run(t, hosttest.Backend{Name: Name, Mount: testMount})`
-with zero `Caps` (read tests only until Task 12).
+with zero `Capabilities` (read tests only until Task 12).
 
 - [ ] **Step 6: CI checkpoint (STOP here)**
 
@@ -1865,7 +1911,7 @@ answers in this plan under "Spike results" below and in the PR:
 
 1. `TestReadStreams`: does allocation stay 0?
 2. `TestProviderProcessRead`: does the provider's own read work? (If not,
-   set `Caps.ChildIO` for cloudfiles and use `hosttest` child ops.)
+   set `Capabilities.ChildIO` for cloudfiles and use `hosttest` child ops.)
 3. `TestUnmountEmpties`: are placeholders removable after unregister?
 4. Does `build-windows-root` (Server Core) load cldapi.dll and mount?
 
@@ -1919,6 +1965,12 @@ the backing fs for up to 10 s:
   the final backing content is the second write and the file ends in-sync.
 - `TestReadOnlyLocalCreate`: on a read-only mount, creating a file locally is
   not uploaded and is logged (check with a `slog` handler capture).
+- `TestWatcherOverflow`: set the test hook `watchBufferSize` to 64 bytes so
+  `ReadDirectoryChangesW` overflows, create 200 files at once through the
+  mount; every one reaches the backing fs.
+- `TestRejectedUpload`: a backing fs whose `Create` returns `fs.ErrInvalid`
+  for one name; writing that file through the mount logs an Error once, is
+  not retried (count `Create` calls), and `Close` reports it.
 - [ ] **Step 2: Implement the syncer** (`sync_windows.go`)
 - Watcher: a goroutine on `windows.ReadDirectoryChanges(dirHandle, buf, true,
   FILE_NOTIFY_CHANGE_FILE_NAME|FILE_NOTIFY_CHANGE_DIR_NAME|FILE_NOTIFY_CHANGE_LAST_WRITE|FILE_NOTIFY_CHANGE_SIZE, ...)`
@@ -1929,7 +1981,22 @@ the backing fs for up to 10 s:
   close.
 - `closeCompletion` callback: unless `CallbackCloseCompletionFlagDeleted`,
   enqueue `s.backingPath(info)`.
-- Queue: a set of pending relative paths and one worker goroutine.
+- Overflow: when `ReadDirectoryChanges` completes with
+  `ERROR_NOTIFY_ENUM_DIR` (or zero bytes), walk the sync root with
+  `filepath.WalkDir` and enqueue every entry that is not an in-sync
+  placeholder. The buffer size is the package variable
+  `watchBufferSize = 64 << 10`, overridden by tests.
+- Queue: a set of pending relative paths and one worker goroutine, with
+  `drop(rel)` (removes `rel` and everything below it) and
+  `move(oldRel, newRel)` (rewrites `rel` and everything below it), both used
+  by Task 11.
+- `server.backingMu sync.Mutex` serializes every change to the backing file
+  system: the worker holds it for one path's upload, the delete and rename
+  callbacks (Task 11) for their change.
+- Errors: `fs.ErrInvalid`, `fs.ErrPermission` and `pathutil` validation
+  errors are permanent: log once at Error, record the path in
+  `s.rejected` (reported by Close), do not retry. Other errors re-queue the
+  path after a backoff of 1 s doubling to 1 min, while the mount is open.
 - For each path, `os.Lstat` the local file:
   - Directory: if not a placeholder, `wfs.MkdirAll(rel)`, then open with
     `FILE_FLAG_BACKUP_SEMANTICS` and
@@ -1974,18 +2041,27 @@ git commit -m "Upload Cloud Files mount writes on close"
   access denied and the local placeholder remains.
 - `TestDeleteBackingFailure`: a backing fs whose `Remove` fails makes the
   delete fail locally (file still listed).
+- `TestRenameWhileQueued`: with a slow backing `Create` (500 ms), write
+  `a.txt`, close, immediately rename it to `b.txt` through the mount; the
+  backing fs ends with `b.txt` holding the content and no `a.txt`.
+- `TestDeleteWhileQueued`: write `a.txt`, close, immediately delete it; the
+  backing fs never has `a.txt` once the queue drains.
 - [ ] **Step 2: Implement**
 - `notifyDelete`: `rel := s.backingPath(info)`. Read-only →
   ack with `STATUS_ACCESS_DENIED`. Directory
   (`CallbackDeleteFlagIsDirectory`) → `wfs.RemoveAll(rel)`, else
   `wfs.Remove(rel)`; `fs.ErrNotExist` counts as success. On success
-  `s.ids.remove(rel)`. Ack with
+  `s.ids.remove(rel)` and `s.queue.drop(rel)`. Hold `s.backingMu` for the
+  backing change. Ack with
   `Execute(OperationInfo{Type: OperationTypeAckDelete, ...}, &AckParameters{ParamSize: 16, CompletionStatus: int32(cfapi.NTStatus(err))})`.
 - `notifyRename`: view as `*cfapi.RenameParameters`; target relative path
   from `TargetPath` (volume-relative, like `NormalizedPath`). Read-only →
   deny. Target outside the sync root
   (`Flags&CallbackRenameFlagTargetInScope == 0`) → treat as delete. Else
-  `ops.Rename(wfs, rel, target)` then `s.ids.rename(rel, target)`. Ack with
+  `ops.Rename(wfs, rel, target)` then `s.ids.rename(rel, target)` and
+  `s.queue.move(rel, target)`, all under `s.backingMu`. A source that is not
+  in the backing fs yet (queued, never uploaded) is not an error: only
+  `s.queue.move` applies. Ack with
   `OperationTypeAckRename`.
 - [ ] **Step 3: Verify and commit**
 
@@ -2002,9 +2078,9 @@ git commit -m "Apply Cloud Files deletes and renames to the mounted file system"
 
 - Create: `host/hosttest/write.go`
 - Modify: `host/hosttest/hosttest.go` (register the write tests when
-  `b.Caps.Write`), `host/fuse/mount_conformance_linux_test.go`,
+  `b.Capabilities.Write`), `host/fuse/mount_conformance_linux_test.go`,
   `host/projfs/mount_conformance_windows_test.go`,
-  `host/cloudfiles/spike_windows_test.go` (Caps for cloudfiles:
+  `host/cloudfiles/spike_windows_test.go` (Capabilities for cloudfiles:
   `Write: true, DirRename: true`, `ChildIO` per Spike result 2)
 - [ ] **Step 1: Add the tests** (`write.go`)
 
@@ -2016,11 +2092,11 @@ backing fs for up to 10 s (writes may be asynchronous):
 - `appendFile` (in-process `os.OpenFile(O_APPEND)` unless ChildIO, then a
   child "append" op): backing "ab".
 - `mkdir`: `os.Mkdir` (child op "mkdir" when ChildIO); backing has the dir.
-- `removeFile`, `removeDir` when `Caps.Delete`: backing loses them.
-- `renameFile`, and `renameDir` when `Caps.DirRename`.
+- `removeFile`, `removeDir` when `Capabilities.Delete`: backing loses them.
+- `renameFile`, and `renameDir` when `Capabilities.DirRename`.
 - `readOnly`: mount a read-only wrapper; delete and rename fail.
 
-Cloud Files Caps: `Write: true, Delete: true, DirRename: true`, and
+Cloud Files Capabilities: `Write: true, Delete: true, DirRename: true`, and
 `ChildIO` from Spike result 2.
 
 - [ ] **Step 2: Verify and commit**

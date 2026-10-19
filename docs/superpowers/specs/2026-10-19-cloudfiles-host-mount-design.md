@@ -100,18 +100,25 @@ Each driver package exports `const Name = "<name>"` for use with
 |:-----------|---------:|:-----------------------------------------|:--------------------------------------------|
 | fuse       | 10       | always                                   | Linux and /dev/fuse usable                  |
 | cloudfiles | 10       | always                                   | Windows, cldapi.dll and every function load |
-| projfs     | 20       | no device in `fsys.GetDeviceInfo()` is remote | Windows, projectedfslib.dll and every function load |
+| projfs     | 20       | no device in `fsys.GetDeviceInfo()` is remote (`IsRemote()`) | Windows, projectedfslib.dll and every function load |
 
 This gives: Cloud Files by default on Windows; ProjFS when installed and the
 mounted file system is entirely local.
 
 ### Device info
 
-- Add `func (DeviceInfo) Remote() bool`.
-- `localFS` on Windows: `DRIVE_REMOTE` becomes `remote=true`.
-- `localFS` on Linux: network file systems (`nfs`, `nfs4`, `cifs`, `smb3`,
-  `fuse.sshfs`, `9p`, `afs`, `ceph`, `glusterfs`) become `remote=true`.
-- `gcsfs` already reports `remote=true`. Other drivers stay local.
+Remoteness comes from the device type: a device is remote when its type is
+`network`.
+
+- Add `const DeviceTypeNetwork = "network"` and
+  `func (DeviceInfo) IsRemote() bool { return info.deviceType == DeviceTypeNetwork }`.
+- Remove the `remote` field from `DeviceInfo` and the `remote` parameter from
+  `NewDeviceInfo` (breaking); every caller drops its last argument. Callers
+  that wrote `"network"` use `DeviceTypeNetwork`.
+- Already `network` today: `gcsfs`, Windows `DRIVE_REMOTE` drives, and Linux
+  `nfs`, `nfs4`, `cifs`, `smbfs`, `sshfs`, `fuse.sshfs`, `fuse.s3fs`,
+  `fuse.gcsfuse`. Add to Linux's list: `smb3`, `9p`, `afs`, `ceph`,
+  `glusterfs`, `fuse.glusterfs`.
 
 ### ufsmount
 
@@ -153,6 +160,19 @@ Add `-backend auto|fuse|projfs|cloudfiles` (default `auto`), passed through
   else `Seek`) and send it with `CfExecute(TRANSFER_DATA)`, in chunks of up to
   4 MiB at 4 KiB-aligned offsets, the last chunk ending at end of file.
   `CANCEL_FETCH_DATA` stops an in-flight transfer.
+- A placeholder keeps the size the backing file had when its directory was
+  listed (backing-side changes are a non-goal). If the backing file is now
+  shorter than the requested range, the fetch fails with
+  `STATUS_CLOUD_FILE_NOT_IN_SYNC` and the driver logs that the backing file
+  changed underneath the mount; a remount picks up the new size. A longer
+  backing file is served up to the placeholder's size.
+- Names Windows cannot hold as placeholders are skipped with a Warn log:
+  - two backing entries in one directory whose names differ only by case
+    (Windows is case-insensitive); the first in `ReadDir` order wins;
+  - symbolic links (a cloud placeholder cannot be a reparse point of another
+    kind);
+  - names invalid on Windows (reserved names such as `CON`, trailing dots or
+    spaces, `<>:"|?*`).
 - Streaming: with `STREAMING_ALLOWED`, Windows may serve reads without storing
   the data locally. Where it stores data anyway (for example memory-mapped
   access), the driver dehydrates the placeholder (`CfDehydratePlaceholder`)
@@ -167,6 +187,15 @@ Add `-backend auto|fuse|projfs|cloudfiles` (default `auto`), passed through
   - `NOTIFY_FILE_CLOSE_COMPLETION` for placeholders.
   - A `ReadDirectoryChangesW` watcher on the sync root for files and
     directories created locally, which get no callback.
+- The watcher can overflow (`ReadDirectoryChangesW` returns
+  `ERROR_NOTIFY_ENUM_DIR` when its buffer fills and the events are lost).
+  On overflow the syncer walks the sync root and enqueues every entry that is
+  not an in-sync placeholder.
+- The queue holds paths relative to the sync root. Backing-file-system
+  changes (uploads, `MkdirAll`, deletes, renames) are serialized by one mutex
+  per mount, so an upload never interleaves with a delete or rename of the
+  same tree. A delete drops queued paths at or below the deleted path; a
+  rename rewrites queued paths at or below the old path to the new one.
 - The single sync goroutine processes each queued path:
   - New directory: `MkdirAll` in the backing file system, then
     `CfConvertToPlaceholder` with `MARK_IN_SYNC` and the new ID.
@@ -177,6 +206,11 @@ Add `-backend auto|fuse|projfs|cloudfiles` (default `auto`), passed through
     the USN no longer matches, the file changed during the upload: re-queue it.
     New files are converted to placeholders with `CfConvertToPlaceholder`.
   - After a file is in-sync, dehydrate it.
+- An upload the backing file system rejects permanently (an invalid name,
+  `fs.ErrPermission`, `fs.ErrInvalid`) is logged at Error with the
+  `cfapi`/ufs error, not retried, and reported again at unmount. Other
+  errors are retried with backoff (1 s doubling to 1 min) while the mount is
+  open.
 - Read-only mount: local creations cannot be prevented. They are logged once
   and left unsynced.
 
@@ -243,11 +277,12 @@ with per-call resolutions added.
 
 ### `host/hosttest`
 
-- `Run(t, Backend{Name, Mount, Caps})` runs the conformance suite: the current
-  read tests plus write tests (create, overwrite, append, mkdir, delete file,
-  delete directory, rename file, rename directory, refusals on a read-only
-  file system). `Caps` lists what a driver supports (for example ProjFS cannot
-  rename a partial directory) so each driver runs the tests that apply.
+- `Run(t, Backend{Name, Mount, Capabilities})` runs the conformance suite:
+  the current read tests plus write tests (create, overwrite, append, mkdir,
+  delete file, delete directory, rename file, rename directory, refusals on a
+  read-only file system). `Capabilities` lists what a driver supports (for
+  example ProjFS cannot rename a partial directory) so each driver runs the
+  tests that apply.
 - `Main(m)` plus `Remove`, `Rename`, `WriteFile` run I/O from a child process,
   for drivers whose platform ignores I/O by the provider's own process.
 
@@ -265,13 +300,22 @@ with per-call resolutions added.
 - `cfapi`: struct sizes and field offsets match `cfapi.h`; every error table
   entry has a description and a default resolution; messages differ by call.
 - The ID map follows renames.
+- Watcher overflow: with a tiny watcher buffer (a test hook), creating many
+  files at once still uploads every one.
+- A rename or delete of a path whose upload is queued uploads to the new name
+  or not at all.
+- A backing file that shrank after listing fails the read with a clear error;
+  case-colliding names and symlinks in the backing file system are skipped
+  and logged.
+- An upload the backing file system rejects is reported at unmount and not
+  retried.
 
 ### `host` and device info (all platforms)
 
 - Selection with fake registered backends: priority, `Suits`, forced backend,
   unregistered backend, no backends.
-- `DeviceInfo.Remote()` for Windows `DRIVE_REMOTE` and Linux network file
-  systems.
+- `DeviceInfo.IsRemote()` is true exactly for the `network` device type,
+  including the Linux file system types added to the network list.
 - Dependency isolation, alongside the existing coredeps test: `host` depends on
   no driver, no driver depends on another, and `cfapi` / `projfslib` import
   nothing from ufs.

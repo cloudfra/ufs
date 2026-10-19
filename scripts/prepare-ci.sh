@@ -26,8 +26,22 @@
 
 set -euo pipefail
 
-awk '$2 ~ "^/tmp/Test" && $3 ~ "^fuse" { print $2 }' /proc/mounts |
-  while read -r mount; do
-    echo "Unmounting stale FUSE test mount ${mount}"
-    fusermount3 -u -z "${mount}" || echo "Cannot unmount ${mount}" >&2
-  done
+function RemoveStuckFuseMounts() {
+  awk '$2 ~ "^/tmp/Test" && $3 ~ "^fuse" { print $2 }' /proc/mounts |
+    while read -r mount; do
+      echo "Unmounting stale FUSE test mount ${mount}"
+      fusermount3 -u -z "${mount}" || echo "Cannot unmount ${mount}" >&2
+    done
+}
+
+function InstallPackages() {
+  sudo apt-get update
+  sudo apt-get -y -q install osslsigncode binutils openssl
+}
+
+function Main() {
+  RemoveStuckFuseMounts
+  InstallPackages
+}
+
+Main

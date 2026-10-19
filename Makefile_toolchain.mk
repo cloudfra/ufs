@@ -45,7 +45,7 @@ TRIVY_VERSION = 0.76.0
 # https://github.com/goptics/vizb/releases
 VIZB_VERSION = 0.22.0
 # https://developer.android.com/ndk/downloads
-ANDROID_NDK_VERSION = r28c
+ANDROID_NDK_VERSION = r30
 # Minimum Android API level for the NDK's clang target wrappers; 21 is the
 # lowest the NDK supports.
 ANDROID_API = 21

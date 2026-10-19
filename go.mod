@@ -2,7 +2,7 @@ module github.com/cloudfra/ufs
 
 go 1.26.2
 
-toolchain go1.26.6
+toolchain go1.26.9
 
 // go-fuse v2.12.0 does not compile for 32-bit Linux (386, arm): splice/pair_linux.go
 // assigns syscall.Splice's result to an int64, but it returns an int there.

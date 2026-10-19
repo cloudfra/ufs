@@ -82,7 +82,9 @@ func (s *Subscription) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case ev, ok := <-s.events:
-			if !ok {
+			// select picks at random when ctx is also done, so check it
+			// again: nothing is delivered once the subscription is canceled.
+			if !ok || ctx.Err() != nil {
 				return
 			}
 			s.hook(ev.op, ev.path)

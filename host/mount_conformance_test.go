@@ -40,6 +40,9 @@ type mountBackend struct {
 	name  string
 	mount func(t *testing.T, fsys types.ReadFS) mountSetup
 	skip  func(t *testing.T)
+	// noDirRename is set when the host cannot rename a directory of the
+	// mounted file system (ProjFS cannot rename a partial directory).
+	noDirRename bool
 }
 
 // mountBackends is populated by platform-specific init() functions in
@@ -368,12 +371,22 @@ func TestMountConformanceRename(t *testing.T) {
 		renames := []struct {
 			oldPath, newPath string
 			file, want       string
+			dir              bool
 		}{
 			{oldPath: "a.txt", newPath: "b.txt", file: "b.txt", want: "a"},
-			{oldPath: "dir", newPath: "moved", file: "moved/f.txt", want: "f"},
+			{oldPath: "dir", newPath: "moved", file: "moved/f.txt", want: "f", dir: true},
 		}
 		for _, tc := range renames {
-			if err := osutil.Rename(filepath.Join(m.mountDir, tc.oldPath), filepath.Join(m.mountDir, tc.newPath)); err != nil {
+			if tc.dir && backend.noDirRename {
+				if err := hostRename(t.Context(), filepath.Join(m.mountDir, tc.oldPath), filepath.Join(m.mountDir, tc.newPath)); err == nil {
+					t.Errorf("Rename(%q, %q) succeeded, want an error", tc.oldPath, tc.newPath)
+				}
+				if _, err := fsys.Stat(tc.oldPath); err != nil {
+					t.Errorf("backing Stat(%q) after failed rename = %v", tc.oldPath, err)
+				}
+				continue
+			}
+			if err := hostRename(t.Context(), filepath.Join(m.mountDir, tc.oldPath), filepath.Join(m.mountDir, tc.newPath)); err != nil {
 				t.Fatalf("Rename(%q, %q) = %v", tc.oldPath, tc.newPath, err)
 			}
 			if data, err := fs.ReadFile(fsys, tc.file); err != nil || string(data) != tc.want {

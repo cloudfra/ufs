@@ -151,6 +151,15 @@ drivers without a native Rename stay writable). Renames go through
 it aside first, not atomic) unless RENAME_NOREPLACE is set, and FUSE nodes take
 their path from the inode tree so they follow renames. ProjFS forwards
 PRE_RENAME within the root to the backing FS and still denies deletes.
+ProjFS sends no notifications for the provider process's own I/O, so tests
+delete and rename through a mount with `hostRemove`/`hostRename`, which run
+the operation in a child process on Windows (in-process elsewhere: a fork on
+Linux briefly holds the parent's open files and makes FUSE unmounts EBUSY). ProjFS asks for file data by the name a
+placeholder had when created, so file placeholders carry an ID (ContentID)
+mapped to their current path; it cannot rename a partial (projected)
+directory at all (ERROR_NOT_SUPPORTED, no notification). The ProjFS tests only run when
+`UFS_ENABLE_PROJFS_TEST` is set (the `desktop-experience` Windows runners);
+elsewhere they skip.
 
 | File (in host/)        | Purpose                                                          |
 |:-----------------------|:-----------------------------------------------------------------|
@@ -159,6 +168,7 @@ PRE_RENAME within the root to the backing FS and still denies deletes.
 | fuse_linux.go          | FUSE adapter — bridges types.ReadFS / ufs.FS to go-fuse InodeEmbedder |
 | mount_windows.go       | ProjFS mount server                                              |
 | projfs_windows.go      | ProjFS syscall bindings                                          |
+| projfs_errors_windows.go | projfsError: ProjFS HRESULTs as errors with a likely cause and resolution |
 | math.go                | Integer clamping helpers for FUSE/ProjFS conversions             |
 
 ### Drivers (`drivers/` subpackages)

@@ -18,6 +18,7 @@ package host
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -105,7 +107,13 @@ func projfsPath(name utf16Str) string {
 	if name == nil {
 		return pathutil.CwdPath
 	}
-	return strings.ReplaceAll(windows.UTF16PtrToString(name), `\`, "/")
+	p := strings.ReplaceAll(windows.UTF16PtrToString(name), `\`, "/")
+	if p == "" {
+		// ProjFS names the mounted root with an empty path, which is not a
+		// valid fs.ValidPath name; the root is "." for the backing fsys.
+		return pathutil.CwdPath
+	}
+	return p
 }
 
 func cbDataAttrs(callbackData *prjCallbackData) []any {
@@ -137,7 +145,11 @@ func projfsHRESULT(err error) uintptr {
 		return hresultOK
 	}
 	var hr uintptr
+	var perr *projfsError
 	switch {
+	case errors.As(err, &perr):
+		// Pass a failed ProjFS call's own HRESULT back to ProjFS.
+		hr = uintptr(perr.hresult)
 	case errors.Is(err, fs.ErrNotExist):
 		hr = hresultFileNotFound
 	case errors.Is(err, fs.ErrPermission):
@@ -162,9 +174,55 @@ type projfsEnumSession struct {
 type projfsMountServer struct {
 	fsys         types.ReadFS
 	nsCtx        uintptr // PRJ_NAMESPACE_VIRTUALIZATION_CONTEXT
+	id           uintptr // instance context, see projfsServers
 	enumSessions sync.Map
 	done         chan struct{}
 	closeOnce    sync.Once
+
+	// GetFileData names a file by its path when its placeholder was created,
+	// even after a rename, so every file placeholder carries an ID in its
+	// ContentID and files maps that ID to the file's current path in fsys.
+	filesMu    sync.Mutex
+	files      map[uint64]string
+	lastFileID uint64
+}
+
+// addFile returns the ID of a new file placeholder for path p.
+func (s *projfsMountServer) addFile(p string) uint64 {
+	s.filesMu.Lock()
+	defer s.filesMu.Unlock()
+	s.lastFileID++
+	s.files[s.lastFileID] = p
+	return s.lastFileID
+}
+
+// filePath returns the current path of the file placeholder that ProjFS
+// asks for data for, or its FilePathName when it carries no known ID.
+func (s *projfsMountServer) filePath(callbackData *prjCallbackData) string {
+	if v := callbackData.VersionInfo; v != nil {
+		if id := binary.LittleEndian.Uint64(v.ContentID[:]); id != 0 {
+			s.filesMu.Lock()
+			p, ok := s.files[id]
+			s.filesMu.Unlock()
+			if ok {
+				return p
+			}
+		}
+	}
+	return projfsPath(callbackData.FilePathName)
+}
+
+// renameFiles moves the file placeholders at or below oldPath to newPath.
+func (s *projfsMountServer) renameFiles(oldPath, newPath string) {
+	s.filesMu.Lock()
+	defer s.filesMu.Unlock()
+	for id, p := range s.files {
+		if p == oldPath {
+			s.files[id] = newPath
+		} else if rest, ok := strings.CutPrefix(p, oldPath+"/"); ok {
+			s.files[id] = newPath + "/" + rest
+		}
+	}
 }
 
 var (
@@ -193,14 +251,31 @@ func initCallbacks() {
 	})
 }
 
+// projfsServers maps the instance context that ProjFS passes to every
+// callback to its server. ProjFS keeps the context in memory Go does not
+// manage, where a Go pointer must not be stored (and turning it back into one
+// fails checkptr), so the context is an ID instead.
+var (
+	projfsServers      sync.Map // uintptr → *projfsMountServer
+	projfsLastServerID atomic.Uintptr
+)
+
+// serverFromContext returns the server of a callback, or nil once it is
+// closed.
 func serverFromContext(callbackData *prjCallbackData) *projfsMountServer {
-	// ProjFS stores the server pointer in the callback context as an opaque
-	// uintptr; the round-trip through unsafe.Pointer is the FFI contract.
-	return (*projfsMountServer)(unsafe.Pointer(callbackData.InstanceContext)) //nolint:gosec,govet
+	v, ok := projfsServers.Load(callbackData.InstanceContext)
+	if !ok {
+		slog.Error("projfs: callback for an unknown or closed mount", cbDataAttrs(callbackData)...)
+		return nil
+	}
+	return v.(*projfsMountServer)
 }
 
 func startDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID) uintptr {
 	s := serverFromContext(callbackData)
+	if s == nil {
+		return hresultFail
+	}
 	p := projfsPath(callbackData.FilePathName)
 	slog.Debug("projfs: StartDirEnum", append(cbDataAttrs(callbackData), "enumId", enumerationID)...)
 	s.enumSessions.Store(*enumerationID, &projfsEnumSession{path: p})
@@ -210,6 +285,9 @@ func startDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID) 
 
 func endDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID) uintptr {
 	s := serverFromContext(callbackData)
+	if s == nil {
+		return hresultFail
+	}
 	slog.Debug("projfs: EndDirEnum", append(cbDataAttrs(callbackData), "enumId", enumerationID)...)
 	s.enumSessions.Delete(*enumerationID)
 	return 0
@@ -217,6 +295,9 @@ func endDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID) ui
 
 func getDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID, searchExpression *uint16, dirEntryBufferHandle uintptr) uintptr {
 	s := serverFromContext(callbackData)
+	if s == nil {
+		return hresultFail
+	}
 	v, ok := s.enumSessions.Load(*enumerationID)
 	if !ok {
 		slog.Error("projfs: GetDirEnum session not found", append(cbDataAttrs(callbackData), "enumId", enumerationID)...)
@@ -314,11 +395,21 @@ func getDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID, se
 		)
 
 		if err := prjFillDirEntryBuffer(namePtr, &fbi, dirEntryBufferHandle); err != nil {
-			slog.Debug("projfs: GetDirEnum buffer full", "filledSoFar", filled, "remaining", len(session.entries)-session.index)
-			break // buffer full — will be called again
+			// A full buffer ends this batch and ProjFS calls again for the
+			// rest, unless not even one entry fit, which it must be told.
+			if filled > 0 && errors.Is(err, windows.ERROR_INSUFFICIENT_BUFFER) {
+				slog.Debug("projfs: GetDirEnum buffer full", "filledSoFar", filled, "remaining", len(session.entries)-session.index)
+				break
+			}
+			hr := projfsHRESULT(err)
+			slog.Error("projfs: GetDirEnum FillDirEntryBuffer failed", "path", session.path, "name", e.Name(), "error", err, "hresult", hresultName(hr))
+			return hr
 		}
 		filled++
 		session.index++
+		if returnSingleEntry {
+			break
+		}
 	}
 	slog.Debug("projfs: GetDirEnum complete",
 		"path", session.path,
@@ -334,6 +425,9 @@ func getDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID, se
 
 func getPlaceholderCB(callbackData *prjCallbackData) uintptr {
 	s := serverFromContext(callbackData)
+	if s == nil {
+		return hresultFail
+	}
 	p := projfsPath(callbackData.FilePathName)
 
 	slog.Debug("projfs: GetPlaceholder", cbDataAttrs(callbackData)...)
@@ -364,6 +458,7 @@ func getPlaceholderCB(callbackData *prjCallbackData) uintptr {
 		info.FileBasicInfo.FileAttributes = 0x10 // FILE_ATTRIBUTE_DIRECTORY
 	} else {
 		info.FileBasicInfo.FileAttributes = 0x80 // FILE_ATTRIBUTE_NORMAL
+		binary.LittleEndian.PutUint64(info.VersionInfo.ContentID[:], s.addFile(p))
 	}
 
 	slog.Debug("projfs: GetPlaceholder writing placeholder",
@@ -385,7 +480,10 @@ func getPlaceholderCB(callbackData *prjCallbackData) uintptr {
 
 func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint32) uintptr {
 	s := serverFromContext(callbackData)
-	p := projfsPath(callbackData.FilePathName)
+	if s == nil {
+		return hresultFail
+	}
+	p := s.filePath(callbackData)
 
 	slog.Debug("projfs: GetFileData", append(cbDataAttrs(callbackData),
 		"byteOffset", byteOffset,
@@ -469,6 +567,9 @@ func getFileDataCB(callbackData *prjCallbackData, byteOffset uint64, length uint
 
 func queryFileNameCB(callbackData *prjCallbackData) uintptr {
 	s := serverFromContext(callbackData)
+	if s == nil {
+		return hresultFail
+	}
 	p := projfsPath(callbackData.FilePathName)
 	slog.Debug("projfs: QueryFileName", cbDataAttrs(callbackData)...)
 	if _, err := s.fsys.Stat(p); err != nil {
@@ -485,7 +586,10 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 	if destinationFileName != nil {
 		destName = windows.UTF16PtrToString(destinationFileName)
 	}
-	slog.Debug("projfs: Notification", append(cbDataAttrs(callbackData),
+	// Only the notifications registered in mount() reach this callback, so these
+	// stay at Info: whether a notification arrived at all is the first thing to
+	// check when a denied operation is not denied, and CI does not capture Debug.
+	slog.Info("projfs: Notification", append(cbDataAttrs(callbackData),
 		"notification", notificationName(notification),
 		"notificationRaw", fmt.Sprintf("0x%08X", notification),
 		"isDirectory", isDirectory != 0,
@@ -495,22 +599,25 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 	switch notification {
 	case prjNotificationPreRename:
 		s := serverFromContext(callbackData)
+		if s == nil {
+			return hresultFail
+		}
 		hr := s.preRename(callbackData.FilePathName, destinationFileName)
-		slog.Debug("projfs: Notification rename",
+		slog.Info("projfs: Notification rename",
 			"path", projfsPath(callbackData.FilePathName),
 			"destinationFileName", destName,
 			"result", hresultName(hr),
 		)
 		return hr
 	case prjNotificationPreDelete:
-		slog.Debug("projfs: Notification denying operation",
+		slog.Info("projfs: Notification denying operation",
 			"path", projfsPath(callbackData.FilePathName),
 			"notification", notificationName(notification),
 			"result", "ACCESS_DENIED",
 		)
 		return hresultAccessDenied
 	}
-	slog.Debug("projfs: Notification allowing operation",
+	slog.Info("projfs: Notification allowing operation",
 		"path", projfsPath(callbackData.FilePathName),
 		"notification", notificationName(notification),
 		"result", "S_OK",
@@ -523,17 +630,20 @@ func notificationCB(callbackData *prjCallbackData, isDirectory uint8, notificati
 // local copy; a failure denies the rename. It is denied when the backing file
 // system is read-only and when either name is outside the virtualization root,
 // where ProjFS passes an empty name. Like [ops.Rename], it never replaces an
-// existing file, and a file that only exists locally cannot be renamed.
+// existing file, and a file that only exists locally cannot be renamed. The
+// renamed file placeholders are then read from their new path (see files).
 func (s *projfsMountServer) preRename(oldName, newName utf16Str) uintptr {
 	wfs, ok := s.fsys.(types.WriteFS)
-	if !ok || oldName == nil || newName == nil {
+	// Check for an empty name before projfsPath, which maps it to the root.
+	if !ok || oldName == nil || newName == nil || *oldName == 0 || *newName == 0 {
 		return hresultAccessDenied
 	}
 	oldPath, newPath := projfsPath(oldName), projfsPath(newName)
-	if oldPath == "" || newPath == "" {
-		return hresultAccessDenied
+	if err := ops.Rename(wfs, oldPath, newPath); err != nil {
+		return projfsHRESULT(err)
 	}
-	return projfsHRESULT(ops.Rename(wfs, oldPath, newPath))
+	s.renameFiles(oldPath, newPath)
+	return hresultOK
 }
 
 func cancelCommandCB(callbackData *prjCallbackData) uintptr {
@@ -629,8 +739,10 @@ func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServe
 	slog.Debug("projfs: directory marked as placeholder", "mountPath", mountPath)
 
 	s := &projfsMountServer{
-		fsys: fsys,
-		done: make(chan struct{}),
+		fsys:  fsys,
+		id:    projfsLastServerID.Add(1),
+		done:  make(chan struct{}),
+		files: make(map[uint64]string),
 	}
 
 	cbs := prjCallbacks{
@@ -666,11 +778,11 @@ func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServe
 		"optsPoolThreadCount", opts.PoolThreadCount,
 		"optsConcurrentThreadCount", opts.ConcurrentThreadCount,
 		"optsMappingsCount", opts.NotificationMappingsCount,
-		//nolint:gosec // log-only: print the raw server pointer address
-		"instanceContext", fmt.Sprintf("0x%X", uintptr(unsafe.Pointer(s))),
+		"instanceContext", s.id,
 	)
-	//nolint:gosec // FFI: pass the server as the ProjFS instance context pointer
-	if err := prjStartVirtualizing(rootPathPtr, &cbs, uintptr(unsafe.Pointer(s)), &opts, &s.nsCtx); err != nil {
+	projfsServers.Store(s.id, s)
+	if err := prjStartVirtualizing(rootPathPtr, &cbs, s.id, &opts, &s.nsCtx); err != nil {
+		projfsServers.Delete(s.id)
 		slog.Error("projfs: StartVirtualizing failed", "mountPath", mountPath, "error", err, "errorType", fmt.Sprintf("%T", err))
 		return nil, fmt.Errorf("cannot start ProjFS virtualization at %q: %w", mountPath, err)
 	}
@@ -693,7 +805,10 @@ func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServe
 func (s *projfsMountServer) Close() error {
 	s.closeOnce.Do(func() {
 		slog.Info("projfs: stopping virtualization", "nsCtx", fmt.Sprintf("0x%X", s.nsCtx))
+		// PrjStopVirtualizing waits for running callbacks, so none can use
+		// the server once it is unregistered.
 		prjStopVirtualizing(s.nsCtx)
+		projfsServers.Delete(s.id)
 		close(s.done)
 		slog.Info("projfs: virtualization stopped")
 	})

@@ -30,5 +30,9 @@ func init() {
 			return mountSetup{mountDir: testProjFSMount(t, fsys)}
 		},
 		skip: requireProjFS,
+		// ProjFS cannot rename or move a partial directory, one that is
+		// still projected from the mounted file system; it fails with
+		// ERROR_NOT_SUPPORTED before the provider is notified.
+		noDirRename: true,
 	})
 }

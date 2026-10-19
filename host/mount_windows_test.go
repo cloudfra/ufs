@@ -19,6 +19,7 @@ package host
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -26,7 +27,9 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 
@@ -36,18 +39,17 @@ import (
 	"github.com/cloudfra/ufs/internal/osutil"
 )
 
-// requireProjFSEnv names the environment variable that turns a missing ProjFS
-// from a skip into a failure. CI is to set it on runners that have ProjFS, so the
-// ProjFS tests cannot be skipped there without anyone noticing.
-const requireProjFSEnv = "UFS_REQUIRE_PROJFS"
+// enableProjFSTestEnv names the environment variable that opts the ProjFS
+// mount tests in. They are skipped unless it is set, so a host without ProjFS
+// (a Server Core image, for example) is not expected to run them. A host that
+// does set it is expected to have ProjFS, so a failure there fails the test
+// instead of being skipped.
+const enableProjFSTestEnv = "UFS_ENABLE_PROJFS_TEST"
 
 func requireProjFS(t *testing.T) {
 	t.Helper()
-	if err := projfsAvailable(); err != nil {
-		if os.Getenv(requireProjFSEnv) != "" {
-			t.Fatalf("ProjFS not available but %s is set: %v", requireProjFSEnv, err)
-		}
-		t.Skipf("ProjFS not available: %v", err)
+	if os.Getenv(enableProjFSTestEnv) == "" {
+		t.Skipf("set %s to run the ProjFS tests", enableProjFSTestEnv)
 	}
 }
 
@@ -129,6 +131,75 @@ func TestProjfsHRESULT(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("projfsHRESULT(%v) = %#x, want %#x", tc.err, got, tc.want)
 		}
+	}
+}
+
+func TestHresultToError(t *testing.T) {
+	t.Parallel()
+	if err := hresultToError("PrjStartVirtualizing", 0); err != nil {
+		t.Errorf("hresultToError(S_OK) = %v, want nil", err)
+	}
+	tests := []struct {
+		hr        uintptr
+		want      error
+		wantInMsg string
+	}{
+		// HRESULT_FROM_WIN32(ERROR_FILE_SYSTEM_VIRTUALIZATION_UNAVAILABLE)
+		{0x80070171, windows.ERROR_FILE_SYSTEM_VIRTUALIZATION_UNAVAILABLE, "fltmc load PrjFlt"},
+		// HRESULT_FROM_WIN32(ERROR_REPARSE_POINT_ENCOUNTERED)
+		{0x8007112B, windows.ERROR_REPARSE_POINT_ENCOUNTERED, "new empty directory"},
+		// HRESULT_FROM_WIN32(ERROR_REPARSE_TAG_MISMATCH)
+		{0x8007112A, windows.ERROR_REPARSE_TAG_MISMATCH, "not marked as a ProjFS virtualization root"},
+		// HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) also matches fs.ErrNotExist.
+		{0x80070002, fs.ErrNotExist, "HRESULT 0x80070002"},
+		// HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED) also matches fs.ErrPermission.
+		{0x80070005, fs.ErrPermission, "can write to the mount directory"},
+		// E_FAIL is not a Win32 error and has no resolution.
+		{0x80004005, windows.Errno(0x80004005), "HRESULT 0x80004005"},
+	}
+	for _, tc := range tests {
+		err := hresultToError("PrjStartVirtualizing", tc.hr)
+		if !errors.Is(err, tc.want) {
+			t.Errorf("hresultToError(%#x) = %v, want errors.Is %v", tc.hr, err, tc.want)
+		}
+		if msg := err.Error(); !strings.HasPrefix(msg, "PrjStartVirtualizing: ") || !strings.Contains(msg, tc.wantInMsg) {
+			t.Errorf("hresultToError(%#x).Error() = %q, want it to name the call and contain %q", tc.hr, msg, tc.wantInMsg)
+		}
+		if got := projfsHRESULT(err); got != tc.hr {
+			t.Errorf("projfsHRESULT(hresultToError(%#x)) = %#x, want the same HRESULT", tc.hr, got)
+		}
+	}
+}
+
+func TestProjfsFileRenames(t *testing.T) {
+	t.Parallel()
+	s := &projfsMountServer{files: make(map[uint64]string)}
+	ids := map[string]uint64{}
+	for _, p := range []string{"a.txt", "dir/f.txt", "dir/sub/g.txt", "dirx/h.txt"} {
+		ids[p] = s.addFile(p)
+	}
+	s.renameFiles("a.txt", "b.txt")
+	s.renameFiles("dir", "moved")
+
+	name, err := windows.UTF16PtrFromString("original.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for orig, want := range map[string]string{
+		"a.txt":         "b.txt",
+		"dir/f.txt":     "moved/f.txt",
+		"dir/sub/g.txt": "moved/sub/g.txt",
+		"dirx/h.txt":    "dirx/h.txt",
+	} {
+		var v prjPlaceholderVersionInfo
+		binary.LittleEndian.PutUint64(v.ContentID[:], ids[orig])
+		if got := s.filePath(&prjCallbackData{FilePathName: name, VersionInfo: &v}); got != want {
+			t.Errorf("filePath(%q) = %q, want %q", orig, got, want)
+		}
+	}
+	// A placeholder without a known ID is read from its FilePathName.
+	if got := s.filePath(&prjCallbackData{FilePathName: name}); got != "original.txt" {
+		t.Errorf("filePath(no version info) = %q, want %q", got, "original.txt")
 	}
 }
 
@@ -239,7 +310,7 @@ func TestMountReadOnlyRemove(t *testing.T) {
 
 	mountDir := testProjFSMount(t, fsys)
 
-	err = osutil.Remove(filepath.Join(mountDir, "keep.txt"))
+	err = hostRemove(t.Context(), filepath.Join(mountDir, "keep.txt"))
 	if err == nil {
 		t.Fatal("remove on mount succeeded, want access denied")
 	}
@@ -265,7 +336,7 @@ func TestMountReadOnlyRename(t *testing.T) {
 	}
 
 	mountDir := testProjFSMount(t, &projfsReadOnlyFS{fsys})
-	if err := osutil.Rename(filepath.Join(mountDir, "keep.txt"), filepath.Join(mountDir, "moved.txt")); err == nil {
+	if err := hostRename(t.Context(), filepath.Join(mountDir, "keep.txt"), filepath.Join(mountDir, "moved.txt")); err == nil {
 		t.Fatal("rename on read-only mount succeeded, want access denied")
 	}
 	if _, err := fsys.Stat("keep.txt"); err != nil {
@@ -397,4 +468,62 @@ func TestProjFSMountReadBack(t *testing.T) {
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(nonexistent) error = %v, want ErrNotExist", err)
 	}
+}
+
+func TestProjFSPlaceholderInfoLayout(t *testing.T) {
+	// Layouts of PRJ_FILE_BASIC_INFO and PRJ_PLACEHOLDER_INFO from
+	// projectedfslib.h. PrjWritePlaceholderInfo validates its size argument
+	// against sizeof(PRJ_PLACEHOLDER_INFO) and fails the call with
+	// ERROR_INSUFFICIENT_BUFFER when it is smaller, so the Go mapping has to
+	// match the C struct byte for byte.
+	t.Run("PRJ_FILE_BASIC_INFO", func(t *testing.T) {
+		var f prjFileBasicInfo
+		fields := []struct {
+			name string
+			got  uintptr
+			want uintptr
+		}{
+			{"IsDirectory", unsafe.Offsetof(f.IsDirectory), 0},
+			{"FileSize", unsafe.Offsetof(f.FileSize), 8},
+			{"CreationTime", unsafe.Offsetof(f.CreationTime), 16},
+			{"LastAccessTime", unsafe.Offsetof(f.LastAccessTime), 24},
+			{"LastWriteTime", unsafe.Offsetof(f.LastWriteTime), 32},
+			{"ChangeTime", unsafe.Offsetof(f.ChangeTime), 40},
+			{"FileAttributes", unsafe.Offsetof(f.FileAttributes), 48},
+		}
+		for _, field := range fields {
+			if field.got != field.want {
+				t.Errorf("%s offset = %d, want %d",
+					field.name, field.got, field.want)
+			}
+		}
+		if got, want := unsafe.Sizeof(f), uintptr(56); got != want {
+			t.Errorf("sizeof(PRJ_FILE_BASIC_INFO) = %d, want %d", got, want)
+		}
+	})
+
+	t.Run("PRJ_PLACEHOLDER_INFO", func(t *testing.T) {
+		var p prjPlaceholderInfo
+		fields := []struct {
+			name string
+			got  uintptr
+			want uintptr
+		}{
+			{"FileBasicInfo", unsafe.Offsetof(p.FileBasicInfo), 0},
+			{"EaInformation", unsafe.Offsetof(p.EaInformation), 56},
+			{"SecurityInformation", unsafe.Offsetof(p.SecurityInformation), 64},
+			{"StreamsInformation", unsafe.Offsetof(p.StreamsInformation), 72},
+			{"VersionInfo", unsafe.Offsetof(p.VersionInfo), 80},
+			{"VariableData", unsafe.Offsetof(p.VariableData), 336},
+		}
+		for _, field := range fields {
+			if field.got != field.want {
+				t.Errorf("%s offset = %d, want %d",
+					field.name, field.got, field.want)
+			}
+		}
+		if got, want := unsafe.Sizeof(p), uintptr(344); got != want {
+			t.Errorf("sizeof(PRJ_PLACEHOLDER_INFO) = %d, want %d", got, want)
+		}
+	})
 }

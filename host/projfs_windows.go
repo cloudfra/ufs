@@ -18,8 +18,6 @@ package host
 
 import (
 	"fmt"
-	"log/slog"
-	"math"
 	"time"
 	"unsafe"
 
@@ -39,17 +37,33 @@ var (
 	procPrjFillDirEntryBuffer         = projectedfslib.NewProc("PrjFillDirEntryBuffer")
 	procPrjFileNameCompare            = projectedfslib.NewProc("PrjFileNameCompare")
 	procPrjFileNameMatch              = projectedfslib.NewProc("PrjFileNameMatch")
+
+	projfsProcs = []*windows.LazyProc{
+		procPrjStartVirtualizing,
+		procPrjStopVirtualizing,
+		procPrjMarkDirectoryAsPlaceholder,
+		procPrjWritePlaceholderInfo,
+		procPrjWriteFileData,
+		procPrjAllocateAlignedBuffer,
+		procPrjFreeAlignedBuffer,
+		procPrjFillDirEntryBuffer,
+		procPrjFileNameCompare,
+		procPrjFileNameMatch,
+	}
 )
 
-// projfsAvailable reports whether projectedfslib.dll could be loaded,
-// i.e. whether the Windows Projected File System feature is enabled.
+// projfsAvailable reports whether projectedfslib.dll and every ProjFS function
+// this package calls could be loaded, i.e. whether the Windows Projected File
+// System feature is enabled. LazyProc.Call panics on a function that cannot
+// be found, so they are all looked up here before any is called.
 func projfsAvailable() error {
 	if err := projectedfslib.Load(); err != nil {
-		return fmt.Errorf("ProjFS is not available: enable the 'Windows Projected File System' feature.\n"+
-			"  Windows Server (admin): Install-WindowsFeature -Name FS-Projectedfs\n"+
-			"  Windows 10/11 (admin):  Enable-WindowsOptionalFeature -Online -FeatureName Client-ProjFS\n"+
-			"  See: https://learn.microsoft.com/en-us/windows/win32/projfs/enabling-windows-projected-file-system\n"+
-			"  %w", err)
+		return fmt.Errorf("ProjFS is not available: %s: %w", projfsEnableHelp, err)
+	}
+	for _, proc := range projfsProcs {
+		if err := proc.Find(); err != nil {
+			return fmt.Errorf("ProjFS is not available: %s: %w", projfsResolutions[windows.ERROR_PROC_NOT_FOUND], err)
+		}
 	}
 	return nil
 }
@@ -133,6 +147,12 @@ type prjPlaceholderInfo struct {
 		OffsetToFirstStreamInfo uint32
 	}
 	VersionInfo prjPlaceholderVersionInfo
+	// VariableData is the start of the variable-length EA / security /
+	// stream data described by the size+offset pairs above. It is part of
+	// the struct, so omitting it makes unsafe.Sizeof smaller than the
+	// sizeof(PRJ_PLACEHOLDER_INFO) that PrjWritePlaceholderInfo requires
+	// and the call fails with ERROR_INSUFFICIENT_BUFFER.
+	VariableData [1]byte
 }
 
 // prjCallbackData maps PRJ_CALLBACK_DATA.
@@ -181,127 +201,92 @@ type prjStartVirtualizingOptions struct {
 	_                         [4]byte
 }
 
-// hresultToError converts an HRESULT (uintptr) to a Go error.
-// S_OK (0) maps to nil. HRESULTs of the form HRESULT_FROM_WIN32(x)
-// (facility code 0x0007 in the high word) are unwrapped to the underlying
-// Win32 error code in the low word so windows.Errno reports the right message.
-func hresultToError(hr uintptr) error {
-	if hr == 0 {
-		return nil
-	}
-	// A value above the 32-bit range is not a valid HRESULT; report it as a
-	// failure instead of silently narrowing it.
-	if hr > math.MaxUint32 {
-		return fmt.Errorf("invalid 64-bit HRESULT: 0x%X", hr)
-	}
-	hr32 := uint32(hr)
-	if hr32>>16 == 0x8007 {
-		return windows.Errno(hr32 & 0xFFFF)
-	}
-	return windows.Errno(hr32)
+// projfsCall calls a ProjFS function and returns its result. ProjFS functions
+// return an HRESULT (or nothing) and do not set the thread's last error, so
+// the error LazyProc.Call returns (from GetLastError) is meaningless. Like
+// LazyProc.Call it is uintptrescapes, so pointers converted to uintptr in its
+// arguments are kept alive for the call.
+//
+//go:uintptrescapes
+func projfsCall(proc *windows.LazyProc, args ...uintptr) uintptr {
+	r, _, _ := proc.Call(args...) //nolint:errcheck // not set by ProjFS, see above
+	return r
 }
 
 func prjMarkDirectoryAsPlaceholder(rootPathName *uint16, targetPathName *uint16, versionInfo *prjPlaceholderVersionInfo, virtualizationInstanceID *windows.GUID) error {
-	hr, _, err := procPrjMarkDirectoryAsPlaceholder.Call(
+	hr := projfsCall(procPrjMarkDirectoryAsPlaceholder,
 		uintptr(unsafe.Pointer(rootPathName)),             //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(targetPathName)),           //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(versionInfo)),              //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(virtualizationInstanceID)), //nolint:gosec // ProjFS FFI arg
 	)
-	if err != nil {
-		slog.Warn("projfs: prjMarkDirectoryAsPlaceholder failed", "error", err)
-	}
-	return hresultToError(hr)
+	return hresultToError("PrjMarkDirectoryAsPlaceholder", hr)
 }
 
 func prjStartVirtualizing(virtualizationRootPath *uint16, callbacks *prjCallbacks, instanceContext uintptr, options *prjStartVirtualizingOptions, namespaceVirtualizationContext *uintptr) error {
-	hr, _, err := procPrjStartVirtualizing.Call(
+	hr := projfsCall(procPrjStartVirtualizing,
 		uintptr(unsafe.Pointer(virtualizationRootPath)), //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(callbacks)),              //nolint:gosec // ProjFS FFI arg
 		instanceContext,
 		uintptr(unsafe.Pointer(options)),                        //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(namespaceVirtualizationContext)), //nolint:gosec // ProjFS FFI arg
 	)
-	if err != nil {
-		slog.Warn("projfs: prjStartVirtualizing failed", "error", err)
-	}
-	return hresultToError(hr)
+	return hresultToError("PrjStartVirtualizing", hr)
 }
 
 func prjStopVirtualizing(namespaceVirtualizationContext uintptr) {
-	_, _, err := procPrjStopVirtualizing.Call(namespaceVirtualizationContext)
-	if err != nil {
-		slog.Warn("projfs: prjStopVirtualizing failed", "error", err)
-	}
+	projfsCall(procPrjStopVirtualizing, namespaceVirtualizationContext)
 }
 
 func prjWritePlaceholderInfo(namespaceVirtualizationContext uintptr, destinationFileName *uint16, placeholderInfo *prjPlaceholderInfo, placeholderInfoSize uint32) error {
-	hr, _, err := procPrjWritePlaceholderInfo.Call(
+	hr := projfsCall(procPrjWritePlaceholderInfo,
 		namespaceVirtualizationContext,
 		uintptr(unsafe.Pointer(destinationFileName)), //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(placeholderInfo)),     //nolint:gosec // ProjFS FFI arg
 		uintptr(placeholderInfoSize),
 	)
-	if err != nil {
-		slog.Warn("projfs: prjWritePlaceholderInfo failed", "error", err)
-	}
-	return hresultToError(hr)
+	return hresultToError("PrjWritePlaceholderInfo", hr)
 }
 
 func prjWriteFileData(namespaceVirtualizationContext uintptr, dataStreamID *windows.GUID, buffer unsafe.Pointer, byteOffset uint64, length uint32) error {
-	hr, _, err := procPrjWriteFileData.Call(
+	hr := projfsCall(procPrjWriteFileData,
 		namespaceVirtualizationContext,
 		uintptr(unsafe.Pointer(dataStreamID)), //nolint:gosec // ProjFS FFI arg
 		uintptr(buffer),
 		uintptr(byteOffset),
 		uintptr(length),
 	)
-	if err != nil {
-		slog.Warn("projfs: prjWriteFileData failed", "error", err)
-	}
-	return hresultToError(hr)
+	return hresultToError("PrjWriteFileData", hr)
 }
 
 func prjAllocateAlignedBuffer(namespaceVirtualizationContext uintptr, size uint64) unsafe.Pointer {
-	ptr, _, err := procPrjAllocateAlignedBuffer.Call(
+	ptr := projfsCall(procPrjAllocateAlignedBuffer,
 		namespaceVirtualizationContext,
 		uintptr(size),
 	)
-	if err != nil {
-		slog.Warn("projfs: prjAllocateAlignedBuffer failed", "error", err)
-	}
 	// A syscall result must be interpreted as the pointer it actually is.
 	//nolint:gosec // FFI: uintptr from a syscall is an unsafe.Pointer by contract
 	return unsafe.Pointer(ptr) //nolint:govet
 }
 
 func prjFreeAlignedBuffer(buffer unsafe.Pointer) {
-	_, _, err := procPrjFreeAlignedBuffer.Call(uintptr(buffer))
-	if err != nil {
-		slog.Warn("projfs: prjFreeAlignedBuffer failed", "error", err)
-	}
+	projfsCall(procPrjFreeAlignedBuffer, uintptr(buffer))
 }
 
 func prjFillDirEntryBuffer(fileName *uint16, fileBasicInfo *prjFileBasicInfo, dirEntryBufferHandle uintptr) error {
-	hr, _, err := procPrjFillDirEntryBuffer.Call(
+	hr := projfsCall(procPrjFillDirEntryBuffer,
 		uintptr(unsafe.Pointer(fileName)),      //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(fileBasicInfo)), //nolint:gosec // ProjFS FFI arg
 		dirEntryBufferHandle,
 	)
-	if err != nil {
-		slog.Warn("projfs: prjFillDirEntryBuffer failed", "error", err)
-	}
-	return hresultToError(hr)
+	return hresultToError("PrjFillDirEntryBuffer", hr)
 }
 
 func prjFileNameCompare(fileName1 *uint16, fileName2 *uint16) int32 {
-	r, _, err := procPrjFileNameCompare.Call(
+	r := projfsCall(procPrjFileNameCompare,
 		uintptr(unsafe.Pointer(fileName1)), //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(fileName2)), //nolint:gosec // ProjFS FFI arg
 	)
-	if err != nil {
-		slog.Warn("projfs: prjFileNameCompare failed", "error", err)
-	}
 	// r is a 32-bit signed comparison result returned in a uintptr, where a
 	// negative value is carried as e.g. 0xFFFFFFFF; truncating to int32 is the
 	// correct re-interpretation and cannot be provably bounded for gosec.
@@ -309,13 +294,10 @@ func prjFileNameCompare(fileName1 *uint16, fileName2 *uint16) int32 {
 }
 
 func prjFileNameMatch(fileNameToCheck *uint16, pattern *uint16) bool {
-	r, _, err := procPrjFileNameMatch.Call(
+	r := projfsCall(procPrjFileNameMatch,
 		uintptr(unsafe.Pointer(fileNameToCheck)), //nolint:gosec // ProjFS FFI arg
 		uintptr(unsafe.Pointer(pattern)),         //nolint:gosec // ProjFS FFI arg
 	)
-	if err != nil {
-		slog.Warn("projfs: prjFileNameMatch failed", "error", err)
-	}
 	return r != 0
 }
 

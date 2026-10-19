@@ -67,11 +67,6 @@ jobs:
       # - name: Container Fix
       #   run: git config --system --add safe.directory /__w/
 
-      - name: Install Signing Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get -y -q install osslsigncode binutils openssl
-
       - name: Clean
         run: make clean
       - name: Build Assets
@@ -258,6 +253,9 @@ jobs:
         with:
           go-version: stable
           cache: false
+      - name: Initialize CI
+        shell: powershell
+        run: ./scripts/Initialize-CI.ps1
       - name: System Information
         run: make system-info
       - name: Clean

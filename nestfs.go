@@ -209,15 +209,68 @@ func (m *mountMap) getClosestMount(name string) (string, string, *nestFS, bool) 
 	return targetMount, targetSubPath, targetFS, targetFS != nil
 }
 
-func (m *mountMap) remove(name string) {
+// releaseAll releases every mount, holding the mount lock for the whole
+// operation. See [mountMap.releaseAllNoLock] for what releasing a mount means.
+func (m *mountMap) releaseAll() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if nfs, ok := m.m[name]; ok {
-		if err := nfs.Close(); err != nil {
-			fmt.Printf("failed to close mount %q, %v\n", name, err)
+	err := m.releaseAllNoLock()
+	m.mu.Unlock()
+	return err
+}
+
+// releaseAllNoLock releases every mount; the caller must hold m.mu for writing.
+//
+// A mount that ufs opened for itself is closed and dropped from the map: ufs
+// opened it to serve the paths inside it rather than to hold a file system the
+// caller gave it, so closing it releases the handle it keeps on the file it was
+// opened from, along with any local copy of that file. In practice such a mount
+// is the content directory of an archive that nestFS mounts automatically, which
+// is mounted again from the file that holds it on next access. A mount that the
+// caller configured, whether it built the file system itself or gave a URI for
+// ufs to open, is the caller's to keep: it stays mounted and releases the mounts
+// below it, recursively.
+//
+// Every mount is attempted. The errors are joined into the result, and a mount
+// that could not be released is left mounted, so that a later release or close
+// can try again.
+func (m *mountMap) releaseAllNoLock() error {
+	var errs []error
+	for name, nfs := range m.m {
+		if nfs.closeOnRelease() {
+			if closeErr := m.removeNoLock(name, nfs); closeErr != nil {
+				errs = append(errs, closeErr)
+			}
+		} else {
+			if releaseErr := nfs.Release(); releaseErr != nil {
+				errs = append(errs, releaseErr)
+			}
 		}
-		delete(m.m, name)
 	}
+	return ufserrors.Join(errs...)
+}
+
+// remove closes the mount at name and drops it from the map. A name that is not
+// mounted is not an error. If the mount cannot be closed it stays in the map, so
+// that it can be closed again later.
+func (m *mountMap) remove(name string) error {
+	m.mu.Lock()
+	var err error
+	if nfs, ok := m.m[name]; ok {
+		err = m.removeNoLock(name, nfs)
+	}
+	m.mu.Unlock()
+	return err
+}
+
+// removeNoLock closes and drops a mount that the caller has already looked up;
+// the caller must hold m.mu for writing. A mount that cannot be closed is left
+// in the map.
+func (m *mountMap) removeNoLock(name string, nfs *nestFS) error {
+	if closeErr := nfs.Close(); closeErr != nil {
+		return fmt.Errorf("failed to close mount %q, %w", name, closeErr)
+	}
+	delete(m.m, name)
+	return nil
 }
 
 func (m *mountMap) Close() error {
@@ -253,6 +306,14 @@ type nestFS struct {
 	// inArchive is set on the mount of an archive's content, which cannot be
 	// changed.
 	inArchive bool
+
+	// autoMounted is set on the content directory of an archive that nestFS
+	// mounts automatically, which is a mount ufs opened for itself rather than
+	// one the caller configured. ufs does not need such a mount to stay open
+	// for the caller, so releasing lets go of it; see [nestFS.closeOnRelease].
+	// A mount the caller configured, by handing over a file system or by giving
+	// a URI, is not marked, so releasing keeps it.
+	autoMounted bool
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
@@ -319,7 +380,9 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 		if strings.HasSuffix(dir, archiveDirExt) && archive.IsMountablePath(strings.TrimSuffix(dir, archiveDirExt)) {
 			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
 			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
-				fsys.mounts.remove(path.Join(name, dir))
+				if removeErr := fsys.mounts.remove(path.Join(name, dir)); removeErr != nil {
+					slog.Warn("cannot unmount the content directory of a missing archive", "path", path.Join(name, dir), "error", removeErr)
+				}
 				continue
 			}
 		}
@@ -370,6 +433,16 @@ func (fsys *nestFS) isMountParent(name string) bool {
 
 func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 	return fsys.mounts.put(name, mountedFS)
+}
+
+// addAutoMount mounts a file system that ufs opened for itself, which today
+// means the content directory of an archive found in the tree. Releasing such a
+// mount lets go of it; see [nestFS.autoMounted]. A mount the caller configures,
+// from a file system it built or from a URI, is added with [nestFS.addMount]
+// instead, so that releasing keeps it.
+func (fsys *nestFS) addAutoMount(name string, mountedFS *nestFS) error {
+	mountedFS.autoMounted = true
+	return fsys.addMount(name, mountedFS)
 }
 
 // IsMountedArchiveDir reports whether name (a full path within this FS) is a
@@ -432,7 +505,7 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 
 	wrapped := makeNestFS(ctx, newFS)
 	wrapped.inArchive = true
-	if err := fsys.addMount(name+archiveDirExt, wrapped); err != nil {
+	if err := fsys.addAutoMount(name+archiveDirExt, wrapped); err != nil {
 		return nil, err
 	}
 	return wrapped, nil
@@ -765,9 +838,62 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		return linkErr(err)
 	}
 	for _, mount := range unmount {
-		mount.fsys.mounts.remove(mount.name)
+		// The rename itself succeeded, so a mount that cannot be closed here is
+		// left for a later close rather than reported as a failed rename.
+		if removeErr := mount.fsys.mounts.remove(mount.name); removeErr != nil {
+			slog.Warn("cannot unmount after rename", "path", mount.name, "error", removeErr)
+		}
 	}
 	return nil
+}
+
+// closeOnRelease reports whether releasing means closing fsys outright rather
+// than keeping it and releasing only what it holds. It is true for a mount that
+// ufs opened for itself that holds a file another application can use: closing
+// it releases the handle it keeps on the file it was opened from, along with any
+// local copy of that file. In practice such a mount is an archive.
+//
+// It is false for a mount the caller configured, which is the caller's to keep
+// open, and for a mount that is not backed by a file at all: releasing it would
+// let go of nothing, and closing it would throw its content away.
+func (fsys *nestFS) closeOnRelease() bool {
+	return fsys.autoMounted && fsys.fsys != nil && !holdsNoFile(fsys.fsys)
+}
+
+// holdsNoFile reports whether fsys is backed by memory or by nothing at all, so
+// that it keeps no file handle and holds no local copy of a remote file. A file
+// system that does not name its device is taken to be backed by a file.
+func holdsNoFile(fsys types.WriteFS) bool {
+	info, ok := fsys.GetDeviceInfo()["."]
+	if !ok {
+		info = types.DefaultDeviceInfo
+	}
+	switch info.DeviceType() {
+	case "memory", "null":
+		return true
+	}
+	return false
+}
+
+// Release lets go of the resources that the mounts of fsys hold on to without
+// closing fsys itself, so that other applications can use them. A mount that ufs
+// opened for itself is closed and unmounted, which releases the handle it keeps
+// on the file it was opened from; in practice such a mount is the content
+// directory of an archive inside the tree. A mount that the caller configured,
+// by handing over a file system or by giving a URI for ufs to open, and a mount
+// that is not backed by a file, keeps its own file system and releases the
+// mounts below it, recursively.
+//
+// fsys stays usable, and the content directory of an archive inside it is
+// mounted again from the file that holds it the next time a path under it is
+// used. The base file system of fsys is not released; only [nestFS.Close] lets
+// go of it.
+//
+// Every mount is attempted. Release joins the errors it meets, and a mount that
+// could not be released stays mounted, so that a later release or close can try
+// again.
+func (fsys *nestFS) Release() error {
+	return fsys.mounts.releaseAll()
 }
 
 // renameLevel is a nestFS that a path passes through and the path within it.

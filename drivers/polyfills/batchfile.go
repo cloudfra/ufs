@@ -25,8 +25,12 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
+const batchCreateOp = "batchcreate"
+
 // BatchCreate writes every file in files, replacing any that already exist, and
-// does nothing for an empty batch.
+// does nothing for an empty batch. Every name is checked with
+// [pathutil.ValidateFileName] before the first write, so a bad name at the end
+// of the batch cannot leave the files before it written.
 //
 // fsys's own [types.BatchCreateFS] implementation is used when it has one, so
 // the batch keeps its atomicity. Otherwise the files are written one at a time
@@ -44,13 +48,18 @@ func BatchCreate(fsys fs.FS, files []types.BatchFile) error {
 	if cFS, ok := fsys.(types.BatchCreateFS); ok {
 		return cFS.BatchCreate(files)
 	}
+	for _, file := range files {
+		if err := pathutil.ValidateFileName(batchCreateOp, file.Name); err != nil {
+			return err
+		}
+	}
 	if cFS, ok := fsys.(types.OpenFileFS); ok {
 		return batchCreateFromOpenFileFS(cFS, files)
 	}
 	if cFS, ok := fsys.(types.CreateFileFS); ok {
 		return batchCreateFromCreateFileFS(cFS, files)
 	}
-	return ufserrors.NewUnimplemented(fsys, "create")
+	return ufserrors.NewUnimplemented(fsys, batchCreateOp)
 }
 
 // batchCreateFromCreateFileFS writes the batch one file at a time with Create,

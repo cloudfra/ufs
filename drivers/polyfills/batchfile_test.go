@@ -192,10 +192,34 @@ func TestBatchCreate(t *testing.T) {
 			wantCloses: 1,
 		},
 		{
+			// Names are checked in a pass of their own, so the second entry
+			// rejects the whole batch instead of leaving the first written.
+			name:      "an invalid name stops the batch before anything is written",
+			wrap:      func(s *store) fs.FS { return openFileFS{s} },
+			files:     []types.BatchFile{{Name: "a", Data: []byte("alpha")}, {Name: "d/", Data: []byte("beta")}},
+			wantErr:   "is not a valid path",
+			wantOpens: 0,
+		},
+		{
+			name:      "the root is not a file name",
+			wrap:      func(s *store) fs.FS { return openFileFS{s} },
+			files:     []types.BatchFile{{Name: ".", Data: []byte("beta")}},
+			wantErr:   "the root is a directory",
+			wantOpens: 0,
+		},
+		{
+			// A native implementation takes its own names, so the emulation's
+			// checks do not run in front of it.
+			name:      "a native BatchCreateFS takes the names as given",
+			wrap:      func(s *store) fs.FS { return batchFS{s} },
+			files:     []types.BatchFile{{Name: "d/", Data: []byte("beta")}},
+			wantBatch: [][]string{{"d/"}},
+		},
+		{
 			name:    "no create interface at all",
 			wrap:    func(s *store) fs.FS { return plainFS{s} },
 			files:   twoFiles,
-			wantErr: `does not support "create"`,
+			wantErr: `does not support "batchcreate"`,
 		},
 	}
 

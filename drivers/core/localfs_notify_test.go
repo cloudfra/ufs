@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -201,6 +202,45 @@ func TestWatchNewDirRecursion(t *testing.T) {
 			return ev.Op == types.NotifyCreate && ev.Path == "new/sub/file.txt"
 		})
 	})
+}
+
+// TestWatchAddRecursiveReportsUnwatched pins the contract that a directory the
+// watcher could not walk is reported instead of left unwatched. WalkDir hands
+// the callback an error and stops descending when it cannot stat or read a
+// directory; that error used to reach neither the caller nor the log, so the
+// subtree under it silently stopped producing events.
+func TestWatchAddRecursiveReportsUnwatched(t *testing.T) {
+	skipIfUnsupported(t)
+	dir := t.TempDir()
+
+	fsys, err := makeLocalFS(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	closer, err := fsys.Watch(ctx, ".", func(types.NotifyOp, string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, closer)()
+
+	lw, ok := closer.(*localWatcher)
+	if !ok {
+		t.Fatalf("Watch returned %T, want *localWatcher", closer)
+	}
+
+	missing := filepath.Join(dir, "gone")
+	err = lw.addRecursive(ctx, missing)
+	if err == nil {
+		t.Fatal("addRecursive reported no error for a directory it could not watch")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error %q does not name the directory it could not watch", err)
+	}
 }
 
 func TestWatchCloseStopsDelivery(t *testing.T) {

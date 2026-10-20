@@ -16,6 +16,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -71,7 +73,7 @@ func (fsys *localFS) Watch(ctx context.Context, name string, hook types.NotifyHo
 		watchRoot: watchRoot,
 	}
 
-	if err := lw.addRecursive(watchRoot); err != nil {
+	if err := lw.addRecursive(ctx, watchRoot); err != nil {
 		slog.WarnContext(ctx, "got error while recursively adding files to local watcher", "error", err, "root", watchRoot)
 		if err := w.Close(); err != nil {
 			slog.WarnContext(ctx, "error while closing fsnotify watcher in response to recursive add failure", "error", err, "root", watchRoot)
@@ -108,17 +110,78 @@ func (lw *localWatcher) Close() error {
 	return err
 }
 
-// addRecursive walks dir and adds an fsnotify watch on every directory.
-func (lw *localWatcher) addRecursive(dir string) error {
-	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+// addWalkAttempts is how many times addRecursive walks a directory before the
+// failure to watch it is reported. Losing a watch is not benign: the subtree
+// under it silently stops producing events. The failure is usually transient,
+// most often on Windows, where a directory that has just been renamed into the
+// watched tree is not always readable yet.
+const addWalkAttempts = 3
+
+// addWalkRetryDelay is how long addRecursive waits before re-walking a
+// directory that could not be watched.
+const addWalkRetryDelay = 20 * time.Millisecond
+
+// addRecursive adds an fsnotify watch on dir and every directory beneath it.
+// Directories that could not be watched are re-walked and the ones still
+// unwatched are reported in the error: WalkDir hands the callback an error and
+// stops descending when it cannot stat or read one, which used to reach neither
+// the caller nor the log and left that subtree unwatched in silence.
+func (lw *localWatcher) addRecursive(ctx context.Context, dir string) error {
+	unwatched, err := lw.walkAndAdd(dir)
+	for attempt := 1; len(unwatched) > 0; attempt++ {
+		if attempt == addWalkAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(addWalkRetryDelay):
+		}
+		retry := make([]string, 0, len(unwatched))
+		var retryErr error
+		for _, p := range unwatched {
+			un, e := lw.walkAndAdd(p)
+			retry = append(retry, un...)
+			if retryErr == nil {
+				retryErr = e
+			}
+		}
+		unwatched, err = retry, retryErr
+	}
+	if len(unwatched) == 0 {
+		return nil
+	}
+	return fmt.Errorf("could not watch %s: %w", strings.Join(unwatched, ", "), err)
+}
+
+// walkAndAdd adds an fsnotify watch on every directory under dir, returning the
+// directories it could not watch and the first error that caused one.
+func (lw *localWatcher) walkAndAdd(dir string) ([]string, error) {
+	var unwatched []string
+	var firstErr error
+	failed := func(p string, err error) {
+		unwatched = append(unwatched, p)
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	if err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// WalkDir will not descend, so the whole subtree under p is left
+			// unwatched.
+			failed(p, err)
 			return nil
 		}
 		if d.IsDir() {
-			return lw.watcher.Add(p)
+			if err := lw.watcher.Add(p); err != nil {
+				failed(p, err)
+			}
 		}
 		return nil
-	})
+	}); err != nil {
+		failed(dir, err)
+	}
+	return unwatched, firstErr
 }
 
 // toRelPath converts an OS-native absolute path to a root-relative,
@@ -160,17 +223,20 @@ func (lw *localWatcher) loop(ctx context.Context) {
 			if !ok || ctx.Err() != nil {
 				return
 			}
-			lw.handleEvent(ev)
+			lw.handleEvent(ctx, ev)
 		case err, ok := <-lw.watcher.Errors:
+			// fsnotify reports dropped events and failed watches here rather
+			// than returning them, so they are invisible unless logged. The
+			// channel is closed only when the watcher is closed.
 			if !ok {
-				slog.ErrorContext(ctx, "Got error on watch", "error", err)
 				return
 			}
+			slog.ErrorContext(ctx, "Got error on watch", "error", err)
 		}
 	}
 }
 
-func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
+func (lw *localWatcher) handleEvent(ctx context.Context, ev fsnotify.Event) {
 	rel, ok := lw.toRelPath(ev.Name)
 	if !ok || rel == pathutil.CwdPath {
 		return
@@ -182,11 +248,15 @@ func (lw *localWatcher) handleEvent(ev fsnotify.Event) {
 	}
 
 	if ev.Has(fsnotify.Create) {
-		if fi, err := osutil.Stat(ev.Name); err == nil && fi.IsDir() {
+		fi, err := osutil.Stat(ev.Name)
+		// A Stat that fails for a reason other than the path already being
+		// gone is ambiguous, so the walk runs anyway: skipping it would leave
+		// a new directory unwatched without saying so.
+		if (err == nil && fi.IsDir()) || (err != nil && !errors.Is(err, fs.ErrNotExist)) {
 			// New directory: register watches for it and any children that
 			// appeared before the watch was installed.
-			if err := lw.addRecursive(ev.Name); err != nil {
-				slog.Warn("got error while recursively adding files to local watcher", "error", err, "event.name", ev.Name, "event.op", ev.Op)
+			if err := lw.addRecursive(ctx, ev.Name); err != nil {
+				slog.WarnContext(ctx, "got error while recursively adding files to local watcher", "error", err, "event.name", ev.Name, "event.op", ev.Op)
 			}
 		}
 	}

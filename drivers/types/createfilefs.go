@@ -20,6 +20,7 @@ import "io/fs"
 // file creation.
 type CreateFileFS interface {
 	fs.FS
+
 	// Create opens a new writable file at name, replacing any existing file at
 	// that path. Parent directories are not created automatically; call
 	// MkdirAll first if needed.

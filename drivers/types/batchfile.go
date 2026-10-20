@@ -39,6 +39,8 @@ type BatchFile struct {
 // them in one transaction. It is not embedded in [WriteFS]; call
 // [BatchCreate] to write a batch to any [WriteFS].
 type BatchCreateFS interface {
+	fs.FS
+
 	// BatchCreate writes every file in files, in order. Missing parent
 	// directories are created as MkdirAll creates them, an existing file is
 	// replaced, and a later entry for a name replaces an earlier one. An

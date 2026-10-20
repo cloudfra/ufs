@@ -14,11 +14,15 @@
 
 package types
 
+import "io/fs"
+
 // CopyFileFS is an optional interface that a file system may implement to
 // support native file copying. It is not embedded in [WriteFS], so a driver
 // need not implement it; the copy helpers in the ufs and ops packages fall
 // back to a read-and-write copy when a backend does not implement it.
 type CopyFileFS interface {
+	fs.FS
+
 	// CopyFile copies a file from srcPath to dstPath. It returns an error
 	// wrapping [fs.ErrNotExist] if srcPath does not exist, or an error if dstPath
 	// already exists. Copying the root (".") returns [fs.ErrPermission].

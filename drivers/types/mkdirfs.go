@@ -16,12 +16,14 @@ package types
 
 import "io/fs"
 
-// MkdirAllFS is an optional interface that a file system may implement to support
+// MkdirFS is an optional interface that a file system may implement to support
 // directory creation.
-type MkdirAllFS interface {
+type MkdirFS interface {
+	fs.FS
+
 	// MkdirAll creates the directory at name and any missing parent directories,
 	// using perm for newly created nodes. It is a no-op if the directory already
 	// exists. Backends that do not have a real directory concept (e.g. GCS) treat
 	// this as a no-op.
-	MkdirAll(name string, perm fs.FileMode) error
+	Mkdir(name string, perm fs.FileMode) error
 }

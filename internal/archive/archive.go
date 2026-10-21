@@ -116,6 +116,14 @@ type archiveFS struct {
 	name    string
 	closer  io.Closer
 	indexed sync.Once
+	// indexMu serializes the index build against every other call into
+	// fsys.fsys. archives.ArchiveFS builds its index lazily on the first
+	// ReadDir, writing maps that Open and Stat read without any locking of
+	// its own. Once isIndexed is set those maps are never written again, so
+	// readers skip the lock. It is never set for an archive with no entries:
+	// the library takes an empty index for a missing one and rebuilds it on
+	// every ReadDir.
+	indexMu sync.RWMutex
 	// isIndexed is set once ensureIndexed has successfully built the
 	// underlying archive's implicit-directory index, letting Open skip
 	// straight to fsys.fsys.Open on every later call instead of repeating the
@@ -148,12 +156,30 @@ func (fsys *archiveFS) ensureIndexed() {
 		if !ok {
 			return
 		}
-		if _, err := rdfs.ReadDir("."); err != nil {
+		fsys.indexMu.Lock()
+		entries, err := rdfs.ReadDir(".")
+		fsys.indexMu.Unlock()
+		if err != nil {
 			slog.Warn("failed to index archive", "name", fsys.name, "error", err)
+			return
+		}
+		if len(entries) == 0 {
+			// The library rebuilds the index of an empty archive on every
+			// ReadDir, so its maps keep being written: stay on the locks.
 			return
 		}
 		fsys.isIndexed.Store(true)
 	})
+}
+
+// rlockUnindexed takes the read side of indexMu unless the archive is already
+// indexed, and returns the function that releases it.
+func (fsys *archiveFS) rlockUnindexed() func() {
+	if fsys.isIndexed.Load() {
+		return func() {}
+	}
+	fsys.indexMu.RLock()
+	return fsys.indexMu.RUnlock
 }
 
 // Open opens name in the underlying FS. If the archive returns an entry
@@ -166,7 +192,9 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 		return fsys.fsys.Open(name)
 	}
 
+	unlock := fsys.rlockUnindexed()
 	f, err := fsys.fsys.Open(name)
+	unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +209,8 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 		return nil, fmt.Errorf("cannot close %q, %w", name, err)
 	}
 	fsys.ensureIndexed()
+	unlock = fsys.rlockUnindexed()
+	defer unlock()
 	return fsys.fsys.Open(name)
 }
 
@@ -191,6 +221,7 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 // ensureIndexed, and it avoids opening (and decompressing into) a content
 // stream just to read metadata.
 func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
+	defer fsys.rlockUnindexed()()
 	return fs.Stat(fsys.fsys, name)
 }
 
@@ -199,6 +230,15 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 // Open followed by ReadDirFile.ReadDir, which would also pay for Open's
 // implicit-directory check on every call.
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	// The first ReadDir builds the archive's index, so it must not run
+	// concurrently with anything else.
+	fsys.ensureIndexed()
+	if !fsys.isIndexed.Load() {
+		// Indexing failed or the archive is empty, so every ReadDir builds
+		// the index again.
+		fsys.indexMu.Lock()
+		defer fsys.indexMu.Unlock()
+	}
 	return fs.ReadDir(fsys.fsys, name)
 }
 

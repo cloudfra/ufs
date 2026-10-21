@@ -15,11 +15,8 @@
 package ops_test
 
 import (
-	"archive/zip"
 	"context"
-	"io"
 	"io/fs"
-	"path/filepath"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -27,6 +24,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	"github.com/cloudfra/ufs/ops"
 )
 
@@ -78,37 +76,11 @@ func testAssetsFS(t *testing.T) fs.FS {
 	return srcFS
 }
 
-// setupNestFSWithArchive creates a temp directory containing a regular file
-// and a zip archive with one entry, then wraps it as a nestFS for Scan tests.
-func setupNestFSWithArchive(t *testing.T) types.WriteFS {
+// newMemNestFS returns a file system over an empty in-memory file system, as
+// [ufs.New] makes it, and closes it when the test ends.
+func newMemNestFS(t *testing.T) types.WriteFS {
 	t.Helper()
-	dir := t.TempDir()
-
-	if err := osutil.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello")); err != nil {
-		t.Fatal(err)
-	}
-
-	zipPath := filepath.Join(dir, "data.zip")
-	zf, err := osutil.Create(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(zf)
-	w, err := zw.Create("inside.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.WriteString(w, "content"); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := zf.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	nfs, err := ufs.New(t.Context(), dir)
+	nfs, err := ufs.New(t.Context(), "memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,5 +89,15 @@ func setupNestFSWithArchive(t *testing.T) types.WriteFS {
 			t.Errorf("failed to close nest FS: %v", err)
 		}
 	})
+	return nfs
+}
+
+// setupNestFSWithArchive creates an in-memory file system holding a regular
+// file and a zip archive with one entry, for Scan tests.
+func setupNestFSWithArchive(t *testing.T) types.WriteFS {
+	t.Helper()
+	nfs := newMemNestFS(t)
+	writeTestFile(t, nfs, "readme.txt", []byte("hello"))
+	writeTestFile(t, nfs, "data.zip", archivetest.Zip(t, archivetest.Entry{Name: "inside.txt", Data: []byte("content")}))
 	return nfs
 }

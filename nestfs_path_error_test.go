@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -245,13 +246,8 @@ func TestNestFSLocalMountErrorNamesCallerPath(t *testing.T) {
 // TestNestFSArchiveErrorNamesCallerPath reads through the content directory of
 // an archive, where the file system that answers is the archive itself.
 func TestNestFSArchiveErrorNamesCallerPath(t *testing.T) {
-	zipPath := ufsTesting.ZipDir(t, testAssetsFilesDir)
-	zipData, err := osutil.ReadFile(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Clean(filepath.Join(dir, "testassets.zip")), zipData, 0o600); err != nil {
+	if err := osutil.WriteFile(filepath.Join(dir, "testassets.zip"), archivetest.ZipDir(t, testAssetsFilesDir)); err != nil {
 		t.Fatal(err)
 	}
 

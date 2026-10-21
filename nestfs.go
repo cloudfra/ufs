@@ -316,6 +316,18 @@ func (fsys *nestFS) GetAbsPath(name string) (string, error) {
 	if err := fsys.validPath(absPathOp, name); err != nil {
 		return "", err
 	}
+	// A name below a mount belongs to the mounted file system.
+	if _, subName, mountFS, ok := fsys.mounts.getClosestMount(name); ok {
+		return mountFS.GetAbsPath(subName)
+	}
+	// The contents of an archive are not files on the host. A directory that
+	// is only named like an archive directory, with no archive next to it, is
+	// an ordinary directory of the base.
+	for _, archiveDirName := range getPotentialArchives(name) {
+		if fsys.IsMountedArchiveDir(archiveDirName) {
+			return "", realAbsPathNotSupported(fsys, name)
+		}
+	}
 	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
 		return rfs.GetAbsPath(name)
 	}
@@ -517,6 +529,11 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	archiveDirNames := getPotentialArchives(targetName)
 	for _, archiveDirName := range archiveDirNames {
 		archiveName := strings.TrimSuffix(archiveDirName, archiveDirExt)
+		// Only a name that is an archive's is an archive directory; "conf.d"
+		// next to a file "conf" is an ordinary name.
+		if !archive.IsMountablePath(archiveName) {
+			continue
+		}
 		info, err := targetFS.Stat(archiveName)
 		if info != nil && err == nil {
 			subPath, ok := pathutil.RemovePrefix(targetName, archiveDirName)

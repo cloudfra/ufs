@@ -590,6 +590,14 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
+	// The handle of a backend such as memFS can write even though Open opens
+	// the file for reading, and would get around the readOnly decorator, which
+	// does not intercept writes through a handle. ToBufferedFile refuses those
+	// writes for a handle it has to adapt, but returns one that is already a
+	// types.File as is, so such a handle goes through ToReadOnlyFile first.
+	if full, ok := f.(types.File); ok {
+		return polyfills.ToReadOnlyFile(full), nil
+	}
 	return polyfills.ToBufferedFile(f, true, mountFS.args.BufMode)
 }
 

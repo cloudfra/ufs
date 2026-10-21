@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
@@ -29,6 +28,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 )
@@ -690,14 +690,8 @@ func TestNestFSValidPathClosed(t *testing.T) {
 
 func TestNestFSStaleArchiveMountPruned(t *testing.T) {
 	tmpDir := t.TempDir()
-	zipPath := ufsTesting.ZipDir(t, testAssetsFilesDir)
-
 	destZip := tmpDir + "/testassets.zip"
-	data, err := osutil.ReadFile(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := osutil.WriteFile(destZip, data); err != nil {
+	if err := osutil.WriteFile(destZip, archivetest.ZipDir(t, testAssetsFilesDir)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1415,32 +1409,19 @@ func TestNestFSMissingDirectory(t *testing.T) {
 
 // TestIsMountedArchiveDir exercises all early-exit conditions of the method.
 func TestIsMountedArchiveDir(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create data.zip (virtual .d should be detected).
-	zf, err := osutil.Create(filepath.Join(dir, "data.zip"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(zf)
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := zf.Close(); err != nil {
-		t.Fatal(err)
-	}
-	// Create conf.d as a real directory (base name "conf" is not an archive).
-	if err := osutil.MkdirAll(filepath.Join(dir, "conf.d")); err != nil {
-		t.Fatal(err)
-	}
-
-	lfs := mustBaseFS(t, dir)
-	nfs := makeNestFS(t.Context(), lfs)
+	nfs := makeNestFS(t.Context(), mustBaseFS(t, "memory:"))
 	t.Cleanup(func() {
 		if err := nfs.Close(); err != nil {
 			t.Errorf("nfs.Close() = %v", err)
 		}
 	})
+
+	// Create data.zip (virtual .d should be detected).
+	writeTestFile(t, nfs, "data.zip", archivetest.Zip(t))
+	// Create conf.d as a real directory (base name "conf" is not an archive).
+	if err := nfs.MkdirAll("conf.d", osutil.DefaultDirectoryPermissions); err != nil {
+		t.Fatal(err)
+	}
 
 	cases := []struct {
 		name string

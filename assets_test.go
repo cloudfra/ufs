@@ -23,6 +23,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/testing/archivetest"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -67,8 +68,7 @@ func TestAssets(t *testing.T) {
 		{
 			name: "archiveFS",
 			createFS: func(tb testing.TB) (types.WriteFS, error) {
-				zipPath := ufsTesting.ZipDir(tb, testAssetsFilesDir)
-				return newBaseFS(tb.Context(), archiveURIPrefix+zipPath)
+				return newMemArchiveFS(tb, "testassets.zip", archivetest.ZipDir(tb, testAssetsFilesDir))
 			},
 		},
 	}
@@ -124,4 +124,12 @@ func copyFileForTest(src fs.FS, dst types.WriteFS, name string) error {
 		return ufserrors.Join(err, f.Close())
 	}
 	return f.Close()
+}
+
+// newMemArchiveFS mounts the archive in data, held in memory under name,
+// through the archive driver. The caller closes the result; nothing is written
+// to disk.
+func newMemArchiveFS(tb testing.TB, name string, data []byte) (types.WriteFS, error) {
+	tb.Helper()
+	return newBaseFSFromFile(tb.Context(), archiveURIPrefix+name, archivetest.NewFile(name, data))
 }

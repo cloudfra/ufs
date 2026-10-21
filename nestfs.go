@@ -494,6 +494,12 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
+	// The handle of a backend such as memFS can write. It must not let a
+	// file that was opened for reading change, and must not get around the
+	// readOnly decorator, which does not intercept writes through a handle.
+	if full, ok := f.(types.File); ok {
+		return readOnlyHandle(full), nil
+	}
 	return wrapFile(f, true, mountFS.args.BufMode)
 }
 

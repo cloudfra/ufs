@@ -1543,3 +1543,116 @@ func TestNestFSMountArchiveWithoutHostPath(t *testing.T) {
 		t.Error("types.ReadFile() returned no content")
 	}
 }
+
+// writeTestZip writes a zip archive holding the single file hello.txt to name
+// in fsys.
+func writeTestZip(t *testing.T, fsys types.WriteFS, name string) {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("hello.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(w, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fsys.Create(name)
+	if err != nil {
+		t.Fatalf("Create(%q) = %v, want nil", name, err)
+	}
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestNestFSArchiveInMountOfMountedFS verifies that an archive is readable
+// when it lives in a mount of a file system that is itself mounted: the base
+// of the inner file system is on the host, the archive is not.
+func TestNestFSArchiveInMountOfMountedFS(t *testing.T) {
+	inner, err := New(t.Context(), "file://"+filepath.ToSlash(t.TempDir())+"?sub=memory:")
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	writeTestZip(t, inner, "sub/a.zip")
+
+	outer, err := NewFSBuilder("memory:").MountFS("m", inner).Build(t.Context())
+	if err != nil {
+		t.Fatalf("Build() = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, outer)()
+
+	entries, err := fs.ReadDir(outer, "m/sub/a.zip.d")
+	if err != nil {
+		t.Fatalf("ReadDir(m/sub/a.zip.d) = %v, want nil", err)
+	}
+	if diff := cmp.Diff([]string{"hello.txt"}, ufsTesting.DirEntryListToNames(entries)); diff != "" {
+		t.Errorf("ReadDir(m/sub/a.zip.d) mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestNestFSAbsPathOutsideHost verifies that AbsPath fails for names that a
+// local base does not serve from the host: names in a mount and names inside
+// an archive.
+func TestNestFSAbsPathOutsideHost(t *testing.T) {
+	fsys, err := New(t.Context(), "file://"+filepath.ToSlash(t.TempDir())+"?sub=memory:")
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	writeTestZip(t, fsys, "a.zip")
+
+	if _, err := AbsPath(fsys, "a.zip"); err != nil {
+		t.Errorf("AbsPath(a.zip) = %v, want nil", err)
+	}
+	for _, name := range []string{"sub/file.txt", "a.zip.d", "a.zip.d/hello.txt", "../outside", "/abs", ""} {
+		if got, err := AbsPath(fsys, name); err == nil {
+			t.Errorf("AbsPath(%q) = %q, want error", name, got)
+		}
+	}
+	// A directory that is only named like an archive directory is a
+	// directory of the host.
+	ufsTesting.Must(t, fsys.MkdirAll("real.zip.d", fs.ModePerm))
+	root, err := AbsPath(fsys, pathutil.CwdPath)
+	if err != nil {
+		t.Fatalf("AbsPath(.) = %v, want nil", err)
+	}
+	got, err := AbsPath(fsys, "real.zip.d/f.txt")
+	if err != nil {
+		t.Fatalf("AbsPath(real.zip.d/f.txt) = %v, want nil", err)
+	}
+	if want := filepath.Join(root, "real.zip.d", "f.txt"); got != want {
+		t.Errorf("AbsPath(real.zip.d/f.txt) = %q, want %q", got, want)
+	}
+}
+
+// TestNestFSDotDNextToFile verifies that a ".d" name is an archive directory
+// only when the name it extends is an archive.
+func TestNestFSDotDNextToFile(t *testing.T) {
+	fsys, err := New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatalf("New() = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	ufsTesting.Must(t, fsys.MkdirAll("conf.d", fs.ModePerm))
+	for _, name := range []string{"conf", "conf.d/x"} {
+		f, err := fsys.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) = %v, want nil", name, err)
+		}
+		ufsTesting.Must(t, f.Close())
+	}
+	entries, err := fs.ReadDir(fsys, "conf.d")
+	if err != nil {
+		t.Fatalf("ReadDir(conf.d) = %v, want nil", err)
+	}
+	if diff := cmp.Diff([]string{"x"}, ufsTesting.DirEntryListToNames(entries)); diff != "" {
+		t.Errorf("ReadDir(conf.d) mismatch (-want +got):\n%s", diff)
+	}
+}

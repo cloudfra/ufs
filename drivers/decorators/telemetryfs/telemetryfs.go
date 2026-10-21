@@ -71,6 +71,7 @@ import (
 var (
 	_ types.WriteFS      = (*telemetryFS)(nil)
 	_ types.RenameFileFS = (*telemetryFS)(nil)
+	_ types.OpenFileFS   = (*telemetryFS)(nil)
 	_ types.Watcher      = (*watchTelemetryFS)(nil)
 )
 
@@ -385,6 +386,15 @@ func (fsys *telemetryFS) endRename(op operation, name, newName string, span trac
 func (fsys *telemetryFS) Open(name string) (fs.File, error) {
 	span, start := fsys.begin(opOpen)
 	f, err := fsys.inner.Open(name)
+	fsys.end(opOpen, name, span, start, err)
+	return f, err
+}
+
+// OpenFile forwards with ufs.OpenFile, so a wrapped file system without the
+// method still works, and is reported as an open.
+func (fsys *telemetryFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	span, start := fsys.begin(opOpen)
+	f, err := ufs.OpenFile(fsys.inner, name, flag, perm)
 	fsys.end(opOpen, name, span, start, err)
 	return f, err
 }

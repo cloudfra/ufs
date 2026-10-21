@@ -21,6 +21,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 )
 
@@ -36,7 +37,7 @@ func validLocalPath(op, name string) error {
 	return pathutil.Validate(op, name)
 }
 
-func localFSWrapFile(f *os.File) fs.File {
+func localFSWrapFile(f *os.File) types.File {
 	return f
 }
 

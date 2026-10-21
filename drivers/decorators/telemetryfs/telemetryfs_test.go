@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"syscall"
 	"testing"
 
@@ -229,6 +230,53 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 		}
 		if got[key] != 1 {
 			t.Errorf("duration count for %q = %d, want 1 (all: %v)", key, got[key], got)
+		}
+	}
+}
+
+// TestTelemetryReportsOpenFile checks that OpenFile is forwarded and reported
+// as an open, with an error status when the wrapped file system cannot honor
+// the flags.
+func TestTelemetryReportsOpenFile(t *testing.T) {
+	t.Parallel()
+	r := newRecorder()
+	fsys := r.wrap(t.Context(), t, core.MakeMemFS(memFSName), both)
+	defer ufsTesting.ValidateClose(t, fsys)()
+	ofs, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("%T does not implement types.OpenFileFS", fsys)
+	}
+
+	w, err := ofs.OpenFile("a.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile(a.txt, write) = %v, want nil", err)
+	}
+	ufsTesting.Must(t, w.Close())
+	rf, err := ofs.OpenFile("a.txt", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(a.txt, read) = %v, want nil", err)
+	}
+	ufsTesting.Must(t, rf.Close())
+	// memFS replaces files but cannot append to one.
+	if _, err := ofs.OpenFile("a.txt", os.O_WRONLY|os.O_APPEND, 0); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("OpenFile(a.txt, append) = %v, want errors.ErrUnsupported", err)
+	}
+
+	spans := r.spans.Ended()
+	wantCodes := []codes.Code{codes.Unset, codes.Unset, codes.Error}
+	if len(spans) != len(wantCodes) {
+		t.Fatalf("got %d spans, want %d", len(spans), len(wantCodes))
+	}
+	for i, span := range spans {
+		if got := span.Name(); got != "ufs.open" {
+			t.Errorf("span %d name = %q, want ufs.open", i, got)
+		}
+		attrs := attribute.NewSet(span.Attributes()...)
+		if got, _ := attrs.Value(pathKey); got.AsString() != "a.txt" {
+			t.Errorf("span %d %s = %q, want a.txt", i, pathKey, got.AsString())
+		}
+		if got := span.Status().Code; got != wantCodes[i] {
+			t.Errorf("span %d status = %v, want %v", i, got, wantCodes[i])
 		}
 	}
 }

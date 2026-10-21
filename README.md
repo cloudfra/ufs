@@ -255,6 +255,23 @@ except `ufs.AbsPath`:
 | `ops.Rename`, `ops.RenameByCopy`             | Rename within one file system, or between two by copying.                          |
 | `ufs.AbsPath`                                | Resolve a virtual path to a real path on the host, when there is one.              |
 
+### Opening files with flags
+
+`ufs.OpenFile` is the counterpart of `os.OpenFile`:
+
+```go
+f, err := ufs.OpenFile(fsys, "log.txt", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+if errors.Is(err, errors.ErrUnsupported) {
+  // This backend cannot append; rewrite the file instead.
+}
+```
+
+Every backend can open a file read-only (`O_RDONLY`) and open it to replace
+its content (`O_WRONLY` or `O_RDWR` with `O_TRUNC`, optionally `O_CREATE`).
+Local disk, and the backends that keep their files there such as Git, honor
+every flag. The others fail a write without `O_TRUNC`, `O_APPEND` and `O_EXCL`
+with `errors.ErrUnsupported`.
+
 ### Change notifications
 
 Backends that implement `types.Watcher` (local disk, memory, BoltDB and GCS)

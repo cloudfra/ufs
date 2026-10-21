@@ -76,6 +76,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/notify"
@@ -85,11 +86,12 @@ import (
 )
 
 var (
-	_ types.File     = (*boltFile)(nil)
-	_ types.WriteFS  = (*boltFS)(nil)
-	_ fs.GlobFS      = (*boltFS)(nil)
-	_ fs.ReadDirFile = (*boltDirFile)(nil)
-	_ types.Watcher  = (*boltFS)(nil)
+	_ types.File       = (*boltFile)(nil)
+	_ types.WriteFS    = (*boltFS)(nil)
+	_ types.OpenFileFS = (*boltFS)(nil)
+	_ fs.GlobFS        = (*boltFS)(nil)
+	_ fs.ReadDirFile   = (*boltDirFile)(nil)
+	_ types.Watcher    = (*boltFS)(nil)
 
 	// selfKey serves two roles that happen to share the same value: it is the
 	// name of the top-level bolt bucket that represents the root ("." /
@@ -586,6 +588,13 @@ func (fsys *boltFS) Close() error {
 	err := fsys.db.Close()
 	fsys.db = nil
 	return ufserrors.Join(busErr, err)
+}
+
+// OpenFile implements [types.OpenFileFS] with [polyfill.OpenFile]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *boltFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *boltFS) Create(name string) (types.File, error) {

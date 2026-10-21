@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -37,10 +38,11 @@ const (
 )
 
 var (
-	_ types.File     = (*nullFile)(nil)
-	_ types.WriteFS  = (*nullFS)(nil)
-	_ fs.GlobFS      = (*nullFS)(nil)
-	_ fs.ReadDirFile = (*nullReadDirFile)(nil)
+	_ types.File       = (*nullFile)(nil)
+	_ types.WriteFS    = (*nullFS)(nil)
+	_ types.OpenFileFS = (*nullFS)(nil)
+	_ fs.GlobFS        = (*nullFS)(nil)
+	_ fs.ReadDirFile   = (*nullReadDirFile)(nil)
 
 	// nullModTime is the modification time of every nullFS entry.
 	nullModTime = time.Time{}
@@ -153,6 +155,13 @@ func (fsys *nullFS) Open(name string) (fs.File, error) {
 
 func (fsys *nullFS) Close() error {
 	return nil
+}
+
+// OpenFile implements [types.OpenFileFS] with [polyfill.OpenFile]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *nullFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *nullFS) Create(name string) (types.File, error) {

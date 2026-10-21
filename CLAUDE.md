@@ -52,6 +52,7 @@ is github.com/cloudfra/ufs.
 | FS         | ufs.FS — extends types.WriteFS with Rename (RenameFileFS); what nestFS and most backends implement |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
 | BatchCreateFS | Optional; writes several whole files atomically via BatchCreate         |
+| OpenFileFS | Optional; OpenFile with os.O_* flags. Call ufs.OpenFile, which falls back to the drivers/polyfill behavior |
 
 ### Factory
 
@@ -185,6 +186,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
 | drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
 | drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |
+| drivers/polyfill/        | Implements optional interfaces from the required methods: polyfill.OpenFile (read-only, or write by truncation) |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
@@ -242,6 +244,28 @@ database transaction; implementations may commit concurrent batches together.
 with `pathutil.ValidateFileName` and writes each file with MkdirAll + Create
 (not atomic, Perm ignored). Writing one file this way is the single-operation
 WriteFile. New drivers are covered by `BatchCreate` in `drivers/testing`.
+
+### OpenFile (`openfile.go`, `drivers/polyfill/`)
+
+```go
+func OpenFile(fsys types.ReadFS, name string, flag int, perm fs.FileMode) (types.File, error) // package ufs
+func OpenFile(fsys types.ReadFS, name string, flag int, perm fs.FileMode) (types.File, error) // package polyfill
+```
+
+Every driver, decorator and nestFS implements `OpenFileFS`. `polyfill.OpenFile`
+builds it from `Open`, `Stat` and `Create` alone: a read-only open, or a write
+with `O_TRUNC` (which is `Create`); any other flag (no `O_TRUNC`, `O_APPEND`,
+`O_EXCL`) fails with `errors.ErrUnsupported`. localFS (and tempMountFS, so
+gitfs) honors every flag through `os.Root.OpenFile`; the other drivers call
+`polyfill.OpenFile` from their `OpenFile` method. Wrappers forward with
+`ufs.OpenFile`, which calls the wrapped file system's `OpenFile` and behaves
+like the polyfill when it has none. The base package cannot import
+`drivers/polyfill`, so both share `fsutil.OpenFilePolyfill` in `internal/`. New
+drivers run `OpenFile` (or `OpenFileAllFlags`) from `drivers/testing`.
+`OpenFile` returns a `types.File` for every flag: a file opened for reading
+that cannot seek is buffered by `internal/polyfill` (`fsutil.WrapOpened`),
+and a directory keeps `ReadDir` while its content methods fail, as for an
+`*os.File` of a directory.
 
 ### Conventions
 

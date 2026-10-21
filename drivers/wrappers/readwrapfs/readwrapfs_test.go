@@ -18,9 +18,11 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"testing"
 	"testing/fstest"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -70,6 +72,29 @@ func TestFromFSOpen(t *testing.T) {
 	}
 	if string(data) != "hello world" {
 		t.Errorf("Open() content = %q, want %q", data, "hello world")
+	}
+}
+
+func TestFromFSOpenFile(t *testing.T) {
+	fsys := makeTestStdFS(t)
+
+	f, err := ufs.OpenFile(fsys, "hello.txt", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(O_RDONLY) = %v, want nil", err)
+	}
+	data, err := io.ReadAll(f)
+	if err != nil || string(data) != "hello world" {
+		t.Errorf("ReadAll() = %q, %v, want hello world, nil", data, err)
+	}
+	if err := f.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil", err)
+	}
+
+	if _, err := ufs.OpenFile(fsys, "hello.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fs.ModePerm); !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("OpenFile(O_WRONLY|O_CREATE|O_TRUNC) = %v, want %v", err, fs.ErrPermission)
+	}
+	if _, err := ufs.OpenFile(fsys, "hello.txt", os.O_RDWR, fs.ModePerm); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("OpenFile(O_RDWR) = %v, want %v", err, errors.ErrUnsupported)
 	}
 }
 

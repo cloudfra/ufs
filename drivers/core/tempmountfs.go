@@ -58,6 +58,12 @@ func (fsys *tempMountFS) Open(name string) (fs.File, error) {
 	return fsys.lfs.Open(name)
 }
 
+// OpenFile implements [types.OpenFileFS] by forwarding to the local file system
+// that holds the files.
+func (fsys *tempMountFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return ufs.OpenFile(fsys.lfs, name, flag, perm)
+}
+
 func (fsys *tempMountFS) Close() error {
 	closeErr := fsys.lfs.Close()
 	cleanupErr := fsys.closer()

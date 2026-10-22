@@ -41,7 +41,7 @@ import (
 )
 
 func init() {
-	ufs.Register(ufs.NewDriver("git", New, isGitFSUri, 1, true, true))
+	ufs.Register(ufs.NewDriver("git", New, isGitFSUri, ufs.PrioritySpecialized, true, true))
 }
 
 // prepareGitDirectory clones the repository gitURL into the directory name.

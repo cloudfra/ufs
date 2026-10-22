@@ -52,6 +52,7 @@ is github.com/cloudfra/ufs.
 | FS         | ufs.FS — extends types.WriteFS with Rename (RenameFileFS); what nestFS and most backends implement |
 | Watcher    | Optional; recursive directory change notifications via Watch                 |
 | BatchCreateFS | Optional; writes several whole files atomically via BatchCreate         |
+| ChtimesFS  | Optional; sets access/modification times in place (used by ops.Chtimes)    |
 
 ### Factory
 
@@ -196,7 +197,7 @@ code with no `ufs` dependency goes in `internal/`.
 |:----------------------|:--------------------------------------------------------------------|
 | info.go               | fsInfo — concrete fs.FileInfo implementation                        |
 | path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
-| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll, Rename |
+| ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll, Rename, Chtimes |
 | internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
 | internal/archive/     | archive.New opens archives as fs.FS; only mholt/archives importer   |
 | internal/httputil/    | SSRF-hardened file download used by remote archives                 |

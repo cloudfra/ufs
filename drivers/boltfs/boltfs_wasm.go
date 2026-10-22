@@ -44,11 +44,17 @@ func init() {
 	})
 }
 
-// newBoltFS reports that boltFS is unavailable on GOARCH=wasm:
+// New reports that boltFS is unavailable on GOARCH=wasm:
 // go.etcd.io/bbolt has no MaxAllocSize constant for that architecture, and
 // its mmap-based storage model has no wasm implementation regardless. The
 // driver is still registered so bolt: URIs fail with this clear error
 // instead of falling through to another driver.
 func newBoltFS(_ context.Context, name string) (types.WriteFS, error) {
 	return nil, fmt.Errorf("boltFS (%q) is not supported on this platform: go.etcd.io/bbolt does not support GOARCH=wasm", name)
+}
+
+// New reports that boltFS is unavailable on GOARCH=wasm, as newBoltFS does.
+func New(ctx context.Context, name string) (ufs.FS, error) {
+	_, err := newBoltFS(ctx, name)
+	return nil, err
 }

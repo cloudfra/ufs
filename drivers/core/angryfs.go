@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -32,8 +33,9 @@ const (
 )
 
 var (
-	_ types.WriteFS = (*angryFS)(nil)
-	_ fs.GlobFS     = (*angryFS)(nil)
+	_ types.WriteFS    = (*angryFS)(nil)
+	_ types.OpenFileFS = (*angryFS)(nil)
+	_ fs.GlobFS        = (*angryFS)(nil)
 
 	errAngry = fs.ErrInvalid
 
@@ -84,6 +86,13 @@ func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	return nil, ufserrors.NewPathError("stat", name, errAngry)
+}
+
+// OpenFile implements [types.OpenFileFS] with [polyfill.OpenFile]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *angryFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *angryFS) Create(name string) (types.File, error) {

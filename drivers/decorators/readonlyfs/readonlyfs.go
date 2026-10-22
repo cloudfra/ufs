@@ -30,7 +30,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var _ types.WriteFS = (*readOnlyFS)(nil)
+var (
+	_ types.WriteFS    = (*readOnlyFS)(nil)
+	_ types.OpenFileFS = (*readOnlyFS)(nil)
+)
 
 const (
 	optionName = "readOnly"
@@ -113,6 +116,19 @@ func (fsys *readOnlyFS) URI() (*url.URL, error) {
 
 func (fsys *readOnlyFS) String() string {
 	return fsutil.String(fsys.ReadFS)
+}
+
+// OpenFile implements [types.OpenFileFS]. A flag that writes, creates,
+// truncates or appends returns [fs.ErrPermission]; a read-only open delegates
+// to inner.
+func (fsys *readOnlyFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	if err := pathutil.Validate("open", name); err != nil {
+		return nil, err
+	}
+	if fsutil.IsWriteFlag(flag) {
+		return nil, ufserrors.NewPathError("open", name, fs.ErrPermission)
+	}
+	return ufs.OpenFile(fsys.ReadFS, name, flag, perm)
 }
 
 func (fsys *readOnlyFS) Create(name string) (types.File, error) {

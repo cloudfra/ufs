@@ -43,6 +43,7 @@ func WriteFSWithBuckets(t *testing.T, createFSFunc func(t *testing.T) types.Writ
 	Create(t, createFSFunc)
 	Rename(t, createFSFunc)
 	BatchCreateWithBuckets(t, createFSFunc)
+	OpenFile(t, createFSFunc)
 	Conventions(t, createFSFunc)
 	// TODO: gcsfs is broken here.
 	// Close(t, createFSFunc)
@@ -76,6 +77,7 @@ func writeFS(t *testing.T, createFSFunc func(t *testing.T) types.WriteFS) {
 	Create(t, createFSFunc)
 	Rename(t, createFSFunc)
 	BatchCreate(t, createFSFunc)
+	OpenFile(t, createFSFunc)
 	Conventions(t, createFSFunc)
 	readFS(t, func(t *testing.T) types.ReadFS {
 		return createFSFunc(t)

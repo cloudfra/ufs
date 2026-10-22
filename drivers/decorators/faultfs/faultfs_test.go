@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/url"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/core"
 	_ "github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
@@ -180,6 +182,7 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 		{"ReadFile", func() error { _, err := fsys.ReadFile("a.txt"); return err }},
 		{"ReadLink", func() error { _, err := fsys.ReadLink("a.txt"); return err }},
 		{"Create", func() error { _, err := fsys.Create("a.txt"); return err }},
+		{"OpenFile", func() error { _, err := ufs.OpenFile(fsys, ".", os.O_RDONLY, 0); return err }},
 		{"MkdirAll", func() error { return fsys.MkdirAll("subdir", fs.ModePerm) }},
 		{"Remove", func() error { return fsys.Remove("a.txt") }},
 		{"RemoveAll", func() error { return fsys.RemoveAll("subdir") }},
@@ -492,6 +495,35 @@ func TestOptionsDecode(t *testing.T) {
 
 	if _, err := ufs.DecodeOptions[Options](map[string]any{"latency": "soon"}); err == nil {
 		t.Error("DecodeOptions() with an invalid latency = nil error, want error")
+	}
+}
+
+// TestFaultInjectorOpenFile verifies that, without a fault, OpenFile reaches
+// the wrapped file system with its flags.
+func TestFaultInjectorOpenFile(t *testing.T) {
+	t.Parallel()
+	inner := core.MakeMemFS("memory://test")
+	fsys, err := newFaultFS(inner, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	f, err := ufs.OpenFile(fsys, "a.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fs.ModePerm)
+	if err != nil {
+		t.Fatalf("OpenFile(O_WRONLY|O_CREATE|O_TRUNC) = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil", err)
+	}
+	if _, err := inner.Stat("a.txt"); err != nil {
+		t.Errorf("Stat(a.txt) on the inner file system = %v, want nil", err)
+	}
+	if _, err := ufs.OpenFile(fsys, "a.txt", os.O_WRONLY|os.O_APPEND, fs.ModePerm); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("OpenFile(O_WRONLY|O_APPEND) = %v, want %v", err, errors.ErrUnsupported)
+	}
+	if _, err := ufs.OpenFile(fsys, "../a.txt", os.O_RDONLY, 0); !errors.Is(err, fs.ErrInvalid) {
+		t.Errorf("OpenFile(../a.txt) = %v, want %v", err, fs.ErrInvalid)
 	}
 }
 

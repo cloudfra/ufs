@@ -21,13 +21,17 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ types.ReadFS = (*readWrapFS)(nil)
+var (
+	_ types.ReadFS     = (*readWrapFS)(nil)
+	_ types.OpenFileFS = (*readWrapFS)(nil)
+)
 
 type readWrapFS struct {
 	fsys fs.FS
@@ -70,6 +74,12 @@ func (fsys *readWrapFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 	return fsys.fsys.Open(name)
+}
+
+// OpenFile implements [types.OpenFileFS] with [polyfill.OpenFile]. The file
+// system is read-only, so only a read-only open succeeds.
+func (fsys *readWrapFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *readWrapFS) Close() error {

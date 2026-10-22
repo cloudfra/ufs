@@ -32,6 +32,7 @@ import (
 func readFS(t *testing.T, createFSFunc func(t *testing.T) types.ReadFS) {
 	Constructor(t, createFSFunc)
 	InvalidPathsForReadFS(t, createFSFunc)
+	OpenFileReadOnly(t, createFSFunc)
 	String(t, createFSFunc)
 }
 

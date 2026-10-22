@@ -30,6 +30,7 @@ import (
 
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
+	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/polyfill"
@@ -58,6 +59,7 @@ type FSArgs struct {
 
 var (
 	_ FS                        = (*nestFS)(nil)
+	_ types.OpenFileFS          = (*nestFS)(nil)
 	_ fs.GlobFS                 = (*nestFS)(nil)
 	_ AbsPathGetter             = (*nestFS)(nil)
 	_ types.MountedArchiveDirFS = (*nestFS)(nil)
@@ -486,6 +488,29 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 	}
 
 	return polyfill.WrapFile(f, true, mountFS.args.BufMode)
+}
+
+// OpenFile implements [OpenFileFS]. A read-only open is Open. Any other open
+// is forwarded with [OpenFile] to the file system that name is mounted in, so
+// the flags it supports are the flags that file system supports.
+func (fsys *nestFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	if !fsutil.IsWriteFlag(flag) {
+		f, err := fsys.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		return fsutil.WrapOpened(f, name, fsys.args.BufMode)
+	}
+	if err := fsys.validPath("open", name); err != nil {
+		return nil, err
+	}
+
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return OpenFile(mountFS.fsys, subName, flag, perm)
 }
 
 func (fsys *nestFS) Close() error {

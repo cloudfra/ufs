@@ -29,6 +29,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -41,11 +42,12 @@ const (
 )
 
 var (
-	_ types.File     = (*memFile)(nil)
-	_ types.WriteFS  = (*memFS)(nil)
-	_ fs.GlobFS      = (*memFS)(nil)
-	_ fs.ReadDirFile = (*memDirFile)(nil)
-	_ types.Watcher  = (*memFS)(nil)
+	_ types.File       = (*memFile)(nil)
+	_ types.WriteFS    = (*memFS)(nil)
+	_ types.OpenFileFS = (*memFS)(nil)
+	_ fs.GlobFS        = (*memFS)(nil)
+	_ fs.ReadDirFile   = (*memDirFile)(nil)
+	_ types.Watcher    = (*memFS)(nil)
 )
 
 func init() {
@@ -290,6 +292,13 @@ func (fsys *memFS) Close() error {
 	fsys.nodes = nil
 	fsys.mu.Unlock()
 	return err
+}
+
+// OpenFile implements [types.OpenFileFS] with [polyfill.OpenFile]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *memFS) Create(name string) (types.File, error) {

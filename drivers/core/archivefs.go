@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfill"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/httputil"
@@ -35,7 +36,8 @@ const (
 )
 
 var (
-	_ types.WriteFS = (*archiveFS)(nil)
+	_ types.WriteFS    = (*archiveFS)(nil)
+	_ types.OpenFileFS = (*archiveFS)(nil)
 
 	archiveDeviceInfo    = types.NewDeviceInfo("archive", "archive", 1, false)
 	archiveDeviceInfoMap = types.NewDeviceMap(archiveDeviceInfo)
@@ -96,6 +98,13 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 		return nil, err
 	}
 	return fsys.fsys.Stat(name)
+}
+
+// OpenFile implements [types.OpenFileFS] with [polyfill.OpenFile]: it opens a
+// file to read it or to replace it, and fails any other flag with
+// [errors.ErrUnsupported].
+func (fsys *archiveFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return polyfill.OpenFile(fsys, name, flag, perm)
 }
 
 func (fsys *archiveFS) Create(name string) (types.File, error) {

@@ -17,18 +17,25 @@ package core_test
 import (
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestLocalFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) types.WriteFS {
+	createFSFunc := func(t *testing.T) types.WriteFS {
 		dir := t.TempDir()
 		fsys, err := core.MakeLocalFS(dir)
 		if err != nil {
 			t.Fatalf("cannot create localFS %q, %s", dir, err)
 		}
 		return fsys
+	}
+	ufsdriversTesting.WriteFS(t, createFSFunc)
+	ufsdriversTesting.OpenFileAllFlags(t, createFSFunc)
+	// nestFS forwards the flags to the file system a path is mounted in.
+	ufsdriversTesting.OpenFileAllFlags(t, func(t *testing.T) types.WriteFS {
+		return ufs.WrapNestFS(t.Context(), createFSFunc(t))
 	})
 }

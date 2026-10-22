@@ -10,7 +10,7 @@ Add `drivers/simplecachefs`, a lossy two-tier cache file system:
 
 Writes land in the hot tier. A write log records them and flushes them to the
 warm tier in batches, on a timer or once enough dirty data accumulates. Warm
-hits are promoted back into the hot tier with `ufs.Chtimes`. Entries are
+hits are promoted back into the hot tier with `ops.Chtimes`. Entries are
 evicted oldest-first (FIFO by modification time), by TTL and by capacity. When the cache has no room, writes fail with
 `ErrNoSpace` rather than blocking.
 
@@ -33,10 +33,11 @@ directory; nothing is added directly to `drivers/common/`.
 - `proto/writelog.proto`: a `WriteLogEntry` message in the existing
   `cloudfra.ufs` proto package.
 - `drivers/boltfs/batch.go`: boltfs implements `writelog.BatchWriter`.
-- `op.go`: a `ufs.Chtimes` function, named after `os.Chtimes`, that sets a
-  file's modification time to now by rewriting it through the FS's normal
-  write path. It is a plain function, not an FS interface. No driver, memfs
-  included, is changed to support it (see [Promotion](#promotion)).
+- `drivers/types/chtimesfs.go`, `ops/chtimes.go`: an optional
+  `types.ChtimesFS` interface and an `ops.Chtimes` function with
+  `os.Chtimes`'s signature. `Chtimes` calls the interface when the FS has it
+  (memfs, localfs and the core wrappers do) and otherwise rewrites the file
+  through the FS's normal write path.
 
 ## Configuration
 
@@ -130,7 +131,7 @@ wraps the memory FS directly.
 | `drivers/common/writelog/filelog.go` | `FileLog`: appends entries with payloads to segment files on disk |
 | `drivers/common/overlay/overlay.go` | `overlay.FS`: N-layer union with tombstones |
 | `drivers/boltfs/batch.go` | `(*boltFS).BatchWrite`: applies entries in one bolt transaction |
-| `op.go` | `ufs.Chtimes` |
+| `ops/chtimes.go` | `ops.Chtimes` |
 | `drivers/simplecachefs/simplecachefs.go` | `New`, `cacheFS`, the `ufs.FS` methods, `Sync` |
 | `drivers/simplecachefs/config.go` | `Config`, conversion methods, defaults and validation |
 | `drivers/simplecachefs/index.go` | Per-tier FIFO index and byte totals |
@@ -442,25 +443,29 @@ LRU can be added later.
 - TTL is enforced by the sweep, not on read. An expired entry can remain
   readable until the next sweep, at most `SweepInterval` late.
 
-### Chtimes (`op.go`)
+### Chtimes (`ops/chtimes.go`)
 
 ```go
-// Chtimes sets the modification time of the file name to now by rewriting
-// its content through fsys (ReadFile, then Create, Write and Close). It is
-// named after os.Chtimes but always uses the current time. A missing file
-// returns fs.ErrNotExist, and a directory returns fs.ErrInvalid.
-func Chtimes(fsys FS, name string) error
+// ChtimesFS is an optional interface for file systems that can change a
+// file's access and modification times in place.
+type ChtimesFS interface {
+	Chtimes(name string, atime, mtime time.Time) error
+}
+
+// Chtimes changes the access and modification times of name, like
+// os.Chtimes. A zero time.Time leaves that time unchanged.
+func Chtimes(fsys types.WriteFS, name string, atime, mtime time.Time) error
 ```
 
-- `Chtimes` uses only the `ufs.FS` write path, so it works on every writable
-  driver and needs no new driver capability. The FS's own `Create` sets the
-  new modification time.
-- It never sets an arbitrary modification time: there is no time argument,
-  and no driver or FS interface gains a `Chtimes` method. A modification
-  time only ever moves to *now*.
-- Cost: one read and one full rewrite of the file. That is fine for the
-  cache's bounded file sizes, and the reason it is not a general-purpose
-  `Chtimes` for large files.
+- When fsys implements `ChtimesFS`, `Chtimes` calls it. memfs, localfs
+  (`os.Root.Chtimes`) and tempMountFS, nestFS (forwards to the mounted FS),
+  and the fault, telemetry and readOnly decorators (`fs.ErrPermission`)
+  implement it.
+- Otherwise it falls back to rewriting the file (ReadFile, then Create,
+  Write and Close). The FS's own `Create` stamps the time, so the fallback
+  sets the modification time to now rather than mtime, ignores atime, and
+  returns `errors.ErrUnsupported` for a directory. It costs one read and one
+  full rewrite of the file.
 
 ### Promotion
 
@@ -471,7 +476,7 @@ come from memory:
   Promotion never evicts anything and never triggers the hard-evict
   goroutine. When there is no room, the file is served from warm and left
   alone.
-- Promotion does what `ufs.Chtimes` does on the overlay, reusing the content it
+- Promotion does what `ops.Chtimes` does on the overlay, reusing the content it
   just read instead of reading it twice. It rewrites the file through the
   overlay's layer 0, the `writelog.FS` over memfs. The hot copy therefore
   gets a modification time of now, and the write log records an `OP_PUT`.
@@ -620,10 +625,13 @@ return `fs.ErrClosed`.
     configuration nothing is evicted, and the cache must pass unchanged. A
     helper asserts after each run that no eviction happened, so a
     misconfigured test fails loudly rather than flaking.
-- **`ufs.Chtimes`** (on `memory:` and `file:`):
-  - An existing file keeps its content and gets a later `ModTime`.
+- **`ops.Chtimes`** (on `memory:`, `file:`, nestFS and faultFS natively, and
+  through the fallback):
+  - Natively, a file or directory keeps its content and gets exactly mtime;
+    zero times leave it unchanged.
+  - Through the fallback, a file keeps its content and gets a later
+    `ModTime`, and a directory returns `errors.ErrUnsupported`.
   - A missing file returns `fs.ErrNotExist`.
-  - A directory returns `fs.ErrInvalid`.
   - A read-only FS returns `fs.ErrPermission`.
 - **writelog:**
   - `writelog.FS` records only successful operations, records a remove that

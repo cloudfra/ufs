@@ -36,7 +36,10 @@ import (
 	"github.com/cloudfra/ufs/ops"
 )
 
-var _ types.WriteFS = (*faultFS)(nil)
+var (
+	_ types.WriteFS   = (*faultFS)(nil)
+	_ types.ChtimesFS = (*faultFS)(nil)
+)
 
 const (
 	optionName = "fault"
@@ -241,6 +244,15 @@ func (fsys *faultFS) ReadLink(name string) (string, error) {
 		return "", err
 	}
 	return fsys.inner.ReadLink(name)
+}
+
+// Chtimes may inject a fault, then forwards to [ops.Chtimes] on the inner
+// file system.
+func (fsys *faultFS) Chtimes(name string, atime, mtime time.Time) error {
+	if err := fsys.maybeInjectFault("chtimes", name); err != nil {
+		return err
+	}
+	return ops.Chtimes(fsys.inner, name, atime, mtime)
 }
 
 func (fsys *faultFS) Create(name string) (types.File, error) {

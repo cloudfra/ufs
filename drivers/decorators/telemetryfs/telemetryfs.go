@@ -71,6 +71,7 @@ import (
 var (
 	_ types.WriteFS      = (*telemetryFS)(nil)
 	_ types.RenameFileFS = (*telemetryFS)(nil)
+	_ types.ChtimesFS    = (*telemetryFS)(nil)
 	_ types.Watcher      = (*watchTelemetryFS)(nil)
 )
 
@@ -170,6 +171,7 @@ const (
 	opRemove
 	opRemoveAll
 	opRename
+	opChtimes
 	numOperations
 )
 
@@ -186,6 +188,7 @@ var operationNames = [numOperations]string{
 	opRemove:    "remove",
 	opRemoveAll: "removeall",
 	opRename:    "rename",
+	opChtimes:   "chtimes",
 }
 
 // errorClass groups errors into the few values reported as error.type.
@@ -458,6 +461,15 @@ func (fsys *telemetryFS) RemoveAll(name string) error {
 
 // Rename renames with [ops.Rename], which copies and removes when the wrapped
 // file system has no Rename of its own. The copy is reported as one rename.
+// Chtimes forwards with [ops.Chtimes], so a wrapped file system without
+// [types.ChtimesFS] still works, and is reported.
+func (fsys *telemetryFS) Chtimes(name string, atime, mtime time.Time) error {
+	span, start := fsys.begin(opChtimes)
+	err := ops.Chtimes(fsys.inner, name, atime, mtime)
+	fsys.end(opChtimes, name, span, start, err)
+	return err
+}
+
 func (fsys *telemetryFS) Rename(oldPath, newPath string) error {
 	span, start := fsys.begin(opRename)
 	err := ops.Rename(fsys.inner, oldPath, newPath)

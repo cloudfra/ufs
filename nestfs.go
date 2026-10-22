@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
@@ -66,6 +67,7 @@ var (
 	_ fs.GlobFS                 = (*nestFS)(nil)
 	_ AbsPathGetter             = (*nestFS)(nil)
 	_ types.MountedArchiveDirFS = (*nestFS)(nil)
+	_ types.ChtimesFS           = (*nestFS)(nil)
 	_ types.DeviceInfoGet       = (*mountMap)(nil)
 )
 
@@ -621,6 +623,19 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 		return nil, rewritePathError(err, name, subName)
 	}
 	return polyfills.ToBufferedFile(f, false, mountFS.args.BufMode)
+}
+
+// Chtimes forwards to [ops.Chtimes] on the file system mounted at name, so
+// the mounted file system's native [types.ChtimesFS] is used when it has one.
+func (fsys *nestFS) Chtimes(name string, atime, mtime time.Time) error {
+	if err := fsys.validPath("chtimes", name); err != nil {
+		return err
+	}
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return err
+	}
+	return ops.Chtimes(mountFS.fsys, subName, atime, mtime)
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {

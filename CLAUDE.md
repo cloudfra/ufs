@@ -179,7 +179,7 @@ enable its scheme. They may use `internal/` packages.
 
 | Path                     | Purpose                                                          |
 |:-------------------------|:-----------------------------------------------------------------|
-| drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
+| drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm); boltfs.New returns the unwrapped FS; BatchWrite applies WriteLogEntry batches in one transaction |
 | drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
 | drivers/core/            | Built-in backends; registers file://, archive://, http(s):// archives, memory:, null: and angry: on import. The base package registers no driver itself |
 | drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |

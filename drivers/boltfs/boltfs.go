@@ -648,25 +648,9 @@ func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
 	now := time.Now()
 	var created []string
 	err := fsys.update(func(tx *bolt.Tx) error {
-		bkt, err := rootBucket(tx)
-		if err != nil {
-			return err
-		}
-		end := 0
-		for part := range strings.SplitSeq(name, pathutil.UnixSeparator) {
-			if end > 0 {
-				end++
-			}
-			end += len(part)
-			var isNew bool
-			if bkt, isNew, err = createDirBucket(bkt, []byte(part), fs.ModeDir|perm, now); err != nil {
-				return err
-			}
-			if isNew {
-				created = append(created, name[:end])
-			}
-		}
-		return nil
+		var err error
+		created, err = mkdirAllTx(tx, name, perm, now)
+		return err
 	})
 	if err != nil {
 		return ufserrors.NewPathError("mkdir", name, err)
@@ -897,32 +881,7 @@ func (fsys *boltFS) RemoveAll(name string) error {
 
 	var removed []string
 	err := fsys.update(func(tx *bolt.Tx) error {
-		if name == pathutil.CwdPath {
-			bkt, err := rootBucket(tx)
-			if err != nil {
-				return err
-			}
-			return removeAllChildren(bkt, pathutil.CwdPath, &removed)
-		}
-		bkt, key, err := lookupParent(tx, name)
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if sub := bkt.Bucket(key); sub != nil {
-			if err := collectPaths(sub, name, &removed); err != nil {
-				return err
-			}
-			removed = append(removed, name)
-			return bkt.DeleteBucket(key)
-		}
-		if bkt.Get(key) == nil {
-			return nil
-		}
-		removed = append(removed, name)
-		return bkt.Delete(key)
+		return removeAllTx(tx, name, &removed)
 	})
 	if err != nil {
 		return ufserrors.NewPathError("removeall", name, err)
@@ -1018,6 +977,65 @@ func copyBucket(src, dst *bolt.Bucket) error {
 	})
 }
 
+// mkdirAllTx creates the directory name (which must not be the root) and any
+// missing ancestors with mode fs.ModeDir|perm and modTime, returning the paths
+// it created, parents first. It must only be called on a writable transaction.
+func mkdirAllTx(tx *bolt.Tx, name string, perm fs.FileMode, modTime time.Time) ([]string, error) {
+	bkt, err := rootBucket(tx)
+	if err != nil {
+		return nil, err
+	}
+	var created []string
+	end := 0
+	for part := range strings.SplitSeq(name, pathutil.UnixSeparator) {
+		if end > 0 {
+			end++
+		}
+		end += len(part)
+		var isNew bool
+		if bkt, isNew, err = createDirBucket(bkt, []byte(part), fs.ModeDir|perm, modTime); err != nil {
+			return nil, err
+		}
+		if isNew {
+			created = append(created, name[:end])
+		}
+	}
+	return created, nil
+}
+
+// removeAllTx removes name and everything below it, appending the full path of
+// everything removed to *removed. Removing a path that does not exist
+// succeeds, and removing the root removes its children. It must only be
+// called on a writable transaction.
+func removeAllTx(tx *bolt.Tx, name string, removed *[]string) error {
+	if name == pathutil.CwdPath {
+		bkt, err := rootBucket(tx)
+		if err != nil {
+			return err
+		}
+		return removeAllChildren(bkt, pathutil.CwdPath, removed)
+	}
+	bkt, key, err := lookupParent(tx, name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if sub := bkt.Bucket(key); sub != nil {
+		if err := collectPaths(sub, name, removed); err != nil {
+			return err
+		}
+		*removed = append(*removed, name)
+		return bkt.DeleteBucket(key)
+	}
+	if bkt.Get(key) == nil {
+		return nil
+	}
+	*removed = append(*removed, name)
+	return bkt.Delete(key)
+}
+
 // isEmptyDir reports whether the directory bucket bkt has no children. Every
 // directory bucket holds its own selfKey record, so it is empty when that is
 // the only key; at most two keys are inspected.
@@ -1092,8 +1110,20 @@ func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error
 	return nil
 }
 
-func newBoltFS(_ context.Context, name string) (types.WriteFS, error) {
-	return makeBoltFS(name)
+func newBoltFS(ctx context.Context, name string) (types.WriteFS, error) {
+	return New(ctx, name)
+}
+
+// New opens the bolt database named by the bolt: URI name (bolt:/path/to.db
+// or bolt:///path/to.db), creating it if needed. Unlike [ufs.New], which wraps
+// every driver, it returns the boltFS itself, so callers can reach methods
+// such as BatchWrite.
+func New(_ context.Context, name string) (ufs.FS, error) {
+	fsys, err := makeBoltFS(name)
+	if err != nil {
+		return nil, err
+	}
+	return fsys, nil
 }
 
 func makeBoltFS(name string) (*boltFS, error) {

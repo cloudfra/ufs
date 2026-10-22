@@ -78,6 +78,18 @@ jobs:
           # https remote behind, so sync over https instead.
           TEMPLATE_GO_REPO: https://github.com/${{ github.repository }}.git
         run: ./scripts/template-go/update-project.sh
+      - name: Select paths to commit
+        id: paths
+        # Mirrors the set of paths update-project.sh writes to. Keeping it
+        # explicit stops build leftovers from landing in the PR, and keeps
+        # the diff reviewable. "go.*" covers go.mod plus go.sum, which
+        # "make deps" rewrites in checkouts that have module requirements
+        # (this template's go.mod has none, so no go.sum exists here).
+        # Not every project has every path (e.g. no install/terraform/),
+        # and create-pull-request's single `git add` stages nothing at all
+        # when one pathspec matches no file, so the list is filtered down
+        # to the pathspecs that exist in this checkout first.
+        run: ./scripts/template-go/existing-pathspecs.sh "Makefile*.mk,install/terraform/*.tf,third_party/,go.*"
       - name: Open pull request
         # https://github.com/peter-evans/create-pull-request
         # PRs opened with GITHUB_TOKEN don't start workflow runs (GitHub's
@@ -94,15 +106,11 @@ jobs:
           delete-branch: true
           commit-message: "chore: update dependencies"
           title: "chore: update dependencies"
-          # Mirrors the set of paths update-project.sh writes to. Keeping it
-          # explicit stops build leftovers from landing in the PR, and keeps
-          # the diff reviewable. "go.*" covers go.mod plus go.sum, which
-          # "make deps" rewrites in checkouts that have module requirements
-          # (this template's go.mod has none, so no go.sum exists here).
           # Comma-separated rather than a block scalar: workflow YAML in this
           # repo stays free of inline multi-line payloads (see "GitHub
-          # Actions workflows" in CONTRIBUTING.md).
-          add-paths: Makefile*.mk,install/terraform/*.tf,third_party/,go.*
+          # Actions workflows" in CONTRIBUTING.md). The list itself is in
+          # the "Select paths to commit" step above.
+          add-paths: ${{ steps.paths.outputs.paths }}
           # Same convention: the PR body is a file in the repo, not a YAML
           # block scalar in this workflow.
           body-path: .github/dependency-update-pr-body.md

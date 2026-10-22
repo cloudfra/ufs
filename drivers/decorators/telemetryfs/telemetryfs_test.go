@@ -632,6 +632,85 @@ func TestTelemetryForwardsWatch(t *testing.T) {
 	}
 }
 
+// TestTelemetryBatchCreate checks that the decorator implements
+// types.BatchCreateFS and types.Watcher exactly when the file system it wraps
+// does, and reports a batch as one operation.
+func TestTelemetryBatchCreate(t *testing.T) {
+	t.Parallel()
+	mem := func() types.WriteFS { return core.MakeMemFS(memFSName) }
+	tests := []struct {
+		name                 string
+		inner                func() types.WriteFS
+		wantWatch, wantBatch bool
+	}{
+		{name: "Both", inner: mem, wantWatch: true, wantBatch: true},
+		{name: "WatchOnly", inner: func() types.WriteFS { return &watchFS{WriteFS: mem()} }, wantWatch: true},
+		{name: "BatchOnly", inner: func() types.WriteFS {
+			m := mem()
+			return struct {
+				types.WriteFS
+				types.BatchCreateFS
+			}{m, m.(types.BatchCreateFS)}
+		}, wantBatch: true},
+		{name: "Neither", inner: func() types.WriteFS { return struct{ types.WriteFS }{mem()} }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRecorder()
+			fsys := r.wrap(t.Context(), t, tc.inner(), both)
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if _, ok := fsys.(types.Watcher); ok != tc.wantWatch {
+				t.Errorf("%T is a types.Watcher = %t, want %t", fsys, ok, tc.wantWatch)
+			}
+			if _, ok := fsys.(types.BatchCreateFS); ok != tc.wantBatch {
+				t.Fatalf("%T is a types.BatchCreateFS = %t, want %t", fsys, ok, tc.wantBatch)
+			}
+			if !tc.wantBatch {
+				return
+			}
+
+			err := ufs.BatchCreate(fsys,
+				types.BatchFile{Name: "dir/a.txt", Data: []byte("a")},
+				types.BatchFile{Name: "b.txt", Data: []byte("b")},
+			)
+			if err != nil {
+				t.Fatalf("BatchCreate() = %v, want nil", err)
+			}
+			ufsTesting.AssertContains(t, fsys, "dir/a.txt", "a")
+			if err := ufs.BatchCreate(fsys, types.BatchFile{Name: "../x"}); !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("BatchCreate(../x) = %v, want %v", err, fs.ErrInvalid)
+			}
+
+			var batchSpans []sdktrace.ReadOnlySpan
+			for _, span := range r.spans.Ended() {
+				if span.Name() == "ufs.batchcreate" {
+					batchSpans = append(batchSpans, span)
+				}
+			}
+			if len(batchSpans) != 2 {
+				t.Fatalf("got %d ufs.batchcreate spans, want 2", len(batchSpans))
+			}
+			attrs := attribute.NewSet(batchSpans[0].Attributes()...)
+			if got, _ := attrs.Value(pathKey); got.AsString() != "dir/a.txt" {
+				t.Errorf("%s = %q, want dir/a.txt", pathKey, got.AsString())
+			}
+			if got, _ := attrs.Value(filesKey); got.AsInt64() != 2 {
+				t.Errorf("%s = %d, want 2", filesKey, got.AsInt64())
+			}
+			if got := batchSpans[1].Status().Code; got != codes.Error {
+				t.Errorf("failed batch status = %v, want %v", got, codes.Error)
+			}
+			got := r.durations(t)
+			for _, key := range []string{"batchcreate/memory/", "batchcreate/memory/invalid"} {
+				if got[key] != 1 {
+					t.Errorf("duration count for %q = %d, want 1 (all: %v)", key, got[key], got)
+				}
+			}
+		})
+	}
+}
+
 // TestTelemetryFSDriver runs the shared file system tests through the
 // decorator, which must not change how the file system behaves.
 func TestTelemetryFSDriver(t *testing.T) {

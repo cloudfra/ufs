@@ -52,7 +52,7 @@ var (
 )
 
 func init() {
-	ufs.Register(ufs.NewDriver("null", newNullFS, isNullFSUri, 1, false, true))
+	ufs.Register(ufs.NewDriver("null", newNullFS, isNullFSUri, ufs.PriorityDefault, false, true))
 }
 
 type nullFile struct {

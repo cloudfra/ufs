@@ -18,7 +18,8 @@ package types
 // directory creation, and deletion.
 type WriteFS interface {
 	ReadFS
-	RemoveFileFS
+	RemoveFS
+	RemoveAllFS
 	CreateFileFS
 	MkdirAllFS
 }

@@ -18,17 +18,13 @@ import (
 	"io/fs"
 )
 
-// RemoveFileFS provides file and directory deletion. It is embedded in [WriteFS],
+// RemoveFS provides file and directory deletion. It is embedded in [WriteFS],
 // so every writable backend must implement it.
-type RemoveFileFS interface {
+type RemoveFS interface {
 	fs.FS
 
 	// Remove deletes the file or empty directory at name. It returns an error
 	// wrapping [fs.ErrNotExist] if name does not exist, or an error if name is
 	// a non-empty directory. Removing the root (".") returns [fs.ErrPermission].
 	Remove(name string) error
-
-	// RemoveAll removes name and all contents beneath it. It is a no-op (returns
-	// nil) if name does not exist.
-	RemoveAll(name string) error
 }

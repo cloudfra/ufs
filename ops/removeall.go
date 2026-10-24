@@ -22,10 +22,10 @@ import (
 )
 
 // RemoveAll removes name and everything beneath it in fsys.
-// If fsys implements [types.RemoveFileFS], its RemoveAll method is used directly.
+// If fsys implements [types.RemoveAllFS], its RemoveAll method is used directly.
 // Otherwise RemoveAll returns [fs.ErrPermission] wrapped in an [fs.PathError].
 func RemoveAll(fsys fs.FS, name string) error {
-	r, ok := fsys.(types.RemoveFileFS)
+	r, ok := fsys.(types.RemoveAllFS)
 	if !ok {
 		return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
 	}

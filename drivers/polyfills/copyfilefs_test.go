@@ -48,27 +48,50 @@ func (s *store) copy(srcPath, dstPath string) error {
 }
 
 // copyFS implements [types.CopyFileFS] and nothing else.
-type copyFS struct{ *store }
+type copyFS struct {
+	*store
+}
 
-func (f copyFS) Open(name string) (fs.File, error)      { return f.open(name) }
-func (f copyFS) CopyFile(srcPath, dstPath string) error { return f.copy(srcPath, dstPath) }
+func (f copyFS) Open(name string) (fs.File, error) {
+	return f.open(name)
+}
+
+func (f copyFS) CopyFile(srcPath, dstPath string) error {
+	return f.copy(srcPath, dstPath)
+}
 
 // copyCreateFS implements [types.CopyFileFS] and [types.CreateFileFS], so the
 // native method must win over the emulation.
-type copyCreateFS struct{ *store }
+type copyCreateFS struct {
+	*store
+}
 
-func (f copyCreateFS) Open(name string) (fs.File, error)      { return f.open(name) }
-func (f copyCreateFS) Create(name string) (types.File, error) { return f.create(name) }
+func (f copyCreateFS) Open(name string) (fs.File, error) {
+	return f.open(name)
+}
 
-func (f copyCreateFS) CopyFile(srcPath, dstPath string) error { return f.copy(srcPath, dstPath) }
+func (f copyCreateFS) Create(name string) (types.File, error) {
+	return f.create(name)
+}
+
+func (f copyCreateFS) CopyFile(srcPath, dstPath string) error {
+	return f.copy(srcPath, dstPath)
+}
 
 // createOpenFS implements both [types.CreateFileFS] and [types.OpenFileFS], so
 // the Create arm must win: it is the one every write file system is required to
 // have, and the one its own Create implementation is built on.
-type createOpenFS struct{ *store }
+type createOpenFS struct {
+	*store
+}
 
-func (f createOpenFS) Open(name string) (fs.File, error)      { return f.open(name) }
-func (f createOpenFS) Create(name string) (types.File, error) { return f.create(name) }
+func (f createOpenFS) Open(name string) (fs.File, error) {
+	return f.open(name)
+}
+
+func (f createOpenFS) Create(name string) (types.File, error) {
+	return f.create(name)
+}
 
 func (f createOpenFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
 	return f.openFile(name, flag, perm)
@@ -77,13 +100,17 @@ func (f createOpenFS) OpenFile(name string, flag int, perm fs.FileMode) (types.F
 // unqueryableCreateFS implements [types.CreateFileFS] but cannot be queried:
 // every open fails with something other than [fs.ErrNotExist], so the stat that
 // guards the destination reports that failure rather than a free overwrite.
-type unqueryableCreateFS struct{ *store }
+type unqueryableCreateFS struct {
+	*store
+}
 
 func (f unqueryableCreateFS) Open(name string) (fs.File, error) {
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
 }
 
-func (f unqueryableCreateFS) Create(name string) (types.File, error) { return f.create(name) }
+func (f unqueryableCreateFS) Create(name string) (types.File, error) {
+	return f.create(name)
+}
 
 func TestCopyFile(t *testing.T) {
 	t.Parallel()
@@ -106,8 +133,10 @@ func TestCopyFile(t *testing.T) {
 		{
 			// The native method keeps whatever efficiency the back end has, so it
 			// must win over the emulation even when the emulation is available.
-			name:       "native CopyFileFS wins over the emulation",
-			wrap:       func(s *store) fs.FS { return copyFS{s} },
+			name: "native CopyFileFS wins over the emulation",
+			wrap: func(s *store) fs.FS {
+				return copyFS{s}
+			},
 			seed:       seedAlpha,
 			srcPath:    "a.txt",
 			dstPath:    "b.txt",
@@ -116,8 +145,10 @@ func TestCopyFile(t *testing.T) {
 			wantCopies: []copyCall{{srcPath: "a.txt", dstPath: "b.txt"}},
 		},
 		{
-			name:       "native CopyFileFS wins over CreateFileFS",
-			wrap:       func(s *store) fs.FS { return copyCreateFS{s} },
+			name: "native CopyFileFS wins over CreateFileFS",
+			wrap: func(s *store) fs.FS {
+				return copyCreateFS{s}
+			},
 			seed:       seedAlpha,
 			srcPath:    "a.txt",
 			dstPath:    "b.txt",
@@ -125,8 +156,10 @@ func TestCopyFile(t *testing.T) {
 			wantCopies: []copyCall{{srcPath: "a.txt", dstPath: "b.txt"}},
 		},
 		{
-			name:       "emulated from OpenFileFS, which carries the mode",
-			wrap:       func(s *store) fs.FS { return openFileFS{s} },
+			name: "emulated from OpenFileFS, which carries the mode",
+			wrap: func(s *store) fs.FS {
+				return openFileFS{s}
+			},
 			seed:       seedSrcMode,
 			srcPath:    "a.txt",
 			dstPath:    "b.txt",
@@ -137,8 +170,10 @@ func TestCopyFile(t *testing.T) {
 		},
 		{
 			// Create takes no permission bits, so only the content moves.
-			name:       "emulated from CreateFileFS",
-			wrap:       func(s *store) fs.FS { return createFS{s} },
+			name: "emulated from CreateFileFS",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
 			seed:       seedSrcMode,
 			srcPath:    "a.txt",
 			dstPath:    "b.txt",
@@ -151,8 +186,10 @@ func TestCopyFile(t *testing.T) {
 			// A file system with both write interfaces is emulated through Create,
 			// which every write file system must have. The zero perm of that arm
 			// rather than the source's mode shows which one ran.
-			name:       "CreateFileFS is preferred over OpenFileFS",
-			wrap:       func(s *store) fs.FS { return createOpenFS{s} },
+			name: "CreateFileFS is preferred over OpenFileFS",
+			wrap: func(s *store) fs.FS {
+				return createOpenFS{s}
+			},
 			seed:       seedSrcMode,
 			srcPath:    "a.txt",
 			dstPath:    "b.txt",
@@ -162,8 +199,10 @@ func TestCopyFile(t *testing.T) {
 			wantCloses: 2,
 		},
 		{
-			name:       "an existing destination is refused by OpenFileFS",
-			wrap:       func(s *store) fs.FS { return openFileFS{s} },
+			name: "an existing destination is refused by OpenFileFS",
+			wrap: func(s *store) fs.FS {
+				return openFileFS{s}
+			},
 			seed:       seedAlphaBeta,
 			srcPath:    "a.txt",
 			dstPath:    "b.txt",
@@ -172,8 +211,10 @@ func TestCopyFile(t *testing.T) {
 			wantCloses: 1,
 		},
 		{
-			name:       "an existing destination is refused by CreateFileFS",
-			wrap:       func(s *store) fs.FS { return createFS{s} },
+			name: "an existing destination is refused by CreateFileFS",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
 			seed:       seedAlphaBeta,
 			srcPath:    "a.txt",
 			dstPath:    "b.txt",
@@ -184,8 +225,10 @@ func TestCopyFile(t *testing.T) {
 		{
 			// The destination exists because it is the source, so the copy is
 			// refused instead of truncating the file it was given.
-			name:       "copying a file onto itself is refused",
-			wrap:       func(s *store) fs.FS { return createFS{s} },
+			name: "copying a file onto itself is refused",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
 			seed:       seedAlpha,
 			srcPath:    "a.txt",
 			dstPath:    "a.txt",
@@ -194,16 +237,20 @@ func TestCopyFile(t *testing.T) {
 			wantCloses: 1,
 		},
 		{
-			name:      "a missing source reports fs.ErrNotExist",
-			wrap:      func(s *store) fs.FS { return openFileFS{s} },
+			name: "a missing source reports fs.ErrNotExist",
+			wrap: func(s *store) fs.FS {
+				return openFileFS{s}
+			},
 			srcPath:   "a.txt",
 			dstPath:   "b.txt",
 			wantErr:   "file does not exist",
 			wantFiles: map[string]string{},
 		},
 		{
-			name:      "a missing source on the Create path reports fs.ErrNotExist",
-			wrap:      func(s *store) fs.FS { return createFS{s} },
+			name: "a missing source on the Create path reports fs.ErrNotExist",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
 			srcPath:   "a.txt",
 			dstPath:   "b.txt",
 			wantErr:   "file does not exist",
@@ -212,17 +259,23 @@ func TestCopyFile(t *testing.T) {
 		{
 			// The source is checked before the destination is created, so a
 			// directory does not leave an empty file behind.
-			name:      "a directory source is refused",
-			wrap:      func(s *store) fs.FS { return openFileFS{s} },
-			seed:      func(s *store) { s.seedDir("d") },
+			name: "a directory source is refused",
+			wrap: func(s *store) fs.FS {
+				return openFileFS{s}
+			},
+			seed: func(s *store) {
+				s.seedDir("d")
+			},
 			srcPath:   "d",
 			dstPath:   "d-copy",
 			wantErr:   "is not a file",
 			wantFiles: map[string]string{},
 		},
 		{
-			name:      "no write interface at all",
-			wrap:      func(s *store) fs.FS { return plainFS{s} },
+			name: "no write interface at all",
+			wrap: func(s *store) fs.FS {
+				return plainFS{s}
+			},
 			seed:      seedAlpha,
 			srcPath:   "a.txt",
 			dstPath:   "b.txt",
@@ -230,8 +283,10 @@ func TestCopyFile(t *testing.T) {
 			wantFiles: map[string]string{"a.txt": "alpha"},
 		},
 		{
-			name:      "the root is refused",
-			wrap:      func(s *store) fs.FS { return createFS{s} },
+			name: "the root is refused",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
 			seed:      seedAlpha,
 			srcPath:   ".",
 			dstPath:   "b.txt",
@@ -239,8 +294,10 @@ func TestCopyFile(t *testing.T) {
 			wantFiles: map[string]string{"a.txt": "alpha"},
 		},
 		{
-			name:      "an invalid path is refused",
-			wrap:      func(s *store) fs.FS { return createFS{s} },
+			name: "an invalid path is refused",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
 			seed:      seedAlpha,
 			srcPath:   "a.txt",
 			dstPath:   "../escape",
@@ -250,8 +307,10 @@ func TestCopyFile(t *testing.T) {
 		{
 			// A destination that cannot be queried is not a license to overwrite
 			// it, and nothing may be created for it.
-			name:      "a destination that cannot be queried is not overwritten",
-			wrap:      func(s *store) fs.FS { return unqueryableCreateFS{s} },
+			name: "a destination that cannot be queried is not overwritten",
+			wrap: func(s *store) fs.FS {
+				return unqueryableCreateFS{s}
+			},
 			seed:      seedAlpha,
 			srcPath:   "a.txt",
 			dstPath:   "b.txt",
@@ -260,8 +319,10 @@ func TestCopyFile(t *testing.T) {
 		},
 		{
 			// A partial copy is a failed copy, but both handles must still close.
-			name:       "a write failure closes both handles",
-			wrap:       func(s *store) fs.FS { return createFS{s} },
+			name: "a write failure closes both handles",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
 			seed:       seedAlpha,
 			writeErr:   "b.txt",
 			srcPath:    "a.txt",
@@ -272,8 +333,10 @@ func TestCopyFile(t *testing.T) {
 			wantCloses: 2,
 		},
 		{
-			name:       "a short write is an error",
-			wrap:       func(s *store) fs.FS { return openFileFS{s} },
+			name: "a short write is an error",
+			wrap: func(s *store) fs.FS {
+				return openFileFS{s}
+			},
 			seed:       seedAlpha,
 			shortWrite: "b.txt",
 			srcPath:    "a.txt",
@@ -331,7 +394,9 @@ func TestCopyFile(t *testing.T) {
 const srcMode = fs.FileMode(0o600)
 
 // seedAlpha, seedAlphaBeta and seedSrcMode set up the files a copy starts from.
-func seedAlpha(s *store) { s.seedFile("a.txt", "alpha") }
+func seedAlpha(s *store) {
+	s.seedFile("a.txt", "alpha")
+}
 
 func seedAlphaBeta(s *store) {
 	s.seedFile("a.txt", "alpha")
@@ -354,7 +419,9 @@ func TestCopyFileLargeContent(t *testing.T) {
 	}
 
 	for name, wrap := range map[string]func(*store) fs.FS{
-		"OpenFileFS": func(s *store) fs.FS { return openFileFS{s} },
+		"OpenFileFS": func(s *store) fs.FS {
+			return openFileFS{s}
+		},
 		"CreateFileFS": func(s *store) fs.FS {
 			return createFS{s}
 		},

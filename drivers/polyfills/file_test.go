@@ -28,29 +28,60 @@ import (
 // streamHandle hides every method of fakeHandle beyond fs.File, the way a file
 // from an object store or a compressed archive entry can only be read in
 // order.
-type streamHandle struct{ h *fakeHandle }
+type streamHandle struct {
+	h *fakeHandle
+}
 
-func (s streamHandle) Stat() (fs.FileInfo, error) { return s.h.Stat() }
-func (s streamHandle) Read(p []byte) (int, error) { return s.h.Read(p) }
-func (s streamHandle) Close() error               { return s.h.Close() }
+func (s streamHandle) Stat() (fs.FileInfo, error) {
+	return s.h.Stat()
+}
+
+func (s streamHandle) Read(p []byte) (int, error) {
+	return s.h.Read(p)
+}
+
+func (s streamHandle) Close() error {
+	return s.h.Close()
+}
 
 // seekOnly is a file that can seek but not read at an offset.
-type seekOnly struct{ h *fakeHandle }
+type seekOnly struct {
+	h *fakeHandle
+}
 
-func (s seekOnly) Stat() (fs.FileInfo, error)                   { return s.h.Stat() }
-func (s seekOnly) Read(p []byte) (int, error)                   { return s.h.Read(p) }
-func (s seekOnly) Seek(offset int64, whence int) (int64, error) { return s.h.Seek(offset, whence) }
-func (s seekOnly) Close() error                                 { return s.h.Close() }
+func (s seekOnly) Stat() (fs.FileInfo, error) {
+	return s.h.Stat()
+}
+
+func (s seekOnly) Read(p []byte) (int, error) {
+	return s.h.Read(p)
+}
+
+func (s seekOnly) Seek(offset int64, whence int) (int64, error) {
+	return s.h.Seek(offset, whence)
+}
+
+func (s seekOnly) Close() error {
+	return s.h.Close()
+}
 
 // streamWriter is a stream that can also be written, but has no WriteString.
-type streamWriter struct{ streamHandle }
+type streamWriter struct {
+	streamHandle
+}
 
-func (s streamWriter) Write(p []byte) (int, error) { return s.h.Write(p) }
+func (s streamWriter) Write(p []byte) (int, error) {
+	return s.h.Write(p)
+}
 
 // streamStringWriter is a [streamWriter] with its own WriteString.
-type streamStringWriter struct{ streamWriter }
+type streamStringWriter struct {
+	streamWriter
+}
 
-func (s streamStringWriter) WriteString(str string) (int, error) { return s.h.WriteString(str) }
+func (s streamStringWriter) WriteString(str string) (int, error) {
+	return s.h.WriteString(str)
+}
 
 // listDir is a directory that can be listed.
 type listDir struct {
@@ -58,12 +89,18 @@ type listDir struct {
 	entries []fs.DirEntry
 }
 
-func (d *listDir) ReadDir(int) ([]fs.DirEntry, error) { return d.entries, nil }
+func (d *listDir) ReadDir(int) ([]fs.DirEntry, error) {
+	return d.entries, nil
+}
 
 // statErrFile is a stream whose Stat fails, so it has no name to report.
-type statErrFile struct{ streamHandle }
+type statErrFile struct {
+	streamHandle
+}
 
-func (statErrFile) Stat() (fs.FileInfo, error) { return nil, errors.New("stat failed") }
+func (statErrFile) Stat() (fs.FileInfo, error) {
+	return nil, errors.New("stat failed")
+}
 
 // openHandle opens name in s as a *fakeHandle.
 func openHandle(t *testing.T, s *store, name string) *fakeHandle {
@@ -96,8 +133,12 @@ func TestToFileStream(t *testing.T) {
 	}
 	wantContent(t, f, "alpha")
 	for name, write := range map[string]func() (int, error){
-		"Write":       func() (int, error) { return f.Write([]byte("x")) },
-		"WriteString": func() (int, error) { return f.WriteString("x") },
+		"Write": func() (int, error) {
+			return f.Write([]byte("x"))
+		},
+		"WriteString": func() (int, error) {
+			return f.WriteString("x")
+		},
 	} {
 		if _, err := write(); !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "a") {
 			t.Errorf("%s() = %v, want %v naming the file", name, err, fs.ErrPermission)
@@ -134,8 +175,18 @@ func TestToFileWriter(t *testing.T) {
 		name string
 		file func(h *fakeHandle) fs.File
 	}{
-		{"Write only", func(h *fakeHandle) fs.File { return streamWriter{streamHandle{h}} }},
-		{"Write and WriteString", func(h *fakeHandle) fs.File { return streamStringWriter{streamWriter{streamHandle{h}}} }},
+		{
+			name: "Write only",
+			file: func(h *fakeHandle) fs.File {
+				return streamWriter{streamHandle{h}}
+			},
+		},
+		{
+			name: "Write and WriteString",
+			file: func(h *fakeHandle) fs.File {
+				return streamStringWriter{streamWriter{streamHandle{h}}}
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -65,8 +65,9 @@ func (f *polyfillFile) Stat() (fs.FileInfo, error) {
 
 func (f *polyfillFile) Read(p []byte) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.f.Read(p)
+	n, err := f.f.Read(p)
+	f.mu.Unlock()
+	return n, err
 }
 
 func (f *polyfillFile) Close() error {
@@ -93,8 +94,9 @@ func (f *polyfillFile) Seek(offset int64, whence int) (int64, error) {
 		return 0, ufserrors.NewPathError("seek", f.errName(), errors.ErrUnsupported)
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return cf.Seek(offset, whence)
+	pos, err := cf.Seek(offset, whence)
+	f.mu.Unlock()
+	return pos, err
 }
 
 func (f *polyfillFile) ReadAt(p []byte, off int64) (int, error) {
@@ -106,8 +108,9 @@ func (f *polyfillFile) ReadAt(p []byte, off int64) (int, error) {
 		return 0, ufserrors.NewPathError("read", f.errName(), errors.ErrUnsupported)
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return seekReadAt(cf, f.f, p, off)
+	n, err := seekReadAt(cf, f.f, p, off)
+	f.mu.Unlock()
+	return n, err
 }
 
 // errName is the name reported in an error. A file given to [ToFile] has no
@@ -122,22 +125,20 @@ func (f *polyfillFile) errName() string {
 // seekReadAt reads len(p) bytes at off with a seek, a full read and a seek back
 // to the offset s had, so that, as [io.ReaderAt] requires, the read position is
 // unchanged afterwards.
-func seekReadAt(s io.Seeker, r io.Reader, p []byte, off int64) (n int, err error) {
+func seekReadAt(s io.Seeker, r io.Reader, p []byte, off int64) (int, error) {
 	cur, err := s.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return 0, err
 	}
-	defer func() {
-		if _, serr := s.Seek(cur, io.SeekStart); serr != nil {
-			err = ufserrors.Join(err, serr)
+	var n int
+	if _, err = s.Seek(off, io.SeekStart); err == nil {
+		n, err = io.ReadFull(r, p)
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			err = io.EOF
 		}
-	}()
-	if _, err := s.Seek(off, io.SeekStart); err != nil {
-		return 0, err
 	}
-	n, err = io.ReadFull(r, p)
-	if errors.Is(err, io.ErrUnexpectedEOF) {
-		err = io.EOF
+	if _, serr := s.Seek(cur, io.SeekStart); serr != nil {
+		err = ufserrors.Join(err, serr)
 	}
 	return n, err
 }

@@ -84,6 +84,17 @@ func (fsys *localFS) Open(name string) (fs.File, error) {
 	return localFSWrapFile(f), nil
 }
 
+func (fsys *localFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	if err := validLocalPath("open", name); err != nil {
+		return nil, err
+	}
+	f, err := fsys.osFS.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return localFSTypesFile(f), nil
+}
+
 func (fsys *localFS) Close() error {
 	return fsys.osFS.Close()
 }

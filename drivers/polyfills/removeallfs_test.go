@@ -38,6 +38,7 @@ var (
 	_ types.RemoveFS    = (*removeAndRemoveAllFS)(nil)
 	_ types.RemoveAllFS = (*removeAndRemoveAllFS)(nil)
 	_ types.RemoveFS    = (*unlistableRemoveFS)(nil)
+	_ types.RemoveFS    = (*deniedChildRemoveFS)(nil)
 )
 
 // removalLog records the names a fake file system was asked to remove, in the
@@ -396,6 +397,33 @@ func TestRemoveAll(t *testing.T) {
 			wantErr:  "not implemented",
 		},
 		{
+			// A nested file the file system will not let anyone open cannot even be
+			// queried. That refusal is not the name being missing, so the walk stops
+			// with the file system's error instead of emptying around it.
+			name: "permission denied on a nested file that cannot be queried",
+			wrap: func(s *store, l *removalLog) fs.FS {
+				return &deniedChildRemoveFS{store: s, log: l, denyOn: "dir/sub/c.txt"}
+			},
+			seed:     seedRemovableTree,
+			target:   "dir",
+			wantLeft: []string{"a.txt", "dir", "dir/sub", "dir/sub/c.txt"},
+			wantLog:  []string{"dir/b.txt"},
+			wantErr:  "permission denied",
+		},
+		{
+			// The same refusal can come from Remove itself, the way a file inside a
+			// directory that cannot be unlinked would be.
+			name: "permission denied on a nested file that cannot be removed",
+			wrap: func(s *store, l *removalLog) fs.FS {
+				return &failRemoveFS{store: s, log: l, failOn: "dir/b.txt", failErr: fs.ErrPermission}
+			},
+			seed:     seedRemovableTree,
+			target:   "dir",
+			wantLeft: []string{"a.txt", "dir", "dir/b.txt", "dir/sub", "dir/sub/c.txt"},
+			wantLog:  []string{"dir/b.txt"},
+			wantErr:  "permission denied",
+		},
+		{
 			name:     "no remove interface at all",
 			wrap:     func(s *store, _ *removalLog) fs.FS { return plainFS{s} },
 			seed:     seedRemovableTree,
@@ -442,7 +470,7 @@ func TestRemoveAllNotAtomic(t *testing.T) {
 
 	s := newStore()
 	seedRemovableTree(s)
-	fsys := &failRemoveFS{store: s, log: &removalLog{}, failOn: "dir/sub"}
+	fsys := &failRemoveFS{store: s, log: &removalLog{}, failOn: "dir/sub", failErr: errNoSpace}
 	if err := RemoveAll(fsys, "dir"); !errors.Is(err, errNoSpace) {
 		t.Fatalf("RemoveAll() = %v, want the error the file system reported", err)
 	}
@@ -454,12 +482,13 @@ func TestRemoveAllNotAtomic(t *testing.T) {
 	}
 }
 
-// failRemoveFS implements [types.RemoveFS] but refuses one name, so a walk stops
-// in the middle of a subtree.
+// failRemoveFS implements [types.RemoveFS] but fails one name with failErr, so a
+// walk stops in the middle of a subtree.
 type failRemoveFS struct {
 	*store
-	log    *removalLog
-	failOn string
+	log     *removalLog
+	failOn  string
+	failErr error
 }
 
 func (f *failRemoveFS) Open(name string) (fs.File, error) {
@@ -472,7 +501,31 @@ func (f *failRemoveFS) Open(name string) (fs.File, error) {
 func (f *failRemoveFS) Remove(name string) error {
 	f.log.add(name)
 	if name == f.failOn {
-		return &fs.PathError{Op: "remove", Path: name, Err: errNoSpace}
+		return &fs.PathError{Op: "remove", Path: name, Err: f.failErr}
 	}
+	return removeNode(f.store, name)
+}
+
+// deniedChildRemoveFS implements [types.RemoveFS] over a tree in which one nested
+// file cannot be queried at all: its open fails with [fs.ErrPermission] rather
+// than [fs.ErrNotExist], which is how a file the process may not reach looks.
+type deniedChildRemoveFS struct {
+	*store
+	log    *removalLog
+	denyOn string
+}
+
+func (f *deniedChildRemoveFS) Open(name string) (fs.File, error) {
+	if f.dirs[name] {
+		return &removableDir{store: f.store, name: name}, nil
+	}
+	if name == f.denyOn {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+	}
+	return f.open(name)
+}
+
+func (f *deniedChildRemoveFS) Remove(name string) error {
+	f.log.add(name)
 	return removeNode(f.store, name)
 }

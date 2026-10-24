@@ -22,10 +22,10 @@ import (
 )
 
 // Remove removes the file or empty directory at name in fsys.
-// If fsys implements [types.RemoveFileFS], its Remove method is used directly.
+// If fsys implements [types.RemoveFS], its Remove method is used directly.
 // Otherwise Remove returns [fs.ErrPermission] wrapped in an [fs.PathError].
 func Remove(fsys fs.FS, name string) error {
-	r, ok := fsys.(types.RemoveFileFS)
+	r, ok := fsys.(types.RemoveFS)
 	if !ok {
 		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
 	}

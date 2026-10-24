@@ -14,6 +14,8 @@
 
 package types
 
+import "io/fs"
+
 // ReleaseFS is an optional interface for file systems that can let go of the
 // resources they are holding on to without being closed, so that other
 // applications can use them. A file system that keeps a local copy of a remote
@@ -34,6 +36,8 @@ package types
 // A file system that implements ReleaseFS also implements [io.Closer], which
 // releases the same resources for good.
 type ReleaseFS interface {
+	fs.FS
+
 	// Release files and mount locks to allow other applications access to the
 	// resources. Every resource is attempted: Release returns the errors it met
 	// joined, and a resource it could not let go of is left for a later release

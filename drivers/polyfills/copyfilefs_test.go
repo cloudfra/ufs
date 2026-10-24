@@ -222,7 +222,7 @@ func TestCopyFile(t *testing.T) {
 			wantFiles: map[string]string{"a.txt": "alpha"},
 		},
 		{
-			// A destination that cannot be queried is not a licence to overwrite
+			// A destination that cannot be queried is not a license to overwrite
 			// it, and nothing may be created for it.
 			name:      "a destination that cannot be queried is not overwritten",
 			wrap:      func(s *store) fs.FS { return unqueryableCreateFS{s} },

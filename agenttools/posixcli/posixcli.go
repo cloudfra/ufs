@@ -15,3 +15,14 @@
 // Package posixcli is an experimental agent tool for supporting basic posix tools like ls, rm, touch, etc for UFS mounts.
 // The goal is that an agent can embed and use UFS without FUSE mounts for a safe contained file system interaction while using tools that the model is familiar with.
 package posixcli
+
+import "context"
+
+// Run is a stub that an AI agent can call to perform an action against the virtual file system as if it had access to the linux terminal.
+// Instead of hitting the terminal directly the command is translated into ufs API calls.
+// We will support basic tool calls. Anything fancy such as using awk etc as part of the call will not be supported and should return an error saying that the terminal environment is emulated and does not support clever CLI calls.
+//
+// Example: Run(context.Background(), "ls") returns directory listing.
+func Run(ctx context.Context, cmd string) (string, error) {
+	return "", nil
+}

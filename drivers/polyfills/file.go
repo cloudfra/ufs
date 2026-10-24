@@ -25,8 +25,10 @@ import (
 )
 
 var (
-	_ types.File     = (*polyfillFile)(nil)
-	_ fs.ReadDirFile = (*polyfillDir)(nil)
+	_ types.File      = (*polyfillFile)(nil)
+	_ fs.ReadDirFile  = (*polyfillDir)(nil)
+	_ types.File      = (*accessFile)(nil)
+	_ io.StringWriter = (*accessFile)(nil)
 )
 
 // ToFile adapts f to [types.File]. A file that already is one is returned as
@@ -42,6 +44,25 @@ func ToFile(f fs.File) types.File {
 	return wrapFile(&polyfillFile{f: f})
 }
 
+// toReadOnlyFile adapts f, which fsys.Open(name) returned, to [types.File] for a
+// read-only OpenFile. Unlike [ToFile], it never writes, and a seek or ReadAt
+// that f cannot perform opens name again and buffers its content in mode, so
+// that a plain sequential read never pays for the copy.
+func toReadOnlyFile(fsys fs.FS, name string, f fs.File, mode BufferMode) types.File {
+	if cFile, ok := f.(types.File); ok {
+		return cFile
+	}
+	return wrapFile(&polyfillFile{
+		f:        f,
+		name:     name,
+		readOnly: true,
+		reopen: func() (fs.File, error) {
+			return fsys.Open(name)
+		},
+		mode: mode,
+	})
+}
+
 // wrapFile returns pf, or a [polyfillDir] around it when its file can list a
 // directory, so that the wrapper does not hide fs.ReadDirFile.
 func wrapFile(pf *polyfillFile) types.File {
@@ -51,71 +72,149 @@ func wrapFile(pf *polyfillFile) types.File {
 	return pf
 }
 
-// polyfillFile emulates the [types.File] methods that its [fs.File] lacks. mu
-// keeps a ReadAt done with seeks from interleaving with a Read or Seek, which
-// would move the position it restores.
+// polyfillFile emulates the [types.File] methods that its [fs.File] lacks. When
+// reopen is set, a seek or ReadAt the file cannot do switches it to a read-only
+// [bufferedFile] holding the whole content, positioned at the bytes read so
+// far; buf is then the file and f is closed.
 type polyfillFile struct {
-	mu sync.Mutex
-	f  fs.File
+	mu       sync.Mutex
+	f        fs.File
+	name     string
+	readOnly bool
+	reopen   func() (fs.File, error)
+	mode     BufferMode
+	pos      int64
+	buf      *bufferedFile
 }
 
 func (f *polyfillFile) Stat() (fs.FileInfo, error) {
-	return f.f.Stat()
+	f.mu.Lock()
+	var info fs.FileInfo
+	var err error
+	if f.buf != nil {
+		info, err = f.buf.Stat()
+	} else {
+		info, err = f.f.Stat()
+	}
+	f.mu.Unlock()
+	return info, err
 }
 
 func (f *polyfillFile) Read(p []byte) (int, error) {
 	f.mu.Lock()
-	n, err := f.f.Read(p)
+	var n int
+	var err error
+	if f.buf != nil {
+		n, err = f.buf.Read(p)
+	} else {
+		n, err = f.f.Read(p)
+		f.pos += int64(n)
+	}
 	f.mu.Unlock()
 	return n, err
 }
 
 func (f *polyfillFile) Close() error {
-	return f.f.Close()
+	f.mu.Lock()
+	var err error
+	if f.buf != nil {
+		err = f.buf.Close()
+	} else {
+		err = f.f.Close()
+	}
+	f.mu.Unlock()
+	return err
 }
 
 func (f *polyfillFile) Write(p []byte) (int, error) {
-	if cf, ok := f.f.(io.Writer); ok {
+	if cf, ok := f.f.(io.Writer); ok && !f.readOnly {
 		return cf.Write(p)
 	}
 	return 0, ufserrors.NewPathError("write", f.errName(), fs.ErrPermission)
 }
 
 func (f *polyfillFile) WriteString(s string) (int, error) {
-	if cf, ok := f.f.(io.StringWriter); ok {
+	if cf, ok := f.f.(io.StringWriter); ok && !f.readOnly {
 		return cf.WriteString(s)
 	}
 	return f.Write([]byte(s))
 }
 
 func (f *polyfillFile) Seek(offset int64, whence int) (int64, error) {
-	cf, ok := f.f.(io.Seeker)
-	if !ok {
-		return 0, ufserrors.NewPathError("seek", f.errName(), errors.ErrUnsupported)
-	}
 	f.mu.Lock()
-	pos, err := cf.Seek(offset, whence)
+	pos, err := f.seekLocked(offset, whence)
 	f.mu.Unlock()
 	return pos, err
 }
 
+// seekLocked is Seek with f.mu held.
+func (f *polyfillFile) seekLocked(offset int64, whence int) (int64, error) {
+	if f.buf == nil {
+		if cf, ok := f.f.(io.Seeker); ok {
+			return cf.Seek(offset, whence)
+		}
+		if err := f.materialize("seek"); err != nil {
+			return 0, err
+		}
+	}
+	return f.buf.Seek(offset, whence)
+}
+
 func (f *polyfillFile) ReadAt(p []byte, off int64) (int, error) {
-	if cf, ok := f.f.(io.ReaderAt); ok {
-		return cf.ReadAt(p, off)
-	}
-	cf, ok := f.f.(io.Seeker)
-	if !ok {
-		return 0, ufserrors.NewPathError("read", f.errName(), errors.ErrUnsupported)
-	}
 	f.mu.Lock()
-	n, err := seekReadAt(cf, f.f, p, off)
+	n, err := f.readAtLocked(p, off)
 	f.mu.Unlock()
 	return n, err
+}
+
+// readAtLocked is ReadAt with f.mu held.
+func (f *polyfillFile) readAtLocked(p []byte, off int64) (int, error) {
+	if f.buf == nil {
+		if cf, ok := f.f.(io.ReaderAt); ok {
+			return cf.ReadAt(p, off)
+		}
+		if cf, ok := f.f.(io.Seeker); ok {
+			return seekReadAt(cf, f.f, p, off)
+		}
+		if err := f.materialize("read"); err != nil {
+			return 0, err
+		}
+	}
+	return f.buf.ReadAt(p, off)
+}
+
+// materialize switches f to a read-only buffered copy of its content, keeping
+// the read position. It fails with [errors.ErrUnsupported] when f has no way
+// to open its content again, as for a file given to [ToFile].
+func (f *polyfillFile) materialize(op string) error {
+	if f.reopen == nil {
+		return ufserrors.NewPathError(op, f.errName(), errors.ErrUnsupported)
+	}
+	src, err := f.reopen()
+	if err != nil {
+		return err
+	}
+	buf, err := loadBufferedFile(f.name, src, f.mode)
+	if err != nil {
+		return err
+	}
+	buf.readable = true
+	if _, err := buf.Seek(f.pos, io.SeekStart); err != nil {
+		return ufserrors.Join(err, buf.Close())
+	}
+	if err := f.f.Close(); err != nil {
+		return ufserrors.Join(err, buf.Close())
+	}
+	f.buf = buf
+	return nil
 }
 
 // errName is the name reported in an error. A file given to [ToFile] has no
 // name of its own, so it asks the file for one.
 func (f *polyfillFile) errName() string {
+	if f.name != "" {
+		return f.name
+	}
 	if info, err := f.f.Stat(); err == nil {
 		return info.Name()
 	}
@@ -150,4 +249,46 @@ type polyfillDir struct {
 
 func (d *polyfillDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	return d.f.(fs.ReadDirFile).ReadDir(n)
+}
+
+// accessFile narrows a writable [types.File] from Create to the access an
+// OpenFile asked for: reads fail unless it was opened read-write, and with
+// append every write first moves to the end of the file.
+type accessFile struct {
+	types.File
+	name     string
+	readable bool
+	append   bool
+}
+
+func (f *accessFile) Read(p []byte) (int, error) {
+	if !f.readable {
+		return 0, ufserrors.NewPathError("read", f.name, fs.ErrPermission)
+	}
+	return f.File.Read(p)
+}
+
+func (f *accessFile) ReadAt(p []byte, off int64) (int, error) {
+	if !f.readable {
+		return 0, ufserrors.NewPathError("read", f.name, fs.ErrPermission)
+	}
+	return f.File.ReadAt(p, off)
+}
+
+func (f *accessFile) Write(p []byte) (int, error) {
+	if f.append {
+		if _, err := f.Seek(0, io.SeekEnd); err != nil {
+			return 0, err
+		}
+	}
+	return f.File.Write(p)
+}
+
+func (f *accessFile) WriteString(s string) (int, error) {
+	if f.append {
+		if _, err := f.Seek(0, io.SeekEnd); err != nil {
+			return 0, err
+		}
+	}
+	return f.File.WriteString(s)
 }

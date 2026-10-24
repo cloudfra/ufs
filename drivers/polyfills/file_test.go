@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -100,6 +101,17 @@ type statErrFile struct {
 
 func (statErrFile) Stat() (fs.FileInfo, error) {
 	return nil, errors.New("stat failed")
+}
+
+// seekRecorder records the seeks made on a [types.File].
+type seekRecorder struct {
+	types.File
+	whences []int
+}
+
+func (s *seekRecorder) Seek(offset int64, whence int) (int64, error) {
+	s.whences = append(s.whences, whence)
+	return s.File.Seek(offset, whence)
 }
 
 // openHandle opens name in s as a *fakeHandle.
@@ -249,6 +261,107 @@ func TestToFileDirectory(t *testing.T) {
 	if _, ok := ToFile(&fakeDir{name: "d"}).(fs.ReadDirFile); ok {
 		t.Error("ToFile() of a directory that cannot be listed is an fs.ReadDirFile")
 	}
+}
+
+func TestReadOnlyFileMaterialize(t *testing.T) {
+	t.Parallel()
+	for _, bm := range bufferModes {
+		t.Run(bm.name, func(t *testing.T) {
+			t.Parallel()
+			s := newStore()
+			s.seedFile("a", "alpha")
+			fsys := streamFS{s}
+			f := toReadOnlyFile(fsys, "a", streamHandle{openHandle(t, s, "a")}, bm.mode)
+
+			wantReadAt(t, f, 1, "lph")
+			if info, err := f.Stat(); err != nil || info.Size() != 5 {
+				t.Errorf("Stat() after buffering = %v, %v", info, err)
+			}
+			wantContent(t, f, "alpha")
+			if _, err := f.WriteString("x"); !errors.Is(err, fs.ErrPermission) {
+				t.Errorf("WriteString() = %v, want %v", err, fs.ErrPermission)
+			}
+			if err := f.Close(); err != nil {
+				t.Errorf("Close() = %v", err)
+			}
+			// The first handle, and the second one opened to buffer it.
+			if s.closeCalls != 2 {
+				t.Errorf("closes = %d, want 2", s.closeCalls)
+			}
+		})
+	}
+}
+
+func TestReadOnlyFileMaterializeErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the file is gone", func(t *testing.T) {
+		t.Parallel()
+		s := newStore()
+		s.seedFile("a", "alpha")
+		f := toReadOnlyFile(streamFS{s}, "a", streamHandle{openHandle(t, s, "a")}, BufferAuto)
+		delete(s.files, "a")
+		if _, err := f.Seek(0, io.SeekEnd); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Seek() = %v, want %v", err, fs.ErrNotExist)
+		}
+	})
+
+	t.Run("unknown buffer mode", func(t *testing.T) {
+		t.Parallel()
+		s := newStore()
+		s.seedFile("a", "alpha")
+		f := toReadOnlyFile(streamFS{s}, "a", streamHandle{openHandle(t, s, "a")}, BufferMode(-1))
+		if _, err := f.ReadAt(make([]byte, 1), 0); !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("ReadAt() = %v, want %v", err, fs.ErrInvalid)
+		}
+		// The stream still works, and the failed copy closed its handle.
+		wantContent(t, f, "alpha")
+		if s.closeCalls != 1 {
+			t.Errorf("closes = %d, want 1", s.closeCalls)
+		}
+	})
+}
+
+func TestAccessFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write only", func(t *testing.T) {
+		t.Parallel()
+		s := newStore()
+		f, err := s.create("a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		af := &accessFile{File: f, name: "a"}
+		if _, err := af.Read(make([]byte, 1)); !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("Read() = %v, want %v", err, fs.ErrPermission)
+		}
+		if _, err := af.ReadAt(make([]byte, 1), 0); !errors.Is(err, fs.ErrPermission) {
+			t.Errorf("ReadAt() = %v, want %v", err, fs.ErrPermission)
+		}
+		if n, err := af.Write([]byte("ab")); n != 2 || err != nil {
+			t.Errorf("Write() = %d, %v", n, err)
+		}
+	})
+
+	t.Run("read write append", func(t *testing.T) {
+		t.Parallel()
+		s := newStore()
+		f, err := s.openFile("a", os.O_RDWR|os.O_CREATE, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := &seekRecorder{File: f}
+		af := &accessFile{File: rec, name: "a", readable: true, append: true}
+		if _, err := af.Write([]byte("ab")); err != nil {
+			t.Fatal(err)
+		}
+		mustWriteString(t, af, "cd")
+		if want := []int{io.SeekEnd, io.SeekEnd}; !reflect.DeepEqual(rec.whences, want) {
+			t.Errorf("seeks = %v, want %v: each append write must move to the end", rec.whences, want)
+		}
+		wantReadAt(t, af, 1, "bcd")
+	})
 }
 
 func wantContent(t *testing.T, f io.Reader, want string) {

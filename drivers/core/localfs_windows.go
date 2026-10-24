@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -70,6 +71,10 @@ func (f *localFSFile) Stat() (fs.FileInfo, error) {
 }
 
 func localFSWrapFile(f *os.File) fs.File {
+	return &localFSFile{f}
+}
+
+func localFSTypesFile(f *os.File) types.File {
 	return &localFSFile{f}
 }
 

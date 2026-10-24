@@ -48,6 +48,7 @@ type store struct {
 	mkdirCalls    []string
 	mkdirAllCalls []string
 	batches       [][]string
+	copyCalls     []copyCall
 	openCalls     int
 	closeCalls    int
 
@@ -160,6 +161,8 @@ func (s *store) openFile(name string, flag int, perm fs.FileMode) (types.File, e
 		}
 		s.files[name] = nil
 		s.perms[name] = perm
+	} else if flag&os.O_EXCL != 0 {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrExist}
 	}
 	if flag&os.O_TRUNC != 0 {
 		s.files[name] = nil

@@ -34,8 +34,9 @@ const copyFileOp = "copyfile"
 // fsys's own [types.CopyFileFS] implementation is used when it has one, so a
 // back end that can copy without moving the bytes (a reflink, a server-side
 // copy) keeps that efficiency. Otherwise the content is moved a buffer at a time
-// with [io.Copy], through [types.OpenFileFS] or [types.CreateFileFS]. A file
-// system that implements none of them gets an unimplemented error.
+// with [io.Copy], through [types.CreateFileFS] or, if that is absent,
+// [types.OpenFileFS]. A file system that implements none of them gets an
+// unimplemented error.
 //
 // The emulation keeps the error contract of the native method: a srcPath that
 // does not exist reports an error wrapping [fs.ErrNotExist], and a dstPath that
@@ -56,40 +57,20 @@ func CopyFile(fsys fs.FS, srcPath, dstPath string) error {
 	// The write capability is probed before anything is read, so a file system
 	// with nothing to write into reports unimplemented without touching the tree.
 	switch wFS := fsys.(type) {
-	case types.OpenFileFS:
-		return copyViaOpenFileFS(fsys, wFS, srcPath, dstPath)
 	case types.CreateFileFS:
 		return copyViaCreateFileFS(fsys, wFS, srcPath, dstPath)
+	case types.OpenFileFS:
+		return copyViaOpenFileFS(fsys, wFS, srcPath, dstPath)
 	}
 	return ufserrors.NewUnimplemented(fsys, copyFileOp)
 }
 
-// copyViaOpenFileFS emulates the copy with an [types.OpenFileFS]. The source is
-// opened before the destination, so a source that is missing or is a directory
-// creates nothing. The exclusive flag makes a dstPath that is taken already fail
-// when the destination is created, which is the contract [types.CopyFileFS]
-// sets and closes the window that a separate stat of dstPath would leave.
-func copyViaOpenFileFS(fsys fs.FS, wFS types.OpenFileFS, srcPath, dstPath string) (err error) {
-	src, info, err := openSource(fsys, srcPath)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		err = ufserrors.Join(err, src.Close())
-	}()
-
-	dst, err := wFS.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
-	if err != nil {
-		return err
-	}
-	return copyInto(dst, src)
-}
-
-// copyViaCreateFileFS emulates the copy with a [types.CreateFileFS]. Create
-// truncates whatever is at dstPath, so a destination that is taken already is
-// refused with a stat first, and Create takes no permission bits, so the
-// source's mode is not carried over.
-func copyViaCreateFileFS(fsys fs.FS, wFS types.CreateFileFS, srcPath, dstPath string) (err error) {
+// copyViaCreateFileFS emulates the copy with a [types.CreateFileFS], the
+// interface a write file system is required to have, so it is the arm most file
+// systems reach. Create truncates whatever is at dstPath, so a destination that
+// is taken already is refused with a stat first, and Create takes no permission
+// bits, so the source's mode is not carried over.
+func copyViaCreateFileFS(fsys fs.FS, wFS types.CreateFileFS, srcPath, dstPath string) error {
 	if _, err := fs.Stat(fsys, dstPath); err == nil {
 		return ufserrors.NewPathError(copyFileOp, dstPath, fs.ErrExist)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -102,13 +83,28 @@ func copyViaCreateFileFS(fsys fs.FS, wFS types.CreateFileFS, srcPath, dstPath st
 	if err != nil {
 		return err
 	}
-	defer func() {
-		err = ufserrors.Join(err, src.Close())
-	}()
-
 	dst, err := wFS.Create(dstPath)
 	if err != nil {
+		return ufserrors.Join(err, src.Close())
+	}
+	return copyInto(dst, src)
+}
+
+// copyViaOpenFileFS emulates the copy with an [types.OpenFileFS] for a file
+// system that has no Create. The source is opened before the destination, so a
+// source that is missing or is a directory creates nothing. The exclusive flag
+// makes a dstPath that is taken already fail when the destination is created,
+// which is the contract [types.CopyFileFS] sets and closes the window that a
+// separate stat of dstPath would leave, and the mode of the source can be given
+// to the new file.
+func copyViaOpenFileFS(fsys fs.FS, wFS types.OpenFileFS, srcPath, dstPath string) error {
+	src, info, err := openSource(fsys, srcPath)
+	if err != nil {
 		return err
+	}
+	dst, err := wFS.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return ufserrors.Join(err, src.Close())
 	}
 	return copyInto(dst, src)
 }
@@ -138,15 +134,13 @@ func openSource(fsys fs.FS, srcPath string) (fs.File, fs.FileInfo, error) {
 	return src, info, nil
 }
 
-// copyInto moves src into a destination handle that is already open, closing the
-// destination whether or not the copy worked, since a handle left open is a leak
-// in a file system the caller still holds. Back ends that buffer writes (object
-// stores, databases) only persist the content on Close, so a failed Close is a
-// failed copy and its error is joined with any copy error.
-func copyInto(dst types.File, src io.Reader) (err error) {
-	defer func() {
-		err = ufserrors.Join(err, dst.Close())
-	}()
-	_, err = io.Copy(dst, src)
-	return err
+// copyInto moves src into a destination handle that is already open, then closes
+// both handles now that the copy is over, whether or not it worked. A handle
+// left open is a leak in a file system the caller still holds, and back ends
+// that buffer writes (object stores, databases) only persist the content on
+// Close, so a failed Close is a failed copy: its error is joined with the copy
+// error rather than dropped.
+func copyInto(dst types.File, src fs.File) error {
+	_, copyErr := io.Copy(dst, src)
+	return ufserrors.Join(copyErr, dst.Close(), src.Close())
 }

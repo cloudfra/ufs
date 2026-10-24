@@ -62,6 +62,18 @@ func (f copyCreateFS) Create(name string) (types.File, error) { return f.create(
 
 func (f copyCreateFS) CopyFile(srcPath, dstPath string) error { return f.copy(srcPath, dstPath) }
 
+// createOpenFS implements both [types.CreateFileFS] and [types.OpenFileFS], so
+// the Create arm must win: it is the one every write file system is required to
+// have, and the one its own Create implementation is built on.
+type createOpenFS struct{ *store }
+
+func (f createOpenFS) Open(name string) (fs.File, error)      { return f.open(name) }
+func (f createOpenFS) Create(name string) (types.File, error) { return f.create(name) }
+
+func (f createOpenFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	return f.openFile(name, flag, perm)
+}
+
 // unqueryableCreateFS implements [types.CreateFileFS] but cannot be queried:
 // every open fails with something other than [fs.ErrNotExist], so the stat that
 // guards the destination reports that failure rather than a free overwrite.
@@ -132,6 +144,20 @@ func TestCopyFile(t *testing.T) {
 			dstPath:    "b.txt",
 			wantFiles:  map[string]string{"a.txt": "alpha", "b.txt": "alpha"},
 			wantPerms:  map[string]fs.FileMode{"a.txt": srcMode},
+			wantOpens:  1,
+			wantCloses: 2,
+		},
+		{
+			// A file system with both write interfaces is emulated through Create,
+			// which every write file system must have. The zero perm of that arm
+			// rather than the source's mode shows which one ran.
+			name:       "CreateFileFS is preferred over OpenFileFS",
+			wrap:       func(s *store) fs.FS { return createOpenFS{s} },
+			seed:       seedSrcMode,
+			srcPath:    "a.txt",
+			dstPath:    "b.txt",
+			wantFiles:  map[string]string{"a.txt": "alpha", "b.txt": "alpha"},
+			wantPerms:  map[string]fs.FileMode{"a.txt": srcMode, "b.txt": 0},
 			wantOpens:  1,
 			wantCloses: 2,
 		},

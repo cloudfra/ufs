@@ -18,7 +18,11 @@ package ufs_test
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -69,6 +73,113 @@ func TestNewFromYAMLReadOnlyMount(t *testing.T) {
 	if err == nil {
 		t.Fatal("Create on read-only mount succeeded, want error")
 	}
+}
+
+// writableModeBits are the permission bits a read-only file system must never
+// report.
+const writableModeBits fs.FileMode = 0o222
+
+// TestNewFromYAMLReadOnlyMountMasksModeBits checks that the mode mask survives
+// nestFS routing into a mount: the same directory mounted read-only reports no
+// write permission bits, while a writable mount of that same directory keeps
+// them.
+func TestNewFromYAMLReadOnlyMountMasksModeBits(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// The mode gives the owner write permission without any group or other bits,
+	// so a normal umask cannot change it. The file has to be writable for the
+	// mask to have anything to hide.
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("WriteFile = %v, want nil", err)
+	}
+	input := fmt.Sprintf("- source: %q\n  mountPoint: \"ro-data\"\n  options:\n    - readOnly: true\n- source: %q\n  mountPoint: \"rw-data\"", dir, dir)
+	fsys, err := ufs.New(t.Context(), input)
+	if err != nil {
+		t.Fatalf("New = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	tests := []struct {
+		accessor string
+		mount    string
+		// wantWritable is whether the mount must report write permission bits.
+		wantWritable bool
+	}{
+		{accessor: "Stat", mount: "ro-data", wantWritable: false},
+		{accessor: "Stat", mount: "rw-data", wantWritable: true},
+		{accessor: "Lstat", mount: "ro-data", wantWritable: false},
+		{accessor: "Lstat", mount: "rw-data", wantWritable: true},
+		{accessor: "ReadDir entry", mount: "ro-data", wantWritable: false},
+		{accessor: "ReadDir entry", mount: "rw-data", wantWritable: true},
+		{accessor: "Open handle", mount: "ro-data", wantWritable: false},
+		{accessor: "Open handle", mount: "rw-data", wantWritable: true},
+	}
+	for _, tc := range tests {
+		// Not a parallel subtest: the file system is closed when this test
+		// function returns, which is before a parallel subtest would run.
+		t.Run(tc.accessor+" "+tc.mount, func(t *testing.T) {
+			name := tc.mount + "/a.txt"
+			info, err := infoOf(t, fsys, tc.accessor, name)
+			if err != nil {
+				t.Fatalf("%s(%q) = %v, want nil", tc.accessor, name, err)
+			}
+			writable := info.Mode().Perm()&writableModeBits != 0
+			if writable != tc.wantWritable {
+				t.Errorf("%s(%q) mode = %v, writable = %t, want writable = %t", tc.accessor, name, info.Mode(), writable, tc.wantWritable)
+			}
+			if info.Name() != "a.txt" {
+				t.Errorf("%s(%q) name = %q, want %q", tc.accessor, name, info.Name(), "a.txt")
+			}
+			if info.Size() != 5 {
+				t.Errorf("%s(%q) size = %d, want 5", tc.accessor, name, info.Size())
+			}
+		})
+	}
+}
+
+// infoOf reports the mode of name through the given accessor of fsys.
+func infoOf(t *testing.T, fsys types.WriteFS, accessor, name string) (fs.FileInfo, error) {
+	t.Helper()
+	switch accessor {
+	case "Stat":
+		return fsys.Stat(name)
+	case "Lstat":
+		return fsys.Lstat(name)
+	case "ReadDir entry":
+		return entryInfoOf(fsys, path.Dir(name), path.Base(name))
+	case "Open handle":
+		return handleStatOf(fsys, name)
+	default:
+		t.Fatalf("unknown accessor %q", accessor)
+		return nil, nil
+	}
+}
+
+// entryInfoOf returns the info that fsys reports for the named entry of dir.
+func entryInfoOf(fsys fs.FS, dir, name string) (fs.FileInfo, error) {
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.Name() == name {
+			return entry.Info()
+		}
+	}
+	return nil, fmt.Errorf("%s does not contain %q: %w", dir, name, fs.ErrNotExist)
+}
+
+// handleStatOf returns the info that a handle opened by fsys reports.
+func handleStatOf(fsys fs.FS, name string) (fs.FileInfo, error) {
+	f, err := fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	info, statErr := f.Stat()
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+	return info, statErr
 }
 
 func TestNewFromYAMLNoRoot(t *testing.T) {

@@ -33,7 +33,7 @@ type readWrapFS struct {
 	fsys fs.FS
 }
 
-func (fsys *readWrapFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *readWrapFS) DeviceInfo() types.DeviceMap {
 	return getDeviceInfoOrDefault(fsys.fsys)
 }
 
@@ -135,8 +135,8 @@ func FromFS(fsys fs.FS) types.ReadFS {
 }
 
 func getDeviceInfoOrDefault(fsys fs.FS) types.DeviceMap {
-	if diFsys, ok := fsys.(types.DeviceInfoGetter); ok {
-		return diFsys.GetDeviceInfo()
+	if diFsys, ok := fsys.(types.DeviceInfoGet); ok {
+		return diFsys.DeviceInfo()
 	}
 	return types.DefaultDeviceMap
 }

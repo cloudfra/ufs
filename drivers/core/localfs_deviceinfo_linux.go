@@ -29,7 +29,7 @@ import (
 
 const procMountsPath = "/proc/self/mounts"
 
-func (fsys *localFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *localFS) DeviceInfo() types.DeviceMap {
 	rootPath := fsys.osFS.Name()
 	if realPath, err := filepath.EvalSymlinks(rootPath); err == nil {
 		rootPath = realPath
@@ -103,7 +103,7 @@ func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) types.Devic
 			continue
 		}
 		di := linuxMakeDeviceInfo(m)
-		if di.Name() != result.Parent(rel).Name() {
+		if di.Name() != result.Backing(rel).Name() {
 			result[rel] = di
 		}
 	}

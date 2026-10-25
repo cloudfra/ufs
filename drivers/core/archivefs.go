@@ -59,7 +59,7 @@ type archiveFS struct {
 	name string
 }
 
-func (fsys *archiveFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *archiveFS) DeviceInfo() types.DeviceMap {
 	return archiveDeviceInfoMap
 }
 

@@ -20,6 +20,6 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
-func (fsys *localFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *localFS) DeviceInfo() types.DeviceMap {
 	return types.DefaultDeviceMap
 }

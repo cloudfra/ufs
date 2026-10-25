@@ -183,7 +183,7 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return batch, nil
 }
 
-func (fsys *memFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *memFS) DeviceInfo() types.DeviceMap {
 	info := types.NewDeviceInfo(fsys.name, "memory", 2, false)
 	return types.NewDeviceMap(info)
 }

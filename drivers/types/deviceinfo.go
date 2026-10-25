@@ -35,14 +35,17 @@ var (
 	DefaultDeviceMap = DeviceMap{
 		".": DefaultDeviceInfo,
 	}
+
+	// DeviceInfo implements String below, so it is a fmt.Stringer. The
+	// assertion declares that conformance at the type level without adding an
+	// always-nil interface field that every DeviceInfo value carries and that
+	// makes info.Stringer.String() panic.
+	_ fmt.Stringer = DeviceInfo{}
 )
 
 // DeviceInfo contains platform agnostic information about the backing device
-// of this file system. It embeds [fmt.Stringer] to declare that conformance
-// at the type level; the implementation is the String method below.
+// of this file system.
 type DeviceInfo struct {
-	fmt.Stringer
-
 	// name of the device as specified by the OS or the ufs implementation
 	name string
 	// deviceType is the type of device that backs the FS.
@@ -75,6 +78,17 @@ func (info DeviceInfo) DeviceType() string {
 	return info.deviceType
 }
 
+// ThreadCount returns the recommended number of threads to access the device.
+func (info DeviceInfo) ThreadCount() int {
+	return info.threadCount
+}
+
+// Remote reports whether the device is located on a remote machine, so that
+// frequent IO calls are slow.
+func (info DeviceInfo) Remote() bool {
+	return info.remote
+}
+
 // String representation of DeviceInfo.
 func (info DeviceInfo) String() string {
 	return fmt.Sprintf("{name: %q, deviceType: %q, threadCount: %d, remote: %t}", info.name, info.deviceType, info.threadCount, info.remote)
@@ -91,7 +105,7 @@ func NewDeviceMap(root DeviceInfo) DeviceMap {
 
 // Combine merges dm with incoming, whose paths are relative to mountPath, and
 // returns the result. An incoming path is dropped as redundant when it names
-// the same device as its nearest ancestor already in dm.
+// the same device as the one that already backs that path in dm.
 func (dm DeviceMap) Combine(mountPath string, incoming DeviceMap) DeviceMap {
 	if len(incoming) == 0 {
 		if len(dm) == 0 {
@@ -105,8 +119,8 @@ func (dm DeviceMap) Combine(mountPath string, incoming DeviceMap) DeviceMap {
 
 	for k, nested := range incoming {
 		fullPath := path.Join(mountPath, k)
-		parent := combined.Parent(fullPath)
-		if nested.name != parent.name {
+		backing := combined.Backing(fullPath)
+		if nested.name != backing.name {
 			combined[fullPath] = nested
 		}
 	}
@@ -114,24 +128,32 @@ func (dm DeviceMap) Combine(mountPath string, incoming DeviceMap) DeviceMap {
 	return combined
 }
 
-// Parent returns the DeviceInfo of mountPath's nearest ancestor in dm.
-func (dm DeviceMap) Parent(mountPath string) DeviceInfo {
-	longest := "."
+// Backing returns the DeviceInfo of the device that backs mountPath: dm's own
+// entry for mountPath when it has one, otherwise the entry of mountPath's
+// nearest ancestor. dm["."] is returned for a path with no closer match, and
+// the zero [DeviceInfo] when dm has no root entry.
+func (dm DeviceMap) Backing(mountPath string) DeviceInfo {
+	longest := ""
 	for k := range dm {
 		if k == "." {
 			continue
 		}
-		if len(k) > len(longest) && strings.HasPrefix(mountPath, k+"/") {
+		if len(k) > len(longest) && (k == mountPath || strings.HasPrefix(mountPath, k+"/")) {
 			longest = k
 		}
+	}
+	if longest == "" {
+		return dm["."]
 	}
 	return dm[longest]
 }
 
-// DeviceInfoGetter provides an interface to obtain the device backend information of a FS.
-type DeviceInfoGetter interface {
-	// GetDeviceInfo returns a map based on the relative path of the device.
+// DeviceInfoGet is an optional interface implemented by file systems that report
+// which device backs them, named like [URIGet] and [ExternalPathGet].
+type DeviceInfoGet interface {
+	// DeviceInfo returns a map of device-relative paths to the device that
+	// backs them.
 	//
 	// The root of the FS has the key ".".
-	GetDeviceInfo() DeviceMap
+	DeviceInfo() DeviceMap
 }

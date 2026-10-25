@@ -1,7 +1,10 @@
 # walk
 
 `walk` lists every file in a virtual file system. It accepts any URI scheme
-supported by `ufs.New` and prints one absolute path per line.
+supported by `ufs.New`. Each line is the absolute path of the file when the
+file system can resolve one; files that exist only inside the virtual file
+system, such as the contents of an archive, are printed as their path within
+that file system.
 
 ## Install
 

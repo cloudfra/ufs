@@ -70,7 +70,7 @@ var (
 	_ fs.GlobFS                 = (*nestFS)(nil)
 	_ AbsPathGetter             = (*nestFS)(nil)
 	_ types.MountedArchiveDirFS = (*nestFS)(nil)
-	_ types.DeviceInfoGetter    = (*mountMap)(nil)
+	_ types.DeviceInfoGet       = (*mountMap)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -90,11 +90,11 @@ type mountMap struct {
 	baseName string
 }
 
-func (m *mountMap) GetDeviceInfo() types.DeviceMap {
+func (m *mountMap) DeviceInfo() types.DeviceMap {
 	combined := types.DeviceMap{}
 	m.mu.RLock()
 	for mountPoint, fsys := range m.m {
-		combined = combined.Combine(mountPoint, fsys.GetDeviceInfo())
+		combined = combined.Combine(mountPoint, fsys.DeviceInfo())
 	}
 	m.mu.RUnlock()
 	return combined
@@ -326,9 +326,9 @@ func (fsys *nestFS) GetAbsPath(name string) (string, error) {
 	return "", realAbsPathNotSupported(fsys, name)
 }
 
-func (fsys *nestFS) GetDeviceInfo() types.DeviceMap {
-	base := fsys.fsys.GetDeviceInfo()
-	return base.Combine("", fsys.mounts.GetDeviceInfo())
+func (fsys *nestFS) DeviceInfo() types.DeviceMap {
+	base := fsys.fsys.DeviceInfo()
+	return base.Combine("", fsys.mounts.DeviceInfo())
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {
@@ -864,7 +864,7 @@ func (fsys *nestFS) closeOnRelease() bool {
 // that it keeps no file handle and holds no local copy of a remote file. A file
 // system that does not name its device is taken to be backed by a file.
 func holdsNoFile(fsys types.WriteFS) bool {
-	info, ok := fsys.GetDeviceInfo()["."]
+	info, ok := fsys.DeviceInfo()["."]
 	if !ok {
 		info = types.DefaultDeviceInfo
 	}

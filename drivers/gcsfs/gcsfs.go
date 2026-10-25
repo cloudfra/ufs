@@ -200,7 +200,7 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *gcsFS) DeviceInfo() types.DeviceMap {
 	info := types.NewDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
 	return types.NewDeviceMap(info)
 }

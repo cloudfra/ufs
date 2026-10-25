@@ -456,7 +456,7 @@ func listBucket(bkt *bolt.Bucket) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
-func (fsys *boltFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *boltFS) DeviceInfo() types.DeviceMap {
 	return types.NewDeviceMap(types.NewDeviceInfo(fsys.absPath, "bolt", 1, false))
 }
 

@@ -35,7 +35,7 @@ type ReadFS interface {
 
 	fmt.Stringer
 
-	DeviceInfoGetter
+	DeviceInfoGet
 
 	// TODO: Implement ExternalPathGet
 

@@ -34,7 +34,7 @@ type embedFS struct {
 	fsys embed.FS
 }
 
-func (fsys *embedFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *embedFS) DeviceInfo() types.DeviceMap {
 	return types.NewDeviceMap(types.NewDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
 }
 

@@ -142,8 +142,8 @@ func newFaultFS(inner types.WriteFS, cfg Options) (types.WriteFS, error) {
 	}, nil
 }
 
-func (fsys *faultFS) GetDeviceInfo() types.DeviceMap {
-	return fsys.inner.GetDeviceInfo()
+func (fsys *faultFS) DeviceInfo() types.DeviceMap {
+	return fsys.inner.DeviceInfo()
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see

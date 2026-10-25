@@ -122,7 +122,7 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *nullFS) DeviceInfo() types.DeviceMap {
 	return nullDeviceInfoMap
 }
 

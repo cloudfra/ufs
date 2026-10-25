@@ -38,8 +38,8 @@ type tempMountFS struct {
 	closer func() error
 }
 
-func (fsys *tempMountFS) GetDeviceInfo() types.DeviceMap {
-	return fsys.lfs.GetDeviceInfo()
+func (fsys *tempMountFS) DeviceInfo() types.DeviceMap {
+	return fsys.lfs.DeviceInfo()
 }
 
 func (fsys *tempMountFS) URI() (*url.URL, error) {

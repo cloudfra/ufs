@@ -317,8 +317,8 @@ func systemOf(fsys types.WriteFS) string {
 	return u.Scheme
 }
 
-func (fsys *telemetryFS) GetDeviceInfo() types.DeviceMap {
-	return fsys.inner.GetDeviceInfo()
+func (fsys *telemetryFS) DeviceInfo() types.DeviceMap {
+	return fsys.inner.DeviceInfo()
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see

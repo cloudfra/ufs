@@ -49,7 +49,7 @@ type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) GetDeviceInfo() types.DeviceMap {
+func (fsys *angryFS) DeviceInfo() types.DeviceMap {
 	return angryDeviceInfoMap
 }
 

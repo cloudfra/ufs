@@ -339,30 +339,30 @@ func TestMountPathError(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mountPathError(tc.err, tc.caller, tc.subName)
+			got := rewritePathError(tc.err, tc.caller, tc.subName)
 			if tc.err == nil {
 				if got != nil {
-					t.Fatalf("mountPathError returned %v, want nil", got)
+					t.Fatalf("rewritePathError returned %v, want nil", got)
 				}
 				return
 			}
 			// The reason an operation failed must survive, whether the path
 			// was rewritten or not.
 			if cause := errorCause(tc.err); !errors.Is(got, cause) {
-				t.Errorf("mountPathError returned %v, which no longer reports the cause %v", got, cause)
+				t.Errorf("rewritePathError returned %v, which no longer reports the cause %v", got, cause)
 			}
 			if tc.want == "" {
 				if got != tc.err {
-					t.Errorf("mountPathError returned %v, want the error unchanged", got)
+					t.Errorf("rewritePathError returned %v, want the error unchanged", got)
 				}
 				return
 			}
 			var pathErr *fs.PathError
 			if !errors.As(got, &pathErr) {
-				t.Fatalf("mountPathError returned %v, want an *fs.PathError", got)
+				t.Fatalf("rewritePathError returned %v, want an *fs.PathError", got)
 			}
 			if pathErr.Path != tc.want {
-				t.Errorf("mountPathError reported path %q, want %q", pathErr.Path, tc.want)
+				t.Errorf("rewritePathError reported path %q, want %q", pathErr.Path, tc.want)
 			}
 		})
 	}
@@ -381,7 +381,7 @@ func errorCause(err error) error {
 }
 
 // wrappedPathError is an error that mentions a path in its own message and
-// wraps an [fs.PathError], which mountPathError must leave alone.
+// wraps an [fs.PathError], which rewritePathError must leave alone.
 type wrappedPathError struct {
 	err error
 }

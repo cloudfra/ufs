@@ -542,7 +542,7 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	return targetFS, targetName, nil
 }
 
-// mountPathError rewrites the path of an error that a file system mounted
+// rewritePathError rewrites the path of an error that a file system mounted
 // below name reported for subName, so that the error names the path the caller
 // used instead of the path relative to that file system's root. It is the
 // error counterpart of [mountPrefix], which does the same for watch events.
@@ -550,7 +550,7 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 // of a wrapped error may quote the path, and an absolute path names a place
 // outside ufs, so neither is a mount-relative path. The replacement keeps Op
 // and Err, so errors.Is and errors.As keep working.
-func mountPathError(err error, name, subName string) error {
+func rewritePathError(err error, name, subName string) error {
 	if err == nil {
 		return nil
 	}
@@ -584,7 +584,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
 			return makeReadDirFile(mountFS, subName), nil
 		}
-		return nil, mountPathError(err, name, subName)
+		return nil, rewritePathError(err, name, subName)
 	}
 
 	if rdf, ok := f.(fs.ReadDirFile); ok {
@@ -622,7 +622,7 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 
 	f, err := mountFS.fsys.Create(subName)
 	if err != nil {
-		return nil, mountPathError(err, name, subName)
+		return nil, rewritePathError(err, name, subName)
 	}
 	return wrapFile(f, false, mountFS.args.BufMode)
 }
@@ -638,7 +638,7 @@ func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
 	}
 
 	if err := mountFS.fsys.MkdirAll(subName, perm); err != nil {
-		return mountPathError(err, name, subName)
+		return rewritePathError(err, name, subName)
 	}
 	return nil
 }
@@ -655,12 +655,12 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadDirFS); ok {
 		dirs, err := cFsys.ReadDir(subName)
-		return mountFS.appendDirEntry(subName, dirs, mountPathError(err, name, subName))
+		return mountFS.appendDirEntry(subName, dirs, rewritePathError(err, name, subName))
 	}
 
 	f, err := mountFS.fsys.Open(subName)
 	if err != nil {
-		return nil, mountPathError(err, name, subName)
+		return nil, rewritePathError(err, name, subName)
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -674,7 +674,7 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 
 	dirs, err := readDirFile.ReadDir(-1)
-	return mountFS.appendDirEntry(subName, dirs, mountPathError(err, name, subName))
+	return mountFS.appendDirEntry(subName, dirs, rewritePathError(err, name, subName))
 }
 
 func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
@@ -692,11 +692,11 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
 			return makeVirtualDirEntry(path.Base(subName)), nil
 		}
-		return info, mountPathError(err, name, subName)
+		return info, rewritePathError(err, name, subName)
 	}
 	f, err := mountFS.Open(subName)
 	if err != nil {
-		return nil, mountPathError(err, name, subName)
+		return nil, rewritePathError(err, name, subName)
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -704,7 +704,7 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 		}
 	}()
 	info, err := f.Stat()
-	return info, mountPathError(err, name, subName)
+	return info, rewritePathError(err, name, subName)
 }
 
 func (fsys *nestFS) ReadFile(name string) ([]byte, error) {
@@ -719,10 +719,10 @@ func (fsys *nestFS) ReadFile(name string) ([]byte, error) {
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadFileFS); ok {
 		data, err := cFsys.ReadFile(subName)
-		return data, mountPathError(err, name, subName)
+		return data, rewritePathError(err, name, subName)
 	}
 	data, err := fs.ReadFile(mountFS.fsys, subName)
-	return data, mountPathError(err, name, subName)
+	return data, rewritePathError(err, name, subName)
 }
 
 func (fsys *nestFS) ReadLink(name string) (string, error) {
@@ -737,7 +737,7 @@ func (fsys *nestFS) ReadLink(name string) (string, error) {
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
 		target, err := cFsys.ReadLink(subName)
-		return target, mountPathError(err, name, subName)
+		return target, rewritePathError(err, name, subName)
 	}
 
 	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
@@ -758,10 +758,10 @@ func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
 			return makeVirtualDirEntry(path.Base(subName)), nil
 		}
-		return info, mountPathError(err, name, subName)
+		return info, rewritePathError(err, name, subName)
 	}
 	info, err := mountFS.Stat(subName)
-	return info, mountPathError(err, name, subName)
+	return info, rewritePathError(err, name, subName)
 }
 
 func (fsys *nestFS) Remove(name string) error {
@@ -773,7 +773,7 @@ func (fsys *nestFS) Remove(name string) error {
 		return err
 	}
 	if err := mountFS.fsys.Remove(subName); err != nil {
-		return mountPathError(err, name, subName)
+		return rewritePathError(err, name, subName)
 	}
 	return nil
 }
@@ -787,7 +787,7 @@ func (fsys *nestFS) RemoveAll(name string) error {
 		return err
 	}
 	if err := mountFS.fsys.RemoveAll(subName); err != nil {
-		return mountPathError(err, name, subName)
+		return rewritePathError(err, name, subName)
 	}
 	return nil
 }

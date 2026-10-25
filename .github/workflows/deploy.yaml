@@ -14,9 +14,9 @@
 
 name: CI
 
+# Releases are built and published by create-release.yaml, on a tag push.
 on:
   push:
-    tags: ["v*"]
     branches: ["main"]
   pull_request:
     branches: ["main"]
@@ -40,8 +40,7 @@ jobs:
     name: "Build Linux"
     runs-on: ["self-hosted", "linux", "large"]
     permissions:
-      contents: write
-      packages: write
+      contents: read
       checks: write
       # Required by actions/upload-code-coverage below.
       # https://docs.github.com/en/code-security/how-tos/maintain-quality-code/set-up-code-coverage
@@ -54,6 +53,16 @@ jobs:
       - name: Checkout code
         # https://github.com/actions/checkout
         uses: actions/checkout@v7
+      - name: Configure Toolchain Cache
+        # Install toolchain releases into the runner's persistent tool
+        # directory instead of build/, so they survive checkout's
+        # `git clean -ffdx` and the Clean step below and are installed once
+        # per runner. Projects made from template-go share it, and only
+        # install the versions they pin that are not there yet. See
+        # TOOLCHAIN_CACHE in Makefile_core.mk.
+        run: |
+          echo "TOOLCHAIN_CACHE=$RUNNER_TOOL_CACHE/toolchain" \
+            >> "$GITHUB_ENV"
       - name: Setup Go
         # https://github.com/actions/setup-go
         uses: actions/setup-go@v7
@@ -99,7 +108,7 @@ jobs:
         # https://github.com/actions/upload-code-coverage
         # https://docs.github.com/en/code-security/how-tos/maintain-quality-code/set-up-code-coverage#step-2-upload-the-coverage-report
         # Requires: code-quality: write
-        if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !startsWith(github.ref, 'refs/tags/')
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
         uses: actions/upload-code-coverage@v1
         with:
@@ -122,80 +131,6 @@ jobs:
           if-no-files-found: error
       - name: Build Binaries
         run: make all -j"$(nproc)"
-      - name: Set up Docker Buildx (Scan)
-        # https://github.com/docker/setup-buildx-action
-        # Skipped on pull requests along with the image scan below.
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: docker/setup-buildx-action@v4
-      - name: Scan Container Image
-        # Builds a local single-arch image with --load purely so trivy has
-        # something to scan; independent of the multi-arch push pipeline
-        # further down, which never loads images into the local daemon.
-        # Skipped on pull requests, and never fails the build.
-        if: ${{ github.event_name != 'pull_request' }}
-        continue-on-error: true
-        run: make scan-images
-      - name: Release Package
-        if: ${{ github.event_name != 'pull_request' }}
-        run: make build/packages/release.tar.gz
-      - name: Create Release
-        # https://github.com/softprops/action-gh-release
-        uses: softprops/action-gh-release@v3
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-          files: |
-            LICENSE
-            build/packages/release.tar.gz
-            build/release/ufsmount-darwin_arm64
-            build/release/ufsmount-linux_amd64
-            build/release/ufsmount-linux_arm64
-            build/release/ufsmount-windows_amd64.exe
-            build/release/ufsmount-windows_arm64.exe
-            build/release/walk-darwin_arm64
-            build/release/walk-linux_amd64
-            build/release/walk-linux_arm64
-            build/release/walk-windows_amd64.exe
-            build/release/walk-windows_arm64.exe
-            build/release/ufsforagents-darwin_arm64
-            build/release/ufsforagents-linux_amd64
-            build/release/ufsforagents-linux_arm64
-            build/release/ufsforagents-windows_amd64.exe
-            build/release/ufsforagents-windows_arm64.exe
-      - name: Login to GitHub Container Registry
-        # https://github.com/docker/login-action#github-packages-docker-registry
-        uses: docker/login-action@v4
-        if: ${{ github.event_name != 'pull_request' }}
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Login to Docker Hub
-        # https://github.com/docker/login-action#github-packages-docker-registry
-        uses: docker/login-action@v4
-        if: ${{ github.event_name != 'pull_request' }}
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-      - name: Set up QEMU
-        # https://github.com/docker/setup-qemu-action
-        uses: docker/setup-qemu-action@v4
-        if: ${{ github.event_name != 'pull_request' }}
-      - name: Set up Docker Buildx
-        # https://github.com/docker/setup-buildx-action
-        uses: docker/setup-buildx-action@v4
-        if: ${{ github.event_name != 'pull_request' }}
-      - name: Push Images (Commit)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' }}
-        run: |
-          make DOCKER_PUSH="" REGISTRY=docker.io/cloudfra linux-images windows-images
-      - name: Push Images (Release)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          make DOCKER_PUSH=--push REGISTRY=docker.io/cloudfra images
-          make DOCKER_PUSH=--push REGISTRY=ghcr.io/cloudfra images
 
   build-windows:
     name: "Build Windows"
@@ -208,6 +143,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      - name: Configure Toolchain Cache
+        # Same as the Linux job. make treats the colon in a C:\ path as a
+        # rule separator, so the path is converted to MSYS form (/c/...).
+        shell: bash
+        run: |
+          cache="$(cygpath -u "$RUNNER_TOOL_CACHE")/toolchain"
+          echo "TOOLCHAIN_CACHE=$cache" >> "$GITHUB_ENV"
       - name: Setup Go
         uses: actions/setup-go@v7
         with:

@@ -25,7 +25,9 @@ import (
 // streaming results without building an intermediate slice. If fsys implements
 // [types.ForEachFilenameIter], its native implementation is used directly; otherwise
 // the paths are collected via [fs.WalkDir] and iterated. f receives paths
-// relative to dir. The walk stops and returns the first non-nil error from f.
+// relative to the root of fsys, following [fs.WalkDir] semantics, so the names
+// below dir keep dir as their prefix. The walk stops and returns the first
+// non-nil error from f.
 func ForEachFilename(fsys fs.FS, dir string, f func(string) error) error {
 	lf, ok := fsys.(types.ForEachFilenameIter)
 	if ok {

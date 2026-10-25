@@ -68,8 +68,9 @@ Lists only objects under the `data/2026` prefix.
 walk -path /tmp/release.tar.gz
 ```
 
-Archives (`.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.7z`) are mounted
-read-only and walked as if they were directories.
+Archives (`.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`,
+`.tar.br`, `.tar.zst`, `.rar`, `.7z`) are mounted read-only and walked as if
+they were directories.
 
 ### Walk a remote archive
 

@@ -78,11 +78,11 @@ const (
 //
 // Pass the returned URI directly to [New]:
 //
-//	 ctx := context.Background()
-//		uri, _ := ufs.CreateURI("file:///srv/data", map[string]string{
-//		    "tmp": "memory://",
-//		})
-//		fsys, _ := ufs.New(ctx, uri)
+//	ctx := context.Background()
+//	uri, _ := ufs.CreateURI("file:///srv/data", map[string]string{
+//		"tmp": "memory://",
+//	})
+//	fsys, _ := ufs.New(ctx, uri)
 //
 // Returns an error if name or any nested URI cannot be parsed.
 func CreateURI(name string, nested map[string]string) (string, error) {
@@ -187,14 +187,15 @@ func nameToURI(name string) (*url.URL, error) {
 //
 // YAML (flat list of [MountSpec] entries):
 //
-//   - source: "memory://"
-//     mountPoint: "."
-//   - source: "null://"
-//     mountPoint: "cache"
-//     options:
-//   - readOnly: true
-//   - fault:
-//     errorRate: 0.1
+//	---
+//	- source: "memory://"
+//	  mountPoint: "."
+//	- source: "null://"
+//	  mountPoint: "cache"
+//	  options:
+//	    - readOnly: true
+//	    - fault:
+//	        errorRate: 0.1
 //
 // options is a list. Each entry is the case-sensitive name of a [Decorator]
 // and its configuration. Decorators are applied in the order listed: the first
@@ -409,9 +410,10 @@ type MountSpec struct {
 // mapping with a single key, the decorator's name, whose value is the
 // decorator's configuration:
 //
-//   - readOnly: true
-//   - fault:
-//     errorRate: 0.1
+//	options:
+//	  - readOnly: true
+//	  - fault:
+//	      errorRate: 0.1
 type MountOption struct {
 	// Name is the name of a registered [Decorator], see [RegisterDecorator].
 	Name string

@@ -29,6 +29,7 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 const (
@@ -331,6 +332,10 @@ func newLocalInner(t *testing.T) (types.WriteFS, string) {
 	if err != nil {
 		t.Fatalf("New(%q) = %v, want nil", dir, err)
 	}
+	// localFS keeps an open handle on the directory, which makes Windows refuse
+	// to remove the temporary directory when the test ends, so the file system
+	// has to be closed before t.TempDir cleanup runs.
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 	return fsys, dir
 }
 

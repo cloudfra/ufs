@@ -24,8 +24,6 @@ import (
 )
 
 var (
-	_ types.FileInfo = (*fsInfo)(nil)
-
 	_ fs.DirEntry = (*virtualDirEntry)(nil)
 	_ fs.FileInfo = (*virtualDirEntry)(nil)
 
@@ -37,46 +35,7 @@ var (
 // NewFileInfo returns a [FileInfo] for the given attributes. The result reports
 // IsDir according to mode.IsDir() and a nil Sys value.
 func NewFileInfo(name string, size int64, mode fs.FileMode, modTime time.Time) types.FileInfo {
-	return &fsInfo{
-		name:    name,
-		size:    size,
-		mode:    mode,
-		modTime: modTime,
-		isDir:   mode.IsDir(),
-	}
-}
-
-type fsInfo struct {
-	name    string
-	size    int64
-	mode    fs.FileMode
-	modTime time.Time
-	isDir   bool
-	sys     any
-}
-
-func (finfo *fsInfo) Name() string {
-	return finfo.name
-}
-
-func (finfo *fsInfo) Size() int64 {
-	return finfo.size
-}
-
-func (finfo *fsInfo) Mode() fs.FileMode {
-	return finfo.mode
-}
-
-func (finfo *fsInfo) ModTime() time.Time {
-	return finfo.modTime
-}
-
-func (finfo *fsInfo) IsDir() bool {
-	return finfo.isDir
-}
-
-func (finfo *fsInfo) Sys() any {
-	return finfo.sys
+	return types.NewFileInfo(name, size, mode, modTime)
 }
 
 type virtualDirEntry struct {

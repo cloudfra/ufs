@@ -58,7 +58,21 @@ const (
 
 // FSArgs holds optional parameters for constructing a nestFS.
 type FSArgs struct {
+	// BufMode selects how a file opened through this nestFS keeps the content
+	// that has to be buffered to make it seekable. The zero value,
+	// BufferMemory, keeps it in memory.
 	BufMode bufferMode
+
+	// AutoBufThreshold is the size in bytes at or above which BufferAuto keeps
+	// that content in a temporary file instead of in memory. Zero or negative
+	// means polyfills.AutoBufferThreshold. Other modes ignore it.
+	AutoBufThreshold int64
+}
+
+// bufferArgs returns the buffering configuration this nestFS passes to the
+// file polyfill.
+func (args FSArgs) bufferArgs() polyfills.BufferArgs {
+	return polyfills.BufferArgs{Mode: args.BufMode, AutoThreshold: args.AutoBufThreshold}
 }
 
 var (
@@ -499,7 +513,10 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 		}
 	}
 
-	wrapped := makeNestFS(ctx, newFS)
+	// The mount is part of this file system's tree, so it buffers files the same
+	// way. Without this the buffering settings would never reach the files of an
+	// archive, which is the case they exist for.
+	wrapped := makeNestFS(ctx, newFS, fsys.args)
 	wrapped.inArchive = true
 	if err := fsys.addAutoMount(name+archiveDirExt, wrapped); err != nil {
 		return nil, err
@@ -590,7 +607,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
-	return polyfills.ToBufferedFile(f, true, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, true, mountFS.args.bufferArgs())
 }
 
 func (fsys *nestFS) Close() error {
@@ -620,7 +637,7 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
 	}
-	return polyfills.ToBufferedFile(f, false, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, false, mountFS.args.bufferArgs())
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {

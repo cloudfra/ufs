@@ -19,7 +19,6 @@ import (
 	"io/fs"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -60,68 +59,6 @@ func TestNewFileInfo(t *testing.T) {
 				t.Errorf("Sys() = %v, want nil", info.Sys())
 			}
 		})
-	}
-}
-
-func TestInfoDir(t *testing.T) {
-	tNow := ufsTesting.MustTime(t, "2026-01-01T00:00:00Z")
-	sysVal := struct{ x int }{x: 42}
-	info := &fsInfo{
-		name:    "mydir",
-		size:    5000,
-		mode:    fs.ModeDir | fs.ModePerm,
-		modTime: tNow,
-		isDir:   true,
-		sys:     sysVal,
-	}
-	if info.Name() != "mydir" {
-		t.Errorf("Name() = %q, want %q", info.Name(), "mydir")
-	}
-	if info.Size() != 5000 {
-		t.Errorf("Size() = %d, want 5000", info.Size())
-	}
-	if info.Mode() != fs.ModeDir|fs.ModePerm {
-		t.Errorf("Mode() = %v, want %v", info.Mode(), fs.ModeDir|fs.ModePerm)
-	}
-	if info.ModTime() != tNow {
-		t.Errorf("ModTime() = %v, want %v", info.ModTime(), tNow)
-	}
-	if !info.IsDir() {
-		t.Error("IsDir() = false, want true")
-	}
-	if info.Sys() != sysVal {
-		t.Errorf("Sys() = %v, want %v", info.Sys(), sysVal)
-	}
-}
-
-func TestInfo(t *testing.T) {
-	tNow := time.Now()
-	info := &fsInfo{
-		name:    "test",
-		size:    0,
-		mode:    0,
-		modTime: tNow,
-		isDir:   false,
-		sys:     nil,
-	}
-
-	if info.Name() != "test" {
-		t.Errorf("Name() = %q, want %q", info.Name(), "test")
-	}
-	if info.Size() != 0 {
-		t.Errorf("Size() = %d, want %d", info.Size(), 0)
-	}
-	if info.Mode() != 0 {
-		t.Errorf("Mode() = %d, want %d", info.Mode(), 0)
-	}
-	if info.ModTime() != tNow {
-		t.Errorf("ModTime() = %v, want %v", info.ModTime(), tNow)
-	}
-	if info.IsDir() != false {
-		t.Errorf("IsDir() = %v, want %v", info.IsDir(), false)
-	}
-	if info.Sys() != nil {
-		t.Errorf("Sys() = %v, want %v", info.Sys(), nil)
 	}
 }
 

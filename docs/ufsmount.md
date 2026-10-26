@@ -166,8 +166,8 @@ mkdir -p /mnt/archive
 ufsmount -uri /tmp/release.tar.gz -mount /mnt/archive
 ```
 
-Archives (`.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.7z`) are mounted
-read-only.
+Archives (`.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`,
+`.tar.br`, `.tar.zst`, `.rar`, `.7z`) are mounted read-only.
 
 ```bash
 ls /mnt/archive

@@ -19,7 +19,9 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -97,6 +99,22 @@ func TestWalkExcludeDirectoryGlob(t *testing.T) {
 	want := []string{"a.txt"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Walk() ExcludeDirectory glob mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestWalkExcludeDirectoryBadPattern(t *testing.T) {
+	fsys := setupListFS(t)
+
+	err := ops.Walk(fsys, pathutil.CwdPath, ops.WalkArgs{ExcludeDirectory: []string{"["}}, func(string) error {
+		return nil
+	})
+	if !errors.Is(err, path.ErrBadPattern) {
+		t.Fatalf("Walk() = %v, want an error wrapping %v", err, path.ErrBadPattern)
+	}
+	// ExcludeDirectory patterns are [path.Match] globs, not regular expressions,
+	// so the error must not call one.
+	if !strings.Contains(err.Error(), "glob pattern") {
+		t.Errorf("Walk() error = %q, want it to name the pattern a glob", err)
 	}
 }
 

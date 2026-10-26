@@ -174,6 +174,40 @@ func TestArchiveFSReadDirSubdir(t *testing.T) {
 	}
 }
 
+// TestArchiveFSReadDirMissingDir checks that a directory the archive does not
+// store is reported as missing rather than as an empty listing, so that a typo
+// in a path does not look like an empty directory.
+func TestArchiveFSReadDirMissingDir(t *testing.T) {
+	fsys := mustArchiveFS(t)
+
+	rfs, ok := fsys.(fs.ReadDirFS)
+	if !ok {
+		t.Fatal("archiveFS does not implement fs.ReadDirFS")
+	}
+
+	// The first call traverses the archive and the second one reads the index
+	// left behind by that traversal; both must report the miss.
+	for range 2 {
+		entries, err := rfs.ReadDir("no/such/dir")
+		if err == nil {
+			t.Fatalf("ReadDir(\"no/such/dir\") = %v, want fs.ErrNotExist", entries)
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("ReadDir(\"no/such/dir\") = %v, want fs.ErrNotExist", err)
+		}
+		var pathErr *fs.PathError
+		if !errors.As(err, &pathErr) {
+			t.Fatalf("ReadDir(\"no/such/dir\") = %v, want an *fs.PathError", err)
+		}
+		if pathErr.Op != "readdir" {
+			t.Errorf("ReadDir(\"no/such/dir\") reported op %q, want readdir", pathErr.Op)
+		}
+		if pathErr.Path != "no/such/dir" {
+			t.Errorf("ReadDir(\"no/such/dir\") reported path %q, want no/such/dir", pathErr.Path)
+		}
+	}
+}
+
 func TestArchiveFSReadLink(t *testing.T) {
 	fsys := mustArchiveFS(t)
 

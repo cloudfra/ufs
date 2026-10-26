@@ -19,32 +19,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net/url"
-	"os"
 	"path"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 
+	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/ops"
 )
 
-type bufferMode int
-
-const (
-	bufferMemory bufferMode = iota
-	bufferDisk
-)
+// bufferMode selects how a file opened through a nestFS keeps the content that
+// has to be buffered to make it seekable. The buffering itself lives in the
+// polyfills package.
+type bufferMode = polyfills.BufferMode
 
 const (
 	// archiveDirExt is the suffix of the virtual directory that holds the
@@ -594,7 +590,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
-	return wrapFile(f, true, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, true, mountFS.args.BufMode)
 }
 
 func (fsys *nestFS) Close() error {
@@ -624,7 +620,7 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
 	}
-	return wrapFile(f, false, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, false, mountFS.args.BufMode)
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
@@ -1051,236 +1047,4 @@ func makeNestReadDirFile(fsys *nestFS, name string, rdf fs.ReadDirFile) *nestRea
 		name: name,
 		rdf:  rdf,
 	}
-}
-
-var _ types.File = (*nestFile)(nil)
-
-// nestFile wraps an fs.File and polyfills any methods from the File interface
-// that the underlying implementation does not provide.
-//
-// When Seek or ReadAt is absent from a file that is open only for reading, the
-// file content is buffered so that both operations work correctly at any
-// position. In memory mode, content is read eagerly into a bytes.Reader. In
-// disk mode, content is streamed to a temporary file. The buffer is released on
-// Close. Read is also redirected through the buffer so that the file position
-// stays consistent across Read/Seek/ReadAt.
-//
-// A file that is open for writing is never buffered: the wrapper writes through
-// to the underlying file, so a buffer would report content that predates those
-// writes. A missing Seek or ReadAt on such a file reports fs.ErrInvalid instead.
-// See https://github.com/cloudfra/ufs/issues/451.
-type nestFile struct {
-	fs.File
-	// closed records that Close has run. Close releases the buffer and the
-	// closures bound to it, so every method must then report fs.ErrClosed.
-	closed          bool
-	buf             *bytes.Reader // non-nil when content is buffered in memory
-	tmpFile         *os.File      // non-nil when content is buffered on disk
-	writeFunc       func([]byte) (int, error)
-	seekFunc        func(int64, int) (int64, error)
-	readAtFunc      func([]byte, int64) (int, error)
-	writeStringFunc func(string) (int, error)
-}
-
-func (f *nestFile) Stat() (fs.FileInfo, error) {
-	if f.closed {
-		return nil, fs.ErrClosed
-	}
-	return f.File.Stat()
-}
-
-func (f *nestFile) Read(p []byte) (int, error) {
-	if f.closed {
-		return 0, fs.ErrClosed
-	}
-	if f.buf != nil {
-		return f.buf.Read(p)
-	}
-	if f.tmpFile != nil {
-		return f.tmpFile.Read(p)
-	}
-	return f.File.Read(p)
-}
-
-// Close releases the buffered content along with the closures that reached it,
-// so that no method can read content that was dropped. A second Close reports
-// fs.ErrClosed, like [os.File.Close].
-func (f *nestFile) Close() error {
-	if f.closed {
-		return fs.ErrClosed
-	}
-	f.closed = true
-	f.buf = nil
-	f.seekFunc = nil
-	f.readAtFunc = nil
-	if f.tmpFile != nil {
-		name := f.tmpFile.Name()
-		if err := f.tmpFile.Close(); err != nil {
-			f.tmpFile = nil
-			return ufserrors.Join(err, f.File.Close())
-		}
-		if err := osutil.Remove(name); err != nil {
-			f.tmpFile = nil
-			return ufserrors.Join(err, f.File.Close())
-		}
-		f.tmpFile = nil
-	}
-	return f.File.Close()
-}
-
-func (f *nestFile) Write(p []byte) (int, error) {
-	if f.closed {
-		return 0, fs.ErrClosed
-	}
-	return f.writeFunc(p)
-}
-
-func (f *nestFile) Seek(off int64, whence int) (int64, error) {
-	if f.closed {
-		return 0, fs.ErrClosed
-	}
-	return f.seekFunc(off, whence)
-}
-
-func (f *nestFile) ReadAt(p []byte, off int64) (int, error) {
-	if f.closed {
-		return 0, fs.ErrClosed
-	}
-	return f.readAtFunc(p, off)
-}
-
-func (f *nestFile) WriteString(s string) (int, error) {
-	if f.closed {
-		return 0, fs.ErrClosed
-	}
-	return f.writeStringFunc(s)
-}
-
-// polyfillSeekReadAt populates nf.seekFunc and nf.readAtFunc for the underlying
-// file f. A method f provides natively is used directly. When f is missing one
-// of them, a file that is open only for reading has its content buffered so
-// that both work at any position, using in-memory (bufferMemory) or temp-file
-// (bufferDisk) buffering; on failure f is closed and the error returned. A file
-// open for writing (writable) is not buffered, so a missing method reports
-// fs.ErrInvalid.
-func polyfillSeekReadAt(nf *nestFile, f fs.File, writable bool, mode bufferMode) error {
-	if seeker, ok := f.(io.Seeker); ok {
-		nf.seekFunc = seeker.Seek
-	}
-	if readerAt, ok := f.(io.ReaderAt); ok {
-		nf.readAtFunc = readerAt.ReadAt
-	}
-	if nf.seekFunc == nil || nf.readAtFunc == nil {
-		if writable {
-			if nf.seekFunc == nil {
-				nf.seekFunc = func(int64, int) (int64, error) {
-					return 0, fs.ErrInvalid
-				}
-			}
-			if nf.readAtFunc == nil {
-				nf.readAtFunc = func([]byte, int64) (int, error) {
-					return 0, fs.ErrInvalid
-				}
-			}
-			return nil
-		}
-		if mode == bufferDisk {
-			return polyfillSeekReadAtDisk(nf, f)
-		}
-		return polyfillSeekReadAtMemory(nf, f)
-	}
-	return nil
-}
-
-func polyfillSeekReadAtMemory(nf *nestFile, f fs.File) error {
-	data, err := io.ReadAll(f)
-	if err != nil {
-		if closeErr := f.Close(); closeErr != nil {
-			slog.Warn("failed to close file after ReadAll error", "error", closeErr)
-		}
-		return err
-	}
-	nf.buf = bytes.NewReader(data)
-	nf.seekFunc = nf.buf.Seek
-	nf.readAtFunc = nf.buf.ReadAt
-	return nil
-}
-
-func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
-	tmp, err := osutil.CreateTemp("", "ufs-polyfill-*.tmp")
-	if err != nil {
-		fCloseErr := f.Close()
-		return ufserrors.Join(err, fCloseErr)
-	}
-	if _, err := io.Copy(tmp, f); err != nil {
-		closeErr := tmp.Close()
-		removeErr := osutil.Remove(tmp.Name())
-		fCloseErr := f.Close()
-		return ufserrors.Join(err, closeErr, removeErr, fCloseErr)
-	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		closeErr := tmp.Close()
-		removeErr := osutil.Remove(tmp.Name())
-		fCloseErr := f.Close()
-		return ufserrors.Join(err, closeErr, removeErr, fCloseErr)
-	}
-	nf.tmpFile = tmp
-	nf.seekFunc = tmp.Seek
-	nf.readAtFunc = tmp.ReadAt
-	return nil
-}
-
-// wrapFile returns f unchanged if it already satisfies File. Otherwise it wraps
-// f, polyfilling any missing methods. When readOnly is true, Write and
-// WriteString always return fs.ErrInvalid. mode selects in-memory or disk-backed
-// buffering for the Seek/ReadAt polyfills, which only apply to a file that is
-// open for reading.
-func wrapFile(f fs.File, readOnly bool, mode bufferMode) (types.File, error) {
-	if full, ok := f.(types.File); ok {
-		return full, nil
-	}
-	nf := &nestFile{File: f}
-	if err := polyfillSeekReadAt(nf, f, !readOnly, mode); err != nil {
-		return nil, err
-	}
-	if readOnly {
-		nf.writeFunc = func(_ []byte) (int, error) {
-			return 0, fs.ErrInvalid
-		}
-		nf.writeStringFunc = func(_ string) (int, error) {
-			return 0, fs.ErrInvalid
-		}
-		return nf, nil
-	}
-	if w, ok := f.(io.Writer); ok {
-		nf.writeFunc = w.Write
-	} else {
-		nf.writeFunc = func(_ []byte) (int, error) {
-			return 0, fs.ErrInvalid
-		}
-	}
-	if sw, ok := f.(io.StringWriter); ok {
-		nf.writeStringFunc = sw.WriteString
-	} else if _, ok := f.(io.Writer); ok {
-		nf.writeStringFunc = func(s string) (int, error) {
-			return nf.writeFunc([]byte(s))
-		}
-	} else {
-		nf.writeStringFunc = func(_ string) (int, error) {
-			return 0, fs.ErrInvalid
-		}
-	}
-	return nf, nil
-}
-
-// wrapReadOnlyFSFile returns f unchanged if it already satisfies File.
-// Otherwise it wraps f for read-only use with in-memory buffering.
-func wrapReadOnlyFSFile(f fs.File) (types.File, error) {
-	return wrapFile(f, true, bufferMemory)
-}
-
-// wrapFSFile returns f unchanged if it already satisfies File. Otherwise it
-// wraps f for read-write use with in-memory buffering.
-func wrapFSFile(f fs.File) (types.File, error) {
-	return wrapFile(f, false, bufferMemory)
 }

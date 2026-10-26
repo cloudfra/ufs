@@ -198,8 +198,22 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 // a directory index, rather than leaving callers to the fs.ReadDir fallback of
 // Open followed by ReadDirFile.ReadDir, which would also pay for Open's
 // implicit-directory check on every call.
+//
+// The library answers a name that is absent from that index with an empty
+// listing instead of an error, so an empty listing is confirmed with Stat: an
+// empty directory that the archive does store stays empty, while a name the
+// archive does not store at all reports [fs.ErrNotExist].
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	return fs.ReadDir(fsys.fsys, name)
+	entries, err := fs.ReadDir(fsys.fsys, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		if _, err := fsys.Stat(name); err != nil {
+			return nil, ufserrors.NewPathError("readdir", name, fs.ErrNotExist)
+		}
+	}
+	return entries, nil
 }
 
 func (fsys *archiveFS) Close() error {

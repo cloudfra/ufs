@@ -34,6 +34,16 @@ import (
 // [types.MkdirFS]. A file system that implements neither gets an unimplemented
 // error.
 func MkdirAll(fsys fs.FS, name string, perm fs.FileMode) error {
+	return mkdirAll(fsys, name, perm)
+}
+
+// mkdirAll is the internal version of [MkdirAll] that every standin in this
+// package uses for a directory it has to recreate. Only the exported entry point
+// probes the optional interface it stands in for, which is what keeps [Mkdir]
+// and [MkdirAll] from recursing into each other: each emulates the other's
+// interface from the file system's own method rather than by calling the other's
+// entry point.
+func mkdirAll(fsys fs.FS, name string, perm fs.FileMode) error {
 	if cFS, ok := fsys.(types.MkdirAllFS); ok {
 		return cFS.MkdirAll(name, perm)
 	}

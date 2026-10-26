@@ -48,6 +48,16 @@ const removeAllOp = "removeall"
 // costs a stat and a read for every directory, which is why a file system with
 // its own RemoveAll is preferred.
 func RemoveAll(fsys fs.FS, name string) error {
+	return removeAll(fsys, name)
+}
+
+// removeAll is the internal version of [RemoveAll] that every standin in this
+// package uses for a name it has to delete. Only the exported entry point probes
+// the optional interface it stands in for, which is what keeps [Remove] and
+// [RemoveAll] from recursing into each other: each emulates the other's
+// interface from the file system's own method rather than by calling the other's
+// entry point.
+func removeAll(fsys fs.FS, name string) error {
 	if rFS, ok := fsys.(types.RemoveAllFS); ok {
 		return rFS.RemoveAll(name)
 	}

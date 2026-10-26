@@ -15,6 +15,7 @@
 package archive
 
 import (
+	"archive/zip"
 	"bytes"
 	"errors"
 	"io"
@@ -317,5 +318,130 @@ func TestCloseIdempotent(t *testing.T) {
 	}
 	if closeCalled.Load() != 1 {
 		t.Errorf("closer called %d times, want exactly 1", closeCalled.Load())
+	}
+}
+
+// TestReadDirMissingDirectory checks that listing a directory the archive does
+// not store reports fs.ErrNotExist rather than an empty listing, which would
+// make a typo look like an empty directory to fs.WalkDir, Glob, or a FUSE
+// readdir. The library answers such a name from its own index with no entries.
+func TestReadDirMissingDirectory(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		archive string
+		dir     string
+	}{
+		{name: "root of an indexed archive", archive: testTarGzArchive, dir: "no/such/dir"},
+		{name: "below a stored directory", archive: testTarGzArchive, dir: "assets/no/such/dir"},
+		{name: "archive without directory entries", archive: testNoDirArchive, dir: "no/such/dir"},
+		{name: "below an implicit directory", archive: testNoDirArchive, dir: "onetwothree/no/such/dir"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fsys := mustNew(t, tc.archive)
+
+			// The first call traverses the archive and the second one reads the
+			// index that the traversal left behind; both must report the miss.
+			for range 2 {
+				entries, err := fsys.ReadDir(tc.dir)
+				if err == nil {
+					t.Fatalf("ReadDir(%q) = %v, want fs.ErrNotExist", tc.dir, entries)
+				}
+				if !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("ReadDir(%q) = %v, want fs.ErrNotExist", tc.dir, err)
+				}
+				var pathErr *fs.PathError
+				if !errors.As(err, &pathErr) {
+					t.Fatalf("ReadDir(%q) = %v, want an *fs.PathError", tc.dir, err)
+				}
+				if pathErr.Op != "readdir" {
+					t.Errorf("ReadDir(%q) reported op %q, want readdir", tc.dir, pathErr.Op)
+				}
+				if pathErr.Path != tc.dir {
+					t.Errorf("ReadDir(%q) reported path %q, want %q", tc.dir, pathErr.Path, tc.dir)
+				}
+			}
+		})
+	}
+}
+
+// TestReadDirEmptyDirectory checks that the fs.ErrNotExist result is limited to
+// a missing name: an empty directory that the archive does store must keep
+// listing as empty, and a name below it must still report the miss.
+func TestReadDirEmptyDirectory(t *testing.T) {
+	t.Parallel()
+
+	zipPath := filepath.Join(t.TempDir(), "empty-dir.zip")
+	writeZipWithEmptyDir(t, zipPath)
+	fsys := mustNew(t, zipPath)
+
+	for range 2 {
+		entries, err := fsys.ReadDir("empty")
+		if err != nil {
+			t.Errorf("ReadDir(empty) = %v, want an empty listing", err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("ReadDir(empty) = %v, want no entries", entries)
+		}
+	}
+	if _, err := fsys.ReadDir("empty/missing"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("ReadDir(empty/missing) = %v, want fs.ErrNotExist", err)
+	}
+}
+
+// TestReadDirFileKeepsLibraryError checks that listing a name that the archive
+// stores as a file keeps the library's own error rather than the missing
+// directory error.
+func TestReadDirFileKeepsLibraryError(t *testing.T) {
+	t.Parallel()
+
+	fsys := mustNew(t, testTarGzArchive)
+	_, err := fsys.ReadDir("index.html")
+	if err == nil {
+		t.Fatal("ReadDir(index.html) = nil, want an error")
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("ReadDir(index.html) = %v, want a not-a-directory error", err)
+	}
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("ReadDir(index.html) = %v, want an *fs.PathError", err)
+	}
+	if pathErr.Op != "readdir" || pathErr.Path != "index.html" {
+		t.Errorf("ReadDir(index.html) reported %s %q, want readdir index.html", pathErr.Op, pathErr.Path)
+	}
+}
+
+// writeZipWithEmptyDir writes a zip holding an explicit entry for an empty
+// directory alongside a file, so that a directory listing can be empty without
+// the directory being missing.
+func writeZipWithEmptyDir(tb testing.TB, name string) {
+	tb.Helper()
+
+	file, err := osutil.Create(name)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	zipWriter := zip.NewWriter(file)
+	for _, entry := range []string{"empty/", "index.html"} {
+		writer, err := zipWriter.Create(entry)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		if entry != "empty/" {
+			if _, err := writer.Write([]byte("<html></html>\n")); err != nil {
+				tb.Fatal(err)
+			}
+		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		tb.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		tb.Fatal(err)
 	}
 }

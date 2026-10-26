@@ -1,7 +1,10 @@
 # walk
 
 `walk` lists every file in a virtual file system. It accepts any URI scheme
-supported by `ufs.New` and prints one absolute path per line.
+supported by `ufs.New`. Each line is the absolute path of the file when the
+file system can resolve one; files that exist only inside the virtual file
+system, such as the contents of an archive, are printed as their path within
+that file system.
 
 ## Install
 
@@ -68,8 +71,9 @@ Lists only objects under the `data/2026` prefix.
 walk -path /tmp/release.tar.gz
 ```
 
-Archives (`.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.7z`) are mounted
-read-only and walked as if they were directories.
+Archives (`.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`,
+`.tar.br`, `.tar.zst`, `.rar`, `.7z`) are mounted read-only and walked as if
+they were directories.
 
 ### Walk a remote archive
 

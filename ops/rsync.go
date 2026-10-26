@@ -26,9 +26,15 @@ import (
 // [fs.ModePerm] as needed. Existing files in destFS are overwritten. The copy
 // is not atomic: if an error occurs mid-walk, destFS may be partially written.
 //
+// The contents of an auto-mounted archive are traversed like any other
+// directory, so they are written to destFS as a directory tree named after the
+// mount point, such as "data.zip.d", not as the archive file itself. The archive
+// file at "data.zip" is copied as an opaque file in addition to its contents.
+//
 // dir must satisfy [fs.ValidPath]; use "." to copy the entire file system.
 func Rsync(srcFS fs.FS, destFS types.WriteFS, dir string) error {
-	// TODO: Prevent archive traversal.
+	// TODO: Prevent archive traversal; see
+	// https://github.com/cloudfra/ufs/issues/46.
 	return ForEachFilename(srcFS, dir, func(name string) error {
 		dir, _ := path.Split(name)
 		dir = path.Clean(dir)

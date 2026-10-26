@@ -19,6 +19,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -31,13 +32,17 @@ var pathFlag = flag.String("path", ".", "Path to walk the directory tree to repo
 
 func main() {
 	flag.Parse()
-	if err := run(*pathFlag); err != nil {
+	if err := run(os.Stdout, *pathFlag); err != nil {
 		slog.Error("walk failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(dir string) error {
+// run lists the files below dir, writing one name per line to w. A name whose
+// file is reachable outside the virtual file system is written as its absolute
+// path; the rest are written as their path within the virtual file system,
+// which is the only place they exist.
+func run(w io.Writer, dir string) error {
 	ctx := context.Background()
 	fsys, err := ufs.New(ctx, dir)
 	if err != nil {
@@ -49,12 +54,11 @@ func run(dir string) error {
 		}
 	}()
 	return ops.ForEachFilename(fsys, ".", func(name string) error {
-		absName, err := ufs.AbsPath(fsys, name)
-		if err == nil {
-			fmt.Println(absName)
-		} else {
-			fmt.Printf("ufs://%s\n", name)
+		printName, err := ufs.AbsPath(fsys, name)
+		if err != nil {
+			printName = name
 		}
-		return nil
+		_, err = fmt.Fprintln(w, printName)
+		return err
 	})
 }

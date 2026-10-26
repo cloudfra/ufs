@@ -60,7 +60,7 @@ func Walk(fsys fs.FS, dir string, args WalkArgs, f func(string) error) error {
 				if matched, err := path.Match(pattern, d.Name()); matched {
 					return fs.SkipDir
 				} else if err != nil {
-					return fmt.Errorf("error compiling the regex %q for matching, %w", pattern, err)
+					return fmt.Errorf("error compiling the glob pattern %q for matching, %w", pattern, err)
 				}
 			}
 			return nil

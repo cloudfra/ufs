@@ -832,30 +832,135 @@ func TestDownloadFileErrors(t *testing.T) {
 	})
 }
 
-func TestDownloadFileOverwritesExisting(t *testing.T) {
+// TestDownloadFileExistingFile covers a destination that already holds an
+// entry: it is never overwritten.
+func TestDownloadFileExistingFile(t *testing.T) {
 	t.Parallel()
-	ts := testServer(t)
-	dir := t.TempDir()
-	existing := filepath.Join(dir, "testassets.zip")
-	stale := bytes.Repeat([]byte("stale"), len(testPayload))
-	if err := os.WriteFile(existing, stale, osutil.DefaultFilePermissions); err != nil {
-		t.Fatal(err)
+	testCases := []struct {
+		name    string
+		prepare func(t *testing.T, dir string)
+		query   string
+		wantErr string
+		// wantSize and wantContent describe the entry left behind; a nil
+		// wantContent skips the content comparison.
+		wantSize    int64
+		wantContent []byte
+		wantDir     bool
+	}{
+		{
+			name:    "digest matches",
+			prepare: writeExistingPayload,
+			query:   "?ufs.checksum=" + testPayloadSHA256,
+			// The body served here is not the payload, so an accepted
+			// existing file can only mean the body was discarded unread.
+			wantSize:    int64(len(testPayload)),
+			wantContent: testPayload,
+		},
+		{
+			name:     "digest mismatch",
+			prepare:  writeExistingPayload,
+			query:    "?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256)),
+			wantErr:  "checksum mismatch",
+			wantSize: int64(len(testPayload)),
+		},
+		{
+			name:     "no checksum",
+			prepare:  writeExistingPayload,
+			wantErr:  "cannot be validated without a ufs.checksum parameter",
+			wantSize: int64(len(testPayload)),
+		},
+		{
+			name: "entry is a directory",
+			prepare: func(t *testing.T, dir string) {
+				if err := os.Mkdir(filepath.Join(dir, "testassets.zip"), osutil.DefaultDirectoryPermissions); err != nil {
+					t.Fatal(err)
+				}
+			},
+			query:   "?ufs.checksum=" + testPayloadSHA256,
+			wantErr: "not a regular file",
+			wantDir: true,
+		},
+		{
+			name: "larger than the size limit",
+			prepare: func(t *testing.T, dir string) {
+				name := filepath.Join(dir, "testassets.zip")
+				if err := os.WriteFile(name, nil, osutil.DefaultFilePermissions); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Truncate(name, maxDownloadSize+1); err != nil {
+					t.Fatal(err)
+				}
+			},
+			query:    "?ufs.checksum=" + testPayloadSHA256,
+			wantErr:  "larger than the size limit",
+			wantSize: maxDownloadSize + 1,
+		},
 	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := existingFileServer(t)
+			dir := t.TempDir()
+			existing := filepath.Join(dir, "testassets.zip")
+			tc.prepare(t, dir)
 
-	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip")
-	if err != nil {
-		t.Fatalf("DownloadFileWith() = %v", err)
+			path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip"+tc.query)
+			switch {
+			case tc.wantErr != "":
+				if err == nil {
+					t.Fatalf("DownloadFileWith() = %q, want error containing %q", path, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error = %v, want mention of %q", err, tc.wantErr)
+				}
+			case err != nil:
+				t.Fatalf("DownloadFileWith() = %v", err)
+			case path != existing:
+				t.Errorf("path = %q, want %q", path, existing)
+			}
+
+			info, err := os.Lstat(existing)
+			if err != nil {
+				t.Fatalf("existing entry after DownloadFileWith() = %v, want it left in place", err)
+			}
+			if info.IsDir() != tc.wantDir {
+				t.Errorf("entry is a directory = %v, want %v", info.IsDir(), tc.wantDir)
+			}
+			if tc.wantSize != 0 && info.Size() != tc.wantSize {
+				t.Errorf("entry size = %d, want %d", info.Size(), tc.wantSize)
+			}
+			if tc.wantContent == nil {
+				return
+			}
+			got, err := osutil.ReadFile(existing)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, tc.wantContent) {
+				t.Errorf("existing entry holds %d bytes, want the original %d bytes", len(got), len(tc.wantContent))
+			}
+		})
 	}
-	if path != existing {
-		t.Errorf("path = %q, want %q", path, existing)
-	}
-	got, err := osutil.ReadFile(path)
-	if err != nil {
+}
+
+func writeExistingPayload(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "testassets.zip"), testPayload, osutil.DefaultFilePermissions); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, testPayload) {
-		t.Errorf("downloaded %d bytes, want %d (existing file not truncated)", len(got), len(testPayload))
-	}
+}
+
+// existingFileServer serves a body that is not testPayload, so a download that
+// stores it rather than discarding it is visible in the destination file.
+func existingFileServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write(bytes.Repeat([]byte("body"), len(testPayload)/4+1)); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	return ts
 }
 
 func TestDownloadFileReturnsAbsolutePath(t *testing.T) {
@@ -1167,11 +1272,15 @@ func assertEmptyDir(t *testing.T, dir string) {
 	}
 }
 
-func TestDownloadFileFailureRemovesExistingFile(t *testing.T) {
+// TestDownloadFileFailureKeepsExistingFile checks that a download refused by a
+// checksum mismatch does not destroy the file that was already there.
+func TestDownloadFileFailureKeepsExistingFile(t *testing.T) {
 	t.Parallel()
 	ts := testServer(t)
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "testassets.zip"), []byte("stale"), osutil.DefaultFilePermissions); err != nil {
+	existing := filepath.Join(dir, "testassets.zip")
+	stale := bytes.Repeat([]byte("stale"), len(testPayload))
+	if err := os.WriteFile(existing, stale, osutil.DefaultFilePermissions); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1179,7 +1288,13 @@ func TestDownloadFileFailureRemovesExistingFile(t *testing.T) {
 	if _, err := DownloadFileWith(t.Context(), ts.Client(), dir, uri); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("DownloadFileWith() = %v, want checksum mismatch", err)
 	}
-	assertEmptyDir(t, dir)
+	got, err := osutil.ReadFile(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, stale) {
+		t.Errorf("existing file holds %d bytes, want the original %d bytes", len(got), len(stale))
+	}
 }
 
 func TestDownloadFileChecksumSurvivesRedirect(t *testing.T) {
@@ -1193,6 +1308,88 @@ func TestDownloadFileChecksumSurvivesRedirect(t *testing.T) {
 	uri = ts.URL + "/redirect-to-archive?ufs.checksum=" + testPayloadSHA256
 	if _, err := DownloadFileWith(t.Context(), ts.Client(), t.TempDir(), uri); err != nil {
 		t.Errorf("DownloadFileWith() = %v", err)
+	}
+}
+
+// syncCloserFake records Sync and Close calls and returns the injected errors.
+type syncCloserFake struct {
+	syncErr    error
+	closeErr   error
+	syncCalls  int
+	closeCalls int
+}
+
+func (f *syncCloserFake) Sync() error {
+	f.syncCalls++
+	return f.syncErr
+}
+
+func (f *syncCloserFake) Close() error {
+	f.closeCalls++
+	return f.closeErr
+}
+
+var (
+	errSyncFailed  = errors.New("sync failed")
+	errCloseFailed = errors.New("close failed")
+)
+
+// TestFlushAndClose covers the durability step of a download.
+func TestFlushAndClose(t *testing.T) {
+	tests := []struct {
+		name        string
+		syncErr     error
+		closeErr    error
+		wantErr     error
+		wantMessage string
+	}{
+		{name: "both succeed"},
+		{
+			name:        "sync fails",
+			syncErr:     errSyncFailed,
+			wantErr:     errSyncFailed,
+			wantMessage: `cannot sync downloaded file "/tmp/archive.zip"`,
+		},
+		{
+			name:        "close fails",
+			closeErr:    errCloseFailed,
+			wantErr:     errCloseFailed,
+			wantMessage: `cannot close downloaded file "/tmp/archive.zip"`,
+		},
+		{
+			name:        "sync error wins over close error",
+			syncErr:     errSyncFailed,
+			closeErr:    errCloseFailed,
+			wantErr:     errSyncFailed,
+			wantMessage: `cannot sync downloaded file`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &syncCloserFake{
+				syncErr:  tc.syncErr,
+				closeErr: tc.closeErr,
+			}
+			err := flushAndClose(f, "/tmp/archive.zip")
+			if f.syncCalls != 1 {
+				t.Errorf("Sync calls = %d, want 1", f.syncCalls)
+			}
+			if f.closeCalls != 1 {
+				t.Errorf("Close calls = %d, want 1", f.closeCalls)
+			}
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("flushAndClose() = %v, want nil", err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("flushAndClose() = %v, want an error wrapping %v", err, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantMessage) {
+				t.Errorf("flushAndClose() = %v, want a message containing %q", err, tc.wantMessage)
+			}
+		})
 	}
 }
 
@@ -1223,6 +1420,270 @@ func TestCopyLimited(t *testing.T) {
 			}
 			if got := dst.String(); got != tc.content {
 				t.Errorf("copyLimited() wrote %q, want %q", got, tc.content)
+			}
+		})
+	}
+}
+
+// dirSyncerFake stands in for an opened directory: it returns the injected
+// errors and records how often each call was made.
+type dirSyncerFake struct {
+	openErr    error
+	syncErr    error
+	closeErr   error
+	openCalls  int
+	syncCalls  int
+	closeCalls int
+	dir        string
+}
+
+func (d *dirSyncerFake) openDir(dir string) (dirSyncer, error) {
+	d.openCalls++
+	d.dir = dir
+	if d.openErr != nil {
+		return nil, d.openErr
+	}
+	return d, nil
+}
+
+func (d *dirSyncerFake) Sync() error {
+	d.syncCalls++
+	return d.syncErr
+}
+
+func (d *dirSyncerFake) Close() error {
+	d.closeCalls++
+	return d.closeErr
+}
+
+var errOpenDirFailed = errors.New("open dir failed")
+
+// TestPublishDownload covers the step that makes a finished download visible:
+// the partial file must be moved onto the final name, the directory holding
+// that entry must be synced, and the handle must be closed whatever the sync
+// reports.
+func TestPublishDownload(t *testing.T) {
+	tests := []struct {
+		name           string
+		openErr        error
+		syncErr        error
+		closeErr       error
+		missing        bool
+		wantErr        error
+		wantMessage    string
+		wantFile       bool
+		wantSyncCalls  int
+		wantCloseCalls int
+	}{
+		{name: "all succeed", wantFile: true, wantSyncCalls: 1, wantCloseCalls: 1},
+		{
+			name:           "directory cannot be opened",
+			openErr:        errOpenDirFailed,
+			wantErr:        errOpenDirFailed,
+			wantMessage:    "cannot publish downloaded file",
+			wantSyncCalls:  0,
+			wantCloseCalls: 0,
+		},
+		{
+			name:        "directory cannot be synced",
+			syncErr:     errSyncFailed,
+			wantErr:     errSyncFailed,
+			wantMessage: "cannot sync directory",
+			// The rename already happened, so the complete file stays where it
+			// is rather than being destroyed over an unproven directory entry.
+			wantFile:       true,
+			wantSyncCalls:  1,
+			wantCloseCalls: 1,
+		},
+		{
+			name:           "directory cannot be closed",
+			closeErr:       errCloseFailed,
+			wantErr:        errCloseFailed,
+			wantMessage:    "cannot close directory",
+			wantFile:       true,
+			wantSyncCalls:  1,
+			wantCloseCalls: 1,
+		},
+		{
+			name:           "rename fails",
+			missing:        true,
+			wantErr:        fs.ErrNotExist,
+			wantMessage:    "cannot publish downloaded file",
+			wantSyncCalls:  0,
+			wantCloseCalls: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			partial := filepath.Join(dir, "archive.zip"+partialFileSuffix)
+			final := filepath.Join(dir, "archive.zip")
+			if !tc.missing {
+				if err := osutil.WriteFile(partial, testPayload); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fake := &dirSyncerFake{openErr: tc.openErr, syncErr: tc.syncErr, closeErr: tc.closeErr}
+
+			err := publishDownload(fake.openDir, dir, final, partial)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("publishDownload() = %v, want nil", err)
+				}
+			} else {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("publishDownload() = %v, want an error wrapping %v", err, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantMessage) {
+					t.Errorf("publishDownload() = %v, want a message containing %q", err, tc.wantMessage)
+				}
+			}
+			if fake.openCalls != 1 {
+				t.Errorf("directory open calls = %d, want 1", fake.openCalls)
+			}
+			if fake.dir != dir {
+				t.Errorf("opened directory %q, want %q", fake.dir, dir)
+			}
+			if _, statErr := osutil.Stat(final); tc.wantFile {
+				if statErr != nil {
+					t.Errorf("stat of published file: %v", statErr)
+				}
+			} else if !errors.Is(statErr, fs.ErrNotExist) {
+				t.Errorf("stat of %q = %v, want fs.ErrNotExist", final, statErr)
+			}
+			if _, statErr := osutil.Stat(partial); !errors.Is(statErr, fs.ErrNotExist) {
+				t.Errorf("stat of %q = %v, want fs.ErrNotExist", partial, statErr)
+			}
+			if fake.syncCalls != tc.wantSyncCalls {
+				t.Errorf("directory sync calls = %d, want %d", fake.syncCalls, tc.wantSyncCalls)
+			}
+			if fake.closeCalls != tc.wantCloseCalls {
+				t.Errorf("directory close calls = %d, want %d", fake.closeCalls, tc.wantCloseCalls)
+			}
+		})
+	}
+}
+
+// TestDownloadFilePartialFileIsPublished checks that the temporary name is gone
+// once the download succeeds.
+func TestDownloadFilePartialFileIsPublished(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t)
+	dir := t.TempDir()
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("%q holds %d entries %v, want only %q", dir, len(entries), names, filepath.Base(path))
+	}
+	if entries[0].Name() != filepath.Base(path) {
+		t.Errorf("%q holds %q, want %q", dir, entries[0].Name(), filepath.Base(path))
+	}
+}
+
+// truncatedFileServer announces more bytes than it sends and drops the
+// connection.
+func truncatedFileServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/truncated.zip", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Length", fmt.Sprint(len(testPayload)))
+		if _, err := w.Write(testPayload[:len(testPayload)/2]); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
+		panic(http.ErrAbortHandler)
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// TestDownloadFileInterruptedTransferLeavesNothing checks that a transfer that
+// stops part way through leaves nothing at the final name.
+func TestDownloadFileInterruptedTransferLeavesNothing(t *testing.T) {
+	t.Parallel()
+	ts := truncatedFileServer(t)
+	dir := t.TempDir()
+
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/truncated.zip")
+	if err == nil {
+		t.Fatalf("DownloadFileWith() = %q, want an error for a truncated body", path)
+	}
+	if !strings.Contains(err.Error(), "read response body") && !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("DownloadFileWith() = %v, want a body read error", err)
+	}
+	assertEmptyDir(t, dir)
+	if _, statErr := osutil.Stat(filepath.Join(dir, "truncated.zip")); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("stat of the download target = %v, want fs.ErrNotExist", statErr)
+	}
+	if _, statErr := osutil.Stat(filepath.Join(dir, "truncated.zip"+partialFileSuffix)); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("stat of the partial file = %v, want fs.ErrNotExist", statErr)
+	}
+}
+
+// TestDownloadFileSyncDirectoryFailure feeds the download path a directory
+// handle that misbehaves, which the real one gives no way to provoke.
+func TestDownloadFileSyncDirectoryFailure(t *testing.T) {
+	tests := []struct {
+		name        string
+		fake        *dirSyncerFake
+		wantErr     error
+		wantMessage string
+		wantFile    bool
+	}{
+		{
+			name:        "directory cannot be opened",
+			fake:        &dirSyncerFake{openErr: errOpenDirFailed},
+			wantErr:     errOpenDirFailed,
+			wantMessage: "cannot publish downloaded file",
+		},
+		{
+			name:        "directory cannot be synced",
+			fake:        &dirSyncerFake{syncErr: errSyncFailed},
+			wantErr:     errSyncFailed,
+			wantMessage: "cannot sync directory",
+			wantFile:    true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := testServer(t)
+			dir := t.TempDir()
+
+			path, err := downloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip", tc.fake.openDir)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("downloadFileWith() = %v, want an error wrapping %v", err, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantMessage) {
+				t.Errorf("downloadFileWith() = %v, want a message containing %q", err, tc.wantMessage)
+			}
+			if !tc.wantFile {
+				assertEmptyDir(t, dir)
+				return
+			}
+			// The file itself is complete and durable; only the durability of
+			// its directory entry is unproven, so it is not destroyed. The
+			// call still reports an error, so it returns no path.
+			if path != "" {
+				t.Errorf("downloadFileWith() = %q, want no path alongside the error", path)
+			}
+			got, readErr := osutil.ReadFile(filepath.Join(dir, "testassets.zip"))
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if !bytes.Equal(got, testPayload) {
+				t.Errorf("published file holds %d bytes, want the %d byte payload", len(got), len(testPayload))
 			}
 		})
 	}

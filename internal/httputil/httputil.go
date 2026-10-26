@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -45,6 +46,9 @@ const (
 	// than to the server hosting the file.
 	uriParamPrefix  = "ufs."
 	maxDownloadSize = 4 << 30 // 4 GiB
+	// partialFileSuffix is the temporary name a download is written to before
+	// it is renamed onto the destination.
+	partialFileSuffix = ".partial"
 )
 
 func newHTTPClient() *http.Client {
@@ -211,9 +215,21 @@ func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
 // unsupported algorithm or is not a valid digest for its algorithm is rejected
 // before any request is made.
 //
+// A file that already exists at the destination is never overwritten: with a
+// checksum it is accepted only if the digest matches, without one it is an
+// error. The body is written to "<name>.partial" and renamed onto the final
+// name once it is complete, so a file at the final name is always finished.
+//
 // If the body cannot be read in full, is larger than 4 GiB or the checksum
-// does not match, the file is deleted, including any earlier file of the same name it replaced.
+// does not match, the downloaded file is deleted. A failed sync or close is
+// returned as an error and the file is deleted too.
 func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
+	return downloadFileWith(ctx, client, dir, uri, openDir)
+}
+
+// downloadFileWith is DownloadFileWith with the directory handle used to sync
+// the renamed entry supplied by the caller, so tests can inject a failure.
+func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri string, openDirHandle openDirFunc) (string, error) {
 	parsed, params, err := ParseURI(uri)
 	if err != nil {
 		return "", fmt.Errorf("invalid download URL: %w", err)
@@ -266,7 +282,29 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 		return "", fmt.Errorf("resolved path %q escapes download directory %q", archiveFilename, baseDir)
 	}
 
-	f, err := os.Create(filepath.Clean(archiveFilename))
+	// The destination is only known after the redirects settle, so an existing
+	// file is inspected here rather than before the request.
+	if info, statErr := osutil.Stat(archiveFilename); statErr == nil {
+		if err := validateExistingFile(archiveFilename, info, fileChecksum); err != nil {
+			return "", err
+		}
+		return archiveFilename, nil
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return "", fmt.Errorf("cannot check for an existing file at %q: %w", archiveFilename, statErr)
+	}
+
+	// The partial file is opened through an os.Root, which resolves each
+	// component under an open handle on baseDir; the filepath.Rel check above
+	// only constrains the final name.
+	root, err := osutil.OpenRoot(baseDir)
+	if err != nil {
+		return "", fmt.Errorf("cannot open download directory %q: %w", baseDir, err)
+	}
+	partialFilename := archiveFilename + partialFileSuffix
+	f, err := root.Create(rel + partialFileSuffix)
+	if closeErr := root.Close(); closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("cannot close download directory %q: %w", baseDir, closeErr))
+	}
 	if err != nil {
 		return "", err
 	}
@@ -281,18 +319,110 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 			err = fmt.Errorf("downloaded file %q: %w", archiveFilename, verifyErr)
 		}
 	}
-	// Close before deleting; Windows cannot remove an open file. A failed
-	// Close can mean that the last writes did not reach the disk, so the
-	// download is not reported as complete.
-	if closeErr := f.Close(); closeErr != nil && err == nil {
-		err = fmt.Errorf("cannot close downloaded file %q: %w", archiveFilename, closeErr)
+	// Close releases the handle without flushing the operating system's cache,
+	// and Sync needs that handle, so Sync must come first.
+	if flushErr := flushAndClose(f, partialFilename); flushErr != nil && err == nil {
+		err = flushErr
 	}
 	if err != nil {
-		osutil.TryDeleteFile(archiveFilename)
+		osutil.TryDeleteFile(partialFilename)
+		return "", err
+	}
+
+	if err := publishDownload(openDirHandle, baseDir, archiveFilename, partialFilename); err != nil {
 		return "", err
 	}
 
 	return archiveFilename, nil
+}
+
+// validateExistingFile reports whether the file already at name may stand in
+// for the download. fileChecksum is nil when the URL named no digest. The file
+// on disk is left as it is either way.
+func validateExistingFile(name string, info fs.FileInfo, fileChecksum *hashutil.Checksum) error {
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("cannot download to %q: an existing entry that is not a regular file is in the way", name)
+	}
+	if fileChecksum == nil {
+		return fmt.Errorf("cannot download to %q: an existing file is present but cannot be validated without a %s parameter", name, URLQueryParamChecksum)
+	}
+	// Rejected from the stat so an oversized file is not hashed first.
+	if info.Size() > maxDownloadSize {
+		return fmt.Errorf("existing file %q: %w of %d bytes", name, errTooLarge, maxDownloadSize)
+	}
+	f, err := osutil.Open(name)
+	if err != nil {
+		return fmt.Errorf("cannot checksum existing file %q: %w", name, err)
+	}
+	readErr := copyLimited(fileChecksum, f, maxDownloadSize)
+	closeErr := f.Close()
+	if readErr != nil {
+		return fmt.Errorf("cannot checksum existing file %q: %w", name, errors.Join(readErr, closeErr))
+	}
+	if closeErr != nil {
+		return fmt.Errorf("cannot close existing file %q: %w", name, closeErr)
+	}
+	if verifyErr := fileChecksum.Verify(); verifyErr != nil {
+		return fmt.Errorf("existing file %q: %w", name, verifyErr)
+	}
+	return nil
+}
+
+// syncCloser is the part of *os.File used to make a written file durable and
+// release it.
+type syncCloser interface {
+	Sync() error
+	Close() error
+}
+
+// flushAndClose makes the bytes written to f durable, then closes it. Sync runs
+// first because it needs the open handle; the file is closed either way so
+// Windows can still remove it. The first failure is returned.
+func flushAndClose(f syncCloser, name string) error {
+	syncErr := f.Sync()
+	closeErr := f.Close()
+	if syncErr != nil {
+		return fmt.Errorf("cannot sync downloaded file %q: %w", name, syncErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("cannot close downloaded file %q: %w", name, closeErr)
+	}
+	return nil
+}
+
+// dirSyncer is the part of an open directory used to make an entry created in
+// that directory durable.
+type dirSyncer interface {
+	Sync() error
+	Close() error
+}
+
+// openDirFunc opens dir so that a rename inside it can be made durable. It is
+// passed to downloadFileWith rather than called directly so tests can inject a
+// failure.
+type openDirFunc func(dir string) (dirSyncer, error)
+
+// publishDownload moves the completed partial file onto its final name and
+// syncs the directory so the renamed entry survives a crash. Before the rename
+// the partial file is removed on failure; after it the file is left in place
+// because it is complete.
+func publishDownload(openDirHandle openDirFunc, dir, finalPath, partialPath string) error {
+	d, err := openDirHandle(dir)
+	if err != nil {
+		return fmt.Errorf("cannot publish downloaded file to %q: %w", finalPath, errors.Join(err, osutil.DeleteFile(partialPath)))
+	}
+	if err := osutil.Rename(partialPath, finalPath); err != nil {
+		return fmt.Errorf("cannot publish downloaded file to %q: %w", finalPath, errors.Join(err, d.Close(), osutil.DeleteFile(partialPath)))
+	}
+	syncErr := d.Sync()
+	closeErr := d.Close()
+	if syncErr != nil {
+		return fmt.Errorf("cannot sync directory %q after publishing %q: %w", dir, finalPath, errors.Join(syncErr, closeErr))
+	}
+	if closeErr != nil {
+		return fmt.Errorf("cannot close directory %q after publishing %q: %w", dir, finalPath, closeErr)
+	}
+	return nil
 }
 
 // errTooLarge is returned for a download that is larger than maxDownloadSize.

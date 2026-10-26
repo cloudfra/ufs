@@ -46,12 +46,29 @@ const copyFileOp = "copyfile"
 // takes none, and the emulation refuses a root path with [fs.ErrInvalid] where a
 // native method would report [fs.ErrPermission].
 func CopyFile(fsys fs.FS, srcPath, dstPath string) error {
+	_, err := copyFile(fsys, srcPath, dstPath)
+	return err
+}
+
+// copyFile is the package's own copy dispatch, which [CopyFile] delegates to and
+// which another standin in this package calls directly. Only the exported entry
+// point probes the optional interface it stands in for, so the emulation inside
+// one standin cannot reach another standin's entry point and probe it again.
+//
+// It reports whether the destination was created, which is what lets an emulated
+// rename record only the names it can take back: a native copy that failed is
+// reported as creating nothing, because only the file system knows what its own
+// copy managed to write.
+func copyFile(fsys fs.FS, srcPath, dstPath string) (created bool, err error) {
 	if cFS, ok := fsys.(types.CopyFileFS); ok {
-		return cFS.CopyFile(srcPath, dstPath)
+		if err := cFS.CopyFile(srcPath, dstPath); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 	for _, name := range [2]string{srcPath, dstPath} {
 		if err := pathutil.ValidateFileName(copyFileOp, name); err != nil {
-			return err
+			return false, err
 		}
 	}
 	// The write capability is probed before anything is read, so a file system
@@ -62,7 +79,7 @@ func CopyFile(fsys fs.FS, srcPath, dstPath string) error {
 	case types.OpenFileFS:
 		return copyViaOpenFileFS(fsys, wFS, srcPath, dstPath)
 	}
-	return ufserrors.NewUnimplemented(fsys, copyFileOp)
+	return false, ufserrors.NewUnimplemented(fsys, copyFileOp)
 }
 
 // copyViaCreateFileFS emulates the copy with a [types.CreateFileFS], the
@@ -70,24 +87,24 @@ func CopyFile(fsys fs.FS, srcPath, dstPath string) error {
 // systems reach. Create truncates whatever is at dstPath, so a destination that
 // is taken already is refused with a stat first, and Create takes no permission
 // bits, so the source's mode is not carried over.
-func copyViaCreateFileFS(fsys fs.FS, wFS types.CreateFileFS, srcPath, dstPath string) error {
+func copyViaCreateFileFS(fsys fs.FS, wFS types.CreateFileFS, srcPath, dstPath string) (created bool, err error) {
 	if _, err := fs.Stat(fsys, dstPath); err == nil {
-		return ufserrors.NewPathError(copyFileOp, dstPath, fs.ErrExist)
+		return false, ufserrors.NewPathError(copyFileOp, dstPath, fs.ErrExist)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		// A destination that cannot be queried is not a free pass to overwrite
 		// it, so its failure is reported instead.
-		return err
+		return false, err
 	}
 
 	src, _, err := openSource(fsys, srcPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	dst, err := wFS.Create(dstPath)
 	if err != nil {
-		return ufserrors.Join(err, src.Close())
+		return false, ufserrors.Join(err, src.Close())
 	}
-	return copyInto(dst, src)
+	return true, copyInto(dst, src)
 }
 
 // copyViaOpenFileFS emulates the copy with an [types.OpenFileFS] for a file
@@ -97,16 +114,16 @@ func copyViaCreateFileFS(fsys fs.FS, wFS types.CreateFileFS, srcPath, dstPath st
 // which is the contract [types.CopyFileFS] sets and closes the window that a
 // separate stat of dstPath would leave, and the mode of the source can be given
 // to the new file.
-func copyViaOpenFileFS(fsys fs.FS, wFS types.OpenFileFS, srcPath, dstPath string) error {
+func copyViaOpenFileFS(fsys fs.FS, wFS types.OpenFileFS, srcPath, dstPath string) (created bool, err error) {
 	src, info, err := openSource(fsys, srcPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	dst, err := wFS.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
 	if err != nil {
-		return ufserrors.Join(err, src.Close())
+		return false, ufserrors.Join(err, src.Close())
 	}
-	return copyInto(dst, src)
+	return true, copyInto(dst, src)
 }
 
 // openSource opens the source of an emulated copy together with its FileInfo,

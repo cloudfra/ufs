@@ -1058,13 +1058,22 @@ var _ types.File = (*nestFile)(nil)
 // nestFile wraps an fs.File and polyfills any methods from the File interface
 // that the underlying implementation does not provide.
 //
-// When Seek or ReadAt is absent, the file content is buffered so that both
-// operations work correctly at any position. In memory mode, content is read
-// eagerly into a bytes.Reader. In disk mode, content is streamed to a temporary
-// file. The buffer is released on Close. Read is also redirected through the
-// buffer so that the file position stays consistent across Read/Seek/ReadAt.
+// When Seek or ReadAt is absent from a file that is open only for reading, the
+// file content is buffered so that both operations work correctly at any
+// position. In memory mode, content is read eagerly into a bytes.Reader. In
+// disk mode, content is streamed to a temporary file. The buffer is released on
+// Close. Read is also redirected through the buffer so that the file position
+// stays consistent across Read/Seek/ReadAt.
+//
+// A file that is open for writing is never buffered: the wrapper writes through
+// to the underlying file, so a buffer would report content that predates those
+// writes. A missing Seek or ReadAt on such a file reports fs.ErrInvalid instead.
+// See https://github.com/cloudfra/ufs/issues/451.
 type nestFile struct {
 	fs.File
+	// closed records that Close has run. Close releases the buffer and the
+	// closures bound to it, so every method must then report fs.ErrClosed.
+	closed          bool
 	buf             *bytes.Reader // non-nil when content is buffered in memory
 	tmpFile         *os.File      // non-nil when content is buffered on disk
 	writeFunc       func([]byte) (int, error)
@@ -1073,7 +1082,17 @@ type nestFile struct {
 	writeStringFunc func(string) (int, error)
 }
 
+func (f *nestFile) Stat() (fs.FileInfo, error) {
+	if f.closed {
+		return nil, fs.ErrClosed
+	}
+	return f.File.Stat()
+}
+
 func (f *nestFile) Read(p []byte) (int, error) {
+	if f.closed {
+		return 0, fs.ErrClosed
+	}
 	if f.buf != nil {
 		return f.buf.Read(p)
 	}
@@ -1083,15 +1102,26 @@ func (f *nestFile) Read(p []byte) (int, error) {
 	return f.File.Read(p)
 }
 
+// Close releases the buffered content along with the closures that reached it,
+// so that no method can read content that was dropped. A second Close reports
+// fs.ErrClosed, like [os.File.Close].
 func (f *nestFile) Close() error {
+	if f.closed {
+		return fs.ErrClosed
+	}
+	f.closed = true
 	f.buf = nil
+	f.seekFunc = nil
+	f.readAtFunc = nil
 	if f.tmpFile != nil {
 		name := f.tmpFile.Name()
 		if err := f.tmpFile.Close(); err != nil {
-			return err
+			f.tmpFile = nil
+			return ufserrors.Join(err, f.File.Close())
 		}
 		if err := osutil.Remove(name); err != nil {
-			return err
+			f.tmpFile = nil
+			return ufserrors.Join(err, f.File.Close())
 		}
 		f.tmpFile = nil
 	}
@@ -1099,39 +1129,67 @@ func (f *nestFile) Close() error {
 }
 
 func (f *nestFile) Write(p []byte) (int, error) {
+	if f.closed {
+		return 0, fs.ErrClosed
+	}
 	return f.writeFunc(p)
 }
 
 func (f *nestFile) Seek(off int64, whence int) (int64, error) {
+	if f.closed {
+		return 0, fs.ErrClosed
+	}
 	return f.seekFunc(off, whence)
 }
 
 func (f *nestFile) ReadAt(p []byte, off int64) (int, error) {
+	if f.closed {
+		return 0, fs.ErrClosed
+	}
 	return f.readAtFunc(p, off)
 }
 
 func (f *nestFile) WriteString(s string) (int, error) {
+	if f.closed {
+		return 0, fs.ErrClosed
+	}
 	return f.writeStringFunc(s)
 }
 
 // polyfillSeekReadAt populates nf.seekFunc and nf.readAtFunc for the underlying
-// file f. If f already provides both io.Seeker and io.ReaderAt the native
-// implementations are used directly. Otherwise the file content is buffered so
-// that Seek and ReadAt work at any position. mode selects in-memory (bufferMemory)
-// or temp-file (bufferDisk) buffering. On failure f is closed and the error
-// returned.
-func polyfillSeekReadAt(nf *nestFile, f fs.File, mode bufferMode) error {
-	_, hasSeek := f.(io.Seeker)
-	_, hasReadAt := f.(io.ReaderAt)
-	if hasSeek && hasReadAt {
-		nf.seekFunc = f.(io.Seeker).Seek
-		nf.readAtFunc = f.(io.ReaderAt).ReadAt
-		return nil
+// file f. A method f provides natively is used directly. When f is missing one
+// of them, a file that is open only for reading has its content buffered so
+// that both work at any position, using in-memory (bufferMemory) or temp-file
+// (bufferDisk) buffering; on failure f is closed and the error returned. A file
+// open for writing (writable) is not buffered, so a missing method reports
+// fs.ErrInvalid.
+func polyfillSeekReadAt(nf *nestFile, f fs.File, writable bool, mode bufferMode) error {
+	if seeker, ok := f.(io.Seeker); ok {
+		nf.seekFunc = seeker.Seek
 	}
-	if mode == bufferDisk {
-		return polyfillSeekReadAtDisk(nf, f)
+	if readerAt, ok := f.(io.ReaderAt); ok {
+		nf.readAtFunc = readerAt.ReadAt
 	}
-	return polyfillSeekReadAtMemory(nf, f)
+	if nf.seekFunc == nil || nf.readAtFunc == nil {
+		if writable {
+			if nf.seekFunc == nil {
+				nf.seekFunc = func(int64, int) (int64, error) {
+					return 0, fs.ErrInvalid
+				}
+			}
+			if nf.readAtFunc == nil {
+				nf.readAtFunc = func([]byte, int64) (int, error) {
+					return 0, fs.ErrInvalid
+				}
+			}
+			return nil
+		}
+		if mode == bufferDisk {
+			return polyfillSeekReadAtDisk(nf, f)
+		}
+		return polyfillSeekReadAtMemory(nf, f)
+	}
+	return nil
 }
 
 func polyfillSeekReadAtMemory(nf *nestFile, f fs.File) error {
@@ -1175,13 +1233,14 @@ func polyfillSeekReadAtDisk(nf *nestFile, f fs.File) error {
 // wrapFile returns f unchanged if it already satisfies File. Otherwise it wraps
 // f, polyfilling any missing methods. When readOnly is true, Write and
 // WriteString always return fs.ErrInvalid. mode selects in-memory or disk-backed
-// buffering for Seek/ReadAt polyfills.
+// buffering for the Seek/ReadAt polyfills, which only apply to a file that is
+// open for reading.
 func wrapFile(f fs.File, readOnly bool, mode bufferMode) (types.File, error) {
 	if full, ok := f.(types.File); ok {
 		return full, nil
 	}
 	nf := &nestFile{File: f}
-	if err := polyfillSeekReadAt(nf, f, mode); err != nil {
+	if err := polyfillSeekReadAt(nf, f, !readOnly, mode); err != nil {
 		return nil, err
 	}
 	if readOnly {

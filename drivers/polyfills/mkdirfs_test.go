@@ -15,6 +15,7 @@
 package polyfills
 
 import (
+	"errors"
 	"io/fs"
 	"reflect"
 	"strings"
@@ -105,6 +106,32 @@ func TestMkdir(t *testing.T) {
 				t.Errorf("Mkdir(%q) called MkdirAll %v, want %v", tc.dir, s.mkdirAllCalls, tc.wantMkdirAlls)
 			}
 		})
+	}
+}
+
+// TestMkdirMissingParentError pins the error shape [types.MkdirFS] documents
+// for a missing parent: an [fs.PathError] naming the refused path with the
+// "mkdir" op, so a caller can find the failed name without parsing the message.
+func TestMkdirMissingParentError(t *testing.T) {
+	t.Parallel()
+
+	s := newStore()
+	err := Mkdir(mkdirAllFS{s}, "a/b", dirPerm)
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("Mkdir() = %v (%T), want an *fs.PathError", err, err)
+	}
+	if pathErr.Op != "mkdir" {
+		t.Errorf("Mkdir() Op = %q, want %q", pathErr.Op, "mkdir")
+	}
+	if pathErr.Path != "a/b" {
+		t.Errorf("Mkdir() Path = %q, want %q", pathErr.Path, "a/b")
+	}
+	if !strings.Contains(pathErr.Err.Error(), `"a" must be a directory to create "a/b"`) {
+		t.Errorf("Mkdir() inner error = %q, want it to name the missing parent", pathErr.Err)
+	}
+	if created := createdDirs(s); created != nil {
+		t.Errorf("Mkdir() created %v, want nothing", created)
 	}
 }
 

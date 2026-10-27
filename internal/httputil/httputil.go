@@ -125,6 +125,15 @@ var blockedNets = mustParseCIDRs(
 // reaches the IPv4 address held in its last four bytes.
 var nat64Net = mustParseCIDRs("64:ff9b::/96")[0]
 
+// sixToFourNet is the 6to4 prefix (RFC 3056). The IPv4 address being reached is
+// held in bytes 2..5, so 2002:7f00:1::1 translates to 127.0.0.1.
+var sixToFourNet = mustParseCIDRs("2002::/16")[0]
+
+// teredoNet is the Teredo prefix (RFC 4380). The IPv4 address being reached is
+// held bitwise complemented in the last four bytes, so the stored bytes have to
+// be inverted before they can be judged.
+var teredoNet = mustParseCIDRs("2001:0000::/32")[0]
+
 func mustParseCIDRs(cidrs ...string) []*net.IPNet {
 	nets := make([]*net.IPNet, 0, len(cidrs))
 	for _, cidr := range cidrs {
@@ -140,10 +149,19 @@ func mustParseCIDRs(cidrs ...string) []*net.IPNet {
 // isBlockedIP reports whether ip is an address that a download must not
 // connect to: anything that is not a public unicast address.
 func isBlockedIP(ip net.IP) bool {
-	if ip.To4() == nil && nat64Net.Contains(ip) {
-		// Judge a NAT64 address by the IPv4 address it is translated to, so
-		// that public hosts stay reachable on IPv6-only networks.
-		return isBlockedIP(ip[len(ip)-net.IPv4len:])
+	if len(ip) == net.IPv6len && ip.To4() == nil {
+		// Judge a transition address by the IPv4 address it is translated to, so
+		// that public hosts stay reachable on IPv6-only networks while an
+		// embedded loopback or private address stays blocked. The byte offsets
+		// below are in range because the address is known to be sixteen bytes.
+		switch {
+		case nat64Net.Contains(ip):
+			return isBlockedIP(ip[len(ip)-net.IPv4len:])
+		case sixToFourNet.Contains(ip):
+			return isBlockedIP(ip[2 : 2+net.IPv4len])
+		case teredoNet.Contains(ip):
+			return isBlockedIP(net.IPv4(^ip[12], ^ip[13], ^ip[14], ^ip[15]))
+		}
 	}
 	if ip.IsLoopback() ||
 		ip.IsPrivate() ||

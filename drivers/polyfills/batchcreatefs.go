@@ -108,7 +108,7 @@ func mkdirParent(fsys fs.FS, name string) error {
 	if pathutil.IsCwd(dir) || isDir(fsys, dir) {
 		return nil
 	}
-	return MkdirAll(fsys, dir, fs.ModePerm)
+	return mkdirAll(fsys, dir, fs.ModePerm)
 }
 
 // writeBatchFile writes the whole of file.Data to f and closes f whether or not

@@ -4,10 +4,15 @@ go 1.26.0
 
 toolchain go1.26.10
 
-// go-fuse v2.12.0 does not compile for 32-bit Linux (386, arm): splice/pair_linux.go
-// assigns syscall.Splice's result to an int64, but it returns an int there.
-// Excluding it keeps `make deps` (go get -u) from upgrading to it.
-exclude github.com/hanwen/go-fuse/v2 v2.12.0
+exclude (
+	// go-fuse v2.12.0 and v2.12.1 do not compile for 32-bit Linux (386, arm, mips,
+	// mipsle): splice/pair_linux.go assigns syscall.Splice's result to an int64, but
+	// syscall.Splice returns an int on those architectures. Excluding them keeps
+	// `make deps` (go get -u) from upgrading to them. The fix is on go-fuse master
+	// (bac3464a7a53, 2026-10-25), which no release contains yet.
+	github.com/hanwen/go-fuse/v2 v2.12.0
+	github.com/hanwen/go-fuse/v2 v2.12.1
+)
 
 require (
 	cloud.google.com/go/pubsub/v2 v2.8.0
@@ -18,7 +23,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/go-cmp v0.7.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0
-	github.com/hanwen/go-fuse/v2 v2.12.1
+	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/mholt/archives v0.1.5
 	github.com/mikelolasagasti/xz v1.0.1
 	go.etcd.io/bbolt v1.5.0

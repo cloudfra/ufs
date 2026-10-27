@@ -27,7 +27,6 @@ package gitfs
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -50,11 +49,21 @@ func init() {
 func prepareGitDirectory(ctx context.Context, name string, gitURL string) error {
 	var errs []error
 	cloned := false
-	for _, opts := range cloneOptions(gitURL) {
+	for attempt, opts := range cloneOptions(gitURL) {
 		// Do not start a clone, or another attempt, once the caller gave up.
 		if err := ctx.Err(); err != nil {
 			errs = append(errs, err)
 			break
+		}
+		if attempt > 0 {
+			// An interrupted attempt leaves a partial worktree and a .git
+			// directory behind, and go-git refuses a target that already holds
+			// a repository, so a retry without this trips over the failure it
+			// is meant to recover from.
+			if err := osutil.RemoveContents(name); err != nil {
+				errs = append(errs, fmt.Errorf("could not reset the clone target %s: %w", name, err))
+				break
+			}
 		}
 		_, err := git.PlainCloneContext(ctx, name, false, opts)
 		if err == nil {
@@ -90,13 +99,11 @@ func cloneOptions(filePath string) []*git.CloneOptions {
 	return []*git.CloneOptions{
 		{
 			URL:          filePath,
-			Progress:     os.Stdout,
 			Depth:        1,
 			SingleBranch: true,
 		},
 		{
 			URL:           filePath,
-			Progress:      os.Stdout,
 			Depth:         1,
 			SingleBranch:  true,
 			ReferenceName: plumbing.NewBranchReferenceName("main"),

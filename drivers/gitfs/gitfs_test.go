@@ -182,6 +182,58 @@ func TestNewViaUFSNew(t *testing.T) {
 	ufsdriversTesting.OpenWithNew(t, srcDir, want)
 }
 
+// TestPrepareGitFSInterruptedRetry checks that a retry starts from a clean
+// target. An interrupted attempt leaves a .git directory behind, which makes
+// go-git refuse the clone, so without a reset between attempts the retry fails
+// on the leftovers of the attempt it was meant to recover from.
+func TestPrepareGitFSInterruptedRetry(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "repo.git")
+	if err := initTestGitRepo(t, repoDir, map[string]string{"hello.txt": "retry"}); err != nil {
+		t.Fatal(err)
+	}
+	// The second set of clone options asks for the main branch, so the
+	// repository has to carry one.
+	repo, err := git.PlainOpen(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName("main"),
+		Create: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Leftovers of an attempt that did not finish: a repository go-git refuses
+	// to clone into, plus a file that is not part of the clone.
+	target := t.TempDir()
+	if _, err := git.PlainInit(target, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := osutil.WriteFile(filepath.Join(target, "leftover.txt"), []byte("stale")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := prepareGitDirectory(t.Context(), target, repoDir); err != nil {
+		t.Fatalf("prepareGitDirectory() = %v, want the retry to succeed", err)
+	}
+
+	data, err := osutil.ReadFile(filepath.Join(target, "hello.txt"))
+	if err != nil {
+		t.Fatalf("reading hello.txt after the retry: %v", err)
+	}
+	if string(data) != "retry" {
+		t.Errorf("hello.txt = %q, want %q", string(data), "retry")
+	}
+	if osutil.Exists(filepath.Join(target, "leftover.txt")) {
+		t.Error("leftover.txt survived the retry, want the target reset before cloning")
+	}
+}
+
 // initTestGitRepo creates a git repo at dir with the given files committed.
 func initTestGitRepo(t *testing.T, dir string, files map[string]string) error {
 	t.Helper()

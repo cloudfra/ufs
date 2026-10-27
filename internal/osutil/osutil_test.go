@@ -152,6 +152,45 @@ func TestRemoveAll(t *testing.T) {
 	}
 }
 
+func TestRemoveContents(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(filepath.Join(tree, "nested", "deep"), DefaultDirectoryPermissions); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(tree, "file"), []byte("x"))
+	mustWrite(t, filepath.Join(tree, "nested", "deep", "file"), []byte("y"))
+
+	if err := RemoveContents(tree); err != nil {
+		t.Fatalf("RemoveContents(tree) = %v, want nil", err)
+	}
+	entries, err := os.ReadDir(tree)
+	if err != nil {
+		t.Fatalf("ReadDir(tree) after RemoveContents = %v, want the directory itself kept", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("tree still contains %d entries after RemoveContents, want it emptied", len(entries))
+	}
+
+	// The clone-retry use case clears a directory that is kept as a file-system
+	// root, so an already empty directory must stay clearable.
+	if err := RemoveContents(tree); err != nil {
+		t.Errorf("RemoveContents(empty) = %v, want nil", err)
+	}
+	if err := RemoveContents(uncleanPath(dir, "tree")); err != nil {
+		t.Errorf("RemoveContents(unclean path) = %v, want nil", err)
+	}
+	if _, err := os.Stat(tree); err != nil {
+		t.Errorf("Stat(tree) after RemoveContents = %v, want the directory kept", err)
+	}
+
+	if err := RemoveContents(filepath.Join(dir, "ghost")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("RemoveContents(missing) = %v, want fs.ErrNotExist", err)
+	}
+}
+
 func TestCreate(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -17,13 +17,16 @@ package types
 import "io/fs"
 
 // MkdirFS is an optional interface that a file system may implement to support
-// directory creation.
+// single-level directory creation.
 type MkdirFS interface {
 	fs.FS
 
-	// MkdirAll creates the directory at name and any missing parent directories,
-	// using perm for newly created nodes. It is a no-op if the directory already
-	// exists. Backends that do not have a real directory concept (e.g. GCS) treat
-	// this as a no-op.
+	// Mkdir creates the directory at name, using perm for the new node, without
+	// creating any missing parent directories: a missing parent is an error, not
+	// a level to create. Report it with an [fs.PathError] whose Op is "mkdir"
+	// and whose Path is name. A name that is already a directory is a no-op. A
+	// backend that creates the whole chain implements [MkdirAllFS] instead.
+	// Backends that do not have a real directory concept (e.g. GCS) treat this
+	// as a no-op.
 	Mkdir(name string, perm fs.FileMode) error
 }

@@ -209,7 +209,11 @@ lint-go: $(GOLANGCI_LINT) $(GOFUMPT) $(REVIVE)
 	$(IGNORE_LINT_CHECK)"$(GOFUMPT)" -l -w .
 	$(IGNORE_LINT_CHECK)"$(GOLANGCI_LINT)" fmt ./...
 	$(IGNORE_LINT_CHECK)"$(GOLANGCI_LINT)" run ./...
+	# The "rpc" build tag gates all gRPC/grpc-gateway code (see Makefile_proto.mk);
+	# lint it too, on top of the default (tagless) pass above.
+	$(IGNORE_LINT_CHECK)"$(GOLANGCI_LINT)" run --build-tags=rpc ./...
 	$(IGNORE_LINT_CHECK)"$(REVIVE)" -set_exit_status -exclude=build/... ./...
+	$(IGNORE_LINT_CHECK)GOFLAGS=-tags=rpc "$(REVIVE)" -set_exit_status -exclude=build/... ./...
 
 lint-docker: $(HADOLINT)
 	$(IGNORE_LINT_CHECK)$(FIND) cmd -iname 'Dockerfile*' -exec "$(HADOLINT)" --ignore=DL3066 {} +
@@ -231,6 +235,7 @@ lint-markdown: $(RUMDL)
 
 lint-vuln: $(GOVULNCHECK)
 	$(IGNORE_LINT_CHECK)"$(GOVULNCHECK)" ./...
+	$(IGNORE_LINT_CHECK)"$(GOVULNCHECK)" -tags rpc ./...
 
 bench: $(TEST_ASSETS)
 	$(GO) test -bench=. -benchmem -tags testing ${SOURCE_DIRS}
@@ -242,9 +247,13 @@ test: test-go test-tf
 
 test-go: $(TEST_ASSETS)
 	$(GO) test -shuffle=on -tags testing ${SOURCE_DIRS}
+	# Also exercise the "rpc" build tag (gRPC/grpc-gateway code), on top of the
+	# default (tagless) pass above.
+	$(GO) test -shuffle=on -tags testing,rpc ${SOURCE_DIRS}
 
 test-deflake: $(TEST_ASSETS)
 	CGO_ENABLED=1 $(GO) test -shuffle=on -tags testing $(GO_RACE) ${SOURCE_DIRS} -cover -count $(GO_TEST_COUNT) -test.short
+	CGO_ENABLED=1 $(GO) test -shuffle=on -tags testing,rpc $(GO_RACE) ${SOURCE_DIRS} -cover -count $(GO_TEST_COUNT) -test.short
 
 ifneq ($(wildcard install/terraform),)
 test-tf: $(TERRAFORM) $(TEST_ASSETS)

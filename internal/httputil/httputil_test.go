@@ -98,6 +98,17 @@ func TestIsBlockedIP(t *testing.T) {
 		{"64:ff9b::7f00:1", true},    // 127.0.0.1
 		{"64:ff9b::a9fe:a9fe", true}, // 169.254.169.254
 		{"64:ff9b::808:808", false},  // 8.8.8.8
+		// 6to4 (RFC 3056) embeds the IPv4 address in bytes 2..5.
+		{"2002:7f00:1::1", true},     // 127.0.0.1
+		{"2002:0a01:0101::1", true},  // 10.1.1.1
+		{"2002:c0a8:6401::1", true},  // 192.168.100.1
+		{"2002:0808:0808::1", false}, // 8.8.8.8
+		// Teredo (RFC 4380) stores the IPv4 address bitwise complemented in
+		// bytes 12..15, so 127.0.0.1 appears as 80ff:fffe.
+		{"2001:0000:4e12:0808:0000:0000:80ff:fffe", true},  // 127.0.0.1
+		{"2001:0000:4e12:0808:0000:0000:f5fe:fefe", true},  // 10.1.1.1
+		{"2001:0000:4e12:0808:0000:0000:3f57:9bfe", true},  // 192.168.100.1
+		{"2001:0000:4e12:0808:0000:0000:f7f7:f7f7", false}, // 8.8.8.8
 	}
 	for _, tc := range tests {
 		t.Run(tc.ip, func(t *testing.T) {

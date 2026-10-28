@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"sync"
 	"testing"
 
@@ -28,10 +29,11 @@ import (
 
 // BatchCreate verifies [ufs.BatchCreate], which uses the file system's own
 // BatchCreate when it has one: files are written with their parent
-// directories, replace existing files and earlier entries, and an invalid
-// name fails before anything is written. A batch that fails on a file system
-// that implements [types.BatchCreateFS] must write nothing. Its files are kept
-// below "bc", apart from anything a test backend is seeded with.
+// directories, replace existing files, and an invalid or repeated name fails
+// before anything is written. A batch that fails on a file system that
+// implements [types.BatchCreateFS] must write nothing, including the
+// directories it would have created. Its files are kept below "bc", apart
+// from anything a test backend is seeded with.
 func BatchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	batchCreate(t, createFS, true)
 }
@@ -50,20 +52,31 @@ func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConfl
 		t.Run("NewFiles", func(t *testing.T) {
 			t.Parallel()
 			fsys := newBatchFS(t, createFS)
-			err := ufs.BatchCreate(fsys,
-				types.BatchFile{Name: "bc/a.txt", Data: []byte("a")},
-				types.BatchFile{Name: "bc/new/dir/b.txt", Data: []byte("b")},
-				types.BatchFile{Name: "bc/new/empty.txt"},
-			)
-			if err != nil {
+			// Files spread over several directories at different levels,
+			// sharing the "bc/new" chain and using chains of their own.
+			files := []types.BatchFile{
+				{Name: "bc/a.txt", Data: []byte("a")},
+				{Name: "bc/new/dir/b.txt", Data: []byte("b")},
+				{Name: "bc/new/empty.txt"},
+				{Name: "bc/new/deeper/c.txt", Data: []byte("c")},
+				{Name: "bc/new/deeper/most/deep/d.txt", Data: []byte("d")},
+				{Name: "bc/side/e.txt", Data: []byte("e")},
+				{Name: "bc/side/more/f.txt", Data: []byte("f")},
+			}
+			if err := ufs.BatchCreate(fsys, files...); err != nil {
 				t.Fatalf("BatchCreate() = %v, want nil", err)
 			}
-			assertBatchFiles(t, fsys, map[string]string{"bc/a.txt": "a", "bc/new/dir/b.txt": "b", "bc/new/empty.txt": ""})
-			for _, dir := range []string{"bc/new", "bc/new/dir"} {
+			want := make(map[string]string, len(files))
+			for _, file := range files {
+				want[file.Name] = string(file.Data)
+			}
+			assertBatchFiles(t, fsys, want)
+			for _, dir := range []string{"bc/new", "bc/new/dir", "bc/new/deeper", "bc/new/deeper/most", "bc/new/deeper/most/deep", "bc/side", "bc/side/more"} {
 				if info, err := fsys.Stat(dir); err != nil || !info.IsDir() {
 					t.Errorf("Stat(%q) = %v, %v, want a directory", dir, info, err)
 				}
 			}
+			assertBatchDir(t, fsys, "bc/new", []string{"deeper", "dir", "empty.txt"})
 		})
 
 		t.Run("Replace", func(t *testing.T) {
@@ -76,17 +89,30 @@ func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConfl
 			assertBatchFiles(t, fsys, map[string]string{"bc/x.txt": "new"})
 		})
 
-		t.Run("SameNameTwice", func(t *testing.T) {
+		t.Run("DuplicateName", func(t *testing.T) {
 			t.Parallel()
 			fsys := newBatchFS(t, createFS)
+			WriteFile(t, fsys, "bc/x.txt", "old")
 			err := ufs.BatchCreate(fsys,
+				types.BatchFile{Name: "bc/new/a.txt", Data: []byte("a")},
+				types.BatchFile{Name: "bc/new/deeper/b.txt", Data: []byte("b")},
 				types.BatchFile{Name: "bc/x.txt", Data: []byte("first")},
+				types.BatchFile{Name: "bc/new/deeper/most/deep/c.txt", Data: []byte("c")},
+				types.BatchFile{Name: "bc/side/d.txt", Data: []byte("d")},
 				types.BatchFile{Name: "bc/x.txt", Data: []byte("second")},
 			)
-			if err != nil {
-				t.Fatalf("BatchCreate() = %v, want nil", err)
+			var pathErr *fs.PathError
+			if !errors.Is(err, fs.ErrInvalid) || !errors.As(err, &pathErr) || pathErr.Path != "bc/x.txt" {
+				t.Fatalf("BatchCreate() = %v, want an *fs.PathError for bc/x.txt wrapping %v", err, fs.ErrInvalid)
 			}
-			assertBatchFiles(t, fsys, map[string]string{"bc/x.txt": "second"})
+			assertBatchFiles(t, fsys, map[string]string{"bc/x.txt": "old"})
+			if _, ok := fsys.(types.BatchCreateFS); !ok {
+				return
+			}
+			assertBatchGone(t, fsys,
+				"bc/new", "bc/new/a.txt", "bc/new/deeper", "bc/new/deeper/b.txt",
+				"bc/new/deeper/most", "bc/new/deeper/most/deep", "bc/new/deeper/most/deep/c.txt",
+				"bc/side", "bc/side/d.txt")
 		})
 
 		t.Run("Empty", func(t *testing.T) {
@@ -170,8 +196,16 @@ func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConfl
 				fsys := newBatchFS(t, createFS)
 				mkdirForTest(t, fsys, "bc/dir")
 				WriteFile(t, fsys, "bc/file.txt", "file")
+				// The files that are written before the failure are spread
+				// over several directories at different levels, sharing a
+				// chain and using chains of their own, so that a rollback
+				// cannot pass by undoing only the last directory.
 				err := ufs.BatchCreate(fsys,
-					types.BatchFile{Name: "bc/first.txt", Data: []byte("first")},
+					types.BatchFile{Name: "bc/new/first.txt", Data: []byte("first")},
+					types.BatchFile{Name: "bc/new/deeper/second.txt", Data: []byte("second")},
+					types.BatchFile{Name: "bc/new/deeper/most/deep/third.txt", Data: []byte("third")},
+					types.BatchFile{Name: "bc/side/fourth.txt", Data: []byte("fourth")},
+					types.BatchFile{Name: "bc/fifth.txt", Data: []byte("fifth")},
 					types.BatchFile{Name: tc.conflict, Data: []byte("conflict")},
 				)
 				if err == nil {
@@ -184,9 +218,12 @@ func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConfl
 				if _, ok := fsys.(types.BatchCreateFS); !ok {
 					return
 				}
-				if _, err := fsys.Stat("bc/first.txt"); !errors.Is(err, fs.ErrNotExist) {
-					t.Errorf("Stat(bc/first.txt) = %v, want %v: a failed batch writes nothing", err, fs.ErrNotExist)
-				}
+				// Not one file, and not a directory at any level of any chain
+				// the batch would have created.
+				assertBatchGone(t, fsys,
+					"bc/new", "bc/new/first.txt", "bc/new/deeper", "bc/new/deeper/second.txt",
+					"bc/new/deeper/most", "bc/new/deeper/most/deep", "bc/new/deeper/most/deep/third.txt",
+					"bc/side", "bc/side/fourth.txt", "bc/fifth.txt")
 			})
 		}
 	})
@@ -212,6 +249,37 @@ func assertBatchFiles(t *testing.T, fsys types.WriteFS, want map[string]string) 
 		}
 		if string(data) != content {
 			t.Errorf("ReadFile(%q) = %q, want %q", name, data, content)
+		}
+	}
+}
+
+// assertBatchDir checks that dir holds exactly the entries in want, so that a
+// batch cannot pass by writing a file without its directory, or by leaving an
+// entry of its own behind.
+func assertBatchDir(t *testing.T, fsys types.WriteFS, dir string, want []string) {
+	t.Helper()
+	entries, err := fsys.ReadDir(dir)
+	if err != nil {
+		t.Errorf("ReadDir(%q) = %v, want nil", dir, err)
+		return
+	}
+	got := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		got = append(got, entry.Name())
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("ReadDir(%q) = %v, want %v", dir, got, want)
+	}
+}
+
+// assertBatchGone checks that none of names exists, which a batch that failed
+// must leave true for every file and directory it would have written.
+func assertBatchGone(t *testing.T, fsys types.WriteFS, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if info, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Stat(%q) = %v, %v, want %v: a failed batch writes nothing", name, info, err, fs.ErrNotExist)
 		}
 	}
 }

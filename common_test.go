@@ -18,9 +18,11 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"path"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -151,8 +153,14 @@ func mustFS(tb testing.TB, newFSFunc func(context.Context, string) (types.WriteF
 }
 
 // writeTestFile writes data to name in fsys, closing the file it creates.
+// writeTestFile writes data to name in fsys, creating its parent directories.
 func writeTestFile(tb testing.TB, fsys types.WriteFS, name string, data []byte) {
 	tb.Helper()
+	if dir := path.Dir(name); dir != pathutil.CwdPath {
+		if err := fsys.MkdirAll(dir, osutil.DefaultDirectoryPermissions); err != nil {
+			tb.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
+		}
+	}
 	f, err := fsys.Create(name)
 	if err != nil {
 		tb.Fatalf("Create(%q) = %v", name, err)

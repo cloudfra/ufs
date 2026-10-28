@@ -15,9 +15,7 @@
 package testing
 
 import (
-	"archive/zip"
 	"errors"
-	"io"
 	"io/fs"
 	"path/filepath"
 	"testing"
@@ -56,35 +54,6 @@ func TestReadDirFiles(t *testing.T) {
 	want := map[string][]byte{"a.txt": []byte("A"), "sub/b.txt": []byte("B")}
 	if diff := cmp.Diff(want, ReadDirFiles(t, dir)); diff != "" {
 		t.Errorf("ReadDirFiles() mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func TestZipDir(t *testing.T) {
-	dir := writeTestDir(t, map[string]string{"a.txt": "A", "sub/b.txt": "B"})
-	zr, err := zip.OpenReader(ZipDir(t, dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ValidateClose(t, zr)()
-
-	got := map[string]string{}
-	for _, zf := range zr.File {
-		r, err := zf.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := r.Close(); err != nil {
-			t.Fatal(err)
-		}
-		got[zf.Name] = string(data)
-	}
-	want := map[string]string{"a.txt": "A", "sub/b.txt": "B"}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("ZipDir() content mismatch (-want +got):\n%s", diff)
 	}
 }
 

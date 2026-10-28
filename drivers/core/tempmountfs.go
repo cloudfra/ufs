@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"time"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
@@ -62,6 +63,11 @@ func (fsys *tempMountFS) Close() error {
 	closeErr := fsys.lfs.Close()
 	cleanupErr := fsys.closer()
 	return ufserrors.Join(closeErr, cleanupErr)
+}
+
+// Chtimes changes the times of name in the local copy.
+func (fsys *tempMountFS) Chtimes(name string, atime, mtime time.Time) error {
+	return ops.Chtimes(fsys.lfs, name, atime, mtime)
 }
 
 func (fsys *tempMountFS) Create(name string) (types.File, error) {

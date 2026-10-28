@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
@@ -50,6 +51,7 @@ func init() {
 
 type localFSInterface interface {
 	types.WriteFS
+	types.ChtimesFS
 	fs.GlobFS
 	ufs.AbsPathGetter
 }
@@ -97,6 +99,15 @@ func (fsys *localFS) OpenFile(name string, flag int, perm fs.FileMode) (types.Fi
 
 func (fsys *localFS) Close() error {
 	return fsys.osFS.Close()
+}
+
+// Chtimes changes the access and modification times of name through
+// [os.Root.Chtimes].
+func (fsys *localFS) Chtimes(name string, atime, mtime time.Time) error {
+	if err := validLocalPath("chtimes", name); err != nil {
+		return err
+	}
+	return fsys.osFS.Chtimes(name, atime, mtime)
 }
 
 func (fsys *localFS) Create(name string) (types.File, error) {

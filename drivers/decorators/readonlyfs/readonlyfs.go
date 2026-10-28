@@ -22,6 +22,7 @@ import (
 	"context"
 	"io/fs"
 	"net/url"
+	"time"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/polyfills"
@@ -32,7 +33,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var _ types.WriteFS = (*readOnlyFS)(nil)
+var (
+	_ types.WriteFS   = (*readOnlyFS)(nil)
+	_ types.ChtimesFS = (*readOnlyFS)(nil)
+)
 
 const (
 	optionName = "readOnly"
@@ -185,6 +189,14 @@ func (fsys *readOnlyFS) RemoveAll(name string) error {
 		return err
 	}
 	return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
+}
+
+// Chtimes always returns [fs.ErrPermission].
+func (fsys *readOnlyFS) Chtimes(name string, _, _ time.Time) error {
+	if err := pathutil.Validate("chtimes", name); err != nil {
+		return err
+	}
+	return ufserrors.NewPathError("chtimes", name, fs.ErrPermission)
 }
 
 func maskFileInfo(info fs.FileInfo, err error) (fs.FileInfo, error) {

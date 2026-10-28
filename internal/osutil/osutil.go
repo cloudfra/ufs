@@ -58,6 +58,22 @@ func RemoveAll(name string) error {
 	return os.RemoveAll(filepath.Clean(name))
 }
 
+// RemoveContents removes everything inside the directory name while leaving
+// the directory itself in place.
+func RemoveContents(name string) error {
+	dir := filepath.Clean(name)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Create creates or truncates the file name.
 func Create(name string) (*os.File, error) {
 	return os.Create(filepath.Clean(name))

@@ -245,6 +245,10 @@ with `pathutil.ValidateFileName` and writes each file with MkdirAll + Create
 (not atomic, Perm ignored). Writing one file this way is the single-operation
 WriteFile. New drivers are covered by `BatchCreate` in `drivers/testing`.
 
+The telemetry decorator forwards BatchCreate (and Watch) only when the wrapped
+file system has it, via separate wrapper types; `fault` and `readOnly` do not
+forward it yet, so they use the fallback.
+
 ### Conventions
 
 * Keep structs private; expose construction via the public New() factory.

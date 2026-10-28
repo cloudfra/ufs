@@ -188,3 +188,50 @@ func TestCopyCreateError(t *testing.T) {
 		t.Error("Copy with angry dst succeeded, want error")
 	}
 }
+
+// wrapperFS stands in for the decorator shape that crashed ops.Copy: a struct
+// holding a func field is not comparable, so == on two fs.FS interface values
+// that hold it panics rather than reporting false. It is passed by value, since
+// a pointer to it would be comparable.
+type wrapperFS struct {
+	types.WriteFS
+	hook func()
+}
+
+func TestCopyNonComparableFileSystem(t *testing.T) {
+	mem, err := newMemFS("memory://same")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, mem)()
+
+	f, err := mem.Create("file.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("hello world"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	src := wrapperFS{WriteFS: mem, hook: func() {}}
+	dst := wrapperFS{WriteFS: mem, hook: func() {}}
+	if err := ops.Copy(src, "file.txt", dst, "copy.txt"); err != nil {
+		t.Fatalf("Copy() = %v, want nil", err)
+	}
+
+	rf, err := mem.Open("copy.txt")
+	if err != nil {
+		t.Fatalf("Open(copy.txt) = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, rf)()
+	data, err := io.ReadAll(rf)
+	if err != nil {
+		t.Fatalf("ReadAll() = %v, want nil", err)
+	}
+	if string(data) != "hello world" {
+		t.Errorf("copy content = %q, want %q", data, "hello world")
+	}
+}

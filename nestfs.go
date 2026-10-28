@@ -99,6 +99,25 @@ func (m *mountMap) DeviceInfo() types.DeviceMap {
 func (m *mountMap) put(name string, fsys *nestFS) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.putLocked(name, fsys)
+}
+
+// putIfAbsent mounts fsys at name unless something is already mounted exactly
+// there, and returns whichever file system ends up mounted at name.
+func (m *mountMap) putIfAbsent(name string, fsys *nestFS) (*nestFS, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if existing, ok := m.m[path.Clean(name)]; ok {
+		return existing, nil
+	}
+	if err := m.putLocked(name, fsys); err != nil {
+		return nil, err
+	}
+	return fsys, nil
+}
+
+// putLocked is put with m.mu already held.
+func (m *mountMap) putLocked(name string, fsys *nestFS) error {
 	for mountPoint := range m.m {
 		if _, ok := pathutil.RemovePrefix(mountPoint, name); ok {
 			return ufserrors.NewPathError("mount", name, fmt.Errorf("mount %q conflicts with %q. You must change the order so that mounting is properly nested. mounts: %s, %+v", name, mountPoint, m.baseName, m.m))
@@ -441,6 +460,17 @@ func (fsys *nestFS) addAutoMount(name string, mountedFS *nestFS) error {
 	return fsys.addMount(name, mountedFS)
 }
 
+// addAutoMountIfAbsent is [nestFS.addAutoMount] for a file system that the
+// caller built because it decided one was needed, which another goroutine may
+// have decided the same thing about. It returns the file system that ends up
+// mounted at name, which is the caller's unless something is already mounted
+// exactly there. A mount lost that way is not released, so the caller must
+// close it.
+func (fsys *nestFS) addAutoMountIfAbsent(name string, mountedFS *nestFS) (*nestFS, error) {
+	mountedFS.autoMounted = true
+	return fsys.mounts.putIfAbsent(name, mountedFS)
+}
+
 // IsMountedArchiveDir reports whether name (a full path within this FS) is a
 // virtual directory backed by a mounted archive. It returns true only when:
 //   - name ends with archiveDirExt
@@ -501,10 +531,17 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 
 	wrapped := makeNestFS(ctx, newFS)
 	wrapped.inArchive = true
-	if err := fsys.addAutoMount(name+archiveDirExt, wrapped); err != nil {
-		return nil, err
+	mounted, err := fsys.addAutoMountIfAbsent(name+archiveDirExt, wrapped)
+	if err != nil {
+		return nil, ufserrors.Join(err, wrapped.Close())
 	}
-	return wrapped, nil
+	if mounted != wrapped {
+		// Another goroutine mounted the same archive first; use its mount.
+		if err := wrapped.Close(); err != nil {
+			return nil, ufserrors.NewPathError("mount", name, err)
+		}
+	}
+	return mounted, nil
 }
 
 func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {

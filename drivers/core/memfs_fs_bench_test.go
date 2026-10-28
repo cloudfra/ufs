@@ -18,8 +18,10 @@ import (
 	"bytes"
 	"fmt"
 	"io/fs"
+	"path"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -189,6 +191,54 @@ func BenchmarkMemFSCreate(b *testing.B) {
 		if err := f.Close(); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// BenchmarkMemFSBatchCreate compares one BatchCreate with the same files
+// written one at a time by MkdirAll and Create, as ufs.BatchCreate does for a
+// file system without BatchCreateFS. Each iteration rewrites the same names.
+func BenchmarkMemFSBatchCreate(b *testing.B) {
+	for _, count := range []int{1, 8, 64} {
+		b.Run(fmt.Sprintf("%d_files", count), func(b *testing.B) {
+			files := make([]types.BatchFile, count)
+			for i := range files {
+				files[i] = types.BatchFile{
+					Name: fmt.Sprintf("dir%d/sub/file_%d.txt", i%8, i),
+					Data: []byte("content"),
+				}
+			}
+
+			b.Run("BatchCreate", func(b *testing.B) {
+				fsys := mustMemFS(b, "memory://bench")
+				b.ResetTimer()
+				for b.Loop() {
+					if err := ufs.BatchCreate(fsys, files...); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+			b.Run("each file", func(b *testing.B) {
+				fsys := mustMemFS(b, "memory://bench")
+				b.ResetTimer()
+				for b.Loop() {
+					for _, file := range files {
+						if err := fsys.MkdirAll(path.Dir(file.Name), fs.ModePerm); err != nil {
+							b.Fatal(err)
+						}
+						f, err := fsys.Create(file.Name)
+						if err != nil {
+							b.Fatal(err)
+						}
+						if _, err := f.Write(file.Data); err != nil {
+							b.Fatal(err)
+						}
+						if err := f.Close(); err != nil {
+							b.Fatal(err)
+						}
+					}
+				}
+			})
+		})
 	}
 }
 

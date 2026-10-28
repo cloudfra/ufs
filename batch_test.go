@@ -23,6 +23,12 @@ import (
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
+// noBatchFS hides the BatchCreate of the file system it wraps, so that
+// [BatchCreate] falls back to Create.
+type noBatchFS struct {
+	types.WriteFS
+}
+
 // batchRecorderFS implements types.BatchCreateFS by recording its batches.
 type batchRecorderFS struct {
 	types.WriteFS
@@ -58,7 +64,7 @@ func TestBatchCreateFallbackError(t *testing.T) {
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 	ufsTesting.Must(t, fsys.MkdirAll("dir", fs.ModePerm))
 
-	err := BatchCreate(fsys,
+	err := BatchCreate(noBatchFS{fsys},
 		types.BatchFile{Name: "a.txt", Data: []byte("a")},
 		types.BatchFile{Name: "dir", Data: []byte("dir")},
 	)

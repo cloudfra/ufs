@@ -85,11 +85,12 @@ import (
 )
 
 var (
-	_ types.File     = (*boltFile)(nil)
-	_ types.WriteFS  = (*boltFS)(nil)
-	_ fs.GlobFS      = (*boltFS)(nil)
-	_ fs.ReadDirFile = (*boltDirFile)(nil)
-	_ types.Watcher  = (*boltFS)(nil)
+	_ types.File          = (*boltFile)(nil)
+	_ types.WriteFS       = (*boltFS)(nil)
+	_ types.BatchCreateFS = (*boltFS)(nil)
+	_ fs.GlobFS           = (*boltFS)(nil)
+	_ fs.ReadDirFile      = (*boltDirFile)(nil)
+	_ types.Watcher       = (*boltFS)(nil)
 
 	// selfKey serves two roles that happen to share the same value: it is the
 	// name of the top-level bolt bucket that represents the root ("." /
@@ -101,34 +102,6 @@ var (
 	selfKey = []byte(pathutil.CwdPath)
 
 	errIsDirectory = errors.New("is a directory")
-)
-
-const (
-	boltFSScheme = "bolt"
-	boltFSPrefix = boltFSScheme + ":"
-)
-
-const (
-	// noSyncParam is the URI query parameter for bolt.Options.NoSync.
-	noSyncParam = "ufs.nosync"
-
-	// noFreelistSyncParam is the URI query parameter for
-	// bolt.Options.NoFreelistSync.
-	noFreelistSyncParam = "ufs.nofreelistsync"
-
-	// noStatisticsParam is the URI query parameter for
-	// bolt.Options.NoStatistics.
-	noStatisticsParam = "ufs.nostatistics"
-
-	// readOnlyParam is the URI query parameter for bolt.Options.ReadOnly.
-	readOnlyParam = "ufs.readonly"
-
-	// timeoutParam is the URI query parameter for bolt.Options.Timeout.
-	timeoutParam = "ufs.timeout"
-
-	// defaultTimeout is how long opening waits for the file lock when the
-	// URI does not set timeoutParam.
-	defaultTimeout = time.Minute
 )
 
 // boltOptions are the database options that a bolt: URI sets.
@@ -226,6 +199,9 @@ type boltFS struct {
 	absPath string
 	opts    boltOptions
 	db      *bolt.DB
+
+	// batches commits the BatchCreate calls of several goroutines together.
+	batches batchCommitter
 
 	notifyBus *notify.Bus
 }
@@ -379,6 +355,12 @@ func lookupParent(tx *bolt.Tx, name string) (*bolt.Bucket, []byte, error) {
 // directories (with default metadata). It must only be called on a writable
 // transaction.
 func parentBucket(tx *bolt.Tx, name string) (*bolt.Bucket, []byte, error) {
+	return parentBucketCreating(tx, name, nil)
+}
+
+// parentBucketCreating is parentBucket that also calls created, when it is
+// not nil, with the path of each directory it creates, outermost first.
+func parentBucketCreating(tx *bolt.Tx, name string, created func(dir string)) (*bolt.Bucket, []byte, error) {
 	bkt, err := rootBucket(tx)
 	if err != nil {
 		return nil, nil, err
@@ -386,10 +368,17 @@ func parentBucket(tx *bolt.Tx, name string) (*bolt.Bucket, []byte, error) {
 	dir, last := path.Split(name)
 	if dir != "" {
 		now := time.Now()
+		end := 0
 		for part := range strings.SplitSeq(dir[:len(dir)-1], pathutil.UnixSeparator) {
-			if bkt, _, err = createDirBucket(bkt, []byte(part), fs.ModeDir|fs.ModePerm, now); err != nil {
+			end += len(part)
+			var isNew bool
+			if bkt, isNew, err = createDirBucket(bkt, []byte(part), fs.ModeDir|fs.ModePerm, now); err != nil {
 				return nil, nil, err
 			}
+			if isNew && created != nil {
+				created(dir[:end])
+			}
+			end++
 		}
 	}
 	return bkt, []byte(last), nil

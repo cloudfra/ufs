@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
@@ -71,7 +71,7 @@ func (f *File) Path() string {
 // Stat returns the file's current name, size, mode and modification time.
 func (f *File) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
-	info := ufs.NewFileInfo(path.Base(f.path), int64(f.content.Len()), f.mode, f.modTime)
+	info := types.NewFileInfo(path.Base(f.path), int64(f.content.Len()), f.mode, f.modTime)
 	f.mu.Unlock()
 	return info, nil
 }

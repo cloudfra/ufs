@@ -15,18 +15,19 @@
 package polyfills
 
 import (
-	"bytes"
 	"io"
 	"io/fs"
-	"log/slog"
-	"os"
 
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var _ types.File = (*bufferedFile)(nil)
+
+// AutoBufferThreshold is the file size at or above which [BufferAuto] keeps the
+// content in a temporary file rather than in memory. [BufferArgs] uses it when
+// its AutoThreshold is not set.
+const AutoBufferThreshold int64 = 1 << 20
 
 // BufferMode selects how the content of a buffered file is kept.
 type BufferMode int
@@ -36,35 +37,50 @@ const (
 	BufferMemory BufferMode = iota
 	// BufferDisk keeps the content in a temporary file, removed on Close.
 	BufferDisk
+	// BufferAuto keeps the content in memory when it is smaller than
+	// [BufferArgs.AutoThreshold] and in a temporary file when it reaches that
+	// size. A file whose Stat reports no usable size is read up to the
+	// threshold and spills to a temporary file if it is longer.
+	BufferAuto
 )
 
-// ToBufferedFile adapts f to [types.File], buffering content when that is the
-// only way to get a working Seek and ReadAt. A file that already is a
-// [types.File] is returned as is.
+// BufferArgs configures how [ToBufferedFile] buffers the content of a file.
+type BufferArgs struct {
+	// Mode selects the backing store. The zero value, [BufferMemory], keeps the
+	// content in memory.
+	Mode BufferMode
+	// AutoThreshold is the size in bytes at or above which [BufferAuto] switches
+	// to a temporary file. Zero or negative means [AutoBufferThreshold]. Other
+	// modes ignore it.
+	AutoThreshold int64
+}
+
+// ToBufferedFile adapts f to [types.File], giving it a working Seek and ReadAt.
+// A file that already is a [types.File] is returned as is.
 //
-// When Seek or ReadAt is absent from a file that is open only for reading, the
-// file content is buffered so that both operations work correctly at any
-// position. In memory mode, content is read eagerly into a bytes.Reader. In
-// disk mode, content is streamed to a temporary file. The buffer is released on
-// Close. Read is also redirected through the buffer so that the file position
-// stays consistent across Read/Seek/ReadAt.
+// What the file lacks is derived from what it provides, so its content is
+// copied only when it has neither Seek nor ReadAt, into the store args selects.
+// A file open for writing is never copied because the wrapper writes through to
+// it; a method that cannot be derived reports [fs.ErrInvalid]. See
+// https://github.com/cloudfra/ufs/issues/451.
 //
-// A file that is open for writing is never buffered: the wrapper writes through
-// to the underlying file, so a buffer would report content that predates those
-// writes. A missing Seek or ReadAt on such a file reports [fs.ErrInvalid]
-// instead. See https://github.com/cloudfra/ufs/issues/451.
+// A ReadAt ending exactly at the end of the content reports [io.EOF] from a
+// memory copy and a nil error from a temporary file; [io.ReaderAt] allows
+// either. A temporary file is created in the operating system's temporary
+// directory and is removed only by Close. Like the file it wraps, the result is
+// not safe for concurrent use.
 //
 // When readOnly is true, Write and WriteString always report [fs.ErrInvalid].
-// Unlike [ToFile], which guesses an adaptation from the interfaces f happens to
-// implement, this one needs the caller's read or write intent to decide whether
-// buffering is allowed, so it is a separate entry point.
-func ToBufferedFile(f fs.File, readOnly bool, mode BufferMode) (types.File, error) {
+// Unlike [ToFile], which guesses from the interfaces f happens to implement,
+// this one needs the caller's read or write intent to decide whether copying
+// the content is allowed.
+func ToBufferedFile(f fs.File, readOnly bool, args BufferArgs) (types.File, error) {
 	if cFile, ok := f.(types.File); ok {
 		return cFile, nil
 	}
 
 	bf := &bufferedFile{File: f}
-	if err := polyfillSeekReadAt(bf, f, !readOnly, mode); err != nil {
+	if err := bf.polyfillSeekReadAt(!readOnly, args); err != nil {
 		return nil, err
 	}
 
@@ -99,16 +115,18 @@ func ToBufferedFile(f fs.File, readOnly bool, mode BufferMode) (types.File, erro
 	return bf, nil
 }
 
-// bufferedFile is the [types.File] returned by [ToBufferedFile]. It emulates
-// the methods its [fs.File] lacks, redirecting Read through the buffer when
-// there is one.
+// bufferedFile is the [types.File] returned by [ToBufferedFile]. It emulates the
+// methods its [fs.File] lacks, reading through content whenever the polyfill
+// took over the file's position.
 type bufferedFile struct {
 	fs.File
-	// closed records that Close has run. Close releases the buffer and the
-	// closures bound to it, so every method must then report [fs.ErrClosed].
-	closed          bool
-	buf             *bytes.Reader // non-nil when content is buffered in memory
-	tmpFile         *os.File      // non-nil when content is buffered on disk
+	// closed records that Close has run, after which every method reports
+	// [fs.ErrClosed].
+	closed bool
+	// content is what Read, Seek and ReadAt operate on when the file itself
+	// could not provide that pair. It is nil when the underlying file serves
+	// those methods itself.
+	content         buffer
 	writeFunc       func([]byte) (int, error)
 	seekFunc        func(int64, int) (int64, error)
 	readAtFunc      func([]byte, int64) (int, error)
@@ -126,39 +144,28 @@ func (f *bufferedFile) Read(p []byte) (int, error) {
 	if f.closed {
 		return 0, fs.ErrClosed
 	}
-	if f.buf != nil {
-		return f.buf.Read(p)
-	}
-	if f.tmpFile != nil {
-		return f.tmpFile.Read(p)
+	if f.content != nil {
+		return f.content.Read(p)
 	}
 	return f.File.Read(p)
 }
 
-// Close releases the buffered content along with the closures that reached it,
-// so that no method can read content that was dropped. A second Close reports
-// [fs.ErrClosed], like [os.File.Close].
+// Close releases the buffered content along with the closures that reached it.
+// A second Close reports [fs.ErrClosed], like [os.File.Close].
 func (f *bufferedFile) Close() error {
 	if f.closed {
 		return fs.ErrClosed
 	}
 	f.closed = true
-	f.buf = nil
+	content := f.content
+	f.content = nil
 	f.seekFunc = nil
 	f.readAtFunc = nil
-	if f.tmpFile != nil {
-		name := f.tmpFile.Name()
-		if err := f.tmpFile.Close(); err != nil {
-			f.tmpFile = nil
-			return ufserrors.Join(err, f.File.Close())
-		}
-		if err := osutil.Remove(name); err != nil {
-			f.tmpFile = nil
-			return ufserrors.Join(err, f.File.Close())
-		}
-		f.tmpFile = nil
+	var contentErr error
+	if content != nil {
+		contentErr = content.Close()
 	}
-	return f.File.Close()
+	return ufserrors.Join(contentErr, f.File.Close())
 }
 
 func (f *bufferedFile) Write(p []byte) (int, error) {
@@ -189,76 +196,78 @@ func (f *bufferedFile) WriteString(s string) (int, error) {
 	return f.writeStringFunc(s)
 }
 
-// polyfillSeekReadAt populates bf.seekFunc and bf.readAtFunc for the underlying
-// file f. A method f provides natively is used directly. When f is missing one
-// of them, a file that is open only for reading has its content buffered so
-// that both work at any position, using in-memory (BufferMemory) or temp-file
-// (BufferDisk) buffering; on failure f is closed and the error returned. A file
-// open for writing (writable) is not buffered, so a missing method reports
-// [fs.ErrInvalid].
-func polyfillSeekReadAt(bf *bufferedFile, f fs.File, writable bool, mode BufferMode) error {
-	if seeker, ok := f.(io.Seeker); ok {
-		bf.seekFunc = seeker.Seek
-	}
-	if readerAt, ok := f.(io.ReaderAt); ok {
-		bf.readAtFunc = readerAt.ReadAt
-	}
-	if bf.seekFunc == nil || bf.readAtFunc == nil {
+// polyfillSeekReadAt populates f.seekFunc, f.readAtFunc and, when the file
+// position has to be tracked for them, f.content. What the file provides is
+// used directly and what it lacks is derived from it, which is how content
+// avoids being copied.
+func (f *bufferedFile) polyfillSeekReadAt(writable bool, args BufferArgs) error {
+	seeker, hasSeek := f.File.(io.Seeker)
+	readerAt, hasReadAt := f.File.(io.ReaderAt)
+	switch {
+	case hasSeek && hasReadAt:
+		f.seekFunc = seeker.Seek
+		f.readAtFunc = readerAt.ReadAt
+		return nil
+	case hasSeek:
+		f.seekFunc = seeker.Seek
+		f.readAtFunc = func(p []byte, off int64) (int, error) {
+			return seekReadAt(seeker, f.File, p, off)
+		}
+		return nil
+	case hasReadAt:
+		// A file open for writing gets no position of its own: the wrapper
+		// writes through the file, so a view bounded by the size Stat reported
+		// could hide those writes. Reading at an offset still reaches the file
+		// directly, and Seek is left to copyContent, which refuses it.
 		if writable {
-			if bf.seekFunc == nil {
-				bf.seekFunc = func(int64, int) (int64, error) {
-					return 0, fs.ErrInvalid
-				}
-			}
-			if bf.readAtFunc == nil {
-				bf.readAtFunc = func([]byte, int64) (int, error) {
-					return 0, fs.ErrInvalid
-				}
-			}
+			f.readAtFunc = readerAt.ReadAt
+			break
+		}
+		// Tracking a position needs a length to seek relative to, so a file
+		// that reports none has to fall back to a copy of its content.
+		if stat := statFile(f.File); stat.size >= 0 {
+			content := newSectionBuffer(readerAt, stat.size)
+			f.content = content
+			f.seekFunc = content.Seek
+			f.readAtFunc = content.ReadAt
 			return nil
 		}
-		if mode == BufferDisk {
-			return polyfillSeekReadAtDisk(bf, f)
-		}
-		return polyfillSeekReadAtMemory(bf, f)
 	}
+	return f.copyContent(writable, args)
+}
+
+// copyContent gives f a private copy of its file's content so that Seek and
+// ReadAt work at any position, in the store args selects. A file open for
+// writing is not copied at all; see https://github.com/cloudfra/ufs/issues/451.
+func (f *bufferedFile) copyContent(writable bool, args BufferArgs) error {
+	if writable {
+		if f.seekFunc == nil {
+			f.seekFunc = func(int64, int) (int64, error) {
+				return 0, fs.ErrInvalid
+			}
+		}
+		if f.readAtFunc == nil {
+			f.readAtFunc = func([]byte, int64) (int, error) {
+				return 0, fs.ErrInvalid
+			}
+		}
+		return nil
+	}
+	content, err := newBuffer(f.File, args)
+	if err != nil {
+		return ufserrors.Join(err, f.File.Close())
+	}
+	f.content = content
+	f.seekFunc = content.Seek
+	f.readAtFunc = content.ReadAt
 	return nil
 }
 
-func polyfillSeekReadAtMemory(bf *bufferedFile, f fs.File) error {
-	data, err := io.ReadAll(f)
-	if err != nil {
-		if closeErr := f.Close(); closeErr != nil {
-			slog.Warn("failed to close file after ReadAll error", "error", closeErr)
-		}
-		return err
+// threshold returns the size at or above which [BufferAuto] switches to a
+// temporary file, [AutoBufferThreshold] when args does not set one.
+func (args BufferArgs) threshold() int64 {
+	if args.AutoThreshold <= 0 {
+		return AutoBufferThreshold
 	}
-	bf.buf = bytes.NewReader(data)
-	bf.seekFunc = bf.buf.Seek
-	bf.readAtFunc = bf.buf.ReadAt
-	return nil
-}
-
-func polyfillSeekReadAtDisk(bf *bufferedFile, f fs.File) error {
-	tmp, err := osutil.CreateTemp("", "ufs-polyfill-*.tmp")
-	if err != nil {
-		fCloseErr := f.Close()
-		return ufserrors.Join(err, fCloseErr)
-	}
-	if _, err := io.Copy(tmp, f); err != nil {
-		closeErr := tmp.Close()
-		removeErr := osutil.Remove(tmp.Name())
-		fCloseErr := f.Close()
-		return ufserrors.Join(err, closeErr, removeErr, fCloseErr)
-	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		closeErr := tmp.Close()
-		removeErr := osutil.Remove(tmp.Name())
-		fCloseErr := f.Close()
-		return ufserrors.Join(err, closeErr, removeErr, fCloseErr)
-	}
-	bf.tmpFile = tmp
-	bf.seekFunc = tmp.Seek
-	bf.readAtFunc = tmp.ReadAt
-	return nil
+	return args.AutoThreshold
 }

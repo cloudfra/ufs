@@ -26,15 +26,17 @@ type BatchCreateFS interface {
 	fs.FS
 
 	// BatchCreate writes every file in files, in order. Missing parent
-	// directories are created as MkdirAll creates them, an existing file is
-	// replaced, and a later entry for a name replaces an earlier one. An
-	// empty batch does nothing.
+	// directories are created as MkdirAll creates them, and an existing file
+	// is replaced. Names must be unique within one batch, and an empty batch
+	// does nothing.
 	//
 	// It returns an [*fs.PathError] for the first file that fails: one
-	// wrapping [fs.ErrInvalid] if its name is invalid or the root, one
-	// wrapping [fs.ErrClosed] if the file system is closed, and an error if
-	// its name or one of its parent paths is an existing directory or file of
-	// the wrong kind, as Create and MkdirAll would.
+	// wrapping [fs.ErrInvalid] if its name is invalid, is the root or repeats
+	// a name earlier in files, one wrapping [fs.ErrClosed] if the file system
+	// is closed, and an error if its name or one of its parent paths is an
+	// existing directory or file of the wrong kind, as Create and MkdirAll
+	// would. [ValidateBatchFiles] checks the names, and every implementation
+	// must check them before writing anything.
 	//
 	// BatchCreate must be atomic: if it returns an error none of the files
 	// was written, and a reader sees either none or all of them. A file system

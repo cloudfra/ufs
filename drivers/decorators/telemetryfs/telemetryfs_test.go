@@ -436,7 +436,7 @@ func TestWrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wrap() = %v, want nil", err)
 	}
-	if fsys != inner {
+	if !types.Equals(fsys, inner) {
 		t.Errorf("wrap with zero Options = %s, want the inner file system", fsys)
 	}
 
@@ -446,7 +446,7 @@ func TestWrap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wrap() = %v, want nil", err)
 	}
-	if fsys == inner {
+	if types.Equals(fsys, inner) {
 		t.Error("wrap with non-zero Options should decorate the file system")
 	}
 	if _, err := fsys.Stat("."); err != nil {

@@ -67,6 +67,7 @@ var (
 	_ AbsPathGetter             = (*nestFS)(nil)
 	_ types.MountedArchiveDirFS = (*nestFS)(nil)
 	_ types.DeviceInfoGet       = (*mountMap)(nil)
+	_ types.FSUnwrapper         = (*nestFS)(nil)
 )
 
 func getPotentialArchives(name string) []string {
@@ -94,6 +95,13 @@ func (m *mountMap) DeviceInfo() types.DeviceMap {
 	}
 	m.mu.RUnlock()
 	return combined
+}
+
+// hasMounts reports whether any file system is mounted within the nestFS.
+func (m *mountMap) hasMounts() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.m) != 0
 }
 
 func (m *mountMap) put(name string, fsys *nestFS) error {
@@ -310,6 +318,18 @@ type nestFS struct {
 	// A mount the caller configured, by handing over a file system or by giving
 	// a URI, is not marked, so releasing keeps it.
 	autoMounted bool
+}
+
+// UnwrapFS reports the file system a nestFS stands for. A nestFS is only a
+// wrapper, so a mount-free one is equivalent to its backing file system and
+// [types.Equals] compares that instead. A nestFS with mounts adds file systems
+// of its own, and one without a backing file system is closed, so neither is
+// equivalent: both report nil and keep their own identity.
+func (fsys *nestFS) UnwrapFS() fs.FS {
+	if fsys.mounts.hasMounts() || fsys.fsys == nil {
+		return nil
+	}
+	return fsys.fsys
 }
 
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
@@ -866,7 +886,7 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		}
 	}
 
-	if srcLeaf.fsys == dstLeaf.fsys {
+	if types.Equals(srcLeaf.fsys, dstLeaf.fsys) {
 		err = ops.Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
 	} else {
 		err = ops.RenameByCopy(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)

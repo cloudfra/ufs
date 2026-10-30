@@ -179,7 +179,7 @@ func TestWrap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fsys != inner {
+	if !types.Equals(fsys, inner) {
 		t.Errorf("wrap with Enabled=false = %v, want the inner FS unchanged", fsys)
 	}
 

@@ -15,7 +15,14 @@
 package types
 
 import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +53,46 @@ type sliceFS struct {
 }
 
 func (sliceFS) Open(string) (fs.File, error) {
+	return nil, fs.ErrNotExist
+}
+
+// thinFS is a wrapper that adds nothing of its own, so it is equivalent to the
+// file system it holds and Equals looks through it.
+type thinFS struct {
+	in fs.FS
+}
+
+func (fsys thinFS) Open(name string) (fs.File, error) {
+	return fsys.in.Open(name)
+}
+
+func (fsys thinFS) UnwrapFS() fs.FS {
+	return fsys.in
+}
+
+// mountedFS is a wrapper that holds more than what it wraps, so it reports nil
+// and keeps its own identity.
+type mountedFS struct {
+	in fs.FS
+}
+
+func (fsys mountedFS) Open(name string) (fs.File, error) {
+	return fsys.in.Open(name)
+}
+
+func (mountedFS) UnwrapFS() fs.FS {
+	return nil
+}
+
+// ifaceFS holds a file system in an interface field. reflect reports the struct
+// as comparable, but == panics when the interface holds a slice, so Equals has
+// to refuse the type. It does not implement [FSUnwrapper], which is how the
+// comparison survives unwrapping.
+type ifaceFS struct {
+	in fs.FS
+}
+
+func (ifaceFS) Open(string) (fs.File, error) {
 	return nil, fs.ErrNotExist
 }
 
@@ -91,6 +138,12 @@ func TestEquals(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "an interface field may hold an incomparable value",
+			a:    ifaceFS{in: sliceFS{entries: []string{"a"}}},
+			b:    ifaceFS{in: sliceFS{entries: []string{"a"}}},
+			want: false,
+		},
+		{
 			name: "two nil file systems",
 			a:    nil,
 			b:    nil,
@@ -126,5 +179,211 @@ func TestEqualsPointer(t *testing.T) {
 	}
 	if Equals(mem, &comparableFS{id: 1}) {
 		t.Error("Equals(two pointers to equal values) = true, want false")
+	}
+}
+
+// TestEqualsUnwraps checks that a wrapper is compared through the file system it
+// holds, which is what lets an operation spanning two file systems notice that
+// they are the same one.
+func TestEqualsUnwraps(t *testing.T) {
+	t.Parallel()
+
+	inner := &comparableFS{id: 1}
+	mounted := &mountedFS{in: inner}
+	testCases := []struct {
+		name string
+		a    fs.FS
+		b    fs.FS
+		want bool
+	}{
+		{
+			name: "a wrapper and what it wraps",
+			a:    thinFS{in: inner},
+			b:    inner,
+			want: true,
+		},
+		{
+			name: "two wrappers over the same file system",
+			a:    thinFS{in: inner},
+			b:    thinFS{in: inner},
+			want: true,
+		},
+		{
+			name: "a chain of wrappers",
+			a:    thinFS{in: thinFS{in: inner}},
+			b:    inner,
+			want: true,
+		},
+		{
+			name: "a wrapper that keeps its identity",
+			a:    mounted,
+			b:    inner,
+			want: false,
+		},
+		{
+			name: "the same wrapper twice",
+			a:    mounted,
+			b:    mounted,
+			want: true,
+		},
+		{
+			name: "a wrapper holding nothing",
+			a:    thinFS{},
+			b:    nil,
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := Equals(tc.a, tc.b); got != tc.want {
+				t.Errorf("Equals(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+// fileSystemName reports whether name follows the convention this repo uses for
+// file systems: an identifier ending in FS or fs, or the local variable name
+// fsys. The io/fs qualifier is excluded because it names the package rather than
+// a file system.
+func fileSystemName(name string) bool {
+	if name == "fs" {
+		return false
+	}
+	return name == "fsys" || strings.HasSuffix(name, "FS") || strings.HasSuffix(name, "fs")
+}
+
+// operandText returns the dotted source text of a comparison operand when it
+// names a value outright — an identifier, a field or a package-qualified name —
+// rather than being a call, an index or a literal.
+func operandText(expr ast.Expr) (string, bool) {
+	for {
+		paren, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expr = paren.X
+	}
+	switch v := expr.(type) {
+	case *ast.Ident:
+		return v.Name, true
+	case *ast.SelectorExpr:
+		base, ok := operandText(v.X)
+		if !ok {
+			return "", false
+		}
+		return base + "." + v.Sel.Name, true
+	default:
+		return "", false
+	}
+}
+
+// lastName returns the final component of a dotted name, which is the part that
+// says whether the value is a file system.
+func lastName(name string) string {
+	if idx := strings.LastIndex(name, "."); idx >= 0 {
+		return name[idx+1:]
+	}
+	return name
+}
+
+// manualEquals reports the file-system comparisons in an already parsed file.
+func manualEquals(fset *token.FileSet, file *ast.File) []string {
+	var found []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		cmp, ok := n.(*ast.BinaryExpr)
+		if !ok {
+			return true
+		}
+		if cmp.Op != token.EQL && cmp.Op != token.NEQ {
+			return true
+		}
+		a, okA := operandText(cmp.X)
+		b, okB := operandText(cmp.Y)
+		if !okA || !okB {
+			return true
+		}
+		// Comparing a file system against nil only asks whether one is set,
+		// which is safe and common.
+		if a == "nil" || b == "nil" {
+			return true
+		}
+		if !fileSystemName(lastName(a)) && !fileSystemName(lastName(b)) {
+			return true
+		}
+		pos := fset.Position(cmp.Pos())
+		found = append(found, fmt.Sprintf("%s:%d: %s %s %s", pos.Filename, pos.Line, a, cmp.Op, b))
+		return true
+	})
+	return found
+}
+
+// moduleRoot returns the directory holding go.mod, found by walking up from the
+// test's working directory.
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() = %v, want nil", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("no go.mod found at or above %q", dir)
+		}
+		dir = parent
+	}
+}
+
+// TestNoManualEqualsOnFileSystems walks every Go file in the module and fails if
+// one compares two file systems with == or !=. Such a comparison panics when the
+// dynamic type of a file system is not comparable, so [Equals] has to be used
+// instead. The check is syntactic: it looks for an operand named after the file
+// system convention above, so a file system held under another name is not
+// found.
+func TestNoManualEqualsOnFileSystems(t *testing.T) {
+	t.Parallel()
+	root := moduleRoot(t)
+
+	found := 0
+	var hits []string
+	err := filepath.WalkDir(root, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == "third_party" || (name != root && strings.HasPrefix(entry.Name(), ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(name, ".go") {
+			return nil
+		}
+		found++
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Errorf("ParseFile(%q) = %v, want nil", name, err)
+			return nil
+		}
+		hits = append(hits, manualEquals(fset, file)...)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir(%q) = %v, want nil", root, err)
+	}
+	// A walk that found almost nothing means the module root is wrong, which
+	// would otherwise pass the test silently.
+	if found < 100 {
+		t.Fatalf("checked %d Go files under %q, want at least 100", found, root)
+	}
+	for _, hit := range hits {
+		t.Errorf("%s compares file systems directly: use types.Equals instead of ==", hit)
 	}
 }

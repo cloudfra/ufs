@@ -26,8 +26,17 @@
 // Each operation is a span named "ufs." followed by the operation, such as
 // "ufs.readfile", with the attributes ufs.operation, ufs.system (the URI
 // scheme of the wrapped file system) and ufs.path, which for a rename is the
-// old path, with the new one in ufs.new_path. A failed operation records
+// old path, with the new one in ufs.new_path, and for a batch create is the
+// first file, with the number of files in ufs.files. A batch with no files is
+// reported with ufs.files=0 and an empty ufs.path. A failed operation records
 // its error and sets the span status.
+//
+// The decorator implements [types.Watcher] and [types.BatchCreateFS] only when
+// the file system it wraps does. It does not write a batch on a file system
+// that cannot: [ufs.BatchCreate] would fall back to one file at a time, which
+// is not what [types.BatchCreateFS] promises, so the decorator leaves such a
+// call to its caller and reports the [types.WriteFS] operations it performs.
+// Watch is not reported.
 //
 // File system methods take no [context.Context], so a span cannot join the
 // span that is current in its caller. Spans are children of the span in the
@@ -72,6 +81,10 @@ var (
 	_ types.WriteFS      = (*telemetryFS)(nil)
 	_ types.RenameFileFS = (*telemetryFS)(nil)
 	_ types.Watcher      = (*watchTelemetryFS)(nil)
+
+	_ types.BatchCreateFS = (*batchTelemetryFS)(nil)
+	_ types.BatchCreateFS = (*watchBatchTelemetryFS)(nil)
+	_ types.Watcher       = (*watchBatchTelemetryFS)(nil)
 )
 
 const (
@@ -86,6 +99,7 @@ const (
 	systemKey    = attribute.Key("ufs.system")
 	pathKey      = attribute.Key("ufs.path")
 	newPathKey   = attribute.Key("ufs.new_path")
+	filesKey     = attribute.Key("ufs.files")
 	errorTypeKey = attribute.Key("error.type")
 )
 
@@ -170,22 +184,24 @@ const (
 	opRemove
 	opRemoveAll
 	opRename
+	opBatchCreate
 	numOperations
 )
 
 // operationNames uses the op names that the path errors of this module use.
 var operationNames = [numOperations]string{
-	opOpen:      "open",
-	opStat:      "stat",
-	opLstat:     "lstat",
-	opReadDir:   "readdir",
-	opReadFile:  "readfile",
-	opReadLink:  "readlink",
-	opCreate:    "create",
-	opMkdirAll:  "mkdir",
-	opRemove:    "remove",
-	opRemoveAll: "removeall",
-	opRename:    "rename",
+	opOpen:        "open",
+	opStat:        "stat",
+	opLstat:       "lstat",
+	opReadDir:     "readdir",
+	opReadFile:    "readfile",
+	opReadLink:    "readlink",
+	opCreate:      "create",
+	opMkdirAll:    "mkdir",
+	opRemove:      "remove",
+	opRemoveAll:   "removeall",
+	opRename:      "rename",
+	opBatchCreate: "batchcreate",
 }
 
 // errorClass groups errors into the few values reported as error.type.
@@ -258,6 +274,55 @@ func (fsys *watchTelemetryFS) Watch(ctx context.Context, name string, hook types
 	return fsys.watcher.Watch(ctx, name, hook)
 }
 
+// batchTelemetryFS is the decorator for a file system that implements
+// [types.BatchCreateFS]. Like watchTelemetryFS it is a separate type, so that
+// the decorator only claims to write batches atomically when the file system
+// it wraps does. Delegating a file system without [types.BatchCreateFS] to
+// [ufs.BatchCreate] instead would claim an atomicity that its file-by-file
+// fallback does not have.
+type batchTelemetryFS struct {
+	*telemetryFS
+	batcher types.BatchCreateFS
+}
+
+// BatchCreate forwards to the wrapped file system and is reported.
+func (fsys *batchTelemetryFS) BatchCreate(files []types.BatchFile) error {
+	return fsys.batchCreate(fsys.batcher, files)
+}
+
+// watchBatchTelemetryFS is the decorator for a file system that implements
+// both [types.Watcher] and [types.BatchCreateFS].
+type watchBatchTelemetryFS struct {
+	*watchTelemetryFS
+	batcher types.BatchCreateFS
+}
+
+// BatchCreate forwards to the wrapped file system and is reported.
+func (fsys *watchBatchTelemetryFS) BatchCreate(files []types.BatchFile) error {
+	return fsys.batchCreate(fsys.batcher, files)
+}
+
+// batchCreate reports a BatchCreate on batcher as one operation. Its path is
+// that of the first file, and ufs.files holds the number of files; a batch
+// with no files reports an empty path and no files.
+//
+// Names are checked by the wrapped file system, not by the decorator, so an
+// invalid name or a name repeated within the batch comes back from
+// batcher.BatchCreate unchanged, after the failed operation has been recorded.
+func (fsys *telemetryFS) batchCreate(batcher types.BatchCreateFS, files []types.BatchFile) error {
+	span, start := fsys.begin(opBatchCreate)
+	err := batcher.BatchCreate(files)
+	var name string
+	if len(files) > 0 {
+		name = files[0].Name
+	}
+	if span != nil && span.IsRecording() {
+		span.SetAttributes(filesKey.Int(len(files)))
+	}
+	fsys.end(opBatchCreate, name, span, start, err)
+	return err
+}
+
 // newTelemetryFS wraps inner as a [types.WriteFS] that reports its operations to
 // tracerProvider and meterProvider, as selected by cfg. Close always delegates
 // to inner without being reported.
@@ -302,10 +367,18 @@ func newTelemetryFS(ctx context.Context, inner types.WriteFS, cfg Options, trace
 		fsys.duration = duration
 	}
 
-	if w, ok := inner.(types.Watcher); ok {
+	w, watches := inner.(types.Watcher)
+	b, batches := inner.(types.BatchCreateFS)
+	switch {
+	case watches && batches:
+		return &watchBatchTelemetryFS{watchTelemetryFS: &watchTelemetryFS{telemetryFS: fsys, watcher: w}, batcher: b}, nil
+	case watches:
 		return &watchTelemetryFS{telemetryFS: fsys, watcher: w}, nil
+	case batches:
+		return &batchTelemetryFS{telemetryFS: fsys, batcher: b}, nil
+	default:
+		return fsys, nil
 	}
-	return fsys, nil
 }
 
 // systemOf returns the URI scheme of fsys, or "" when it has no URI.

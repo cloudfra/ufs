@@ -220,6 +220,12 @@ func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
 // checksum it is accepted only if the digest matches, without one it is an
 // error. A failed download leaves nothing at the destination.
 func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
+	return downloadFileWith(ctx, client, dir, uri, osutil.OpenDir)
+}
+
+// downloadFileWith is DownloadFileWith with the handle for the download
+// directory supplied by the caller, so tests can make it misbehave.
+func downloadFileWith(ctx context.Context, client *http.Client, dir string, uri string, openDirHandle openDirFunc) (string, error) {
 	parsed, params, err := ParseURI(uri)
 	if err != nil {
 		return "", fmt.Errorf("invalid download URL: %w", err)
@@ -271,22 +277,21 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if err != nil {
 		return "", fmt.Errorf("cannot open download directory %q: %w", baseDir, err)
 	}
-	err = storeDownload(root, baseDir, filename, fileChecksum, resp.Body)
+	err = storeDownload(root, baseDir, filename, fileChecksum, resp.Body, openDirHandle)
 	if closeErr := root.Close(); closeErr != nil {
 		err = errors.Join(err, fmt.Errorf("cannot close download directory %q: %w", baseDir, closeErr))
 	}
 	if err != nil {
 		return "", err
 	}
-
 	return archiveFilename, nil
 }
 
-// storeDownload writes body to the destination name inside dir, taking the
-// name only once the write has succeeded. A failure leaves nothing there.
-func storeDownload(root *os.Root, dir, name string, fileChecksum *hashutil.Checksum, body io.Reader) error {
+// storeDownload puts body where uri is meant to be downloaded. A failure
+// leaves nothing at the destination.
+func storeDownload(root *os.Root, dir, name string, fileChecksum *hashutil.Checksum, body io.Reader, openDirHandle openDirFunc) error {
 	finalPath := filepath.Join(dir, name)
-	// The destination is only known once the redirects settle, so an existing
+	// The destination is only known after the redirects settle, so an existing
 	// file is inspected here rather than before the request.
 	info, statErr := root.Stat(name)
 	if statErr == nil {
@@ -310,29 +315,21 @@ func storeDownload(root *os.Root, dir, name string, fileChecksum *hashutil.Check
 			err = fmt.Errorf("downloaded file %q: %w", finalPath, verifyErr)
 		}
 	}
-	// Close before renaming; Windows cannot rename an open file. A failed
-	// Close can mean that the last writes did not reach the disk, so the
-	// download is not reported as complete.
-	if closeErr := f.Close(); closeErr != nil && err == nil {
-		err = fmt.Errorf("cannot close partial file %q: %w", filepath.Join(dir, partialName), closeErr)
+	if flushErr := osutil.FlushAndClose(f, finalPath); flushErr != nil && err == nil {
+		err = flushErr
 	}
 	if err != nil {
 		return errors.Join(err, discard(root, dir, partialName))
 	}
-	if err := root.Rename(partialName, name); err != nil {
-		return fmt.Errorf("cannot publish downloaded file to %q: %w", finalPath,
-			errors.Join(err, discard(root, dir, partialName)))
-	}
-	return nil
+	return publishDownload(root, openDirHandle, dir, name, partialName)
 }
 
-// partialCreateAttempts bounds the partial names storeDownload tries before
-// giving up.
+// partialCreateAttempts bounds the names storeDownload tries before giving up.
 const partialCreateAttempts = 8
 
-// createPartialFile opens a file for a download of name, taking a name no other
-// download already holds so concurrent downloads of one destination never share
-// a file.
+// createPartialFile opens a new file for a download of name, taking a name no
+// other download already holds. Concurrent downloads of one destination never
+// share a file.
 func createPartialFile(root *os.Root, name string) (string, *os.File, error) {
 	partialName := name + partialFileSuffix
 	for attempt := range partialCreateAttempts {
@@ -387,6 +384,34 @@ func validateExistingFile(root *os.Root, finalPath, name string, info fs.FileInf
 	}
 	if verifyErr := fileChecksum.Verify(); verifyErr != nil {
 		return fmt.Errorf("existing file %q: %w", finalPath, verifyErr)
+	}
+	return nil
+}
+
+// openDirFunc opens a download directory so the file just stored in it can be
+// made durable. Tests inject a failure through it.
+type openDirFunc func(dir string) (osutil.DirSyncer, error)
+
+// publishDownload makes the downloaded file available under name, leaving
+// nothing behind if it cannot.
+func publishDownload(root *os.Root, openDirHandle openDirFunc, dir, name, partialName string) error {
+	finalPath := filepath.Join(dir, name)
+	d, err := openDirHandle(dir)
+	if err != nil {
+		return fmt.Errorf("cannot publish downloaded file to %q: %w", finalPath, errors.Join(err, discard(root, dir, partialName)))
+	}
+	if err := root.Rename(partialName, name); err != nil {
+		return fmt.Errorf("cannot publish downloaded file to %q: %w", finalPath, errors.Join(err, d.Close(), discard(root, dir, partialName)))
+	}
+	syncErr := d.Sync()
+	closeErr := d.Close()
+	if syncErr != nil {
+		return fmt.Errorf("cannot sync directory %q after publishing %q: %w", dir, finalPath,
+			errors.Join(syncErr, closeErr, discard(root, dir, name)))
+	}
+	if closeErr != nil {
+		return fmt.Errorf("cannot close directory %q after publishing %q: %w", dir, finalPath,
+			errors.Join(closeErr, discard(root, dir, name)))
 	}
 	return nil
 }

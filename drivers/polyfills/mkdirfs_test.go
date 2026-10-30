@@ -77,6 +77,70 @@ func TestMkdir(t *testing.T) {
 			wantMkdirAlls: nil,
 		},
 		{
+			// The parent is there but is a regular file, so no level can be
+			// created below it and MkdirAll must not be asked to try.
+			name: "a parent that is a file is refused",
+			wrap: func(s *store) fs.FS {
+				return mkdirAllFS{s}
+			},
+			seed: func(s *store) {
+				s.seedFile("a/b", "data")
+			},
+			dir:           "a/b/c",
+			wantErr:       `"a/b" is not a directory`,
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: nil,
+		},
+		{
+			// The blocking file is not the parent, so the refusal has to name
+			// the file rather than the missing level below it.
+			name: "a file higher up is named",
+			wrap: func(s *store) fs.FS {
+				return mkdirAllFS{s}
+			},
+			seed: func(s *store) {
+				s.seedFile("a/b", "data")
+			},
+			dir:           "a/b/c/d",
+			wantErr:       `"a/b" is not a directory`,
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: nil,
+		},
+		{
+			// A parent that cannot be inspected is not a missing parent, so the
+			// file system's reason reaches the caller.
+			name:          "a parent that cannot be inspected is passed through",
+			wrap:          func(s *store) fs.FS { return brokenMkdirAllFS{s} },
+			dir:           "a/b",
+			wantErr:       "permission denied",
+			wantDirs:      nil,
+			wantMkdirAlls: nil,
+		},
+		{
+			// The name itself holds a regular file, so the collision belongs to
+			// the back end: it is a node the emulation did not invent, unlike
+			// the missing levels it exists to keep the caller from creating.
+			name:          "a name held by a regular file is refused by the back end",
+			wrap:          func(s *store) fs.FS { return mkdirAllFS{s} },
+			seed:          func(s *store) { s.seedFile("a/b", "data") },
+			dir:           "a/b",
+			wantErr:       "file already exists",
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: []string{"a/b"},
+		},
+		{
+			// [types.MkdirAllFS] lets a file system with no real directory
+			// concept treat the create as a no-op, so nothing is left here to
+			// refuse the name. This row pins that boundary, it does not choose
+			// it: changing it is a contract decision about Mkdir, not this call.
+			name:          "a file system without real directories accepts a name held by a file",
+			wrap:          func(s *store) fs.FS { return noopMkdirAllFS{s} },
+			seed:          func(s *store) { s.seedFile("a/b", "data") },
+			dir:           "a/b",
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: []string{"a/b"},
+		},
+		{
 			name:       "no mkdir interface at all",
 			wrap:       func(s *store) fs.FS { return plainFS{s} },
 			dir:        "a",

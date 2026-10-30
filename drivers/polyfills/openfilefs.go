@@ -85,8 +85,7 @@ func OpenFile(fsys fs.FS, name string, flag int, perm fs.FileMode) (types.File, 
 		// A directory cannot hold the content the caller is about to write, so
 		// it is refused here rather than returned as a handle that fails when
 		// written to.
-		isADir := fmt.Errorf("%q is a directory, %w", name, fs.ErrInvalid)
-		return nil, ufserrors.NewPathError(openFileOp, name, isADir)
+		return nil, underDirError(openFileOp, name, name)
 	}
 
 	if !writable {

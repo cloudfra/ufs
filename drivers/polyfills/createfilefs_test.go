@@ -48,6 +48,12 @@ func seedDirD(s *store) {
 	s.seedDir("d")
 }
 
+// seedFileInD is a regular file in a directory, so a name below it has a
+// directory for its parent and a file for its ancestor.
+func seedFileInD(s *store) {
+	s.seedFile("d/f.txt", "alpha")
+}
+
 func TestCreate(t *testing.T) {
 	t.Parallel()
 
@@ -184,6 +190,33 @@ func TestCreate(t *testing.T) {
 			file:      "d",
 			wantErr:   "invalid argument",
 			wantFiles: map[string]string{},
+			wantDirs:  []string{"d"},
+		},
+		{
+			// The name stands where a directory has to be for the file to exist,
+			// so the emulation refuses it instead of asking for a file that can
+			// never be opened.
+			name: "a file below a file is refused by the emulation",
+			wrap: func(s *store) fs.FS {
+				return openFileFS{s}
+			},
+			seed:      seedFileInD,
+			file:      "d/f.txt/g.txt",
+			wantErr:   `"d/f.txt" is not a directory`,
+			wantFiles: map[string]string{"d/f.txt": "alpha"},
+			wantDirs:  []string{"d"},
+		},
+		{
+			// A native create asks its own back end, which reports the missing
+			// directory in its own words: the standin does not second-guess it.
+			name: "a file below a file is left to the native method",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
+			seed:      seedFileInD,
+			file:      "d/f.txt/g.txt",
+			wantErr:   "file does not exist",
+			wantFiles: map[string]string{"d/f.txt": "alpha"},
 			wantDirs:  []string{"d"},
 		},
 		{

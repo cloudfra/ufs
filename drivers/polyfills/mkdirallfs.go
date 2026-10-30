@@ -16,7 +16,6 @@ package polyfills
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"path"
 
@@ -72,7 +71,7 @@ func mkdirAllFromMkdirFS(fsys types.MkdirFS, name string, perm fs.FileMode) erro
 				return err
 			}
 		} else if !stat.IsDir() {
-			return ufserrors.NewPathError("mkdir", name, fmt.Errorf("%q is not a directory", parent))
+			return ufserrors.NewPathError("mkdir", name, underFileError(parent))
 		}
 	}
 	return fsys.Mkdir(name, perm)

@@ -77,6 +77,21 @@ func TestMkdir(t *testing.T) {
 			wantMkdirAlls: nil,
 		},
 		{
+			// The parent is there but is a regular file, so no level can be
+			// created below it and MkdirAll must not be asked to try.
+			name: "a parent that is a file is refused",
+			wrap: func(s *store) fs.FS {
+				return mkdirAllFS{s}
+			},
+			seed: func(s *store) {
+				s.seedFile("a/b", "data")
+			},
+			dir:           "a/b/c",
+			wantErr:       `"a/b" is not a directory`,
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: nil,
+		},
+		{
 			name:       "no mkdir interface at all",
 			wrap:       func(s *store) fs.FS { return plainFS{s} },
 			dir:        "a",

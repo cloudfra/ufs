@@ -29,7 +29,8 @@ import (
 //
 // fsys's own [types.MkdirFS] implementation is used when it has one, and is
 // otherwise emulated with [types.MkdirAllFS] restricted to the leaf. A file
-// system that implements neither gets an unimplemented error.
+// system that implements neither gets an unimplemented error, and a name whose
+// parent is a regular file is refused with an error wrapping [fs.ErrExist].
 func Mkdir(fsys fs.FS, name string, perm fs.FileMode) error {
 	if cFS, ok := fsys.(types.MkdirFS); ok {
 		return cFS.Mkdir(name, perm)
@@ -48,7 +49,13 @@ func Mkdir(fsys fs.FS, name string, perm fs.FileMode) error {
 // parent to exist already keeps the single-level semantics Mkdir promises.
 func mkdirFromMkdirAllFS(fsys types.MkdirAllFS, name string, perm fs.FileMode) error {
 	parentDir := path.Dir(name)
-	if isDir(fsys, parentDir) {
+	stat, err := fs.Stat(fsys, parentDir)
+	if err == nil && !stat.IsDir() {
+		// The parent is a regular file, so the level asked for can never exist
+		// and MkdirAll would only create levels above it behind the caller's back.
+		return ufserrors.NewPathError("mkdir", name, underFileError(parentDir))
+	}
+	if err == nil {
 		return fsys.MkdirAll(name, perm)
 	}
 	return ufserrors.NewPathError("mkdir", name, fmt.Errorf("%q must be a directory to create %q", parentDir, name))

@@ -119,6 +119,32 @@ func Open(name string) (*os.File, error) {
 	return os.Open(filepath.Clean(name))
 }
 
+// SyncCloser is an open file whose bytes can be made durable.
+type SyncCloser interface {
+	Sync() error
+	Close() error
+}
+
+// FlushAndClose makes the bytes written to f durable and then releases it. f is
+// closed even when that fails, so Windows can still remove it.
+func FlushAndClose(f SyncCloser, name string) error {
+	syncErr := f.Sync()
+	closeErr := f.Close()
+	if syncErr != nil {
+		return fmt.Errorf("cannot sync file %q, %w", name, syncErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("cannot close file %q, %w", name, closeErr)
+	}
+	return nil
+}
+
+// DirSyncer is an open directory whose entries can be made durable.
+type DirSyncer interface {
+	Sync() error
+	Close() error
+}
+
 // CreateTemp creates a temporary file in dir (or the default temp directory if
 // dir is empty).
 func CreateTemp(dir string, pattern string) (*os.File, error) {

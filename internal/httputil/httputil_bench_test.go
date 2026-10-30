@@ -73,6 +73,48 @@ func benchServer(b *testing.B, payload []byte) *httptest.Server {
 	return ts
 }
 
+// closeOnly releases a written file the way the download path did before the
+// Sync was added.
+func closeOnly(f osutil.SyncCloser, _ string) error {
+	return f.Close()
+}
+
+// BenchmarkFlushAndClose measures what it costs to make a downloaded file
+// durable before releasing it.
+func BenchmarkFlushAndClose(b *testing.B) {
+	modes := []struct {
+		name  string
+		flush func(f osutil.SyncCloser, name string) error
+	}{
+		{"close_only", closeOnly},
+		{"sync_then_close", osutil.FlushAndClose},
+	}
+	for _, size := range benchSizes {
+		payload := benchPayload(size.size)
+		b.Run(size.name, func(b *testing.B) {
+			dir := b.TempDir()
+			name := filepath.Join(dir, "archive.zip")
+			b.SetBytes(int64(len(payload)))
+			for _, mode := range modes {
+				b.Run(mode.name, func(b *testing.B) {
+					for b.Loop() {
+						f, err := os.Create(filepath.Clean(name))
+						if err != nil {
+							b.Fatal(err)
+						}
+						if _, err := f.Write(payload); err != nil {
+							b.Fatal(err)
+						}
+						if err := mode.flush(f, name); err != nil {
+							b.Fatal(err)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
 // BenchmarkDownloadFileWith measures the whole download path, which is where
 // the existing-file check and the partial name are charged.
 func BenchmarkDownloadFileWith(b *testing.B) {
@@ -156,7 +198,7 @@ func BenchmarkStoreDownload(b *testing.B) {
 			}
 			b.SetBytes(int64(len(payload)))
 			for b.Loop() {
-				if err := storeDownload(root, dir, "archive.zip", nil, bytes.NewReader(payload)); err != nil {
+				if err := storeDownload(root, dir, "archive.zip", nil, bytes.NewReader(payload), osutil.OpenDir); err != nil {
 					b.Fatal(err)
 				}
 				if err := root.Remove("archive.zip"); err != nil {
@@ -165,6 +207,49 @@ func BenchmarkStoreDownload(b *testing.B) {
 			}
 			if err := root.Close(); err != nil {
 				b.Fatal(err)
+			}
+		})
+	}
+}
+
+// BenchmarkPublishDownload isolates the rename that publishes a finished
+// download, with and without the directory sync.
+func BenchmarkPublishDownload(b *testing.B) {
+	noDirSync := func(string) (osutil.DirSyncer, error) {
+		return &dirSyncerFake{}, nil
+	}
+	modes := []struct {
+		name    string
+		openDir openDirFunc
+	}{
+		{name: "rename_only", openDir: noDirSync},
+		{name: "rename_and_dir_sync", openDir: osutil.OpenDir},
+	}
+	for _, size := range benchSizes {
+		b.Run(size.name, func(b *testing.B) {
+			payload := benchPayload(size.size)
+			for _, mode := range modes {
+				b.Run(mode.name, func(b *testing.B) {
+					dir := b.TempDir()
+					root, err := osutil.OpenRoot(dir)
+					if err != nil {
+						b.Fatal(err)
+					}
+					partialName := "archive.zip" + partialFileSuffix
+					b.SetBytes(int64(len(payload)))
+					for b.Loop() {
+						if err := osutil.WriteFile(filepath.Join(dir, partialName), payload); err != nil {
+							b.Fatal(err)
+						}
+						if err := publishDownload(root, mode.openDir, dir, "archive.zip", partialName); err != nil {
+							b.Fatal(err)
+						}
+						osutil.TryDeleteFile(filepath.Join(dir, "archive.zip"))
+					}
+					if err := root.Close(); err != nil {
+						b.Fatal(err)
+					}
+				})
 			}
 		})
 	}

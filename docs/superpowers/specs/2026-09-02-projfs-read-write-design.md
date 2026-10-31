@@ -146,14 +146,14 @@ ProjFS placeholders carry `prjFileBasicInfo` which maps to Windows
 concepts: `FileAttributes`, four timestamps, and `FileSize`. The Go
 `fs.FileInfo` interface provides Unix-style `Mode()` bits. The mapping:
 
-| fs.FileInfo field | ProjFS placeholder field | Mapping |
-|-------------------|--------------------------|---------|
-| `IsDir()` | `IsDirectory`, `FILE_ATTRIBUTE_DIRECTORY` | Direct |
-| `Size()` | `FileSize` | Direct |
-| `ModTime()` | `CreationTime`, `LastAccessTime`, `LastWriteTime`, `ChangeTime` | All four set to `ModTime` |
-| `Mode() & 0o222 == 0` | `FILE_ATTRIBUTE_READONLY` | **New** — set when no write bits |
-| `Mode()` (other bits) | Not mapped | Windows ACLs are orthogonal to Unix mode bits |
-| Security descriptor | `SecurityInformation` | Zeroed — inherits parent directory ACL |
+| fs.FileInfo field     | ProjFS placeholder field                                        | Mapping                                       |
+| --------------------- | --------------------------------------------------------------- | --------------------------------------------- |
+| `IsDir()`             | `IsDirectory`, `FILE_ATTRIBUTE_DIRECTORY`                       | Direct                                        |
+| `Size()`              | `FileSize`                                                      | Direct                                        |
+| `ModTime()`           | `CreationTime`, `LastAccessTime`, `LastWriteTime`, `ChangeTime` | All four set to `ModTime`                     |
+| `Mode() & 0o222 == 0` | `FILE_ATTRIBUTE_READONLY`                                       | **New** — set when no write bits              |
+| `Mode()` (other bits) | Not mapped                                                      | Windows ACLs are orthogonal to Unix mode bits |
+| Security descriptor   | `SecurityInformation`                                           | Zeroed — inherits parent directory ACL        |
 
 Current behavior (read-only mount): all files get `FILE_ATTRIBUTE_NORMAL`
 and all directories get `FILE_ATTRIBUTE_DIRECTORY`. This works because
@@ -199,15 +199,15 @@ No change to `getDirEnumCB` is needed.
 
 ## Files modified
 
-| File | Change |
-|------|--------|
-| `mount_windows.go` | Add `writable`/`mountPath` fields, expand notification bitmask, implement `syncFromLocal`/`handleDelete`/`handleRename`, update `notificationCB` |
-| `mount_windows_test.go` | Add ~44 ProjFS-specific write integration tests (see test matrix below) |
-| `mount_conformance_test.go` | Add write conformance tests (`TestMountConformance*`) using `writeMountBackends` table |
-| `mount_conformance_linux_test.go` | Register FUSE write backend |
-| `mount_conformance_windows_test.go` | Register ProjFS write backend |
-| `fuse_linux_test.go` | Remove write tests that move to conformance |
-| `docs/ufsmount.md` | Update Windows supported operations table |
+| File                                | Change                                                                                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mount_windows.go`                  | Add `writable`/`mountPath` fields, expand notification bitmask, implement `syncFromLocal`/`handleDelete`/`handleRename`, update `notificationCB` |
+| `mount_windows_test.go`             | Add ~44 ProjFS-specific write integration tests (see test matrix below)                                                                          |
+| `mount_conformance_test.go`         | Add write conformance tests (`TestMountConformance*`) using `writeMountBackends` table                                                           |
+| `mount_conformance_linux_test.go`   | Register FUSE write backend                                                                                                                      |
+| `mount_conformance_windows_test.go` | Register ProjFS write backend                                                                                                                    |
+| `fuse_linux_test.go`                | Remove write tests that move to conformance                                                                                                      |
+| `docs/ufsmount.md`                  | Update Windows supported operations table                                                                                                        |
 
 ## Test matrix
 
@@ -220,87 +220,87 @@ A future PR (#222) will extract these into shared cross-platform functions.
 
 ### Create file (10 tests)
 
-| # | Test | Scenario |
-|---|------|----------|
-| 1 | TestHostMountCreateFile | Create file, verify content in backing FS |
-| 2 | TestHostMountCreateFileEmpty | Create zero-byte file, verify exists |
-| 3 | TestHostMountCreateFileLarge | Write 256KB, verify byte-for-byte |
-| 4 | TestHostMountCreateFileNested | Create in existing subdirectory |
-| 5 | TestHostMountCreateFileDeepNew | Create `a/b/c/file.txt` where dirs don't exist |
-| 6 | TestHostMountCreateFileBinaryContent | Write bytes 0x00-0xFF including nulls |
-| 7 | TestHostMountCreateFileUnicodeName | File with Unicode name (e.g., `日本語.txt`) |
-| 8 | TestHostMountCreateFileSpacesInName | Filename with spaces and special chars |
-| 9 | TestHostMountCreateFileOverwriteProjected | Overwrite existing projected file |
-| 10 | TestHostMountCreateMultipleFiles | Create 50 files rapidly, verify all in backing FS |
+| #   | Test                                      | Scenario                                          |
+| --- | ----------------------------------------- | ------------------------------------------------- |
+| 1   | TestHostMountCreateFile                   | Create file, verify content in backing FS         |
+| 2   | TestHostMountCreateFileEmpty              | Create zero-byte file, verify exists              |
+| 3   | TestHostMountCreateFileLarge              | Write 256KB, verify byte-for-byte                 |
+| 4   | TestHostMountCreateFileNested             | Create in existing subdirectory                   |
+| 5   | TestHostMountCreateFileDeepNew            | Create `a/b/c/file.txt` where dirs don't exist    |
+| 6   | TestHostMountCreateFileBinaryContent      | Write bytes 0x00-0xFF including nulls             |
+| 7   | TestHostMountCreateFileUnicodeName        | File with Unicode name (e.g., `日本語.txt`)       |
+| 8   | TestHostMountCreateFileSpacesInName       | Filename with spaces and special chars            |
+| 9   | TestHostMountCreateFileOverwriteProjected | Overwrite existing projected file                 |
+| 10  | TestHostMountCreateMultipleFiles          | Create 50 files rapidly, verify all in backing FS |
 
 ### Modify file (7 tests)
 
-| # | Test | Scenario |
-|---|------|----------|
-| 11 | TestHostMountModifyFile | Modify projected file, verify new content |
-| 12 | TestHostMountModifyFileGrow | 10 bytes → 10KB |
-| 13 | TestHostMountModifyFileShrink | 10KB → 10 bytes |
-| 14 | TestHostMountModifyFileToEmpty | Overwrite with zero bytes |
-| 15 | TestHostMountModifyFilePreservesOthers | Modify one, verify others unchanged |
-| 16 | TestHostMountModifyFileTwice | Write, close, write again, verify final |
-| 17 | TestHostMountModifyFileAppend | Open for append, verify original + appended |
+| #   | Test                                   | Scenario                                    |
+| --- | -------------------------------------- | ------------------------------------------- |
+| 11  | TestHostMountModifyFile                | Modify projected file, verify new content   |
+| 12  | TestHostMountModifyFileGrow            | 10 bytes → 10KB                             |
+| 13  | TestHostMountModifyFileShrink          | 10KB → 10 bytes                             |
+| 14  | TestHostMountModifyFileToEmpty         | Overwrite with zero bytes                   |
+| 15  | TestHostMountModifyFilePreservesOthers | Modify one, verify others unchanged         |
+| 16  | TestHostMountModifyFileTwice           | Write, close, write again, verify final     |
+| 17  | TestHostMountModifyFileAppend          | Open for append, verify original + appended |
 
 ### Delete (8 tests)
 
-| # | Test | Scenario |
-|---|------|----------|
-| 18 | TestHostMountDeleteFile | Delete projected file, verify gone |
-| 19 | TestHostMountDeleteFileNotExist | Delete non-existent file, expect OS error |
-| 20 | TestHostMountDeleteDir | Delete empty directory |
-| 21 | TestHostMountDeleteDirNonEmpty | Delete non-empty dir, expect OS error |
-| 22 | TestHostMountDeleteThenCreate | Delete then recreate with new content |
-| 23 | TestHostMountDeleteThenStat | Delete then Stat, expect ErrNotExist |
-| 24 | TestHostMountDeleteMultiple | Delete 10 files, verify remaining untouched |
-| 25 | TestHostMountDeleteReadOnly | Delete on read-only mount, expect denied |
+| #   | Test                            | Scenario                                    |
+| --- | ------------------------------- | ------------------------------------------- |
+| 18  | TestHostMountDeleteFile         | Delete projected file, verify gone          |
+| 19  | TestHostMountDeleteFileNotExist | Delete non-existent file, expect OS error   |
+| 20  | TestHostMountDeleteDir          | Delete empty directory                      |
+| 21  | TestHostMountDeleteDirNonEmpty  | Delete non-empty dir, expect OS error       |
+| 22  | TestHostMountDeleteThenCreate   | Delete then recreate with new content       |
+| 23  | TestHostMountDeleteThenStat     | Delete then Stat, expect ErrNotExist        |
+| 24  | TestHostMountDeleteMultiple     | Delete 10 files, verify remaining untouched |
+| 25  | TestHostMountDeleteReadOnly     | Delete on read-only mount, expect denied    |
 
 ### Rename (5 tests)
 
-| # | Test | Scenario |
-|---|------|----------|
-| 26 | TestHostMountRenameFile | Rename, verify old gone + new has content |
-| 27 | TestHostMountRenameFileAcrossDir | Rename `dir1/a.txt` → `dir2/b.txt` |
-| 28 | TestHostMountRenameFileOverwrite | Rename onto existing file, verify replaced |
-| 29 | TestHostMountRenameDir | Rename directory, verify children accessible |
-| 30 | TestHostMountRenameReadOnly | Rename on read-only mount, expect denied |
+| #   | Test                             | Scenario                                     |
+| --- | -------------------------------- | -------------------------------------------- |
+| 26  | TestHostMountRenameFile          | Rename, verify old gone + new has content    |
+| 27  | TestHostMountRenameFileAcrossDir | Rename `dir1/a.txt` → `dir2/b.txt`           |
+| 28  | TestHostMountRenameFileOverwrite | Rename onto existing file, verify replaced   |
+| 29  | TestHostMountRenameDir           | Rename directory, verify children accessible |
+| 30  | TestHostMountRenameReadOnly      | Rename on read-only mount, expect denied     |
 
 ### Mkdir (4 tests)
 
-| # | Test | Scenario |
-|---|------|----------|
-| 31 | TestHostMountMkdir | Create directory, verify in backing FS |
-| 32 | TestHostMountMkdirNested | Create `a/b/c` via MkdirAll |
-| 33 | TestHostMountMkdirAlreadyExists | Mkdir existing dir, expect no error |
-| 34 | TestHostMountMkdirThenCreateFile | Mkdir then create file inside |
+| #   | Test                             | Scenario                               |
+| --- | -------------------------------- | -------------------------------------- |
+| 31  | TestHostMountMkdir               | Create directory, verify in backing FS |
+| 32  | TestHostMountMkdirNested         | Create `a/b/c` via MkdirAll            |
+| 33  | TestHostMountMkdirAlreadyExists  | Mkdir existing dir, expect no error    |
+| 34  | TestHostMountMkdirThenCreateFile | Mkdir then create file inside          |
 
 ### UX workflows (10 tests)
 
-| # | Test | Scenario |
-|---|------|----------|
-| 35 | TestHostMountWorkflowEditCycle | Read → modify → read back, verify round-trip |
-| 36 | TestHostMountWorkflowBuildTree | Create 5 dirs + 20 files, WalkDir, verify matches backing FS |
-| 37 | TestHostMountWorkflowRsyncRoundTrip | Rsync in, modify through mount, Rsync out, verify |
-| 38 | TestHostMountWorkflowDeleteAndReadDir | Delete 2 of 5 files, ReadDir, verify 3 remain |
-| 39 | TestHostMountWorkflowCreateReadModifyDelete | Full file lifecycle through mount |
-| 40 | TestHostMountWorkflowMixedReadWrite | 10 existing + 5 new + 3 modified + 2 deleted, verify final state |
-| 41 | TestHostMountWorkflowConcurrentWrites | 10 goroutines each creating a file, verify all land |
-| 42 | TestHostMountWorkflowLargeDir | Create 200 files, ReadDir, verify all present |
-| 43 | TestHostMountWorkflowNestedOverlayWrite | Write to nested FS (memory + null), verify routing |
-| 44 | TestHostMountWorkflowCopyViaProjFS | io.Copy between files within mount |
+| #   | Test                                        | Scenario                                                         |
+| --- | ------------------------------------------- | ---------------------------------------------------------------- |
+| 35  | TestHostMountWorkflowEditCycle              | Read → modify → read back, verify round-trip                     |
+| 36  | TestHostMountWorkflowBuildTree              | Create 5 dirs + 20 files, WalkDir, verify matches backing FS     |
+| 37  | TestHostMountWorkflowRsyncRoundTrip         | Rsync in, modify through mount, Rsync out, verify                |
+| 38  | TestHostMountWorkflowDeleteAndReadDir       | Delete 2 of 5 files, ReadDir, verify 3 remain                    |
+| 39  | TestHostMountWorkflowCreateReadModifyDelete | Full file lifecycle through mount                                |
+| 40  | TestHostMountWorkflowMixedReadWrite         | 10 existing + 5 new + 3 modified + 2 deleted, verify final state |
+| 41  | TestHostMountWorkflowConcurrentWrites       | 10 goroutines each creating a file, verify all land              |
+| 42  | TestHostMountWorkflowLargeDir               | Create 200 files, ReadDir, verify all present                    |
+| 43  | TestHostMountWorkflowNestedOverlayWrite     | Write to nested FS (memory + null), verify routing               |
+| 44  | TestHostMountWorkflowCopyViaProjFS          | io.Copy between files within mount                               |
 
 ## Test architecture — conformance vs. implementation-specific
 
 Mount backends have different interception models:
 
-| Backend | Model | Writes | Deletes | Renames |
-|---------|-------|--------|---------|---------|
-| FUSE (Linux) | Synchronous interception | Intercepted in-flight | Intercepted | Intercepted |
-| ProjFS (Windows) | Post-notification write-back | Land on NTFS, synced after handle close | Intercepted via PRE_DELETE | Post-rename sync |
-| WinFSP (Windows, future) | Synchronous interception | Intercepted in-flight | Intercepted | Intercepted |
+| Backend                  | Model                        | Writes                                  | Deletes                    | Renames          |
+| ------------------------ | ---------------------------- | --------------------------------------- | -------------------------- | ---------------- |
+| FUSE (Linux)             | Synchronous interception     | Intercepted in-flight                   | Intercepted                | Intercepted      |
+| ProjFS (Windows)         | Post-notification write-back | Land on NTFS, synced after handle close | Intercepted via PRE_DELETE | Post-rename sync |
+| WinFSP (Windows, future) | Synchronous interception     | Intercepted in-flight                   | Intercepted                | Intercepted      |
 
 These differences mean some tests are universally valid (conformance) and
 others are sensitive to interception timing or platform behavior

@@ -6,9 +6,9 @@
 
 ## Platform table (replaces existing)
 
-| Platform | Backend | Read | Write |
-|----------|---------|------|-------|
-| Linux    | FUSE    | yes  | yes (if the FS supports it) |
+| Platform | Backend | Read | Write                                   |
+| -------- | ------- | ---- | --------------------------------------- |
+| Linux    | FUSE    | yes  | yes (if the FS supports it)             |
 | Windows  | ProjFS  | yes  | yes (write-back; if the FS supports it) |
 
 ## Windows (ProjFS) — Supported operations (replaces existing section)
@@ -19,19 +19,19 @@ land on the local NTFS directory first, then ProjFS notifications sync
 them back to the backing FS when the file handle is closed. When the
 backing FS is read-only (`ReadFS`), destructive operations are denied.
 
-| Operation        | Read-write FS | Read-only FS |
-|------------------|---------------|--------------|
-| Read file        | yes           | yes          |
-| Stat / readdir   | yes           | yes          |
+| Operation        | Read-write FS    | Read-only FS                               |
+| ---------------- | ---------------- | ------------------------------------------ |
+| Read file        | yes              | yes                                        |
+| Stat / readdir   | yes              | yes                                        |
 | Create file      | yes (write-back) | no (bypasses ProjFS, writes to local NTFS) |
 | Write (truncate) | yes (write-back) | no (bypasses ProjFS, writes to local NTFS) |
 | Write (append)   | yes (write-back) | no (bypasses ProjFS, writes to local NTFS) |
 | mkdir            | yes (write-back) | no (bypasses ProjFS, writes to local NTFS) |
-| Remove file      | yes           | denied       |
-| Remove directory | yes           | denied       |
-| Rename           | yes (write-back) | denied   |
-| Symlink / link   | not yet       | not yet      |
-| chmod / chown    | not applicable | not applicable |
+| Remove file      | yes              | denied                                     |
+| Remove directory | yes              | denied                                     |
+| Rename           | yes (write-back) | denied                                     |
+| Symlink / link   | not yet          | not yet                                    |
+| chmod / chown    | not applicable   | not applicable                             |
 
 **Write-back model:** ProjFS cannot intercept writes in-flight. Instead,
 writes materialize on the local NTFS directory. When the file handle is

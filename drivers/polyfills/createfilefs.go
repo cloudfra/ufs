@@ -15,7 +15,6 @@
 package polyfills
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 
@@ -48,9 +47,10 @@ const createPerm = fs.FileMode(0o666)
 // The emulation keeps the error contract of the native method. The root and any
 // other name that is not a valid file name are refused with an error wrapping
 // [fs.ErrInvalid] before anything is opened, and so is a name that already holds
-// a directory, which would otherwise be handed back as a writable handle. Like
-// [types.CreateFileFS], the emulation does not create missing parent
-// directories and reports whatever the file system says about them, and a
+// a directory, which would otherwise be handed back as a writable handle. A name
+// whose path runs through a regular file is refused as well, wrapping
+// [fs.ErrExist]. Like [types.CreateFileFS], the emulation does not create missing
+// parent directories and reports whatever the file system says about them, and a
 // failure of the underlying OpenFile reaches the caller as that file system
 // reports it.
 func Create(fsys fs.FS, name string) (types.File, error) {
@@ -74,13 +74,8 @@ func Create(fsys fs.FS, name string) (types.File, error) {
 // use: writable, created when it is missing and truncated when it is there,
 // which is what replacing any existing file means.
 func createViaOpenFileFS(fsys fs.FS, wFS types.OpenFileFS, name string) (types.File, error) {
-	info, err := fs.Stat(fsys, name)
-	if err == nil && info.IsDir() {
-		// A directory cannot hold the content the caller is about to write, so
-		// it is refused here rather than returned as a handle that fails when
-		// written to.
-		isADir := fmt.Errorf("%q is a directory, %w", name, fs.ErrInvalid)
-		return nil, ufserrors.NewPathError(createFileOp, name, isADir)
+	if err := CheckDirFileConflict(fsys, createFileOp, name, WantFile); err != nil {
+		return nil, err
 	}
 	// A stat that fails for any other reason leaves the name unknown, which is
 	// not a reason to refuse the create: the file system decides when the file

@@ -382,7 +382,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 				continue
 			}
 		}
-		appendEntry[dir] = makeVirtualDirEntry(dir)
+		appendEntry[dir] = types.NewDirEntry(dir)
 	}
 
 	if notExist && len(appendEntry) == 0 {
@@ -394,9 +394,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	for _, entry := range entries {
 		if archive.IsMountablePath(entry.Name()) {
 			mountName := entry.Name() + ".d"
-			appendEntry[mountName] = &virtualDirEntry{
-				name: mountName,
-			}
+			appendEntry[mountName] = types.NewDirEntry(mountName)
 		}
 	}
 	if len(appendEntry) == 0 {
@@ -686,7 +684,7 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
 		info, err := cFsys.Stat(subName)
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
-			return makeVirtualDirEntry(path.Base(subName)), nil
+			return types.NewDirEntry(path.Base(subName)), nil
 		}
 		return info, rewritePathError(err, name, subName)
 	}
@@ -752,7 +750,7 @@ func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
 	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
 		info, err := cFsys.Lstat(subName)
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
-			return makeVirtualDirEntry(path.Base(subName)), nil
+			return types.NewDirEntry(path.Base(subName)), nil
 		}
 		return info, rewritePathError(err, name, subName)
 	}
@@ -1015,6 +1013,38 @@ func makeNestFS(ctx context.Context, fsys types.WriteFS, args ...FSArgs) *nestFS
 		ctx:    ctx,
 		mounts: makeMountMap(fsys.String()),
 		args:   a,
+	}
+}
+
+var _ fs.ReadDirFile = (*readDirFile)(nil)
+
+// readDirFile stands in for a directory that holds a mount but that the file
+// system below cannot report at all: its listing comes from the mounts alone.
+type readDirFile struct {
+	fsys types.ReadFS
+	name string
+}
+
+func (rdf *readDirFile) Stat() (fs.FileInfo, error) {
+	return fs.Stat(rdf.fsys, rdf.name)
+}
+
+func (rdf *readDirFile) Read(_ []byte) (int, error) {
+	return 0, &fs.PathError{Op: "read", Path: rdf.name, Err: errors.New("is a directory")}
+}
+
+func (rdf *readDirFile) Close() error {
+	return nil
+}
+
+func (rdf *readDirFile) ReadDir(_ int) ([]fs.DirEntry, error) {
+	return rdf.fsys.ReadDir(rdf.name)
+}
+
+func makeReadDirFile(fsys types.ReadFS, name string) *readDirFile {
+	return &readDirFile{
+		fsys: fsys,
+		name: name,
 	}
 }
 

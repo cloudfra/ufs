@@ -265,7 +265,7 @@ type boltDirFile struct {
 }
 
 func (d *boltDirFile) Stat() (fs.FileInfo, error) {
-	return ufs.NewFileInfo(path.Base(d.path), osutil.EmptyDirSize, d.mode, d.modTime), nil
+	return types.NewFileInfo(path.Base(d.path), osutil.EmptyDirSize, d.mode, d.modTime), nil
 }
 
 func (d *boltDirFile) Read([]byte) (int, error) {
@@ -409,14 +409,14 @@ func listBucket(bkt *bolt.Bucket) ([]fs.DirEntry, error) {
 			if err != nil {
 				return err
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(ufs.NewFileInfo(string(k), osutil.EmptyDirSize, mode, modTime)))
+			entries = append(entries, fs.FileInfoToDirEntry(types.NewFileInfo(string(k), osutil.EmptyDirSize, mode, modTime)))
 			return nil
 		}
 		rec, err := decodeBoltRecord(v)
 		if err != nil {
 			return err
 		}
-		entries = append(entries, fs.FileInfoToDirEntry(ufs.NewFileInfo(string(k), int64(len(rec.content)), rec.mode, rec.modTime)))
+		entries = append(entries, fs.FileInfoToDirEntry(types.NewFileInfo(string(k), int64(len(rec.content)), rec.mode, rec.modTime)))
 		return nil
 	})
 	if err != nil {
@@ -731,7 +731,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 			if err != nil {
 				return err
 			}
-			info = ufs.NewFileInfo(pathutil.CwdPath, osutil.EmptyDirSize, mode, modTime)
+			info = types.NewFileInfo(pathutil.CwdPath, osutil.EmptyDirSize, mode, modTime)
 			return nil
 		}
 		bkt, key, err := lookupParent(tx, name)
@@ -743,7 +743,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 			if err != nil {
 				return err
 			}
-			info = ufs.NewFileInfo(string(key), osutil.EmptyDirSize, mode, modTime)
+			info = types.NewFileInfo(string(key), osutil.EmptyDirSize, mode, modTime)
 			return nil
 		}
 		data := bkt.Get(key)
@@ -754,7 +754,7 @@ func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
 		if err != nil {
 			return err
 		}
-		info = ufs.NewFileInfo(string(key), int64(len(rec.content)), rec.mode, rec.modTime)
+		info = types.NewFileInfo(string(key), int64(len(rec.content)), rec.mode, rec.modTime)
 		return nil
 	})
 	if err != nil {

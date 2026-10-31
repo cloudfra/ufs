@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -45,6 +46,8 @@ const (
 	// than to the server hosting the file.
 	uriParamPrefix  = "ufs."
 	maxDownloadSize = 4 << 30 // 4 GiB
+	// partialFileSuffix marks a file whose download has not finished.
+	partialFileSuffix = ".partial"
 )
 
 func newHTTPClient() *http.Client {
@@ -178,6 +181,8 @@ func isBlockedIP(ip net.IP) bool {
 	return false
 }
 
+// sanitizeFilename picks the name that rawURL is downloaded as inside the
+// download directory.
 func sanitizeFilename(rawURL *url.URL) (string, error) {
 	p := rawURL.Path
 	parts := strings.Split(p, "/")
@@ -211,8 +216,9 @@ func DownloadFile(ctx context.Context, dir string, uri string) (string, error) {
 // unsupported algorithm or is not a valid digest for its algorithm is rejected
 // before any request is made.
 //
-// If the body cannot be read in full, is larger than 4 GiB or the checksum
-// does not match, the file is deleted, including any earlier file of the same name it replaced.
+// A file that already exists at the destination is never overwritten: with a
+// checksum it is accepted only if the digest matches, without one it is an
+// error. A failed download leaves nothing at the destination.
 func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri string) (string, error) {
 	parsed, params, err := ParseURI(uri)
 	if err != nil {
@@ -257,42 +263,132 @@ func DownloadFileWith(ctx context.Context, client *http.Client, dir string, uri 
 	if err != nil {
 		return "", fmt.Errorf("invalid download directory %q: %w", dir, err)
 	}
-	archiveFilename, err := filepath.Abs(filepath.Join(baseDir, filename))
-	if err != nil {
-		return "", fmt.Errorf("invalid archive filename %q: %w", filename, err)
-	}
-	rel, err := filepath.Rel(baseDir, archiveFilename)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return "", fmt.Errorf("resolved path %q escapes download directory %q", archiveFilename, baseDir)
-	}
+	archiveFilename := filepath.Join(baseDir, filename)
 
-	f, err := os.Create(filepath.Clean(archiveFilename))
+	// Every file operation on the destination runs through this root, so an
+	// entry planted in the download directory cannot point the work outside it.
+	root, err := osutil.OpenRoot(baseDir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("cannot open download directory %q: %w", baseDir, err)
 	}
-
-	var w io.Writer = f
-	if fileChecksum != nil {
-		w = io.MultiWriter(f, fileChecksum)
-	}
-	err = copyLimited(w, resp.Body, maxDownloadSize)
-	if err == nil && fileChecksum != nil {
-		if verifyErr := fileChecksum.Verify(); verifyErr != nil {
-			err = fmt.Errorf("downloaded file %q: %w", archiveFilename, verifyErr)
-		}
-	}
-	// Close before deleting; Windows cannot remove an open file. A failed
-	// Close can mean that the last writes did not reach the disk, so the
-	// download is not reported as complete.
-	if closeErr := f.Close(); closeErr != nil && err == nil {
-		err = fmt.Errorf("cannot close downloaded file %q: %w", archiveFilename, closeErr)
+	err = storeDownload(root, baseDir, filename, fileChecksum, resp.Body)
+	if closeErr := root.Close(); closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("cannot close download directory %q: %w", baseDir, closeErr))
 	}
 	if err != nil {
-		osutil.TryDeleteFile(archiveFilename)
 		return "", err
 	}
 
 	return archiveFilename, nil
+}
+
+// storeDownload writes body to the destination name inside dir, taking the
+// name only once the write has succeeded. A failure leaves nothing there.
+func storeDownload(root *os.Root, dir, name string, fileChecksum *hashutil.Checksum, body io.Reader) error {
+	finalPath := filepath.Join(dir, name)
+	// The destination is only known once the redirects settle, so an existing
+	// file is inspected here rather than before the request.
+	info, statErr := root.Stat(name)
+	if statErr == nil {
+		return validateExistingFile(root, finalPath, name, info, fileChecksum)
+	}
+	if !errors.Is(statErr, fs.ErrNotExist) {
+		return fmt.Errorf("cannot check for an existing file at %q: %w", finalPath, statErr)
+	}
+
+	partialName, f, err := createPartialFile(root, name)
+	if err != nil {
+		return err
+	}
+	var w io.Writer = f
+	if fileChecksum != nil {
+		w = io.MultiWriter(f, fileChecksum)
+	}
+	err = copyLimited(w, body, maxDownloadSize)
+	if err == nil && fileChecksum != nil {
+		if verifyErr := fileChecksum.Verify(); verifyErr != nil {
+			err = fmt.Errorf("downloaded file %q: %w", finalPath, verifyErr)
+		}
+	}
+	// Close before renaming; Windows cannot rename an open file. A failed
+	// Close can mean that the last writes did not reach the disk, so the
+	// download is not reported as complete.
+	if closeErr := f.Close(); closeErr != nil && err == nil {
+		err = fmt.Errorf("cannot close partial file %q: %w", filepath.Join(dir, partialName), closeErr)
+	}
+	if err != nil {
+		return errors.Join(err, discard(root, dir, partialName))
+	}
+	if err := root.Rename(partialName, name); err != nil {
+		return fmt.Errorf("cannot publish downloaded file to %q: %w", finalPath,
+			errors.Join(err, discard(root, dir, partialName)))
+	}
+	return nil
+}
+
+// partialCreateAttempts bounds the partial names storeDownload tries before
+// giving up.
+const partialCreateAttempts = 8
+
+// createPartialFile opens a file for a download of name, taking a name no other
+// download already holds so concurrent downloads of one destination never share
+// a file.
+func createPartialFile(root *os.Root, name string) (string, *os.File, error) {
+	partialName := name + partialFileSuffix
+	for attempt := range partialCreateAttempts {
+		if attempt > 0 {
+			partialName = fmt.Sprintf("%s-%d-%d", name+partialFileSuffix, os.Getpid(), attempt)
+		}
+		f, err := root.OpenFile(partialName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, osutil.DefaultFilePermissions)
+		switch {
+		case err == nil:
+			return partialName, f, nil
+		case !errors.Is(err, fs.ErrExist):
+			return "", nil, fmt.Errorf("cannot create partial file for %q: %w", name, err)
+		}
+	}
+	return "", nil, fmt.Errorf("cannot create partial file for %q: %d names are already in use", name, partialCreateAttempts)
+}
+
+// discard takes name out of the download directory, counting an absent file as
+// success.
+func discard(root *os.Root, dir, name string) error {
+	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("cannot remove %q: %w", filepath.Join(dir, name), err)
+	}
+	return nil
+}
+
+// validateExistingFile reports whether the file already at name can stand in
+// for the download; fileChecksum is nil when the URL named no digest. The file
+// on disk is left as it is either way.
+func validateExistingFile(root *os.Root, finalPath, name string, info fs.FileInfo, fileChecksum *hashutil.Checksum) error {
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("cannot download to %q: an existing entry that is not a regular file is in the way", finalPath)
+	}
+	if fileChecksum == nil {
+		return fmt.Errorf("cannot download to %q: an existing file is present but cannot be validated without a %s parameter", finalPath, URLQueryParamChecksum)
+	}
+	// Rejected from the stat so an oversized file is not hashed first.
+	if info.Size() > maxDownloadSize {
+		return fmt.Errorf("existing file %q: %w of %d bytes", finalPath, errTooLarge, maxDownloadSize)
+	}
+	f, err := root.Open(name)
+	if err != nil {
+		return fmt.Errorf("cannot checksum existing file %q: %w", finalPath, err)
+	}
+	readErr := copyLimited(fileChecksum, f, maxDownloadSize)
+	closeErr := f.Close()
+	if readErr != nil {
+		return fmt.Errorf("cannot checksum existing file %q: %w", finalPath, errors.Join(readErr, closeErr))
+	}
+	if closeErr != nil {
+		return fmt.Errorf("cannot close existing file %q: %w", finalPath, closeErr)
+	}
+	if verifyErr := fileChecksum.Verify(); verifyErr != nil {
+		return fmt.Errorf("existing file %q: %w", finalPath, verifyErr)
+	}
+	return nil
 }
 
 // errTooLarge is returned for a download that is larger than maxDownloadSize.

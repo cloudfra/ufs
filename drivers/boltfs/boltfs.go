@@ -103,34 +103,6 @@ var (
 	errIsDirectory = errors.New("is a directory")
 )
 
-const (
-	boltFSScheme = "bolt"
-	boltFSPrefix = boltFSScheme + ":"
-)
-
-const (
-	// noSyncParam is the URI query parameter for bolt.Options.NoSync.
-	noSyncParam = "ufs.nosync"
-
-	// noFreelistSyncParam is the URI query parameter for
-	// bolt.Options.NoFreelistSync.
-	noFreelistSyncParam = "ufs.nofreelistsync"
-
-	// noStatisticsParam is the URI query parameter for
-	// bolt.Options.NoStatistics.
-	noStatisticsParam = "ufs.nostatistics"
-
-	// readOnlyParam is the URI query parameter for bolt.Options.ReadOnly.
-	readOnlyParam = "ufs.readonly"
-
-	// timeoutParam is the URI query parameter for bolt.Options.Timeout.
-	timeoutParam = "ufs.timeout"
-
-	// defaultTimeout is how long opening waits for the file lock when the
-	// URI does not set timeoutParam.
-	defaultTimeout = time.Minute
-)
-
 // boltOptions are the database options that a bolt: URI sets.
 type boltOptions struct {
 	noSync         bool

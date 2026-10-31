@@ -69,7 +69,7 @@ func (n *memNode) size() int64 {
 }
 
 func (n *memNode) info() fs.FileInfo {
-	return ufs.NewFileInfo(n.name, n.size(), n.mode, n.modTime)
+	return types.NewFileInfo(n.name, n.size(), n.mode, n.modTime)
 }
 
 // memFS is an in-memory file system. All nodes are stored in a flat map keyed
@@ -154,7 +154,7 @@ type memDirFile struct {
 }
 
 func (d *memDirFile) Stat() (fs.FileInfo, error) {
-	return ufs.NewFileInfo(path.Base(d.path), osutil.EmptyDirSize, d.mode, d.modTime), nil
+	return types.NewFileInfo(path.Base(d.path), osutil.EmptyDirSize, d.mode, d.modTime), nil
 }
 
 func (d *memDirFile) Read([]byte) (int, error) {

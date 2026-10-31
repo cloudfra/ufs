@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/ops"
@@ -152,8 +151,8 @@ func TestForEachFileInfoInterface(t *testing.T) {
 	}()
 
 	wantInfos := []fs.FileInfo{
-		ufs.NewFileInfo("fast.txt", 10, fs.ModePerm, time.Time{}),
-		ufs.NewFileInfo("path.txt", 20, fs.ModePerm, time.Time{}),
+		types.NewFileInfo("fast.txt", 10, fs.ModePerm, time.Time{}),
+		types.NewFileInfo("path.txt", 20, fs.ModePerm, time.Time{}),
 	}
 	fsys := &forEachFileInfoFS{WriteFS: inner, infos: wantInfos}
 

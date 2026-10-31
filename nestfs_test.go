@@ -932,3 +932,50 @@ func TestNestFSMountArchiveWithoutHostPath(t *testing.T) {
 		t.Error("types.ReadFile() returned no content")
 	}
 }
+
+func TestReadDirFile(t *testing.T) {
+	t.Parallel()
+	fsys := mustBaseFS(t, "memory:///")
+	ufsTesting.Must(t, fsys.MkdirAll("a/b/c", fs.ModePerm))
+	ufsTesting.Must(t, fsys.MkdirAll("d/e/f", fs.ModePerm))
+	ufsTesting.Must(t, fsys.MkdirAll("g/h/i", fs.ModePerm))
+
+	dirFile := makeReadDirFile(fsys, pathutil.CwdPath)
+
+	bytesRead, err := dirFile.Read(nil)
+	if bytesRead != 0 || err == nil {
+		t.Errorf("Read() should fail got (%d, %s)", bytesRead, err)
+	} else {
+		var pathErr *fs.PathError
+		if !errors.As(err, &pathErr) {
+			t.Errorf("Read() error type = %T, want *fs.PathError; err = %v", err, err)
+		} else if pathErr.Err.Error() != "is a directory" {
+			t.Errorf("Read() error = %q, want: %q", pathErr.Err, "is a directory")
+		}
+	}
+
+	entries, err := dirFile.ReadDir(-1)
+	if err != nil {
+		t.Fatalf("ReadDir(-1) returned error, %s", err)
+	}
+	wantNames := []string{"a", "d", "g"}
+	gotNames := ufsTesting.DirEntryListToNames(entries)
+	if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+		t.Errorf("got %s, want %s diff(-want,+got):\n %v", gotNames, wantNames, diff)
+	}
+
+	stat, err := dirFile.Stat()
+	if err != nil {
+		t.Fatalf("Stat() returned error, %s", err)
+	}
+	if stat.Name() != pathutil.CwdPath {
+		t.Errorf("Stat().Name() got %s, want '.'", stat.Name())
+	}
+	if !stat.IsDir() {
+		t.Errorf("Stat().Mode() is not a directory, got: %s", stat.Mode())
+	}
+
+	if err := dirFile.Close(); err != nil {
+		t.Errorf("Close() returned error, %s", err)
+	}
+}

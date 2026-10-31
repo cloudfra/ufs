@@ -220,7 +220,7 @@ func TestFuseErrno(t *testing.T) {
 func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	fi := ufs.NewFileInfo("hello.txt", 1234, osutil.DefaultFilePermissions, modTime)
+	fi := types.NewFileInfo("hello.txt", 1234, osutil.DefaultFilePermissions, modTime)
 	var attr fuse.Attr
 	fuseAttrFromFileInfo(fi, &attr)
 
@@ -246,7 +246,7 @@ func TestFuseAttrFromFileInfoRegularFile(t *testing.T) {
 func TestFuseAttrFromFileInfoDirectory(t *testing.T) {
 	t.Parallel()
 	modTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	fi := ufs.NewFileInfo("subdir", 0, fs.ModeDir|osutil.DefaultDirectoryPermissions, modTime)
+	fi := types.NewFileInfo("subdir", 0, fs.ModeDir|osutil.DefaultDirectoryPermissions, modTime)
 	var attr fuse.Attr
 	fuseAttrFromFileInfo(fi, &attr)
 

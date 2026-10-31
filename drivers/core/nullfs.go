@@ -45,7 +45,7 @@ var (
 	// nullModTime is the modification time of every nullFS entry.
 	nullModTime = time.Time{}
 
-	nullDirStat = ufs.NewFileInfo(".", osutil.EmptyDirSize, fs.ModeDir|fs.ModePerm, nullModTime)
+	nullDirStat = types.NewFileInfo(".", osutil.EmptyDirSize, fs.ModeDir|fs.ModePerm, nullModTime)
 
 	nullDeviceInfo    = types.NewDeviceInfo("null", "null", 1, false)
 	nullDeviceInfoMap = types.NewDeviceMap(nullDeviceInfo)
@@ -67,7 +67,7 @@ func (n *nullFile) Stat() (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = osutil.EmptyDirSize
 	}
-	return ufs.NewFileInfo(path.Base(n.name), size, mode, nullModTime), nil
+	return types.NewFileInfo(path.Base(n.name), size, mode, nullModTime), nil
 }
 
 func (n *nullFile) Read(_ []byte) (int, error) {
@@ -202,7 +202,7 @@ func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
 		mode = fs.ModeDir | fs.ModePerm
 		size = osutil.EmptyDirSize
 	}
-	return ufs.NewFileInfo(name, size, mode, nullModTime), nil
+	return types.NewFileInfo(name, size, mode, nullModTime), nil
 }
 
 func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {

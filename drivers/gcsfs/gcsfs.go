@@ -85,7 +85,7 @@ func (f *gcsFile) Stat() (fs.FileInfo, error) {
 	if f.isDir {
 		mode = fs.ModeDir | fs.ModePerm
 	}
-	return ufs.NewFileInfo(path.Base(f.name), f.size, mode, f.modTime), nil
+	return types.NewFileInfo(path.Base(f.name), f.size, mode, f.modTime), nil
 }
 
 func (f *gcsFile) Read(p []byte) (int, error) {
@@ -287,7 +287,7 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	if name == pathutil.CwdPath {
-		return ufs.NewFileInfo(pathutil.CwdPath, 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
+		return types.NewFileInfo(pathutil.CwdPath, 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
 	}
 	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
@@ -296,7 +296,7 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	objPath := path.Join(fsys.baseDir, name)
 	attrs, err := fsys.client.Bucket(fsys.bucket).Object(objPath).Attrs(fsys.ctx)
 	if err == nil {
-		return ufs.NewFileInfo(path.Base(name), attrs.Size, fs.ModePerm, attrs.Updated), nil
+		return types.NewFileInfo(path.Base(name), attrs.Size, fs.ModePerm, attrs.Updated), nil
 	}
 	if !errors.Is(err, storage.ErrObjectNotExist) {
 		return nil, ufserrors.NewPathError("stat", name, err)
@@ -310,7 +310,7 @@ func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
 	if len(entries) == 0 {
 		return nil, ufserrors.NewPathError("stat", name, fs.ErrNotExist)
 	}
-	return ufs.NewFileInfo(path.Base(name), 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
+	return types.NewFileInfo(path.Base(name), 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
@@ -344,13 +344,13 @@ func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 			if dirName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(ufs.NewFileInfo(dirName, 0, fs.ModeDir|fs.ModePerm, time.Time{})))
+			entries = append(entries, fs.FileInfoToDirEntry(types.NewFileInfo(dirName, 0, fs.ModeDir|fs.ModePerm, time.Time{})))
 		} else {
 			fileName := strings.TrimPrefix(attrs.Name, listPrefix)
 			if fileName == "" {
 				continue
 			}
-			entries = append(entries, fs.FileInfoToDirEntry(ufs.NewFileInfo(fileName, attrs.Size, fs.ModePerm, attrs.Updated)))
+			entries = append(entries, fs.FileInfoToDirEntry(types.NewFileInfo(fileName, attrs.Size, fs.ModePerm, attrs.Updated)))
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool {

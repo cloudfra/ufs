@@ -121,20 +121,20 @@ wraps the memory FS directly.
 
 ### Files
 
-| File | Purpose |
-|:--|:--|
-| `proto/writelog.proto` | `WriteLogEntry` message (package `cloudfra.ufs`, Go package `github.com/cloudfra/ufs/proto`) |
-| `drivers/common/writelog/writelog.go` | `Log` and `BatchWriter` interfaces, `Apply` |
-| `drivers/common/writelog/fs.go` | `writelog.FS`: wraps a `ufs.FS` and records successful writes |
-| `drivers/common/writelog/memorylog.go` | `MemoryLog`: deduped entries that reference payloads in the source FS |
-| `drivers/common/writelog/filelog.go` | `FileLog`: appends entries with payloads to segment files on disk |
-| `drivers/common/overlay/overlay.go` | `overlay.FS`: N-layer union with tombstones |
-| `drivers/boltfs/batch.go` | `(*boltFS).BatchWrite`: applies entries in one bolt transaction |
-| `op.go` | `ufs.Chtimes` |
-| `drivers/simplecachefs/simplecachefs.go` | `New`, `cacheFS`, the `ufs.FS` methods, `Sync` |
-| `drivers/simplecachefs/config.go` | `Config`, conversion methods, defaults and validation |
-| `drivers/simplecachefs/index.go` | Per-tier FIFO index and byte totals |
-| `drivers/simplecachefs/maintain.go` | Maintenance goroutine (flush, TTL, soft sweep), hard-evict goroutine, promotion |
+| File                                     | Purpose                                                                                      |
+| :--------------------------------------- | :------------------------------------------------------------------------------------------- |
+| `proto/writelog.proto`                   | `WriteLogEntry` message (package `cloudfra.ufs`, Go package `github.com/cloudfra/ufs/proto`) |
+| `drivers/common/writelog/writelog.go`    | `Log` and `BatchWriter` interfaces, `Apply`                                                  |
+| `drivers/common/writelog/fs.go`          | `writelog.FS`: wraps a `ufs.FS` and records successful writes                                |
+| `drivers/common/writelog/memorylog.go`   | `MemoryLog`: deduped entries that reference payloads in the source FS                        |
+| `drivers/common/writelog/filelog.go`     | `FileLog`: appends entries with payloads to segment files on disk                            |
+| `drivers/common/overlay/overlay.go`      | `overlay.FS`: N-layer union with tombstones                                                  |
+| `drivers/boltfs/batch.go`                | `(*boltFS).BatchWrite`: applies entries in one bolt transaction                              |
+| `op.go`                                  | `ufs.Chtimes`                                                                                |
+| `drivers/simplecachefs/simplecachefs.go` | `New`, `cacheFS`, the `ufs.FS` methods, `Sync`                                               |
+| `drivers/simplecachefs/config.go`        | `Config`, conversion methods, defaults and validation                                        |
+| `drivers/simplecachefs/index.go`         | Per-tier FIFO index and byte totals                                                          |
+| `drivers/simplecachefs/maintain.go`      | Maintenance goroutine (flush, TTL, soft sweep), hard-evict goroutine, promotion              |
 
 ## Write log (`drivers/common/writelog`)
 

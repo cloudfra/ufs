@@ -36,11 +36,11 @@ This means the methods always exist on Windows builds (`//go:build windows`), bu
 
 ## File Layout
 
-| File | Build tag | Purpose |
-|:-----|:----------|:--------|
-| `mft_windows.go` | `windows` | MFT enumeration engine: volume handle management, `FSCTL_ENUM_USN_DATA` loop, parent-chain resolver, subtree filter |
-| `mft_nowindows.go` | `!windows` | Empty file — ensures cross-platform compilation |
-| `localfs_windows.go` | `windows` | Gains `ForEachFilename`, `ForEachFileInfo`, `ListFilenames` methods on `localFS` that delegate to the MFT engine |
+| File                 | Build tag  | Purpose                                                                                                             |
+| :------------------- | :--------- | :------------------------------------------------------------------------------------------------------------------ |
+| `mft_windows.go`     | `windows`  | MFT enumeration engine: volume handle management, `FSCTL_ENUM_USN_DATA` loop, parent-chain resolver, subtree filter |
+| `mft_nowindows.go`   | `!windows` | Empty file — ensures cross-platform compilation                                                                     |
+| `localfs_windows.go` | `windows`  | Gains `ForEachFilename`, `ForEachFileInfo`, `ListFilenames` methods on `localFS` that delegate to the MFT engine    |
 
 No changes to `op.go`, `ufs.go`, `nestfs.go`, or any non-Windows file.
 
@@ -106,24 +106,24 @@ This is O(n) in the total number of files on the volume for the collect pass, an
 
 ## Error Handling
 
-| Condition | Behavior |
-|:----------|:---------|
-| Volume handle open fails (`ERROR_ACCESS_DENIED`) | Silent fallback to `WalkDir` |
-| Non-NTFS volume (FAT32, exFAT, ReFS) | `FSCTL_ENUM_USN_DATA` fails -> silent fallback to `WalkDir` |
-| `DeviceIoControl` fails mid-enumeration | Return error (partial MFT reads are not usable) |
-| `os.Stat` fails in full-info mode | Return error to caller (same contract as `WalkDir`) |
-| `localFS` root path not resolvable to a volume | Silent fallback to `WalkDir` |
+| Condition                                        | Behavior                                                    |
+| :----------------------------------------------- | :---------------------------------------------------------- |
+| Volume handle open fails (`ERROR_ACCESS_DENIED`) | Silent fallback to `WalkDir`                                |
+| Non-NTFS volume (FAT32, exFAT, ReFS)             | `FSCTL_ENUM_USN_DATA` fails -> silent fallback to `WalkDir` |
+| `DeviceIoControl` fails mid-enumeration          | Return error (partial MFT reads are not usable)             |
+| `os.Stat` fails in full-info mode                | Return error to caller (same contract as `WalkDir`)         |
+| `localFS` root path not resolvable to a volume   | Silent fallback to `WalkDir`                                |
 
 ## Windows Syscall Surface
 
 All syscalls are via `golang.org/x/sys/windows` (already available as an indirect dependency) or direct `syscall.NewLazyDLL`/`syscall.NewProc` calls. No CGO required.
 
-| Syscall / IOCTL | Purpose |
-|:----------------|:--------|
-| `CreateFileW` | Open volume handle (`\\.\C:`) and root directory handle |
-| `DeviceIoControl` + `FSCTL_ENUM_USN_DATA` | Bulk MFT enumeration |
-| `GetFileInformationByHandle` | Get MFT reference number for the root directory |
-| `CloseHandle` | Close volume and directory handles |
+| Syscall / IOCTL                           | Purpose                                                 |
+| :---------------------------------------- | :------------------------------------------------------ |
+| `CreateFileW`                             | Open volume handle (`\\.\C:`) and root directory handle |
+| `DeviceIoControl` + `FSCTL_ENUM_USN_DATA` | Bulk MFT enumeration                                    |
+| `GetFileInformationByHandle`              | Get MFT reference number for the root directory         |
+| `CloseHandle`                             | Close volume and directory handles                      |
 
 Constants (`FSCTL_ENUM_USN_DATA`, `USN_RECORD_V2` layout, `FILE_ATTRIBUTE_DIRECTORY`) are defined locally in `mft_windows.go` if not present in `x/sys/windows`.
 
@@ -155,9 +155,9 @@ Windows CI runners need admin privileges to exercise MFT tests. Non-admin runner
 
 For a subtree of ~1M files on a volume with ~2M total files:
 
-| Mode | WalkDir | MFT |
-|:-----|:--------|:----|
-| Name-only | 30-120s | 2-5s |
+| Mode      | WalkDir | MFT    |
+| :-------- | :------ | :----- |
+| Name-only | 30-120s | 2-5s   |
 | Full info | 30-120s | 10-30s |
 
 The name-only speedup is 10-60x. Full-info is 3-10x (bottlenecked by per-file `os.Stat`). The speedup is most pronounced on deep directory trees where `WalkDir` pays a syscall per directory; MFT enumeration is flat regardless of tree depth.

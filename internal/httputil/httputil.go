@@ -44,8 +44,8 @@ const (
 	URLQueryParamChecksum = "ufs.checksum"
 	// uriParamPrefix marks query parameters that are addressed to ufs rather
 	// than to the server hosting the file.
-	uriParamPrefix  = "ufs."
-	maxDownloadSize = 4 << 30 // 4 GiB
+	uriParamPrefix        = "ufs."
+	maxDownloadSize int64 = 4 << 30 // 4 GiB
 	// partialFileSuffix marks a file whose download has not finished.
 	partialFileSuffix = ".partial"
 )

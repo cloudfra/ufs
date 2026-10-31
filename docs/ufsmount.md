@@ -6,10 +6,10 @@ any program — `ls`, `cat`, editors, build tools, and so on.
 
 The mount mechanism is platform-specific:
 
-| Platform | Backend | Read | Write |
-|----------|---------|------|-------|
+| Platform | Backend | Read | Write                       |
+| -------- | ------- | ---- | --------------------------- |
 | Linux    | FUSE    | yes  | yes (if the FS supports it) |
-| Windows  | ProjFS  | yes  | no (read-only) |
+| Windows  | ProjFS  | yes  | no (read-only)              |
 
 ## Install
 
@@ -58,11 +58,11 @@ for details.
 ufsmount -uri <source> -mount <path> [-verbose]
 ```
 
-| Flag     | Required | Description                                             |
-|----------|----------|---------------------------------------------------------|
-| `-uri`   | yes      | URI (or path) of the virtual file system to mount.      |
-| `-mount` | yes      | Directory on the host where the FS will appear.         |
-| `-verbose` | no     | Log every FUSE/ProjFS callback, for debugging.          |
+| Flag       | Required | Description                                        |
+| ---------- | -------- | -------------------------------------------------- |
+| `-uri`     | yes      | URI (or path) of the virtual file system to mount. |
+| `-mount`   | yes      | Directory on the host where the FS will appear.    |
+| `-verbose` | no       | Log every FUSE/ProjFS callback, for debugging.     |
 
 The process runs in the foreground. Press `Ctrl-C` or send `SIGTERM` to
 unmount and exit. You can also unmount externally:
@@ -247,7 +247,7 @@ type C:\mnt\bucket\data\report.csv
 ### Linux (FUSE)
 
 | Operation        | Read-write FS | Read-only FS |
-|------------------|---------------|--------------|
+| ---------------- | ------------- | ------------ |
 | Read file        | yes           | yes          |
 | Stat / readdir   | yes           | yes          |
 | Create file      | yes           | EROFS        |
@@ -266,15 +266,15 @@ ProjFS mounts are always read-only. All file systems — including those
 that implement the read-write `FS` interface — are projected as
 read-only virtual files.
 
-| Operation        | Any FS          |
-|------------------|-----------------|
-| Read file        | yes             |
-| Stat / readdir   | yes             |
-| Create file      | no (bypasses ProjFS, writes to local NTFS) |
-| Write            | no (bypasses ProjFS, writes to local NTFS) |
-| mkdir            | no (bypasses ProjFS, writes to local NTFS) |
-| Remove file      | denied          |
-| Rename           | denied          |
+| Operation      | Any FS                                     |
+| -------------- | ------------------------------------------ |
+| Read file      | yes                                        |
+| Stat / readdir | yes                                        |
+| Create file    | no (bypasses ProjFS, writes to local NTFS) |
+| Write          | no (bypasses ProjFS, writes to local NTFS) |
+| mkdir          | no (bypasses ProjFS, writes to local NTFS) |
+| Remove file    | denied                                     |
+| Rename         | denied                                     |
 
 ProjFS intercepts delete and rename operations and denies them.
 New file creation and writes cannot be intercepted by ProjFS — they
@@ -283,8 +283,8 @@ routed through the virtual file system.
 
 ## Signals
 
-| Signal            | Behavior                          |
-|-------------------|-----------------------------------|
-| `SIGINT` (`^C`)   | Unmount and exit cleanly.         |
-| `SIGTERM`         | Unmount and exit cleanly.         |
-| Context cancel    | Automatic unmount (library use).  |
+| Signal          | Behavior                         |
+| --------------- | -------------------------------- |
+| `SIGINT` (`^C`) | Unmount and exit cleanly.        |
+| `SIGTERM`       | Unmount and exit cleanly.        |
+| Context cancel  | Automatic unmount (library use). |

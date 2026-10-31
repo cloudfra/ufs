@@ -34,14 +34,8 @@ function RemoveStuckFuseMounts() {
     done
 }
 
-function InstallPackages() {
-  sudo apt-get update
-  sudo apt-get -y -q install osslsigncode binutils openssl
-}
-
 function Main() {
   RemoveStuckFuseMounts
-  InstallPackages
 }
 
 Main

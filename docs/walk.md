@@ -18,9 +18,9 @@ go install github.com/cloudfra/ufs/cmd/walk@latest
 walk -path <uri-or-path>
 ```
 
-| Flag    | Default | Description                                  |
-|---------|---------|----------------------------------------------|
-| `-path` | `.`     | URI or local path to walk.                   |
+| Flag    | Default | Description                |
+| ------- | ------- | -------------------------- |
+| `-path` | `.`     | URI or local path to walk. |
 
 ## Examples
 

@@ -42,16 +42,16 @@ is github.com/cloudfra/ufs.
 
 ### Core interfaces (`drivers/types/types.go`, package `types`)
 
-| Interface  | What it wraps / adds                                                         |
-|:-----------|:-----------------------------------------------------------------------------|
-| FileInfo   | Name, Size, Mode, ModTime, IsDir, Type, Sys                                  |
-| ReadFile   | Read-only file; wraps fs.File                                                |
-| File       | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter               |
-| ReadFS     | Read-only FS; adds Close, ListFilenames, ForEachIterators                    |
-| WriteFS    | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll          |
-| FS         | ufs.FS — extends types.WriteFS with Rename (RenameFileFS); what nestFS and most backends implement |
-| Watcher    | Optional; recursive directory change notifications via Watch                 |
-| BatchCreateFS | Optional; writes several whole files atomically via BatchCreate         |
+| Interface     | What it wraps / adds                                                                               |
+| :------------ | :------------------------------------------------------------------------------------------------- |
+| FileInfo      | Name, Size, Mode, ModTime, IsDir, Type, Sys                                                        |
+| ReadFile      | Read-only file; wraps fs.File                                                                      |
+| File          | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter                                     |
+| ReadFS        | Read-only FS; adds Close, ListFilenames, ForEachIterators                                          |
+| WriteFS       | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll                                |
+| FS            | ufs.FS — extends types.WriteFS with Rename (RenameFileFS); what nestFS and most backends implement |
+| Watcher       | Optional; recursive directory change notifications via Watch                                       |
+| BatchCreateFS | Optional; writes several whole files atomically via BatchCreate                                    |
 
 ### Factory
 
@@ -61,15 +61,15 @@ func New(ctx context.Context, name string) (types.WriteFS, error)
 
 Dispatches to the appropriate implementation based on URI scheme:
 
-| Scheme        | Implementation   | Struct    | Type     | Status  | Behavior                                                 |
-|:--------------|:-----------------|:----------|:---------|:--------|:---------------------------------------------------------|
-| null://       | drivers/core/    | nullFS    | ro       | Impl.   | /dev/null — writes discarded, reads return empty         |
-| memory:       | drivers/core/    | memFS     | rw       | Impl.   | In-memory storage; lost when process exits               |
-| file:///...   | drivers/core/    | localFS   | rw       | Impl.   | Local disk via os.OpenRoot; rejects paths outside root   |
-| gs://...      | drivers/gcsfs/   | gcsFS     | rw       | Impl.   | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs) |
-| git://...     | drivers/gitfs/   | --        | rw       | Impl.   | Contents of a git repo (clones on first open; writes go to the temporary clone; blank-import drivers/gitfs) |
-| archive://    | drivers/core/    | archiveFS | ro       | Impl.   | Reads archives (zip, tar, 7z) as virtual FSs             |
-| bolt:...      | drivers/boltfs/  | boltFS    | rw       | Impl.   | Single BoltDB file; registered by importing the package; `ufs.nosync`, `ufs.nofreelistsync`, `ufs.nostatistics`, `ufs.readonly`, `ufs.timeout` query params set bolt.Options (parsed with httputil.ParseURI) |
+| Scheme      | Implementation  | Struct    | Type | Status | Behavior                                                                                                                                                                                                     |
+| :---------- | :-------------- | :-------- | :--- | :----- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| null://     | drivers/core/   | nullFS    | ro   | Impl.  | /dev/null — writes discarded, reads return empty                                                                                                                                                             |
+| memory:     | drivers/core/   | memFS     | rw   | Impl.  | In-memory storage; lost when process exits                                                                                                                                                                   |
+| file:///... | drivers/core/   | localFS   | rw   | Impl.  | Local disk via os.OpenRoot; rejects paths outside root                                                                                                                                                       |
+| gs://...    | drivers/gcsfs/  | gcsFS     | rw   | Impl.  | Google Cloud Storage bucket as a virtual FS (blank-import drivers/gcsfs)                                                                                                                                     |
+| git://...   | drivers/gitfs/  | --        | rw   | Impl.  | Contents of a git repo (clones on first open; writes go to the temporary clone; blank-import drivers/gitfs)                                                                                                  |
+| archive://  | drivers/core/   | archiveFS | ro   | Impl.  | Reads archives (zip, tar, 7z) as virtual FSs                                                                                                                                                                 |
+| bolt:...    | drivers/boltfs/ | boltFS    | rw   | Impl.  | Single BoltDB file; registered by importing the package; `ufs.nosync`, `ufs.nofreelistsync`, `ufs.nostatistics`, `ufs.readonly`, `ufs.timeout` query params set bolt.Options (parsed with httputil.ParseURI) |
 
 ### Layering / nesting
 
@@ -126,10 +126,10 @@ parameters for the driver and stay with the base URI.
 The fstab `ro` option and the implicit read-only null root both map to the
 `readOnly` option, so they need `drivers/decorators/readonlyfs` imported.
 
-| Option    | Package                        | Options type         | Behavior                                       |
-|:----------|:-------------------------------|:---------------------|:-----------------------------------------------|
-| readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`) | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner) |
-| fault     | drivers/decorators/faultfs     | faultfs.Options      | Injects configurable latency and random errors |
+| Option    | Package                        | Options type                                            | Behavior                                                                                         |
+| :-------- | :----------------------------- | :------------------------------------------------------ | :----------------------------------------------------------------------------------------------- |
+| readOnly  | drivers/decorators/readonlyfs  | readonlyfs.Options (bare bool or `enabled:`)            | Returns fs.ErrPermission for all write ops; also readonlyfs.New(inner)                           |
+| fault     | drivers/decorators/faultfs     | faultfs.Options                                         | Injects configurable latency and random errors                                                   |
 | telemetry | drivers/decorators/telemetryfs | telemetryfs.Options (bare bool or `traces:`/`metrics:`) | Reports an OpenTelemetry span and a duration histogram per FS operation via the global providers |
 
 ### Host mount (`host` subpackage)
@@ -161,15 +161,15 @@ directory at all (ERROR_NOT_SUPPORTED, no notification). The ProjFS tests only r
 `UFS_ENABLE_PROJFS_TEST` is set (the `desktop-experience` Windows runners);
 elsewhere they skip.
 
-| File (in host/)        | Purpose                                                          |
-|:-----------------------|:-----------------------------------------------------------------|
-| host.go                | Platform-agnostic MountServer interface and Mount function       |
-| host_other.go          | Stub returning "not implemented" on non-Linux/Windows platforms  |
-| fuse_linux.go          | FUSE adapter — bridges types.ReadFS / ufs.FS to go-fuse InodeEmbedder |
-| mount_windows.go       | ProjFS mount server                                              |
-| projfs_windows.go      | ProjFS syscall bindings                                          |
+| File (in host/)          | Purpose                                                                   |
+| :----------------------- | :------------------------------------------------------------------------ |
+| host.go                  | Platform-agnostic MountServer interface and Mount function                |
+| host_other.go            | Stub returning "not implemented" on non-Linux/Windows platforms           |
+| fuse_linux.go            | FUSE adapter — bridges types.ReadFS / ufs.FS to go-fuse InodeEmbedder     |
+| mount_windows.go         | ProjFS mount server                                                       |
+| projfs_windows.go        | ProjFS syscall bindings                                                   |
 | projfs_errors_windows.go | projfsError: ProjFS HRESULTs as errors with a likely cause and resolution |
-| math.go                | Integer clamping helpers for FUSE/ProjFS conversions             |
+| math.go                  | Integer clamping helpers for FUSE/ProjFS conversions                      |
 
 ### Drivers (`drivers/` subpackages)
 
@@ -177,16 +177,16 @@ Drivers outside the base package import `ufs` (never the reverse) and register
 themselves in `init()` via `ufs.Register`; callers blank-import the package to
 enable its scheme. They may use `internal/` packages.
 
-| Path                     | Purpose                                                          |
-|:-------------------------|:-----------------------------------------------------------------|
-| drivers/boltfs/          | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)    |
-| drivers/common/buffile/  | Exported fully-buffered file handle for drivers (depends on ufs) |
-| drivers/core/            | Built-in backends; registers file://, archive://, http(s):// archives, memory:, null: and angry: on import. The base package registers no driver itself |
-| drivers/embedfs/         | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration) |
-| drivers/gcsfs/           | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient |
-| drivers/gitfs/           | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1 |
-| drivers/polyfills/       | Best-effort standins for optional interfaces a file system lacks; used by the base package, so it must not import ufs |
-| drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it |
+| Path                       | Purpose                                                                                                                                                 |
+| :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| drivers/boltfs/            | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)                                                                                           |
+| drivers/common/buffile/    | Exported fully-buffered file handle for drivers (depends on ufs)                                                                                        |
+| drivers/core/              | Built-in backends; registers file://, archive://, http(s):// archives, memory:, null: and angry: on import. The base package registers no driver itself |
+| drivers/embedfs/           | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration)                                                      |
+| drivers/gcsfs/             | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient                                                                     |
+| drivers/gitfs/             | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1                           |
+| drivers/polyfills/         | Best-effort standins for optional interfaces a file system lacks; used by the base package, so it must not import ufs                                   |
+| drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it                                                                 |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
 code with no `ufs` dependency goes in `internal/`. `drivers/polyfills/` is the
@@ -195,21 +195,21 @@ it stays under `drivers/` because its entry points are public API.
 
 ### Supporting files
 
-| File                  | Purpose                                                             |
-|:----------------------|:--------------------------------------------------------------------|
-| info.go               | fsInfo — concrete fs.FileInfo implementation                        |
-| path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)        |
+| File                  | Purpose                                                                                  |
+| :-------------------- | :--------------------------------------------------------------------------------------- |
+| info.go               | fsInfo — concrete fs.FileInfo implementation                                             |
+| path.go, path_test.go | CwdPath and AbsPath (resolves a virtual path to a host path)                             |
 | ops/                  | High-level ops — Rsync, Copy, List, ListFiles, ForEach*, Walk, Remove, RemoveAll, Rename |
-| internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers   |
-| internal/archive/     | archive.New opens archives as fs.FS; only mholt/archives importer   |
-| internal/httputil/    | SSRF-hardened file download used by remote archives                 |
-| internal/hashutil/    | New creates a hash by algorithm name; Checksum verifies digests     |
-| internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.            |
-| internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                   |
-| internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls       |
-| internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir              |
-| testing_test.go       | Shared test harness used by each backend                            |
-| assets_test.go        | Test asset loading helpers                                          |
+| internal/osutil/      | Path-cleaning wrappers around package os, temp dir/delete helpers                        |
+| internal/archive/     | archive.New opens archives as fs.FS; only mholt/archives importer                        |
+| internal/httputil/    | SSRF-hardened file download used by remote archives                                      |
+| internal/hashutil/    | New creates a hash by algorithm name; Checksum verifies digests                          |
+| internal/pathutil/    | Path helpers: Validate, RemovePrefix, Split, IsCwd, etc.                                 |
+| internal/ufserrors/   | Error helpers: Join, NewPathError, ErrDirNotEmpty                                        |
+| internal/notify/      | Prefix-matching change-event bus for in-process Watcher impls                            |
+| internal/globutil/    | GlobFS — fs.Glob for any FS that only provides ReadDir                                   |
+| testing_test.go       | Shared test harness used by each backend                                                 |
+| assets_test.go        | Test asset loading helpers                                                               |
 
 ### Rename (`ops/rename.go`)
 

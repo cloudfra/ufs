@@ -28,9 +28,9 @@ import (
 
 // BatchCreate verifies [ufs.BatchCreate], which uses the file system's own
 // BatchCreate when it has one: files are written with their parent
-// directories, replace existing files and earlier entries, and an invalid
-// name fails before anything is written. A batch that fails on a file system
-// that implements [types.BatchCreateFS] must write nothing. Its files are kept
+// directories, replace existing files, and a name that is invalid or repeated
+// fails before anything is written. A batch that fails on a file system that
+// implements [types.BatchCreateFS] must write nothing. Its files are kept
 // below "bc", apart from anything a test backend is seeded with.
 func BatchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS) {
 	batchCreate(t, createFS, true)
@@ -76,17 +76,25 @@ func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConfl
 			assertBatchFiles(t, fsys, map[string]string{"bc/x.txt": "new"})
 		})
 
-		t.Run("SameNameTwice", func(t *testing.T) {
+		t.Run("DuplicateName", func(t *testing.T) {
 			t.Parallel()
 			fsys := newBatchFS(t, createFS)
 			err := ufs.BatchCreate(fsys,
 				types.BatchFile{Name: "bc/x.txt", Data: []byte("first")},
+				types.BatchFile{Name: "bc/new/a.txt", Data: []byte("a")},
 				types.BatchFile{Name: "bc/x.txt", Data: []byte("second")},
 			)
-			if err != nil {
-				t.Fatalf("BatchCreate() = %v, want nil", err)
+			var pathErr *fs.PathError
+			if !errors.Is(err, fs.ErrInvalid) || !errors.As(err, &pathErr) || pathErr.Path != "bc/x.txt" {
+				t.Fatalf("BatchCreate() = %v, want an *fs.PathError for bc/x.txt wrapping %v", err, fs.ErrInvalid)
 			}
-			assertBatchFiles(t, fsys, map[string]string{"bc/x.txt": "second"})
+			// The names are checked before the first write.
+			for _, name := range []string{"bc/x.txt", "bc/new", "bc/new/a.txt"} {
+				if info, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("Stat(%q) = %v, %v, want %v: a rejected batch writes nothing",
+						name, info, err, fs.ErrNotExist)
+				}
+			}
 		})
 
 		t.Run("Empty", func(t *testing.T) {
@@ -186,6 +194,52 @@ func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConfl
 				}
 				if _, err := fsys.Stat("bc/first.txt"); !errors.Is(err, fs.ErrNotExist) {
 					t.Errorf("Stat(bc/first.txt) = %v, want %v: a failed batch writes nothing", err, fs.ErrNotExist)
+				}
+			})
+		}
+
+		// One batch cannot hold both a file and a file below that name, in
+		// either order.
+		nested := []struct {
+			name  string
+			files []types.BatchFile
+		}{
+			{
+				name: "FileThenBelowIt",
+				files: []types.BatchFile{
+					{Name: "bc/first.txt", Data: []byte("first")},
+					{Name: "bc/x.txt", Data: []byte("file")},
+					{Name: "bc/x.txt/a.txt", Data: []byte("below")},
+				},
+			},
+			{
+				name: "BelowItThenFile",
+				files: []types.BatchFile{
+					{Name: "bc/first.txt", Data: []byte("first")},
+					{Name: "bc/x.txt/a.txt", Data: []byte("below")},
+					{Name: "bc/x.txt", Data: []byte("file")},
+				},
+			},
+		}
+		for _, tc := range nested {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				fsys := newBatchFS(t, createFS)
+				err := ufs.BatchCreate(fsys, tc.files...)
+				if err == nil {
+					t.Fatalf("BatchCreate(%q, %q) = nil, want an error", tc.files[1].Name, tc.files[2].Name)
+				}
+				if info, err := fsys.Stat("bc"); err != nil || !info.IsDir() {
+					t.Errorf("Stat(bc) = %v, %v, want a directory", info, err)
+				}
+				if _, ok := fsys.(types.BatchCreateFS); !ok {
+					return
+				}
+				for _, name := range []string{"bc/first.txt", "bc/x.txt", "bc/x.txt/a.txt"} {
+					if info, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
+						t.Errorf("Stat(%q) = %v, %v, want %v: a failed batch writes nothing",
+							name, info, err, fs.ErrNotExist)
+					}
 				}
 			})
 		}

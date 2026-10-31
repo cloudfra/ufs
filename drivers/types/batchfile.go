@@ -15,7 +15,11 @@
 package types
 
 import (
+	"fmt"
 	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 // BatchFile is one file that [BatchCreate] writes.
@@ -32,4 +36,45 @@ type BatchFile struct {
 	// Perm holds the permission bits of the file, on file systems that store
 	// them. Zero means the permissions that Create uses.
 	Perm fs.FileMode
+}
+
+// linearUniqueFiles is the largest batch scanned pairwise for repeated names,
+// which is cheaper than a map until a little past this size.
+const linearUniqueFiles = 16
+
+// ValidateBatchFiles checks the names of a batch before any of it is written,
+// so a bad entry cannot leave the entries before it written. It returns an
+// [*fs.PathError] wrapping [fs.ErrInvalid] for the first name that
+// [pathutil.ValidateFileName] rejects or that repeats a name earlier in files.
+func ValidateBatchFiles(op string, files []BatchFile) error {
+	if len(files) <= linearUniqueFiles {
+		for i, file := range files {
+			if err := pathutil.ValidateFileName(op, file.Name); err != nil {
+				return err
+			}
+			for _, before := range files[:i] {
+				if file.Name == before.Name {
+					return duplicateName(op, file.Name)
+				}
+			}
+		}
+		return nil
+	}
+	seen := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		if err := pathutil.ValidateFileName(op, file.Name); err != nil {
+			return err
+		}
+		if _, ok := seen[file.Name]; ok {
+			return duplicateName(op, file.Name)
+		}
+		seen[file.Name] = struct{}{}
+	}
+	return nil
+}
+
+// duplicateName reports the error for a name that a batch writes twice.
+func duplicateName(op, name string) error {
+	return ufserrors.NewPathError(op, name,
+		fmt.Errorf("%q is written twice in this batch: %w", name, fs.ErrInvalid))
 }

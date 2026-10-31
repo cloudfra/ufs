@@ -240,10 +240,11 @@ func BatchCreate(fsys WriteFS, files ...BatchFile) error
 `BatchCreateFS` is optional and only for file systems that can write a batch
 atomically (all files or none, readers never see part of it), such as one
 database transaction; implementations may commit concurrent batches together.
-`ufs.BatchCreate` calls it when present and otherwise validates every name
-with `pathutil.ValidateFileName` and writes each file with MkdirAll + Create
-(not atomic, Perm ignored). Writing one file this way is the single-operation
-WriteFile. New drivers are covered by `BatchCreate` in `drivers/testing`.
+`ufs.BatchCreate` calls it when present and otherwise checks the names with
+`types.ValidateBatchFiles` before writing, then writes each file with
+MkdirAll + Create (not atomic, Perm ignored). Writing one file this way is the
+single-operation WriteFile. New drivers are covered by `BatchCreate` in
+`drivers/testing`.
 
 ### Conventions
 

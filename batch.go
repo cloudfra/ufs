@@ -29,7 +29,8 @@ const batchCreateOp = "batchcreate"
 // fsys.BatchCreate when fsys implements [BatchCreateFS]. Otherwise it checks
 // every name first and then writes each file with MkdirAll and Create. That
 // is not atomic: an error can leave the files before it written. Perm is not
-// applied, since Create takes no permissions.
+// applied, since Create takes no permissions. A batch with no files writes
+// nothing.
 //
 // Writing a single file with BatchCreate costs one operation on a file system
 // that implements [BatchCreateFS], such as a single transaction, instead of

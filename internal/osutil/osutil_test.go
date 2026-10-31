@@ -927,3 +927,121 @@ func TestTryDeleteDirectoryMissingDoesNotLog(t *testing.T) {
 		t.Errorf("TryDeleteDirectory(missing) logged %q, want nothing", logs.String())
 	}
 }
+
+// syncCloserFake stands in for an open file so a test can control what its
+// calls report.
+type syncCloserFake struct {
+	syncErr    error
+	closeErr   error
+	syncCalls  int
+	closeCalls int
+}
+
+func (f *syncCloserFake) Sync() error {
+	f.syncCalls++
+	return f.syncErr
+}
+
+func (f *syncCloserFake) Close() error {
+	f.closeCalls++
+	return f.closeErr
+}
+
+var (
+	errSyncFailed  = errors.New("sync failed")
+	errCloseFailed = errors.New("close failed")
+)
+
+func TestFlushAndClose(t *testing.T) {
+	tests := []struct {
+		name        string
+		syncErr     error
+		closeErr    error
+		wantErr     error
+		wantMessage string
+	}{
+		{name: "both succeed"},
+		{
+			name:        "sync fails",
+			syncErr:     errSyncFailed,
+			wantErr:     errSyncFailed,
+			wantMessage: `cannot sync file "/tmp/archive.zip"`,
+		},
+		{
+			name:        "close fails",
+			closeErr:    errCloseFailed,
+			wantErr:     errCloseFailed,
+			wantMessage: `cannot close file "/tmp/archive.zip"`,
+		},
+		{
+			name:        "sync error wins over close error",
+			syncErr:     errSyncFailed,
+			closeErr:    errCloseFailed,
+			wantErr:     errSyncFailed,
+			wantMessage: `cannot sync file`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &syncCloserFake{
+				syncErr:  tc.syncErr,
+				closeErr: tc.closeErr,
+			}
+			err := FlushAndClose(f, "/tmp/archive.zip")
+			if f.syncCalls != 1 {
+				t.Errorf("Sync calls = %d, want 1", f.syncCalls)
+			}
+			if f.closeCalls != 1 {
+				t.Errorf("Close calls = %d, want 1", f.closeCalls)
+			}
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("FlushAndClose() = %v, want nil", err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("FlushAndClose() = %v, want an error wrapping %v", err, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantMessage) {
+				t.Errorf("FlushAndClose() = %v, want a message containing %q", err, tc.wantMessage)
+			}
+		})
+	}
+}
+
+// TestFlushAndCloseReleasesTheHandle checks that a real file can be removed
+// after FlushAndClose, which Windows requires because an open handle blocks
+// removal.
+func TestFlushAndCloseReleasesTheHandle(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "archive.zip")
+	f, err := os.Create(filepath.Clean(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("payload")); err != nil {
+		t.Fatal(err)
+	}
+	if err := FlushAndClose(f, name); err != nil {
+		t.Fatalf("FlushAndClose() = %v", err)
+	}
+	if err := DeleteFile(name); err != nil {
+		t.Errorf("DeleteFile after FlushAndClose = %v", err)
+	}
+}
+
+// TestOpenDirSyncsEntries checks that a directory opened with OpenDir can be
+// synced, which is what makes a renamed entry durable.
+func TestOpenDirSyncsEntries(t *testing.T) {
+	dir := t.TempDir()
+	d, err := OpenDir(dir)
+	if err != nil {
+		t.Fatalf("OpenDir(%q) = %v", dir, err)
+	}
+	if err := d.Sync(); err != nil {
+		t.Errorf("Sync() = %v", err)
+	}
+	if err := d.Close(); err != nil {
+		t.Errorf("Close() = %v", err)
+	}
+}

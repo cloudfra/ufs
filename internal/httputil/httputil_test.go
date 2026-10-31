@@ -832,30 +832,135 @@ func TestDownloadFileErrors(t *testing.T) {
 	})
 }
 
-func TestDownloadFileOverwritesExisting(t *testing.T) {
+// TestDownloadFileExistingFile covers a destination that already holds an
+// entry: it is never overwritten.
+func TestDownloadFileExistingFile(t *testing.T) {
 	t.Parallel()
-	ts := testServer(t)
-	dir := t.TempDir()
-	existing := filepath.Join(dir, "testassets.zip")
-	stale := bytes.Repeat([]byte("stale"), len(testPayload))
-	if err := os.WriteFile(existing, stale, osutil.DefaultFilePermissions); err != nil {
-		t.Fatal(err)
+	testCases := []struct {
+		name    string
+		prepare func(t *testing.T, dir string)
+		query   string
+		wantErr string
+		// wantSize and wantContent describe the entry left behind; a nil
+		// wantContent skips the content comparison.
+		wantSize    int64
+		wantContent []byte
+		wantDir     bool
+	}{
+		{
+			name:    "digest matches",
+			prepare: writeExistingPayload,
+			query:   "?ufs.checksum=" + testPayloadSHA256,
+			// The body served here is not the payload, so an accepted
+			// existing file can only mean the body was discarded unread.
+			wantSize:    int64(len(testPayload)),
+			wantContent: testPayload,
+		},
+		{
+			name:     "digest mismatch",
+			prepare:  writeExistingPayload,
+			query:    "?ufs.checksum=" + strings.Repeat("0", len(testPayloadSHA256)),
+			wantErr:  "checksum mismatch",
+			wantSize: int64(len(testPayload)),
+		},
+		{
+			name:     "no checksum",
+			prepare:  writeExistingPayload,
+			wantErr:  "cannot be validated without a ufs.checksum parameter",
+			wantSize: int64(len(testPayload)),
+		},
+		{
+			name: "entry is a directory",
+			prepare: func(t *testing.T, dir string) {
+				if err := os.Mkdir(filepath.Join(dir, "testassets.zip"), osutil.DefaultDirectoryPermissions); err != nil {
+					t.Fatal(err)
+				}
+			},
+			query:   "?ufs.checksum=" + testPayloadSHA256,
+			wantErr: "not a regular file",
+			wantDir: true,
+		},
+		{
+			name: "larger than the size limit",
+			prepare: func(t *testing.T, dir string) {
+				name := filepath.Join(dir, "testassets.zip")
+				if err := os.WriteFile(name, nil, osutil.DefaultFilePermissions); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Truncate(name, maxDownloadSize+1); err != nil {
+					t.Fatal(err)
+				}
+			},
+			query:    "?ufs.checksum=" + testPayloadSHA256,
+			wantErr:  "larger than the size limit",
+			wantSize: maxDownloadSize + 1,
+		},
 	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := existingFileServer(t)
+			dir := t.TempDir()
+			existing := filepath.Join(dir, "testassets.zip")
+			tc.prepare(t, dir)
 
-	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip")
-	if err != nil {
-		t.Fatalf("DownloadFileWith() = %v", err)
+			path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip"+tc.query)
+			switch {
+			case tc.wantErr != "":
+				if err == nil {
+					t.Fatalf("DownloadFileWith() = %q, want error containing %q", path, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error = %v, want mention of %q", err, tc.wantErr)
+				}
+			case err != nil:
+				t.Fatalf("DownloadFileWith() = %v", err)
+			case path != existing:
+				t.Errorf("path = %q, want %q", path, existing)
+			}
+
+			info, err := os.Lstat(existing)
+			if err != nil {
+				t.Fatalf("existing entry after DownloadFileWith() = %v, want it left in place", err)
+			}
+			if info.IsDir() != tc.wantDir {
+				t.Errorf("entry is a directory = %v, want %v", info.IsDir(), tc.wantDir)
+			}
+			if tc.wantSize != 0 && info.Size() != tc.wantSize {
+				t.Errorf("entry size = %d, want %d", info.Size(), tc.wantSize)
+			}
+			if tc.wantContent == nil {
+				return
+			}
+			got, err := osutil.ReadFile(existing)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, tc.wantContent) {
+				t.Errorf("existing entry holds %d bytes, want the original %d bytes", len(got), len(tc.wantContent))
+			}
+		})
 	}
-	if path != existing {
-		t.Errorf("path = %q, want %q", path, existing)
-	}
-	got, err := osutil.ReadFile(path)
-	if err != nil {
+}
+
+func writeExistingPayload(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "testassets.zip"), testPayload, osutil.DefaultFilePermissions); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, testPayload) {
-		t.Errorf("downloaded %d bytes, want %d (existing file not truncated)", len(got), len(testPayload))
-	}
+}
+
+// existingFileServer serves a body that is not testPayload, so a download that
+// stores it rather than discarding it is visible in the destination file.
+func existingFileServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write(bytes.Repeat([]byte("body"), len(testPayload)/4+1)); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	return ts
 }
 
 func TestDownloadFileReturnsAbsolutePath(t *testing.T) {
@@ -1167,11 +1272,15 @@ func assertEmptyDir(t *testing.T, dir string) {
 	}
 }
 
-func TestDownloadFileFailureRemovesExistingFile(t *testing.T) {
+// TestDownloadFileFailureKeepsExistingFile checks that a download refused by a
+// checksum mismatch does not destroy the file that was already there.
+func TestDownloadFileFailureKeepsExistingFile(t *testing.T) {
 	t.Parallel()
 	ts := testServer(t)
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "testassets.zip"), []byte("stale"), osutil.DefaultFilePermissions); err != nil {
+	existing := filepath.Join(dir, "testassets.zip")
+	stale := bytes.Repeat([]byte("stale"), len(testPayload))
+	if err := os.WriteFile(existing, stale, osutil.DefaultFilePermissions); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1179,7 +1288,13 @@ func TestDownloadFileFailureRemovesExistingFile(t *testing.T) {
 	if _, err := DownloadFileWith(t.Context(), ts.Client(), dir, uri); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("DownloadFileWith() = %v, want checksum mismatch", err)
 	}
-	assertEmptyDir(t, dir)
+	got, err := osutil.ReadFile(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, stale) {
+		t.Errorf("existing file holds %d bytes, want the original %d bytes", len(got), len(stale))
+	}
 }
 
 func TestDownloadFileChecksumSurvivesRedirect(t *testing.T) {
@@ -1226,4 +1341,204 @@ func TestCopyLimited(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDownloadFilePartialFileIsPublished checks that the temporary name is gone
+// once the download succeeds.
+func TestDownloadFilePartialFileIsPublished(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t)
+	dir := t.TempDir()
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("%q holds %d entries %v, want only %q", dir, len(entries), names, filepath.Base(path))
+	}
+	if entries[0].Name() != filepath.Base(path) {
+		t.Errorf("%q holds %q, want %q", dir, entries[0].Name(), filepath.Base(path))
+	}
+}
+
+// truncatedFileServer announces more bytes than it sends and drops the
+// connection.
+func truncatedFileServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/truncated.zip", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Length", fmt.Sprint(len(testPayload)))
+		if _, err := w.Write(testPayload[:len(testPayload)/2]); err != nil {
+			t.Errorf("failed to write to response: %v", err)
+		}
+		panic(http.ErrAbortHandler)
+	})
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// TestDownloadFileInterruptedTransferLeavesNothing checks that a transfer that
+// stops part way through leaves nothing at the final name.
+func TestDownloadFileInterruptedTransferLeavesNothing(t *testing.T) {
+	t.Parallel()
+	ts := truncatedFileServer(t)
+	dir := t.TempDir()
+
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/truncated.zip")
+	if err == nil {
+		t.Fatalf("DownloadFileWith() = %q, want an error for a truncated body", path)
+	}
+	if !strings.Contains(err.Error(), "read response body") && !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("DownloadFileWith() = %v, want a body read error", err)
+	}
+	assertEmptyDir(t, dir)
+	if _, statErr := osutil.Stat(filepath.Join(dir, "truncated.zip")); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("stat of the download target = %v, want fs.ErrNotExist", statErr)
+	}
+	if _, statErr := osutil.Stat(filepath.Join(dir, "truncated.zip"+partialFileSuffix)); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("stat of the partial file = %v, want fs.ErrNotExist", statErr)
+	}
+}
+
+// TestDownloadFilePlantedSymlinkStaysInside checks that an entry in the download
+// directory cannot point the work at a file outside it.
+func TestDownloadFilePlantedSymlinkStaysInside(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating a symbolic link needs elevated privileges on Windows")
+	}
+	t.Parallel()
+	ts := testServer(t)
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	const secret = "not for the download"
+	if err := osutil.WriteFile(outside, []byte(secret)); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := osutil.Symlink(outside, filepath.Join(dir, "testassets.zip")); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip")
+	if err == nil {
+		t.Fatalf("DownloadFileWith() = %q, want an error for a destination that leaves the download directory", path)
+	}
+	if !strings.Contains(err.Error(), "cannot check for an existing file") {
+		t.Errorf("DownloadFileWith() = %v, want a refusal to inspect the destination", err)
+	}
+	got, readErr := osutil.ReadFile(outside)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != secret {
+		t.Errorf("the linked file holds %q, want it untouched", got)
+	}
+}
+
+// TestDownloadFilePartialNameInUse checks that a partial name already held by
+// another download of the same target is skipped rather than truncated.
+func TestDownloadFilePartialNameInUse(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t)
+	dir := t.TempDir()
+	occupied := filepath.Join(dir, "testassets.zip"+partialFileSuffix)
+	const other = "another download owns this file"
+	if err := osutil.WriteFile(occupied, []byte(other)); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip")
+	if err != nil {
+		t.Fatalf("DownloadFileWith() = %v, want a different partial name", err)
+	}
+	got, err := osutil.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, testPayload) {
+		t.Errorf("downloaded file holds %d bytes, want the %d byte payload", len(got), len(testPayload))
+	}
+	kept, err := osutil.ReadFile(occupied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(kept) != other {
+		t.Errorf("the other download's partial file holds %q, want it untouched", kept)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("%q holds %d entries, want the download and the untouched partial file", dir, len(entries))
+	}
+}
+
+// TestDownloadFileConcurrentSameName checks that downloads racing for one
+// destination never interleave inside a shared file.
+func TestDownloadFileConcurrentSameName(t *testing.T) {
+	t.Parallel()
+	ts := testServer(t)
+	dir := t.TempDir()
+	uri := ts.URL + "/testassets.zip?ufs.checksum=" + testPayloadSHA256
+
+	const n = 4
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := range n {
+		wg.Go(func() {
+			if _, err := DownloadFileWith(t.Context(), ts.Client(), dir, uri); err != nil {
+				errs[i] = err
+			}
+		})
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		t.Error(err)
+	}
+	got, err := osutil.ReadFile(filepath.Join(dir, "testassets.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, testPayload) {
+		t.Errorf("%q holds %d bytes, want the %d byte payload", filepath.Join(dir, "testassets.zip"), len(got), len(testPayload))
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("%q holds %d entries, want only the download", dir, len(entries))
+	}
+}
+
+// TestDownloadFileReadOnlyDirectory covers a destination directory that refuses
+// new files.
+func TestDownloadFileReadOnlyDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory permissions are not enforced the same way on Windows")
+	}
+	t.Parallel()
+	ts := testServer(t)
+	dir := filepath.Join(t.TempDir(), "readonly")
+	if err := os.Mkdir(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	// No permission is restored: the download must leave the directory empty,
+	// and t.TempDir can remove an empty read-only directory.
+
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip")
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("DownloadFileWith() = %q, %v, want an error wrapping fs.ErrPermission", path, err)
+	}
+	assertEmptyDir(t, dir)
 }

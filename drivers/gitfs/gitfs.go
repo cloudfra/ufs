@@ -35,8 +35,8 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 func init() {
@@ -65,7 +65,7 @@ func prepareGitDirectory(ctx context.Context, name string, gitURL string) error 
 				break
 			}
 		}
-		_, err := git.PlainCloneContext(ctx, name, false, opts)
+		_, err := git.PlainCloneContext(ctx, name, opts)
 		if err == nil {
 			cloned = true
 			break

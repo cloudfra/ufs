@@ -96,11 +96,11 @@ Each driver package exports `const Name = "<name>"` for use with
   registered backend and why it was not chosen, or, if none is registered,
   naming `host/all`.
 
-| Driver     | Priority | Suits                                    | Available                                   |
-|:-----------|---------:|:-----------------------------------------|:--------------------------------------------|
-| fuse       | 10       | always                                   | Linux and /dev/fuse usable                  |
-| cloudfiles | 10       | always                                   | Windows, cldapi.dll and every function load |
-| projfs     | 20       | no device in `fsys.GetDeviceInfo()` is remote (`IsRemote()`) | Windows, projectedfslib.dll and every function load |
+| Driver     | Priority | Suits                                                        | Available                                           |
+| :--------- | -------: | :----------------------------------------------------------- | :-------------------------------------------------- |
+| fuse       |       10 | always                                                       | Linux and /dev/fuse usable                          |
+| cloudfiles |       10 | always                                                       | Windows, cldapi.dll and every function load         |
+| projfs     |       20 | no device in `fsys.GetDeviceInfo()` is remote (`IsRemote()`) | Windows, projectedfslib.dll and every function load |
 
 This gives: Cloud Files by default on Windows; ProjFS when installed and the
 mounted file system is entirely local.

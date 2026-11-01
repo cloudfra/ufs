@@ -39,29 +39,29 @@ both synchronous (FUSE, WinFSP) and write-back (ProjFS) models.
 
 ### Conformance test coverage
 
-| Category | Tests |
-|----------|-------|
-| Read | Read file, stat file/dir, readdir, stat non-existent, nested reads, large file |
-| Write | Create file, modify file, create in subdirectory |
-| Delete | Delete file, verify gone from backing FS |
-| Rename | Rename file, verify old gone + new present |
-| Mkdir | Create directory, verify in backing FS |
-| Read-only | Delete denied, rename denied |
-| Lifecycle | Create → read → modify → read → delete → verify gone |
-| Mixed | Existing + new + modified + deleted, verify final state |
+| Category  | Tests                                                                          |
+| --------- | ------------------------------------------------------------------------------ |
+| Read      | Read file, stat file/dir, readdir, stat non-existent, nested reads, large file |
+| Write     | Create file, modify file, create in subdirectory                               |
+| Delete    | Delete file, verify gone from backing FS                                       |
+| Rename    | Rename file, verify old gone + new present                                     |
+| Mkdir     | Create directory, verify in backing FS                                         |
+| Read-only | Delete denied, rename denied                                                   |
+| Lifecycle | Create → read → modify → read → delete → verify gone                           |
+| Mixed     | Existing + new + modified + deleted, verify final state                        |
 
 ## Implementation-specific tests
 
 These live in per-platform test files and exercise behavior sensitive
 to the mount backend's interception model:
 
-| Concern | Example |
-|---------|---------|
-| Interception timing | ProjFS syncs on handle close; FUSE syncs immediately |
-| Read-only write rejection | ProjFS can't block new file creation; FUSE returns EROFS |
-| Append semantics | ProjFS reads entire file and overwrites; FUSE intercepts individual writes |
-| Binary/Unicode content | Platform-specific path and encoding edge cases |
-| Concurrency | Backend-specific thread pool behavior |
+| Concern                   | Example                                                                    |
+| ------------------------- | -------------------------------------------------------------------------- |
+| Interception timing       | ProjFS syncs on handle close; FUSE syncs immediately                       |
+| Read-only write rejection | ProjFS can't block new file creation; FUSE returns EROFS                   |
+| Append semantics          | ProjFS reads entire file and overwrites; FUSE intercepts individual writes |
+| Binary/Unicode content    | Platform-specific path and encoding edge cases                             |
+| Concurrency               | Backend-specific thread pool behavior                                      |
 
 Implementation-specific tests should have maximum parity across platforms:
 same scenario names, same final-state assertions where possible.

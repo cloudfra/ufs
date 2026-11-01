@@ -1554,28 +1554,28 @@ Same shape as projfslib (`errorInfo{description, resolution map[Call]string}`,
 come from the code's meaning; resolutions are per call. Required call-specific
 resolutions (at minimum):
 
-| Code | Call | Resolution |
-|:-----|:-----|:-----------|
-| ERROR_CLOUD_FILE_PROVIDER_NOT_RUNNING | default | the mount is not connected; it was closed or crashed: remount |
-| ERROR_CLOUD_FILE_PROVIDER_NOT_RUNNING | CfDisconnectSyncRoot, CfUnregisterSyncRoot | already disconnected; safe to ignore |
-| ERROR_CLOUD_FILE_ALREADY_CONNECTED | CfConnectSyncRoot | another process (another ufsmount?) is serving this directory: stop it or mount elsewhere |
-| ERROR_NOT_A_CLOUD_SYNC_ROOT | CfConnectSyncRoot | CfRegisterSyncRoot did not run or was undone: mount on a new empty directory |
-| ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT | default | the file is outside the mount directory |
-| ERROR_CLOUD_FILE_IN_USE | CfDehydratePlaceholder, CfSetInSyncState | a process has the file open; retried after the next close |
-| ERROR_CLOUD_FILE_NOT_IN_SYNC | CfDehydratePlaceholder | the file changed locally and is not uploaded yet; it is uploaded on close |
-| ERROR_CLOUD_FILE_PINNED | CfDehydratePlaceholder | the user pinned the file ("Always keep on this device"); it is left hydrated |
-| ERROR_CLOUD_FILE_READ_ONLY_VOLUME | default | the volume is read-only: mount on a writable NTFS volume |
-| ERROR_CLOUD_FILE_INCOMPATIBLE_HARDLINKS | default | hard links are not supported in a Cloud Files mount: remove them |
-| ERROR_CLOUD_FILE_REQUEST_TIMEOUT | CfExecute(TRANSFER_DATA) | the mounted file system answered too slowly (60 s limit); for remote storage check the network |
-| ERROR_ACCESS_DENIED | CfRegisterSyncRoot, CfConnectSyncRoot | the current user cannot write to the mount directory, or it is a system/protected folder |
-| ERROR_ACCESS_DENIED | CfExecute(ACK_DELETE), CfExecute(ACK_RENAME) | the mounted file system refused the change; it may be read-only |
-| ERROR_NOT_SUPPORTED, ERROR_CLOUD_FILE_NOT_SUPPORTED | CfRegisterSyncRoot | Cloud Files needs a local NTFS volume (not ReFS, FAT, a network share or a RAM disk) |
-| ERROR_MOD_NOT_FOUND | default | cldapi.dll is missing: Cloud Files needs Windows 10 1709+ or Windows Server 2016+ with Desktop Experience |
-| ERROR_PROC_NOT_FOUND | default | cldapi.dll is too old for ufs: update Windows (Windows 10 1709+) |
-| ERROR_INVALID_PARAMETER | default | Cloud Files rejected an argument, a bug in the ufs bindings: report it at <https://github.com/cloudfra/ufs/issues> with the log |
-| ERROR_FILE_NOT_FOUND | default | the file was removed from the mounted file system |
-| ERROR_DIRECTORY | CfRegisterSyncRoot | the mount path is not a directory |
-| ERROR_PATH_NOT_FOUND | CfRegisterSyncRoot | create the mount directory first |
+| Code                                                | Call                                         | Resolution                                                                                                                      |
+| :-------------------------------------------------- | :------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| ERROR_CLOUD_FILE_PROVIDER_NOT_RUNNING               | default                                      | the mount is not connected; it was closed or crashed: remount                                                                   |
+| ERROR_CLOUD_FILE_PROVIDER_NOT_RUNNING               | CfDisconnectSyncRoot, CfUnregisterSyncRoot   | already disconnected; safe to ignore                                                                                            |
+| ERROR_CLOUD_FILE_ALREADY_CONNECTED                  | CfConnectSyncRoot                            | another process (another ufsmount?) is serving this directory: stop it or mount elsewhere                                       |
+| ERROR_NOT_A_CLOUD_SYNC_ROOT                         | CfConnectSyncRoot                            | CfRegisterSyncRoot did not run or was undone: mount on a new empty directory                                                    |
+| ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT                | default                                      | the file is outside the mount directory                                                                                         |
+| ERROR_CLOUD_FILE_IN_USE                             | CfDehydratePlaceholder, CfSetInSyncState     | a process has the file open; retried after the next close                                                                       |
+| ERROR_CLOUD_FILE_NOT_IN_SYNC                        | CfDehydratePlaceholder                       | the file changed locally and is not uploaded yet; it is uploaded on close                                                       |
+| ERROR_CLOUD_FILE_PINNED                             | CfDehydratePlaceholder                       | the user pinned the file ("Always keep on this device"); it is left hydrated                                                    |
+| ERROR_CLOUD_FILE_READ_ONLY_VOLUME                   | default                                      | the volume is read-only: mount on a writable NTFS volume                                                                        |
+| ERROR_CLOUD_FILE_INCOMPATIBLE_HARDLINKS             | default                                      | hard links are not supported in a Cloud Files mount: remove them                                                                |
+| ERROR_CLOUD_FILE_REQUEST_TIMEOUT                    | CfExecute(TRANSFER_DATA)                     | the mounted file system answered too slowly (60 s limit); for remote storage check the network                                  |
+| ERROR_ACCESS_DENIED                                 | CfRegisterSyncRoot, CfConnectSyncRoot        | the current user cannot write to the mount directory, or it is a system/protected folder                                        |
+| ERROR_ACCESS_DENIED                                 | CfExecute(ACK_DELETE), CfExecute(ACK_RENAME) | the mounted file system refused the change; it may be read-only                                                                 |
+| ERROR_NOT_SUPPORTED, ERROR_CLOUD_FILE_NOT_SUPPORTED | CfRegisterSyncRoot                           | Cloud Files needs a local NTFS volume (not ReFS, FAT, a network share or a RAM disk)                                            |
+| ERROR_MOD_NOT_FOUND                                 | default                                      | cldapi.dll is missing: Cloud Files needs Windows 10 1709+ or Windows Server 2016+ with Desktop Experience                       |
+| ERROR_PROC_NOT_FOUND                                | default                                      | cldapi.dll is too old for ufs: update Windows (Windows 10 1709+)                                                                |
+| ERROR_INVALID_PARAMETER                             | default                                      | Cloud Files rejected an argument, a bug in the ufs bindings: report it at <https://github.com/cloudfra/ufs/issues> with the log |
+| ERROR_FILE_NOT_FOUND                                | default                                      | the file was removed from the mounted file system                                                                               |
+| ERROR_DIRECTORY                                     | CfRegisterSyncRoot                           | the mount path is not a directory                                                                                               |
+| ERROR_PATH_NOT_FOUND                                | CfRegisterSyncRoot                           | create the mount directory first                                                                                                |
 
 Also add the filter-driver case: when `CfConnectSyncRoot` fails with
 `ERROR_CLOUD_FILE_PROVIDER_NOT_RUNNING` or `ERROR_NOT_SUPPORTED`, the

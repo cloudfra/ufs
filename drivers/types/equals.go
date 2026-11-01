@@ -30,5 +30,14 @@ func Equals(a, b fs.FS) bool {
 	if aType != bType || !aType.Comparable() {
 		return false
 	}
+	if aURIGet, aOk := a.(URIGet); aOk {
+		if bURIGet, bOk := b.(URIGet); bOk {
+			aURI, aErr := aURIGet.URI()
+			bURI, bErr := bURIGet.URI()
+			if aErr == nil && bErr == nil {
+				return aURI.String() == bURI.String()
+			}
+		}
+	}
 	return a == b
 }

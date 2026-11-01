@@ -60,10 +60,12 @@ linters:
               desc: "google.golang.org/grpc is not allowed"
             - pkg: "github.com/grpc-ecosystem/grpc-gateway/v2"
               desc: "github.com/grpc-ecosystem/grpc-gateway/v2 is not allowed"
-            - pkg: "github.com/go-git/go-git/v5"
-              desc: "github.com/go-git/go-git/v5 is not allowed"
+            - pkg: "github.com/go-git/go-git/v6"
+              desc: "github.com/go-git/go-git/v6 is not allowed"
             - pkg: "cloud.google.com/go/storage"
               desc: "cloud.google.com/go/storage is not allowed"
+            - pkg: "github.com/stretchr/testify"
+              desc: "github.com/stretchr/testify is not allowed"
   exclusions:
     paths:
       - "build/"

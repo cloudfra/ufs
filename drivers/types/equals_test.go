@@ -16,8 +16,21 @@ package types
 
 import (
 	"io/fs"
+	"net/url"
 	"testing"
 )
+
+type uriFS struct {
+	path string
+}
+
+func (uriFS) Open(string) (fs.File, error) {
+	return nil, fs.ErrNotExist
+}
+
+func (u uriFS) URI() (*url.URL, error) {
+	return url.Parse(u.path)
+}
 
 // comparableFS holds only comparable fields, so == on two file systems holding
 // it compares the values.
@@ -60,6 +73,24 @@ func TestEquals(t *testing.T) {
 		b    fs.FS
 		want bool
 	}{
+		{
+			name: "same uri",
+			a:    uriFS{path: "file:///one"},
+			b:    uriFS{path: "file:///one"},
+			want: true,
+		},
+		{
+			name: "different uri",
+			a:    uriFS{path: "file:///one"},
+			b:    uriFS{path: "file:///two"},
+			want: false,
+		},
+		{
+			name: "different type",
+			a:    uriFS{path: "file:///one"},
+			b:    comparableFS{id: 1},
+			want: false,
+		},
 		{
 			name: "the same value",
 			a:    comparableFS{id: 1},

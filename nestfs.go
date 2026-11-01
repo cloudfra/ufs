@@ -864,6 +864,9 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		}
 	}
 
+	// TODO: Compare the file systems the nestFS values wrap rather than the
+	// wrappers. types.Equals compares URIs and two separate mounts of one
+	// driver can share a URI, so these pointers are compared directly.
 	if srcLeaf.fsys == dstLeaf.fsys {
 		err = ops.Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
 	} else {

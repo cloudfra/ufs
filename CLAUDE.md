@@ -245,6 +245,12 @@ with `pathutil.ValidateFileName` and writes each file with MkdirAll + Create
 (not atomic, Perm ignored). Writing one file this way is the single-operation
 WriteFile. New drivers are covered by `BatchCreate` in `drivers/testing`.
 
+boltFS writes a batch in one transaction through `batchCommitter`
+(`drivers/boltfs/batch.go`), a group commit: a lone writer commits at once, and
+writers that arrive during a commit share the next one (unlike `bolt.DB.Batch`,
+which waits up to MaxBatchDelay). A failing request in a shared commit is
+retried alone so it fails only itself.
+
 ### Conventions
 
 * Keep structs private; expose construction via the public New() factory.

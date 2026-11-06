@@ -44,6 +44,10 @@ type MountServer interface {
 //
 // When ctx is canceled the file system is automatically unmounted.
 //
+// Mounting another volume while this one is mounted returns an error matching
+// [ErrMountLimit] on platforms that cannot serve two volumes safely.
+// [ReleaseMounts] unmounts every volume the process still holds.
+//
 // On platforms without a supported mount mechanism Mount returns an error.
 func Mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error) {
 	return mount(ctx, fsys, mountPath)

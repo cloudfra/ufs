@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/url"
+	"os"
 	"path"
 	"slices"
 	"sort"
@@ -619,6 +620,52 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 		return nil, rewritePathError(err, name, subName)
 	}
 	return polyfills.ToBufferedFile(f, false, mountFS.args.BufMode)
+}
+
+// OpenFile opens name with the os.OpenFile flags in flag and the permission
+// bits in perm, as the file system owning name carries them out. A file system
+// without types.OpenFileFS gets the flags emulated with what it does offer.
+//
+// A name that holds a mount, and the root of a file system, is a directory of
+// this file system whatever the file system below has there, so the flags are
+// settled before any of them reaches that file system: a write flag reports
+// [fs.ErrInvalid] and [os.O_CREATE] together with [os.O_EXCL] reports
+// [fs.ErrExist], which keeps a mount from being replaced by a file. A read-only
+// open of such a name lists its mounts along with whatever else is there.
+func (fsys *nestFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	if err := fsys.validPath("open", name); err != nil {
+		return nil, err
+	}
+
+	mountFS, subName, err := fsys.getFSAndSubpath(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if mountFS.isMountParent(subName) || subName == pathutil.CwdPath {
+		if flag&(os.O_CREATE|os.O_EXCL) == os.O_CREATE|os.O_EXCL {
+			return nil, ufserrors.NewPathError("open", name, fs.ErrExist)
+		}
+		if flag&(os.O_WRONLY|os.O_RDWR) != 0 {
+			isADir := fmt.Errorf("%q is a directory, %w", name, fs.ErrInvalid)
+			return nil, ufserrors.NewPathError("open", name, isADir)
+		}
+		return polyfills.ToFile(makeReadDirFile(mountFS, subName)), nil
+	}
+
+	f, err := polyfills.OpenFile(mountFS.fsys, subName, flag, perm)
+	if err != nil {
+		return nil, rewritePathError(err, name, subName)
+	}
+
+	if rdf, ok := f.(fs.ReadDirFile); ok {
+		info, statErr := f.Stat()
+		if statErr == nil && info.IsDir() {
+			return polyfills.ToFile(makeNestReadDirFile(mountFS, subName, rdf)), nil
+		}
+	}
+
+	return polyfills.ToBufferedFile(f, flag&(os.O_WRONLY|os.O_RDWR) == 0, mountFS.args.BufMode)
 }
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {

@@ -88,7 +88,20 @@ var (
 	_ fuseFileHandler = (*fuseFileHandle)(nil)
 )
 
+// volumeLimit is one because mounting brings up and tears down a mount helper
+// that inherits this process's file descriptors, which the kernel flushes
+// against the volume each one belongs to: with two volumes mounted, closing
+// one can wait forever on files held open on the other.
+const volumeLimit = 1
+
 func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error) {
+	// The slot is claimed before mounting so that no other volume can start
+	// while this mount's helpers are running, and is held until unmounting.
+	claimed, err := volumes.claim(mountPath)
+	if err != nil {
+		return nil, err
+	}
+
 	root := &fuseNode{fsys: fsys}
 
 	// TODO: Accept mount options (e.g. forwarding the URI query parameter
@@ -104,13 +117,17 @@ func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServe
 
 	server, err := fusefs.Mount(mountPath, root, opts)
 	if err != nil {
+		claimed.release()
 		return nil, err
 	}
 	if err := server.WaitMount(); err != nil {
+		// The slot stays claimed: the mount may have started anyway, and an
+		// untracked volume would leave the next mount exposed to it.
 		return nil, err
 	}
 
-	hostServer := &fuseHostServer{server: server}
+	hostServer := &fuseHostServer{server: server, volume: claimed}
+	claimed.setServer(hostServer)
 	go func() {
 		<-ctx.Done()
 		if err := hostServer.Close(); err != nil {
@@ -123,6 +140,7 @@ func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServe
 
 type fuseHostServer struct {
 	server *fuse.Server
+	volume *volume
 
 	// fuse.Server.Unmount is not safe to call from two goroutines, and both
 	// Close and the context watcher in mount call it.
@@ -135,6 +153,10 @@ type fuseHostServer struct {
 func (s *fuseHostServer) Close() error {
 	s.unmountOnce.Do(func() {
 		s.unmountErr = s.server.Unmount()
+		// Unmounting returned, so this volume can no longer affect another
+		// mount even if the helper reported an error. A close that never
+		// returns keeps the slot claimed and rejects further mounts.
+		s.volume.release()
 	})
 	return s.unmountErr
 }

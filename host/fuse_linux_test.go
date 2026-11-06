@@ -35,6 +35,41 @@ import (
 	"github.com/cloudfra/ufs/ops"
 )
 
+const (
+	// mountSlotPoll is how long a test waits before asking for the volume slot
+	// again.
+	mountSlotPoll = 10 * time.Millisecond
+	// mountSlotTimeout bounds that wait. A slot changes hands in milliseconds, so
+	// one still held after this long was never released.
+	mountSlotTimeout = 10 * time.Second
+)
+
+// mountWaitForSlot mounts fsys at mountPath, retrying while another test holds
+// the process's only volume slot.
+func mountWaitForSlot(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error) {
+	for start := time.Now(); ; {
+		server, err := Mount(ctx, fsys, mountPath)
+		if !errors.Is(err, ErrMountLimit) {
+			return server, err
+		}
+		if time.Since(start) > mountSlotTimeout {
+			return nil, fmt.Errorf("%w: no volume slot was freed within %s", err, mountSlotTimeout)
+		}
+		time.Sleep(mountSlotPoll)
+	}
+}
+
+// mountFailed reports a mount that did not happen. A volume slot that never
+// freed means this package left a volume mounted, so it fails instead of
+// skipping the way a runner without a mount mechanism does.
+func mountFailed(t *testing.T, err error) {
+	t.Helper()
+	if errors.Is(err, ErrMountLimit) {
+		t.Fatalf("%v", err)
+	}
+	fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
+}
+
 func requireFUSE(t *testing.T) {
 	t.Helper()
 	if _, err := osutil.Stat("/dev/fuse"); err != nil {
@@ -53,17 +88,16 @@ func testMount(t *testing.T, fsys types.ReadFS) string {
 	requireFUSE(t)
 	mountDir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
-	server, err := Mount(ctx, fsys, mountDir)
+	t.Cleanup(cancel)
+	server, err := mountWaitForSlot(ctx, fsys, mountDir)
 	if err != nil {
-		cancel()
-		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
+		mountFailed(t, err)
 		return ""
 	}
 	t.Cleanup(func() {
 		if err := server.Close(); err != nil {
 			t.Errorf("unmount cleanup: %v", err)
 		}
-		cancel()
 	})
 	return mountDir
 }
@@ -554,9 +588,9 @@ func TestMountClose(t *testing.T) {
 	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := t.TempDir()
-	server, err := Mount(t.Context(), fsys, mountDir)
+	server, err := mountWaitForSlot(t.Context(), fsys, mountDir)
 	if err != nil {
-		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
+		mountFailed(t, err)
 		return
 	}
 
@@ -594,9 +628,9 @@ func TestMountContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	mountDir := t.TempDir()
-	server, err := Mount(ctx, fsys, mountDir)
+	server, err := mountWaitForSlot(ctx, fsys, mountDir)
 	if err != nil {
-		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
+		mountFailed(t, err)
 		return
 	}
 	defer validateClose(t, server)()

@@ -178,6 +178,7 @@ type projfsMountServer struct {
 	enumSessions sync.Map
 	done         chan struct{}
 	closeOnce    sync.Once
+	volume       *volume
 
 	// GetFileData names a file by its path when its placeholder was created,
 	// even after a rename, so every file placeholder carries an ID in its
@@ -651,6 +652,10 @@ func cancelCommandCB(callbackData *prjCallbackData) uintptr {
 	return 0
 }
 
+// volumeLimit is zero because starting ProjFS virtualization runs no helper
+// process, so volumes here cannot block on each other.
+const volumeLimit = 0
+
 func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error) {
 	slog.Info("projfs: mount starting",
 		"mountPath", mountPath,
@@ -780,12 +785,20 @@ func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServe
 		"optsMappingsCount", opts.NotificationMappingsCount,
 		"instanceContext", s.id,
 	)
+	claimed, err := volumes.claim(mountPath)
+	if err != nil {
+		projfsServers.Delete(s.id)
+		return nil, err
+	}
+	s.volume = claimed
 	projfsServers.Store(s.id, s)
 	if err := prjStartVirtualizing(rootPathPtr, &cbs, s.id, &opts, &s.nsCtx); err != nil {
 		projfsServers.Delete(s.id)
+		claimed.release()
 		slog.Error("projfs: StartVirtualizing failed", "mountPath", mountPath, "error", err, "errorType", fmt.Sprintf("%T", err))
 		return nil, fmt.Errorf("cannot start ProjFS virtualization at %q: %w", mountPath, err)
 	}
+	claimed.setServer(s)
 	slog.Info("projfs: virtualization started successfully",
 		"mountPath", mountPath,
 		"nsCtx", fmt.Sprintf("0x%X", s.nsCtx),
@@ -809,6 +822,7 @@ func (s *projfsMountServer) Close() error {
 		// the server once it is unregistered.
 		prjStopVirtualizing(s.nsCtx)
 		projfsServers.Delete(s.id)
+		s.volume.release()
 		close(s.done)
 		slog.Info("projfs: virtualization stopped")
 	})

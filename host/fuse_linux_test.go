@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -35,19 +34,6 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/ops"
 )
-
-// mountMu admits one test volume at a time because Mount holds a volume slot
-// for the whole life of a mount: a test that mounts while another test's
-// volume is still mounted gets ErrMountLimit.
-var mountMu sync.Mutex
-
-// lockMounts holds the package's mount slot for t and releases it after t's
-// cleanups have detached the volume, so a test may mount only once.
-func lockMounts(t *testing.T) {
-	t.Helper()
-	mountMu.Lock()
-	t.Cleanup(mountMu.Unlock)
-}
 
 func requireFUSE(t *testing.T) {
 	t.Helper()
@@ -66,7 +52,6 @@ func testMount(t *testing.T, fsys types.ReadFS) string {
 	t.Helper()
 	requireFUSE(t)
 	mountDir := t.TempDir()
-	lockMounts(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	server, err := Mount(ctx, fsys, mountDir)
 	if err != nil {
@@ -569,7 +554,6 @@ func TestMountClose(t *testing.T) {
 	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := t.TempDir()
-	lockMounts(t)
 	server, err := Mount(t.Context(), fsys, mountDir)
 	if err != nil {
 		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))
@@ -610,7 +594,6 @@ func TestMountContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	mountDir := t.TempDir()
-	lockMounts(t)
 	server, err := Mount(ctx, fsys, mountDir)
 	if err != nil {
 		fuseSkipOrFatal(t, fmt.Sprintf("Mount: %v", err))

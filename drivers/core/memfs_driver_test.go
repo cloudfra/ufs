@@ -26,4 +26,11 @@ func TestMemFSDriver(t *testing.T) {
 	ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, func(_ *testing.T) types.SimpleFS {
 		return core.MakeMemFS("memory://test")
 	})
+	ufsdriversTesting.OpenFile(t, ufsdriversTesting.Args{}, func(_ *testing.T) types.OpenFileFS {
+		ofs, ok := core.MakeMemFS("memory://test").(types.OpenFileFS)
+		if !ok {
+			t.Fatal("memFS does not implement types.OpenFileFS")
+		}
+		return ofs
+	})
 }

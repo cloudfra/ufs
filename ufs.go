@@ -51,11 +51,13 @@ import (
 )
 
 // FS is the top-level file system interface returned by the public
-// constructors. It extends [WriteFS] with renaming ([RenameFileFS]) and
-// releasing the resources a mount holds on to ([types.ReleaseFS]), and will add
-// file copying ([CopyFileFS]). Every concrete value is a *nestFS.
+// constructors. It extends [WriteFS] with generalized opens ([types.OpenFileFS]),
+// renaming ([RenameFileFS]) and releasing the resources a mount holds on to
+// ([types.ReleaseFS]), and will add file copying ([CopyFileFS]). Every concrete
+// value is a *nestFS.
 type FS interface {
 	types.WriteFS
+	types.OpenFileFS
 	types.RenameFileFS
 	types.ReleaseFS
 

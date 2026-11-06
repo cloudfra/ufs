@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/fs"
+	"os"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -108,6 +109,63 @@ func BenchmarkMemFSReadFileLarge(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// BenchmarkMemFSOpenFileSmall prices an OpenFile of a small file against Open,
+// which already copies the same content into its handle.
+func BenchmarkMemFSOpenFileSmall(b *testing.B) {
+	benchmarkMemFSOpen(b, "small.bin", bytes.Repeat([]byte("X"), 1<<10))
+}
+
+// BenchmarkMemFSOpenFileLarge prices the same pair once the copied content is
+// large enough for an extra copy per open to show up.
+func BenchmarkMemFSOpenFileLarge(b *testing.B) {
+	benchmarkMemFSOpen(b, "large.bin", bytes.Repeat([]byte("Z"), 10<<20))
+}
+
+// benchmarkMemFSOpen opens an existing name read-only through both entry points
+// so the handle copy OpenFile takes can be compared with the one Open takes.
+func benchmarkMemFSOpen(b *testing.B, name string, content []byte) {
+	fsys := mustMemFS(b, "memory://bench")
+	ofs, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		b.Fatal("memFS does not implement types.OpenFileFS")
+	}
+	f, err := fsys.Create(name)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := f.Write(content); err != nil {
+		b.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		b.Fatal(err)
+	}
+
+	b.Run("OpenFile", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			handle, err := ofs.OpenFile(name, os.O_RDONLY, 0)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := handle.Close(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("Open", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			handle, err := fsys.Open(name)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := handle.Close(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func BenchmarkMemFSGlob(b *testing.B) {

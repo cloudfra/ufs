@@ -31,4 +31,16 @@ func TestLocalFSDriver(t *testing.T) {
 		}
 		return fsys
 	})
+	ufsdriversTesting.OpenFile(t, func(t *testing.T) types.OpenFileFS {
+		dir := t.TempDir()
+		fsys, err := core.MakeLocalFS(dir)
+		if err != nil {
+			t.Fatalf("cannot create localFS %q, %s", dir, err)
+		}
+		openFS, ok := fsys.(types.OpenFileFS)
+		if !ok {
+			t.Fatalf("localFS %q does not implement types.OpenFileFS", dir)
+		}
+		return openFS
+	})
 }

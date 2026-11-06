@@ -32,3 +32,16 @@ TAR = tar
 SEVENZIP = 7z
 
 include Makefile_build.mk
+
+# Runs the deflake command over the host package alone and verbosely, so a
+# mount that wedges names the test it stopped in: go test streams a single
+# package's output as it is produced, while a suite buffers each package's
+# output until that package finishes. Its own timeout is below the CI step's,
+# so go test reports the stuck test and dumps the stack of every goroutine
+# before the runner cancels the step and takes the log with it.
+HOST_TEST_TIMEOUT = 5m
+
+test-host: testassets
+	CGO_ENABLED=1 $(GO) test -shuffle=on -tags testing $(GO_RACE) ./host/... -cover -count $(GO_TEST_COUNT) -test.short -timeout $(HOST_TEST_TIMEOUT) -v
+
+.PHONY: test-host

@@ -87,10 +87,29 @@ jobs:
         run: make tools -j"$(nproc)"
       - name: Lint
         run: make lint
+      # Temporary while a wedged FUSE mount can stop a test run: a per-step
+      # timeout turns that into a step failure a few minutes in instead of
+      # letting the run consume the whole job timeout, and leaves the rest of
+      # the job's steps, including the diagnostic step below, running. The job
+      # keeps its 45 minutes because a passing Build Linux needs about 32.
+      - name: Test (Host, Verbose)
+        timeout-minutes: 10
+        run: make test-host
       - name: Test
+        timeout-minutes: 10
         run: make test
       - name: Test (Deflake)
+        timeout-minutes: 10
         run: make test-deflake
+      # Reports everything readable about the run that just ended, while the
+      # processes it left behind are still there: the mounts, the mount
+      # helpers, the kernel stack of each thread that can hold a mount, and
+      # what the kernel logged. Run with sudo because /proc/<pid>/stack and
+      # /sys/fs/fuse/connections are readable only by root.
+      - name: Diagnose Tests
+        if: always()
+        continue-on-error: true
+        run: sudo ./scripts/prepare-ci.sh diagnose
       - name: Coverage
         run: make coverage.txt coverage.xml
       - name: Push Code Coverage

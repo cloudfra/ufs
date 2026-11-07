@@ -1311,6 +1311,11 @@ func TestDownloadFileChecksumSurvivesRedirect(t *testing.T) {
 	}
 }
 
+var (
+	errSyncFailed  = errors.New("sync failed")
+	errCloseFailed = errors.New("close failed")
+)
+
 func TestCopyLimited(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1338,6 +1343,152 @@ func TestCopyLimited(t *testing.T) {
 			}
 			if got := dst.String(); got != tc.content {
 				t.Errorf("copyLimited() wrote %q, want %q", got, tc.content)
+			}
+		})
+	}
+}
+
+// dirSyncerFake stands in for an opened download directory so a test can
+// control what its calls report.
+type dirSyncerFake struct {
+	openErr    error
+	syncErr    error
+	closeErr   error
+	openCalls  int
+	syncCalls  int
+	closeCalls int
+	dir        string
+}
+
+func (d *dirSyncerFake) openDir(dir string) (osutil.DirSyncer, error) {
+	d.openCalls++
+	d.dir = dir
+	if d.openErr != nil {
+		return nil, d.openErr
+	}
+	return d, nil
+}
+
+func (d *dirSyncerFake) Sync() error {
+	d.syncCalls++
+	return d.syncErr
+}
+
+func (d *dirSyncerFake) Close() error {
+	d.closeCalls++
+	return d.closeErr
+}
+
+var errOpenDirFailed = errors.New("open dir failed")
+
+// TestPublishDownload covers publishing a finished download, including a
+// download directory that reports failure.
+func TestPublishDownload(t *testing.T) {
+	tests := []struct {
+		name           string
+		openErr        error
+		syncErr        error
+		closeErr       error
+		missing        bool
+		wantErr        error
+		wantMessage    string
+		wantFile       bool
+		wantSyncCalls  int
+		wantCloseCalls int
+	}{
+		{name: "all succeed", wantFile: true, wantSyncCalls: 1, wantCloseCalls: 1},
+		{
+			name:           "directory cannot be opened",
+			openErr:        errOpenDirFailed,
+			wantErr:        errOpenDirFailed,
+			wantMessage:    "cannot publish downloaded file",
+			wantSyncCalls:  0,
+			wantCloseCalls: 0,
+		},
+		{
+			name:        "directory cannot be synced",
+			syncErr:     errSyncFailed,
+			wantErr:     errSyncFailed,
+			wantMessage: "cannot sync directory",
+			// A failed sync leaves the entry's durability unproven, so the
+			// download reports failure and publishes nothing.
+			wantFile:       false,
+			wantSyncCalls:  1,
+			wantCloseCalls: 1,
+		},
+		{
+			name:           "directory cannot be closed",
+			closeErr:       errCloseFailed,
+			wantErr:        errCloseFailed,
+			wantMessage:    "cannot close directory",
+			wantFile:       false,
+			wantSyncCalls:  1,
+			wantCloseCalls: 1,
+		},
+		{
+			name:           "rename fails",
+			missing:        true,
+			wantErr:        fs.ErrNotExist,
+			wantMessage:    "cannot publish downloaded file",
+			wantSyncCalls:  0,
+			wantCloseCalls: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			root, err := osutil.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := root.Close(); err != nil {
+					t.Errorf("closing the root of %q: %v", dir, err)
+				}
+			})
+			partial := filepath.Join(dir, "archive.zip"+partialFileSuffix)
+			final := filepath.Join(dir, "archive.zip")
+			if !tc.missing {
+				if err := osutil.WriteFile(partial, testPayload); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fake := &dirSyncerFake{openErr: tc.openErr, syncErr: tc.syncErr, closeErr: tc.closeErr}
+
+			err = publishDownload(root, fake.openDir, dir, "archive.zip", "archive.zip"+partialFileSuffix)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("publishDownload() = %v, want nil", err)
+				}
+			} else {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("publishDownload() = %v, want an error wrapping %v", err, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantMessage) {
+					t.Errorf("publishDownload() = %v, want a message containing %q", err, tc.wantMessage)
+				}
+			}
+			if fake.openCalls != 1 {
+				t.Errorf("directory open calls = %d, want 1", fake.openCalls)
+			}
+			if fake.dir != dir {
+				t.Errorf("opened directory %q, want %q", fake.dir, dir)
+			}
+			if _, statErr := osutil.Stat(final); tc.wantFile {
+				if statErr != nil {
+					t.Errorf("stat of published file: %v", statErr)
+				}
+			} else if !errors.Is(statErr, fs.ErrNotExist) {
+				t.Errorf("stat of %q = %v, want fs.ErrNotExist", final, statErr)
+			}
+			if _, statErr := osutil.Stat(partial); !errors.Is(statErr, fs.ErrNotExist) {
+				t.Errorf("stat of %q = %v, want fs.ErrNotExist", partial, statErr)
+			}
+			if fake.syncCalls != tc.wantSyncCalls {
+				t.Errorf("directory sync calls = %d, want %d", fake.syncCalls, tc.wantSyncCalls)
+			}
+			if fake.closeCalls != tc.wantCloseCalls {
+				t.Errorf("directory close calls = %d, want %d", fake.closeCalls, tc.wantCloseCalls)
 			}
 		})
 	}
@@ -1407,6 +1558,82 @@ func TestDownloadFileInterruptedTransferLeavesNothing(t *testing.T) {
 	}
 	if _, statErr := osutil.Stat(filepath.Join(dir, "truncated.zip"+partialFileSuffix)); !errors.Is(statErr, fs.ErrNotExist) {
 		t.Errorf("stat of the partial file = %v, want fs.ErrNotExist", statErr)
+	}
+}
+
+// TestDownloadFileSyncDirectoryFailure feeds the download path a directory
+// handle that misbehaves, which the real one gives no way to provoke.
+func TestDownloadFileSyncDirectoryFailure(t *testing.T) {
+	tests := []struct {
+		name        string
+		fake        *dirSyncerFake
+		wantErr     error
+		wantMessage string
+	}{
+		{
+			name:        "directory cannot be opened",
+			fake:        &dirSyncerFake{openErr: errOpenDirFailed},
+			wantErr:     errOpenDirFailed,
+			wantMessage: "cannot publish downloaded file",
+		},
+		{
+			name:        "directory cannot be synced",
+			fake:        &dirSyncerFake{syncErr: errSyncFailed},
+			wantErr:     errSyncFailed,
+			wantMessage: "cannot sync directory",
+		},
+		{
+			name:        "directory cannot be closed",
+			fake:        &dirSyncerFake{closeErr: errCloseFailed},
+			wantErr:     errCloseFailed,
+			wantMessage: "cannot close directory",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := testServer(t)
+			dir := t.TempDir()
+
+			path, err := downloadFileWith(t.Context(), ts.Client(), dir, ts.URL+"/testassets.zip", tc.fake.openDir)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("downloadFileWith() = %v, want an error wrapping %v", err, tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantMessage) {
+				t.Errorf("downloadFileWith() = %v, want a message containing %q", err, tc.wantMessage)
+			}
+			if path != "" {
+				t.Errorf("downloadFileWith() = %q, want no path alongside the error", path)
+			}
+			// A failed durability step is a failed download: nothing is left
+			// behind, so a retry is not trapped by the existing-file rule.
+			assertEmptyDir(t, dir)
+		})
+	}
+}
+
+// TestDownloadFileRetryAfterPublishFailure checks that a download that failed
+// in the publish step can be retried into the same destination.
+func TestDownloadFileRetryAfterPublishFailure(t *testing.T) {
+	ts := testServer(t)
+	dir := t.TempDir()
+	uri := ts.URL + "/testassets.zip"
+
+	if _, err := downloadFileWith(t.Context(), ts.Client(), dir, uri, (&dirSyncerFake{syncErr: errSyncFailed}).openDir); err == nil {
+		t.Fatal("downloadFileWith() = nil, want the injected sync failure")
+	}
+	assertEmptyDir(t, dir)
+
+	path, err := DownloadFileWith(t.Context(), ts.Client(), dir, uri)
+	if err != nil {
+		t.Fatalf("retry after a publish failure = %v", err)
+	}
+	got, err := osutil.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, testPayload) {
+		t.Errorf("retried download holds %d bytes, want the %d byte payload", len(got), len(testPayload))
 	}
 }
 

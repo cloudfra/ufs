@@ -15,6 +15,7 @@
 package testing
 
 import (
+	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -50,9 +51,18 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
 	DirFileConflicts(t, args, createWriteFSFunc)
 	Rename(t, args, createWriteFSFunc)
 	BatchCreate(t, args, createWriteFSFunc)
-	ReadFS(t, args, func(t *testing.T) types.ReadFS {
-		return createFSFunc(t)
-	})
+
+	exampleFS := createFSFunc(t)
+	if _, ok := exampleFS.(types.CopyFileFS); ok {
+		CopyFileFS(t, args, func(t *testing.T) fs.FS {
+			return createFSFunc(t)
+		})
+	}
+	if _, ok := exampleFS.(types.ReadFS); ok {
+		ReadFS(t, args, func(t *testing.T) types.ReadFS {
+			return createFSFunc(t)
+		})
+	}
 }
 
 // WriteFile creates name in fsys with content, stopping the test if Create,

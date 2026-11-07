@@ -53,6 +53,9 @@ func OpenFile(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Ope
 	openFileKeepExisting(t, args, createFSFunc)
 	openFileAppend(t, args, createFSFunc)
 	openFileAccess(t, args, createFSFunc)
+	openFileReadAt(t, args, createFSFunc)
+	openFileSeek(t, args, createFSFunc)
+	openFileClosed(t, args, createFSFunc)
 	openFileDirectory(t, args, createFSFunc)
 	openFileInvalidPaths(t, args, createFSFunc)
 	openFileReopen(t, args, createFSFunc)
@@ -188,6 +191,27 @@ func openFileTruncate(t *testing.T, _ Args, createFSFunc func(t *testing.T) type
 		if got := readOpenFile(t, fsys, "trunc.txt"); got != "short" {
 			t.Errorf("truncated file = %q, want %q", got, "short")
 		}
+
+		// O_TRUNC also empties what the handle that truncated the file reads
+		// back, not only what a later open sees.
+		writeOpenFile(t, fsys, "truncrw.txt", "long content")
+		g, err := fsys.OpenFile("truncrw.txt", os.O_RDWR|os.O_TRUNC, openFilePerm)
+		if err != nil {
+			t.Fatalf("OpenFile(truncrw.txt, O_RDWR|O_TRUNC) = %v, want nil", err)
+		}
+		if n, err := g.Read(make([]byte, 4)); n != 0 || !errors.Is(err, io.EOF) {
+			t.Errorf("Read on a freshly truncated O_RDWR handle = %d, %v, want 0, %v", n, err, io.EOF)
+		}
+		if _, err := g.WriteString("short"); err != nil {
+			t.Fatalf("WriteString = %v, want nil", err)
+		}
+		if err := g.Close(); err != nil {
+			t.Fatalf("Close = %v, want nil", err)
+		}
+		if got := readOpenFile(t, fsys, "truncrw.txt"); got != "short" {
+			t.Errorf("truncated file read through its own handle = %q, want %q", got, "short")
+		}
+
 		// O_TRUNC on a read-only open is deliberately untested: POSIX leaves it
 		// unspecified and localFS disagrees across platforms, refusing the open
 		// on Windows with "Access is denied" and truncating on Linux.
@@ -247,6 +271,38 @@ func openFileAppend(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.
 		}
 		if got := readOpenFile(t, fsys, "app.txt"); got != "first second third" {
 			t.Errorf("appended file = %q, want %q", got, "first second third")
+		}
+
+		// O_APPEND with O_CREATE starts from an empty file when the name is new.
+		g, err := fsys.OpenFile("new.txt", os.O_WRONLY|os.O_CREATE|os.O_APPEND, openFilePerm)
+		if err != nil {
+			t.Fatalf("OpenFile(new.txt, O_CREATE|O_APPEND) = %v, want nil", err)
+		}
+		if _, err := g.WriteString("first"); err != nil {
+			t.Fatalf("WriteString = %v, want nil", err)
+		}
+		if err := g.Close(); err != nil {
+			t.Fatalf("Close = %v, want nil", err)
+		}
+		if got := readOpenFile(t, fsys, "new.txt"); got != "first" {
+			t.Errorf("appended to a created file = %q, want %q", got, "first")
+		}
+
+		// O_TRUNC empties the name when the file is opened, so an append flag
+		// carried along with it starts from nothing.
+		writeOpenFile(t, fsys, "truncapp.txt", "before")
+		h, err := fsys.OpenFile("truncapp.txt", os.O_WRONLY|os.O_TRUNC|os.O_APPEND, openFilePerm)
+		if err != nil {
+			t.Fatalf("OpenFile(truncapp.txt, O_TRUNC|O_APPEND) = %v, want nil", err)
+		}
+		if _, err := h.WriteString("after"); err != nil {
+			t.Fatalf("WriteString = %v, want nil", err)
+		}
+		if err := h.Close(); err != nil {
+			t.Fatalf("Close = %v, want nil", err)
+		}
+		if got := readOpenFile(t, fsys, "truncapp.txt"); got != "after" {
+			t.Errorf("appending to a truncated file = %q, want %q", got, "after")
 		}
 	})
 }
@@ -314,6 +370,244 @@ func openFileAccess(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.
 		}
 		if err := f.Close(); err != nil {
 			t.Fatalf("Close = %v, want nil", err)
+		}
+	})
+}
+
+// openFileReadAt pins the offset-addressed read: it must return the bytes held
+// at the offset it is handed, and leave the handle's own position alone.
+func openFileReadAt(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
+	t.Run("OpenFileReadAt", func(t *testing.T) {
+		t.Parallel()
+		fsys := createFSFunc(t)
+		t.Cleanup(closeOpenFileFS(t, fsys))
+
+		writeOpenFile(t, fsys, "readat.txt", "0123456789")
+
+		for _, tc := range []struct {
+			name    string
+			offset  int64
+			size    int
+			want    string
+			wantEOF bool
+		}{
+			{name: "start", offset: 0, size: 4, want: "0123"},
+			{name: "middle", offset: 4, size: 4, want: "4567"},
+			{name: "across_the_end", offset: 8, size: 4, want: "89", wantEOF: true},
+			{name: "at_the_end", offset: 10, size: 4, want: "", wantEOF: true},
+			{name: "past_the_end", offset: 14, size: 4, want: "", wantEOF: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f, err := fsys.OpenFile("readat.txt", os.O_RDONLY, openFilePerm)
+				if err != nil {
+					t.Fatalf("OpenFile(readat.txt, O_RDONLY) = %v, want nil", err)
+				}
+				buf := make([]byte, tc.size)
+				n, err := f.ReadAt(buf, tc.offset)
+				if n != len(tc.want) {
+					t.Errorf("ReadAt at %d read %d bytes, want %d", tc.offset, n, len(tc.want))
+				}
+				if got := string(buf[:n]); got != tc.want {
+					t.Errorf("ReadAt at %d = %q, want %q", tc.offset, got, tc.want)
+				}
+				if tc.wantEOF {
+					if !errors.Is(err, io.EOF) {
+						t.Errorf("ReadAt at %d = %v, want %v", tc.offset, err, io.EOF)
+					}
+				} else if err != nil {
+					t.Errorf("ReadAt at %d = %v, want nil", tc.offset, err)
+				}
+				if err := f.Close(); err != nil {
+					t.Errorf("Close = %v, want nil", err)
+				}
+			})
+		}
+
+		t.Run("negative_offset", func(t *testing.T) {
+			t.Parallel()
+			f, err := fsys.OpenFile("readat.txt", os.O_RDONLY, openFilePerm)
+			if err != nil {
+				t.Fatalf("OpenFile(readat.txt, O_RDONLY) = %v, want nil", err)
+			}
+			// Only the refusal is pinned. localFS reports a bare message from the
+			// os package while an in-memory file system reports fs.ErrInvalid.
+			buf := make([]byte, 4)
+			if n, err := f.ReadAt(buf, -1); n != 0 || err == nil {
+				t.Errorf("ReadAt at -1 = %d, %v, want 0 and an error", n, err)
+			}
+			if err := f.Close(); err != nil {
+				t.Errorf("Close = %v, want nil", err)
+			}
+		})
+
+		t.Run("position_unchanged", func(t *testing.T) {
+			t.Parallel()
+			f, err := fsys.OpenFile("readat.txt", os.O_RDONLY, openFilePerm)
+			if err != nil {
+				t.Fatalf("OpenFile(readat.txt, O_RDONLY) = %v, want nil", err)
+			}
+			buf := make([]byte, 3)
+			if n, err := f.Read(buf); n != 3 || err != nil || string(buf) != "012" {
+				t.Fatalf("Read = %d, %v, %q, want 3, nil, %q", n, err, string(buf), "012")
+			}
+			// The ReadAt is deliberately aimed away from the position the handle
+			// has reached, so a ReadAt that moved it would show up next.
+			if n, err := f.ReadAt(buf, 6); n != 3 || err != nil || string(buf) != "678" {
+				t.Fatalf("ReadAt at 6 = %d, %v, %q, want 3, nil, %q", n, err, string(buf), "678")
+			}
+			if n, err := f.Read(buf); n != 3 || err != nil || string(buf) != "345" {
+				t.Errorf("Read after a ReadAt = %d, %v, %q, want 3, nil, %q", n, err, string(buf), "345")
+			}
+			if err := f.Close(); err != nil {
+				t.Errorf("Close = %v, want nil", err)
+			}
+		})
+	})
+}
+
+// openFileSeek pins where a handle positions itself for the next read or write,
+// including the hole that a write past the end of a file leaves behind.
+func openFileSeek(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
+	t.Run("OpenFileSeek", func(t *testing.T) {
+		t.Parallel()
+		fsys := createFSFunc(t)
+		t.Cleanup(closeOpenFileFS(t, fsys))
+
+		writeOpenFile(t, fsys, "seek.txt", "abcdef")
+
+		for _, tc := range []struct {
+			name     string
+			from     int64
+			offset   int64
+			whence   int
+			wantPos  int64
+			wantRead string
+			wantEOF  bool
+		}{
+			{name: "start", from: -1, offset: 2, whence: io.SeekStart, wantPos: 2, wantRead: "cd"},
+			{name: "current", from: 1, offset: 2, whence: io.SeekCurrent, wantPos: 3, wantRead: "de"},
+			{name: "end", from: -1, offset: -2, whence: io.SeekEnd, wantPos: 4, wantRead: "ef"},
+			{name: "past_the_end", from: -1, offset: 20, whence: io.SeekStart, wantPos: 20, wantEOF: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				f, err := fsys.OpenFile("seek.txt", os.O_RDONLY, openFilePerm)
+				if err != nil {
+					t.Fatalf("OpenFile(seek.txt, O_RDONLY) = %v, want nil", err)
+				}
+				if tc.from >= 0 {
+					if pos, err := f.Seek(tc.from, io.SeekStart); pos != tc.from || err != nil {
+						t.Fatalf("Seek(%d, io.SeekStart) = %d, %v, want %d, nil", tc.from, pos, err, tc.from)
+					}
+				}
+				pos, err := f.Seek(tc.offset, tc.whence)
+				if pos != tc.wantPos || err != nil {
+					t.Fatalf("Seek(%d, whence %d) = %d, %v, want %d, nil", tc.offset, tc.whence, pos, err, tc.wantPos)
+				}
+				buf := make([]byte, 2)
+				n, err := f.Read(buf)
+				if n != len(tc.wantRead) {
+					t.Fatalf("Read after Seek(%d, whence %d) read %d bytes, want %d", tc.offset, tc.whence, n, len(tc.wantRead))
+				}
+				if tc.wantEOF {
+					if !errors.Is(err, io.EOF) {
+						t.Fatalf("Read after Seek(%d, whence %d) = %v, want %v", tc.offset, tc.whence, err, io.EOF)
+					}
+				} else if err != nil {
+					t.Fatalf("Read after Seek(%d, whence %d) = %v, want nil", tc.offset, tc.whence, err)
+				}
+				if got := string(buf[:n]); got != tc.wantRead {
+					t.Errorf("Read after Seek(%d, whence %d) = %q, want %q", tc.offset, tc.whence, got, tc.wantRead)
+				}
+				if err := f.Close(); err != nil {
+					t.Errorf("Close = %v, want nil", err)
+				}
+			})
+		}
+
+		t.Run("hole_before_a_write", func(t *testing.T) {
+			t.Parallel()
+			f, err := fsys.OpenFile("hole.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, openFilePerm)
+			if err != nil {
+				t.Fatalf("OpenFile(hole.txt) = %v, want nil", err)
+			}
+			if _, err := f.WriteString("ab"); err != nil {
+				t.Fatalf("WriteString = %v, want nil", err)
+			}
+			if pos, err := f.Seek(4, io.SeekStart); pos != 4 || err != nil {
+				t.Fatalf("Seek(4, io.SeekStart) = %d, %v, want 4, nil", pos, err)
+			}
+			if _, err := f.WriteString("X"); err != nil {
+				t.Fatalf("WriteString past the end = %v, want nil", err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatalf("Close = %v, want nil", err)
+			}
+			if got := readOpenFile(t, fsys, "hole.txt"); got != "ab\x00\x00X" {
+				t.Errorf("a write past the end left %q, want %q", got, "ab\\0\\0X")
+			}
+		})
+
+		t.Run("refused_seeks", func(t *testing.T) {
+			t.Parallel()
+			f, err := fsys.OpenFile("seek.txt", os.O_RDONLY, openFilePerm)
+			if err != nil {
+				t.Fatalf("OpenFile(seek.txt, O_RDONLY) = %v, want nil", err)
+			}
+			// Only the refusal and the untouched position are pinned: localFS
+			// carries the bare EINVAL from seek(2), which matches no io/fs
+			// sentinel, and issue #548 decides what this refusal wraps. An
+			// unknown whence is deliberately not pinned here, because Windows
+			// keeps the move method at FILE_BEGIN for a whence it does not
+			// recognize, so the same call succeeds there.
+			pos, err := f.Seek(-1, io.SeekStart)
+			if pos != 0 || err == nil {
+				t.Errorf("Seek(-1, io.SeekStart) = %d, %v, want 0 and an error", pos, err)
+			}
+			if err := f.Close(); err != nil {
+				t.Errorf("Close = %v, want nil", err)
+			}
+		})
+	})
+}
+
+// openFileClosed wants a closed handle to refuse every read and write, which no
+// flag combination can show on its own.
+func openFileClosed(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
+	t.Run("OpenFileClosedHandle", func(t *testing.T) {
+		t.Parallel()
+		fsys := createFSFunc(t)
+		t.Cleanup(closeOpenFileFS(t, fsys))
+
+		f, err := fsys.OpenFile("closed.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, openFilePerm)
+		if err != nil {
+			t.Fatalf("OpenFile(closed.txt) = %v, want nil", err)
+		}
+		if _, err := f.WriteString("kept"); err != nil {
+			t.Fatalf("WriteString = %v, want nil", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatalf("Close = %v, want nil", err)
+		}
+		if _, err := f.Read(make([]byte, 4)); !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("Read after Close = %v, want %v", err, fs.ErrClosed)
+		}
+		if _, err := f.ReadAt(make([]byte, 4), 0); !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("ReadAt after Close = %v, want %v", err, fs.ErrClosed)
+		}
+		if _, err := f.Write([]byte("x")); !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("Write after Close = %v, want %v", err, fs.ErrClosed)
+		}
+		if _, err := f.WriteString("x"); !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("WriteString after Close = %v, want %v", err, fs.ErrClosed)
+		}
+		// What a closed handle does to Seek, Stat and a second Close is left
+		// unasserted: a plain os.File refuses all three while a handle that keeps
+		// its content in memory answers them, and no file system may rely on
+		// either.
+		if got := readOpenFile(t, fsys, "closed.txt"); got != "kept" {
+			t.Errorf("a closed handle left %q, want %q", got, "kept")
 		}
 	})
 }

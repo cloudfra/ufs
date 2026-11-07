@@ -16,8 +16,6 @@ package types
 
 import (
 	"fmt"
-	"io"
-	"io/fs"
 	"maps"
 	"path"
 	"strings"
@@ -161,12 +159,10 @@ type DeviceInfoGet interface {
 }
 
 // DeviceInfoGetFS is a file system that reports the devices backing its paths.
-// It combines [fs.FS] and [io.Closer] with [DeviceInfoGet], so callers holding a
-// mounted volume can ask which [DeviceInfo] backs each path. See
-// [DeviceInfoGet] and [DeviceInfoGet.DeviceInfo] for the layout of the returned
-// [DeviceMap].
+// It combines [SimpleFS] with [DeviceInfoGet], so callers holding a mounted
+// volume can ask which [DeviceInfo] backs each path. See [DeviceInfoGet] and
+// [DeviceInfoGet.DeviceInfo] for the layout of the returned [DeviceMap].
 type DeviceInfoGetFS interface {
-	fs.FS
+	SimpleFS
 	DeviceInfoGet
-	io.Closer
 }

@@ -14,14 +14,10 @@
 
 package types
 
-import (
-	"io/fs"
-)
-
 // RemoveFS provides file and directory deletion. It is embedded in [WriteFS],
 // so every writable backend must implement it.
 type RemoveFS interface {
-	fs.FS
+	SimpleFS
 
 	// Remove deletes the file or empty directory at name. It returns an error
 	// wrapping [fs.ErrNotExist] if name does not exist, or an error if name is

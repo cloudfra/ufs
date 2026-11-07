@@ -19,7 +19,7 @@ import "io/fs"
 // MkdirAllFS is an optional interface that a file system may implement to support
 // directory creation.
 type MkdirAllFS interface {
-	fs.FS
+	SimpleFS
 
 	// MkdirAll creates the directory at name and any missing parent directories,
 	// using perm for newly created nodes. It is a no-op if the directory already

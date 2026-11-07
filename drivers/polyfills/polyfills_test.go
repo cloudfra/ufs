@@ -39,7 +39,9 @@ var errNoSpace = errors.New("no space left on device")
 
 // store is the in-memory file system behind the fakes below. Its methods are
 // unexported so that each fake satisfies exactly the optional interfaces it
-// declares and no more, which is what makes the dispatch order testable.
+// declares and no more, which is what makes the dispatch order testable. Close
+// is the exception: every file-system interface in package types embeds
+// [io.Closer], so the fakes need it to satisfy the interfaces they claim.
 type store struct {
 	dirs  map[string]bool
 	files map[string][]byte
@@ -68,6 +70,10 @@ func newStore() *store {
 		perms: map[string]fs.FileMode{},
 	}
 }
+
+// Close satisfies the [io.Closer] that every file-system interface in package
+// types embeds. The store holds no resource, so it only reports success.
+func (s *store) Close() error { return nil }
 
 // seedDir and seedFile set up the state an operation starts from. seedDir
 // creates the whole chain, as a real file system would already hold it.

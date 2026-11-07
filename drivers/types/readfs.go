@@ -16,18 +16,15 @@ package types
 
 import (
 	"fmt"
-	"io"
 	"io/fs"
 )
 
-// ReadFS is a read-only file system. In addition to the standard [fs.FS]
-// interface it requires [io.Closer] for lifecycle management, the four
-// extended read interfaces from the standard library, and [fmt.Stringer] so
+// ReadFS is a read-only file system. It builds on [SimpleFS], adding the four
+// extended read interfaces from the standard library and [fmt.Stringer] so
 // that every implementation can describe itself. Callers should always Close
 // a ReadFS when they are done with it.
 type ReadFS interface {
-	fs.FS
-	io.Closer
+	SimpleFS
 	fs.ReadDirFS
 	fs.ReadFileFS
 	fs.ReadLinkFS

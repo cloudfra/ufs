@@ -19,7 +19,7 @@ import "io/fs"
 // MkdirFS is an optional interface that a file system may implement to support
 // single-level directory creation.
 type MkdirFS interface {
-	fs.FS
+	SimpleFS
 
 	// Mkdir creates the directory at name, using perm for the new node, without
 	// creating any missing parent directories: a missing parent is an error, not

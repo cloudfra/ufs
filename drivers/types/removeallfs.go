@@ -14,14 +14,10 @@
 
 package types
 
-import (
-	"io/fs"
-)
-
 // RemoveAllFS provides file and directory deletion. It is embedded in [WriteFS],
 // so every writable backend must implement it.
 type RemoveAllFS interface {
-	fs.FS
+	SimpleFS
 
 	// RemoveAll removes name and all contents beneath it. It is a no-op (returns
 	// nil) if name does not exist.

@@ -15,6 +15,7 @@
 package testing
 
 import (
+	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -41,18 +42,29 @@ var invalidPaths = []string{
 
 // FS runs the full read-write conformance suite against file systems
 // returned by createFSFunc.
-func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
+func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
+	exampleFS := createFSFunc(t)
+	if _, ok := exampleFS.(ufs.FS); ok {
+		testFS(t, args, createFSFunc)
+	} else if _, ok := exampleFS.(types.WriteFS); ok {
+		WriteFS(t, args, createFSFunc)
+	} else if _, ok := exampleFS.(types.ReadFS); ok {
+		ReadFS(t, args, createFSFunc)
+	} else {
+		t.Fatalf("createFSFunc must return a ufs.FS, types.WriteFS, or types.ReadFS; got %T", exampleFS)
+	}
+}
+
+func testFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
 	createWriteFSFunc := func(t *testing.T) types.WriteFS {
-		return createFSFunc(t)
+		return createFSFunc(t).(types.WriteFS)
 	}
 	MkdirAll(t, args, createWriteFSFunc)
 	ReadFile(t, args, createWriteFSFunc)
 	DirFileConflicts(t, args, createWriteFSFunc)
 	Rename(t, args, createWriteFSFunc)
 	BatchCreate(t, args, createWriteFSFunc)
-	ReadFS(t, args, func(t *testing.T) types.ReadFS {
-		return createFSFunc(t)
-	})
+	ReadFS(t, args, createWriteFSFunc)
 }
 
 // WriteFile creates name in fsys with content, stopping the test if Create,

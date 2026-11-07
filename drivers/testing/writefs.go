@@ -36,7 +36,7 @@ import (
 
 // WriteFS runs the write conformance suite against file systems returned by
 // createFSFunc.
-func WriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
+func WriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
 	writeFS(t, args, createFSFunc)
 
 	// TODO: This should work for all WriteFS implementations, but some backends (like gcsfs) don't support this yet. So we only run this test for WriteFS implementations that are not buckets.
@@ -48,7 +48,7 @@ func WriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Writ
 	}
 }
 
-func writeFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
+func writeFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
 	MkdirAll(t, args, createFSFunc)
 	ReadFile(t, args, createFSFunc)
 	DirFileConflicts(t, args, createFSFunc)
@@ -293,7 +293,7 @@ func wantDirTree(leaves []string, leafEntries ...string) map[string][]string {
 // MkdirAll verifies that MkdirAll creates every missing directory in a path,
 // that each one is reported as a directory and listed by its parent next to
 // its siblings, and that repeating the call on existing directories succeeds.
-func MkdirAll(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
+func MkdirAll(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
 	if args.Bucket {
 		t.Run("MkdirAll", func(t *testing.T) {
 			t.Parallel()
@@ -550,7 +550,7 @@ func mkdirForTest(tb testing.TB, fsys types.WriteFS, dirs ...string) {
 }
 
 // InvalidPathsForWriteFS verifies that write operations reject invalid paths.
-func InvalidPathsForWriteFS(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
+func InvalidPathsForWriteFS(t *testing.T, _ Args, createFS func(*testing.T) fs.FS) {
 	tests := []struct {
 		name   string
 		wantOp string

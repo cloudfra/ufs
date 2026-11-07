@@ -15,16 +15,16 @@
 package readwrapfs_test
 
 import (
+	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/drivers/wrappers/readwrapfs"
 )
 
 func TestReadWrapFSDriver(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{ReadOnly: true}, func(_ *testing.T) types.ReadFS {
+	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{ReadOnly: true}, func(_ *testing.T) fs.FS {
 		return readwrapfs.FromFS(core.MakeMemFS("memory://test"))
 	})
 }

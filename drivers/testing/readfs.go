@@ -20,7 +20,6 @@ import (
 	"io/fs"
 	"maps"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -29,7 +28,7 @@ import (
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
-func readFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadFS) {
+func readFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
 	Constructor(t, args, createFSFunc)
 	InvalidPathsForReadFS(t, args, createFSFunc)
 	String(t, args, createFSFunc)
@@ -37,27 +36,14 @@ func readFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadF
 
 // ReadFS runs the read-only conformance suite, including URI checks, against
 // file systems returned by createFSFunc.
-func ReadFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadFS) {
+func ReadFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
 	readFS(t, args, createFSFunc)
 	URI(t, args, createFSFunc)
 }
 
-// String verifies that the file system's String method returns a URI-like
-// description containing "//".
-func String(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.ReadFS) {
-	t.Run("String", func(t *testing.T) {
-		t.Parallel()
-		fsys := createFSFunc(t)
-		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-		if got := fsys.String(); !strings.Contains(got, "//") {
-			t.Errorf("%s.String() should contain %q: got: %q", fsys, "//", got)
-		}
-	})
-}
-
 // Constructor verifies that createFSFunc returns a non-nil file system that
 // can be closed repeatedly.
-func Constructor(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.ReadFS) {
+func Constructor(t *testing.T, _ Args, createFSFunc func(t *testing.T) fs.FS) {
 	t.Run("Constructor", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -71,10 +57,10 @@ func Constructor(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.Rea
 }
 
 // URI verifies that the file system reports a URI marked read-only.
-func URI(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.ReadFS) {
+func URI(t *testing.T, _ Args, createFSFunc func(t *testing.T) fs.FS) {
 	t.Run("URI", func(t *testing.T) {
 		t.Parallel()
-		fsys := createFSFunc(t)
+		fsys := mustURI(createFSFunc(t))
 		defer ufsTesting.ValidateClose(t, fsys)()
 
 		u, err := fsys.URI()
@@ -91,7 +77,7 @@ func URI(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.ReadFS) {
 }
 
 // InvalidPathsForReadFS verifies that read operations reject invalid paths.
-func InvalidPathsForReadFS(t *testing.T, _ Args, createFS func(*testing.T) types.ReadFS) {
+func InvalidPathsForReadFS(t *testing.T, _ Args, createFS func(*testing.T) fs.FS) {
 	tests := []struct {
 		name   string
 		wantOp string
@@ -187,4 +173,13 @@ func OpenWithNew(t *testing.T, uri string, want map[string]string) {
 			t.Errorf("ReadFile(%q) = %q, want %q", name, got, want[name])
 		}
 	}
+}
+
+func mustReadFS(t *testing.T, fsys fs.FS) types.ReadFS {
+	t.Helper()
+	readFS, ok := fsys.(types.ReadFS)
+	if !ok {
+		t.Fatalf("fsys %T does not implement types.ReadFS", fsys)
+	}
+	return readFS
 }

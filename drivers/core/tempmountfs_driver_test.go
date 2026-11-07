@@ -23,7 +23,7 @@ import (
 )
 
 func TestTempMountFS(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.WriteFS {
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.SimpleFS {
 		name := "temp://test"
 		fsys, err := core.NewTempMountFS(t.Context(), name, func(string) error { return nil })
 		if err != nil {

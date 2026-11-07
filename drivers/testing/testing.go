@@ -15,11 +15,11 @@
 package testing
 
 import (
-	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // Args for conformance tests.
@@ -40,29 +40,89 @@ var invalidPaths = []string{
 	"invalid/../path",
 }
 
-// FS runs the full read-write conformance suite against file systems
-// returned by createFSFunc.
-func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
-	createWriteFSFunc := func(t *testing.T) types.WriteFS {
-		return createFSFunc(t)
-	}
-	mkdirAll(t, args, createWriteFSFunc)
-	ReadFile(t, args, createWriteFSFunc)
-	DirFileConflicts(t, args, createWriteFSFunc)
-	Rename(t, args, createWriteFSFunc)
-	BatchCreate(t, args, createWriteFSFunc)
+// FS runs the conformance suite of every contract that the file system returned
+// by createFSFunc supports, at whatever depth that support goes.
+func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	t.Cleanup(ufsTesting.ValidateClose(t, createFSFunc(t)))
+	contracts(t, args, createFSFunc)
 
-	exampleFS := createFSFunc(t)
-	if _, ok := exampleFS.(types.CopyFileFS); ok {
-		CopyFileFS(t, args, func(t *testing.T) fs.FS {
-			return createFSFunc(t)
+	// A file system that writes is tested again through a nestFS view of
+	// itself, which needs a types.WriteFS to wrap.
+	//
+	// TODO: This should work for all writing file systems, but some backends
+	// (like gcsfs) don't support this yet, so buckets are left out.
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if ok && !args.Bucket {
+		contracts(t, args, func(t *testing.T) types.SimpleFS {
+			return ufs.WrapNestFS(t.Context(), createWriteFSFunc(t))
 		})
 	}
-	if _, ok := exampleFS.(types.ReadFS); ok {
-		ReadFS(t, args, func(t *testing.T) types.ReadFS {
-			return createFSFunc(t)
-		})
+}
+
+// contracts runs the public variant of each contract. Every variant checks for
+// itself whether the file system supports it, so this list stays unconditional.
+func contracts(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	MkdirAll(t, args, createFSFunc)
+	ReadFile(t, args, createFSFunc)
+	DirFileConflicts(t, args, createFSFunc)
+	InvalidPathsForWriteFS(t, args, createFSFunc)
+	ReadDir(t, args, createFSFunc)
+	Close(t, args, createFSFunc)
+	Create(t, args, createFSFunc)
+	Rename(t, args, createFSFunc)
+	BatchCreate(t, args, createFSFunc)
+	Conventions(t, args, createFSFunc)
+	CopyFileFS(t, args, createFSFunc)
+	ReadFS(t, args, createFSFunc)
+}
+
+// asWriteFS narrows createFSFunc to a constructor for [types.WriteFS],
+// reporting false when the write contracts do not apply to the file system.
+//
+// A read-only file system's writes have no observable result, so there is
+// nothing for the write contracts to check even when it implements one.
+func asWriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) (func(t *testing.T) types.WriteFS, bool) {
+	t.Helper()
+	if args.ReadOnly {
+		return nil, false
 	}
+	return writableFS(t, createFSFunc)
+}
+
+// writableFS narrows createFSFunc to a constructor for [types.WriteFS],
+// reporting false when the file system does not implement it.
+func writableFS(t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) (func(t *testing.T) types.WriteFS, bool) {
+	t.Helper()
+	if _, ok := createFSFunc(t).(types.WriteFS); !ok {
+		return nil, false
+	}
+	return func(t *testing.T) types.WriteFS {
+		return mustWriteFS(t, createFSFunc(t))
+	}, true
+}
+
+// asReadFS narrows createFSFunc to a constructor for [types.ReadFS], reporting
+// false when the file system does not implement it.
+func asReadFS(t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) (func(t *testing.T) types.ReadFS, bool) {
+	t.Helper()
+	if _, ok := createFSFunc(t).(types.ReadFS); !ok {
+		return nil, false
+	}
+	return func(t *testing.T) types.ReadFS {
+		return mustReadFS(t, createFSFunc(t))
+	}, true
+}
+
+// asCopyFileFS narrows createFSFunc to a constructor for [types.CopyFileFS],
+// reporting false when the file system does not implement it.
+func asCopyFileFS(t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) (func(t *testing.T) types.CopyFileFS, bool) {
+	t.Helper()
+	if _, ok := createFSFunc(t).(types.CopyFileFS); !ok {
+		return nil, false
+	}
+	return func(t *testing.T) types.CopyFileFS {
+		return mustCopyFileFS(t, createFSFunc)
+	}, true
 }
 
 // WriteFile creates name in fsys with content, stopping the test if Create,

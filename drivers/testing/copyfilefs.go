@@ -16,7 +16,6 @@ package testing
 
 import (
 	"errors"
-	"io"
 	"io/fs"
 	"maps"
 	"strings"
@@ -53,13 +52,15 @@ const copyFileLargeBufferSize = 64 * 1024
 //
 // A copy stands on its own, so editing the destination afterwards may not
 // change the source. The permission bits a copy carries are not checked.
-func CopyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
+func CopyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
 	if createFSFunc == nil {
 		t.Fatal("createFSFunc is nil")
 	}
-	copyFileFS(t, args, func(t *testing.T) types.CopyFileFS {
-		return mustCopyFileFS(t, createFSFunc)
-	})
+	createCopyFileFSFunc, ok := asCopyFileFS(t, createFSFunc)
+	if !ok {
+		return
+	}
+	copyFileFS(t, args, createCopyFileFSFunc)
 }
 
 func copyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
@@ -250,9 +251,7 @@ func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) 
 func newCopyFS(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileFS) (types.CopyFileFS, types.WriteFS) {
 	t.Helper()
 	fsys := createFSFunc(t)
-	if closer, ok := fsys.(io.Closer); ok {
-		t.Cleanup(ufsTesting.ValidateClose(t, closer))
-	}
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 	wFS, ok := fsys.(types.WriteFS)
 	if !ok {
 		t.Fatalf("%T does not implement types.WriteFS, which this suite needs to seed the tree", fsys)
@@ -331,7 +330,7 @@ func copyFileLargeContent() string {
 	return sb.String()
 }
 
-func mustCopyFileFS(t *testing.T, createFSFunc func(t *testing.T) fs.FS) types.CopyFileFS {
+func mustCopyFileFS(t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) types.CopyFileFS {
 	t.Helper()
 	fsys := createFSFunc(t)
 	cfsys, ok := fsys.(types.CopyFileFS)

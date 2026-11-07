@@ -26,7 +26,6 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/ops"
@@ -34,47 +33,17 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// WriteFS runs the write conformance suite against file systems returned by
-// createFSFunc.
-func WriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
-	writeFS(t, args, createFSFunc)
-
-	// TODO: This should work for all WriteFS implementations, but some backends (like gcsfs) don't support this yet. So we only run this test for WriteFS implementations that are not buckets.
-	if !args.Bucket {
-		// args.Bucket = false
-		writeFS(t, args, func(t *testing.T) types.WriteFS {
-			return ufs.WrapNestFS(t.Context(), createFSFunc(t))
-		})
-	}
-}
-
-func writeFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
-	mkdirAll(t, args, createFSFunc)
-	ReadFile(t, args, createFSFunc)
-	DirFileConflicts(t, args, createFSFunc)
-	InvalidPathsForWriteFS(t, args, createFSFunc)
-	ReadDir(t, args, createFSFunc)
-	Close(t, args, createFSFunc)
-	Create(t, args, createFSFunc)
-	Rename(t, args, createFSFunc)
-	BatchCreate(t, args, createFSFunc)
-	Conventions(t, args, createFSFunc)
-
-	exampleFS := createFSFunc(t)
-	if _, ok := exampleFS.(types.CopyFileFS); ok {
-		CopyFileFS(t, args, func(t *testing.T) fs.FS {
-			return createFSFunc(t)
-		})
-	}
-
-	readFS(t, args, func(t *testing.T) types.ReadFS {
-		return createFSFunc(t)
-	})
-}
-
 // ReadDir verifies that fs.ReadDirFS and fs.ReadDirFile return the expected
 // entries for a created directory tree.
-func ReadDir(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
+func ReadDir(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	readDir(t, args, createWriteFSFunc)
+}
+
+func readDir(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
 	// TODO: Add some tests here for buckets.
 	if args.Bucket {
 		return
@@ -228,7 +197,15 @@ func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name strin
 // Conventions copies the ufs test assets into the file system with
 // [ops.Rsync] and verifies the result satisfies the [fstest.TestFS]
 // conventions for every copied file.
-func Conventions(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.WriteFS) {
+func Conventions(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	conventions(t, args, createWriteFSFunc)
+}
+
+func conventions(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.WriteFS) {
 	t.Run("Conventions", func(t *testing.T) {
 		t.Parallel()
 		srcFS := ufsTesting.TestAssetsFS()
@@ -299,7 +276,15 @@ func wantDirTree(leaves []string, leafEntries ...string) map[string][]string {
 }
 
 // ReadFile verifies that data written to a file can be read back.
-func ReadFile(t *testing.T, _ Args, createFSFunc func(*testing.T) types.WriteFS) {
+func ReadFile(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	readFile(t, args, createWriteFSFunc)
+}
+
+func readFile(t *testing.T, _ Args, createFSFunc func(*testing.T) types.WriteFS) {
 	t.Run("ReadFile", func(t *testing.T) {
 		t.Parallel()
 		wantData := ufsTesting.RandomString(100)
@@ -374,7 +359,15 @@ func newDirFileConflictFS(t *testing.T, createFS func(*testing.T) types.WriteFS)
 // DirFileConflicts verifies that every WriteFS rejects Create and
 // MkdirAll calls that would replace a directory with a file or place anything
 // under a regular file, and that a rejected call leaves the tree unchanged.
-func DirFileConflicts(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
+func DirFileConflicts(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	dirFileConflicts(t, args, createWriteFSFunc)
+}
+
+func dirFileConflicts(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
 	// TODO: Figure out some tests for buckets mode.
 	if args.Bucket {
 		return
@@ -420,7 +413,15 @@ func DirFileConflicts(t *testing.T, args Args, createFS func(*testing.T) types.W
 
 // Close verifies that Close can be called repeatedly and that every operation
 // on a closed file system returns fs.ErrClosed.
-func Close(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
+func Close(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	closeFS(t, args, createWriteFSFunc)
+}
+
+func closeFS(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
 	// TODO: Figure out some tests for buckets mode.
 	// gcsfs is the reason we can't run this test.
 	if args.Bucket {
@@ -500,7 +501,17 @@ func mkdirForTest(tb testing.TB, fsys types.WriteFS, dirs ...string) {
 }
 
 // InvalidPathsForWriteFS verifies that write operations reject invalid paths.
-func InvalidPathsForWriteFS(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
+func InvalidPathsForWriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	// The refusals are checked whatever Args.ReadOnly says, because a read-only
+	// file system still has to reject an invalid path.
+	createWriteFSFunc, ok := writableFS(t, createFSFunc)
+	if !ok {
+		return
+	}
+	invalidPathsForWriteFS(t, args, createWriteFSFunc)
+}
+
+func invalidPathsForWriteFS(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
 	tests := []struct {
 		name   string
 		wantOp string
@@ -550,7 +561,15 @@ func InvalidPathsForWriteFS(t *testing.T, _ Args, createFS func(*testing.T) type
 
 // Create verifies that files created and written in nested directories can be
 // read back via ReadFile, Open, and Lstat, and are not reported as symlinks.
-func Create(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
+func Create(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	createFS(t, args, createWriteFSFunc)
+}
+
+func createFS(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
 	t.Run("Create", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFS(t)

@@ -25,13 +25,9 @@ import (
 func TestNullFSDriver(t *testing.T) {
 	// nullFS discards writes: MkdirAll and Create succeed without creating
 	// anything, so the write tests that check the result (MkdirAll, ReadFile,
-	// Create, ReadDir, ...) do not apply. Only the read suite and the
-	// invalid-path checks for write operations do.
-	createFSFunc := func(_ *testing.T) types.WriteFS {
+	// Create, ReadDir, ...) do not apply. Args.ReadOnly runs the read suite and
+	// the invalid-path checks for write operations instead.
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(_ *testing.T) types.SimpleFS {
 		return core.MakeNullFS("null://test")
-	}
-	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.ReadFS {
-		return createFSFunc(t)
 	})
-	ufsdriversTesting.InvalidPathsForWriteFS(t, ufsdriversTesting.Args{ReadOnly: true}, createFSFunc)
 }

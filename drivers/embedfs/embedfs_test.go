@@ -28,7 +28,9 @@ import (
 )
 
 func TestDriverTest(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.ReadFS {
+	// embedFS refuses every write, so Args.ReadOnly keeps the conformance suite
+	// on its reads and the invalid-path checks.
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.SimpleFS {
 		return makeTestEmbedFS(t, "ok")
 	})
 }

@@ -37,9 +37,13 @@ func readFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadF
 
 // ReadFS runs the read-only conformance suite, including URI checks, against
 // file systems returned by createFSFunc.
-func ReadFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadFS) {
-	readFS(t, args, createFSFunc)
-	URI(t, args, createFSFunc)
+func ReadFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createReadFSFunc, ok := asReadFS(t, createFSFunc)
+	if !ok {
+		return
+	}
+	readFS(t, args, createReadFSFunc)
+	URI(t, args, createReadFSFunc)
 }
 
 // String verifies that the file system's String method returns a URI-like
@@ -71,7 +75,12 @@ func Constructor(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.Rea
 }
 
 // URI verifies that the file system reports a URI marked read-only.
-func URI(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.ReadFS) {
+func URI(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadFS) {
+	// A writable file system's URI is not marked read-only, so this only
+	// describes the file systems that Args.ReadOnly calls out.
+	if !args.ReadOnly {
+		return
+	}
 	t.Run("URI", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -187,4 +196,15 @@ func OpenWithNew(t *testing.T, uri string, want map[string]string) {
 			t.Errorf("ReadFile(%q) = %q, want %q", name, got, want[name])
 		}
 	}
+}
+
+func mustReadFS(t *testing.T, fsys types.SimpleFS) types.ReadFS {
+	t.Helper()
+
+	rFS, ok := fsys.(types.ReadFS)
+	if !ok {
+		t.Fatalf("fsys %T does not implement types.ReadFS", fsys)
+	}
+
+	return rFS
 }

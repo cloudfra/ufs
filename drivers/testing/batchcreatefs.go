@@ -32,7 +32,15 @@ import (
 // name fails before anything is written. A batch that fails on a file system
 // that implements [types.BatchCreateFS] must write nothing. Its files are kept
 // below "bc", apart from anything a test backend is seeded with.
-func BatchCreate(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
+func BatchCreate(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	batchCreate(t, args, createWriteFSFunc)
+}
+
+func batchCreate(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
 	t.Run("BatchCreate", func(t *testing.T) {
 		t.Parallel()
 

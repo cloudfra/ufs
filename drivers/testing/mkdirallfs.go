@@ -26,10 +26,12 @@ import (
 // MkdirAll verifies that MkdirAll creates every missing directory in a path,
 // that each one is reported as a directory and listed by its parent next to
 // its siblings, and that repeating the call on existing directories succeeds.
-func MkdirAll(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
-	mkdirAll(t, args, func(t *testing.T) types.WriteFS {
-		return mustWriteFS(t, createFSFunc(t))
-	})
+func MkdirAll(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	createWriteFSFunc, ok := asWriteFS(t, args, createFSFunc)
+	if !ok {
+		return
+	}
+	mkdirAll(t, args, createWriteFSFunc)
 }
 
 func mkdirAll(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {

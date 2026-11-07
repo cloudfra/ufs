@@ -23,7 +23,7 @@ import (
 )
 
 func TestAngryFSDriver(t *testing.T) {
-	createFSFunc := func(_ *testing.T) types.WriteFS {
+	createFSFunc := func(_ *testing.T) types.SimpleFS {
 		return core.MakeAngryFS("angry://test")
 	}
 	// ufsdriversTesting.MkdirAll(t, ufsdriversTesting.Args{}, createFSFunc)

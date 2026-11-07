@@ -45,7 +45,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
 	createWriteFSFunc := func(t *testing.T) types.WriteFS {
 		return createFSFunc(t)
 	}
-	MkdirAll(t, args, createWriteFSFunc)
+	mkdirAll(t, args, createWriteFSFunc)
 	ReadFile(t, args, createWriteFSFunc)
 	DirFileConflicts(t, args, createWriteFSFunc)
 	Rename(t, args, createWriteFSFunc)

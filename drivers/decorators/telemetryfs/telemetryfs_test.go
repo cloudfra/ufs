@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"path"
 	"syscall"
 	"testing"
 
@@ -28,6 +29,8 @@ import (
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"go.opentelemetry.io/otel/attribute"
@@ -605,6 +608,84 @@ func (fsys *watchFS) Watch(_ context.Context, name string, _ types.NotifyHook) (
 	return io.NopCloser(nil), nil
 }
 
+// batchFS reports itself as a types.BatchCreateFS, writing each file with
+// MkdirAll and Create. It lets the decorator be tested against a file system
+// that writes batches without a driver that implements types.BatchCreateFS.
+type batchFS struct {
+	// Embedding types.BatchCreateFS next to types.WriteFS is not enough: both
+	// carry fs.FS, so Open would be ambiguous.
+	types.WriteFS
+	batched int
+}
+
+// batchCreateOp is the operation a batch writer names in its path errors. It
+// repeats the constant of the file systems that write batches rather than
+// reading the decorator's table, so that a test can tell an error the decorator
+// passed through from one it rewrote.
+const batchCreateOp = "batchcreate"
+
+// BatchCreate writes the batch, checking every name before writing anything as
+// a driver must, and counts calls whether they are accepted or not.
+func (fsys *batchFS) BatchCreate(files []types.BatchFile) error {
+	fsys.batched++
+	for _, file := range files {
+		if err := pathutil.ValidateFileName(batchCreateOp, file.Name); err != nil {
+			return err
+		}
+	}
+	// Written one file at a time, so a failed batch leaves earlier files
+	// behind: this fake belongs to these tests and would fail the atomicity
+	// check of the shared batch suite in drivers/testing. A repeated name is
+	// written twice, the later entry winning, as that suite's SameNameTwice
+	// case requires at this head; https://github.com/cloudfra/ufs/pull/618
+	// replaces it with DuplicateName, and this fake follows when that lands.
+	for _, file := range files {
+		if dir := path.Dir(file.Name); !pathutil.IsCwd(dir) {
+			if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
+				return err
+			}
+		}
+		f, err := fsys.Create(file.Name)
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(file.Data); err != nil {
+			return ufserrors.Join(err, f.Close())
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// batches reports how many times BatchCreate was called.
+func (fsys *batchFS) batches() int {
+	return fsys.batched
+}
+
+// closedBatchFS is a batch-capable file system whose batches fail with err
+// before anything is written, standing in for a driver whose transaction
+// cannot start.
+type closedBatchFS struct {
+	types.WriteFS
+	err error
+}
+
+// BatchCreate reports the error of the file system without writing files.
+func (fsys *closedBatchFS) BatchCreate([]types.BatchFile) error {
+	return fsys.err
+}
+
+// watchBatchFS is a batchFS that also watches.
+type watchBatchFS struct {
+	batchFS
+}
+
+func (fsys *watchBatchFS) Watch(_ context.Context, _ string, _ types.NotifyHook) (io.Closer, error) {
+	return io.NopCloser(nil), nil
+}
+
 // TestTelemetryForwardsWatch verifies that the decorator watches through to
 // the file system it wraps, and does not claim to watch when that file system
 // cannot.
@@ -629,6 +710,249 @@ func TestTelemetryForwardsWatch(t *testing.T) {
 	defer ufsTesting.ValidateClose(t, plain)()
 	if _, ok := plain.(types.Watcher); ok {
 		t.Errorf("%T is a types.Watcher, want none when the inner file system is not", plain)
+	}
+}
+
+// TestTelemetryBatchCreate checks that the decorator implements
+// types.BatchCreateFS and types.Watcher exactly when the file system it wraps
+// does, and reports a batch as one operation.
+func TestTelemetryBatchCreate(t *testing.T) {
+	t.Parallel()
+	mem := func() types.WriteFS {
+		return core.MakeMemFS(memFSName)
+	}
+	innerBoth := func() types.WriteFS {
+		return &watchBatchFS{batchFS{WriteFS: mem()}}
+	}
+	innerWatchOnly := func() types.WriteFS {
+		return &watchFS{WriteFS: mem()}
+	}
+	innerBatchOnly := func() types.WriteFS {
+		return &batchFS{WriteFS: mem()}
+	}
+	innerNeither := func() types.WriteFS {
+		return struct{ types.WriteFS }{mem()}
+	}
+	tests := []struct {
+		name                 string
+		inner                func() types.WriteFS
+		wantWatch, wantBatch bool
+	}{
+		{name: "Both", inner: innerBoth, wantWatch: true, wantBatch: true},
+		{name: "WatchOnly", inner: innerWatchOnly, wantWatch: true},
+		{name: "BatchOnly", inner: innerBatchOnly, wantBatch: true},
+		{name: "Neither", inner: innerNeither},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRecorder()
+			inner := tc.inner()
+			fsys := r.wrap(t.Context(), t, inner, both)
+			defer ufsTesting.ValidateClose(t, fsys)()
+			if _, ok := fsys.(types.Watcher); ok != tc.wantWatch {
+				t.Errorf("%T is a types.Watcher = %t, want %t", fsys, ok, tc.wantWatch)
+			}
+			if _, ok := fsys.(types.BatchCreateFS); ok != tc.wantBatch {
+				t.Fatalf("%T is a types.BatchCreateFS = %t, want %t", fsys, ok, tc.wantBatch)
+			}
+			if !tc.wantBatch {
+				return
+			}
+
+			err := ufs.BatchCreate(fsys,
+				types.BatchFile{Name: "dir/a.txt", Data: []byte("a")},
+				types.BatchFile{Name: "b.txt", Data: []byte("b")},
+			)
+			if err != nil {
+				t.Fatalf("BatchCreate() = %v, want nil", err)
+			}
+			ufsTesting.AssertContains(t, fsys, "dir/a.txt", "a")
+			err = ufs.BatchCreate(fsys, types.BatchFile{Name: "../x"})
+			// The decorator checks no name itself, so this is the wrapped file
+			// system's error exactly as it returned it.
+			var pathErr *fs.PathError
+			if !errors.Is(err, fs.ErrInvalid) || !errors.As(err, &pathErr) ||
+				pathErr.Op != batchCreateOp || pathErr.Path != "../x" {
+				t.Errorf("BatchCreate(../x) = %v, want the wrapped file system's *fs.PathError for ../x wrapping %v", err, fs.ErrInvalid)
+			}
+
+			counter, ok := inner.(interface{ batches() int })
+			if !ok {
+				t.Fatalf("%T has no batches() counter", inner)
+			}
+			if got := counter.batches(); got != 2 {
+				t.Errorf("inner BatchCreate calls = %d, want 2: the decorator must write through to the file system it wraps", got)
+			}
+
+			batchSpanName := "ufs." + operationNames[opBatchCreate]
+			var batchSpans []sdktrace.ReadOnlySpan
+			for _, span := range r.spans.Ended() {
+				if span.Name() == batchSpanName {
+					batchSpans = append(batchSpans, span)
+				}
+			}
+			if len(batchSpans) != 2 {
+				t.Fatalf("got %d %s spans, want 2", len(batchSpans), batchSpanName)
+			}
+			attrs := attribute.NewSet(batchSpans[0].Attributes()...)
+			if got, _ := attrs.Value(pathKey); got.AsString() != "dir/a.txt" {
+				t.Errorf("%s = %q, want dir/a.txt", pathKey, got.AsString())
+			}
+			if got, _ := attrs.Value(filesKey); got.AsInt64() != 2 {
+				t.Errorf("%s = %d, want 2", filesKey, got.AsInt64())
+			}
+			if got := batchSpans[1].Status().Code; got != codes.Error {
+				t.Errorf("failed batch status = %v, want %v", got, codes.Error)
+			}
+			got := r.durations(t)
+			for _, key := range []string{"batchcreate/memory/", "batchcreate/memory/invalid"} {
+				if got[key] != 1 {
+					t.Errorf("duration count for %q = %d, want 1 (all: %v)", key, got[key], got)
+				}
+			}
+		})
+	}
+}
+
+// TestTelemetryBatchCreateRecording pins what the decorator reports for the two
+// batches a single path cannot describe: one that names the same file twice,
+// where the later entry wins at this head, and one with no files at all.
+func TestTelemetryBatchCreateRecording(t *testing.T) {
+	t.Parallel()
+	r := newRecorder()
+	fsys := r.wrap(t.Context(), t, &batchFS{WriteFS: core.MakeMemFS(memFSName)}, both)
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	if err := ufs.BatchCreate(fsys,
+		types.BatchFile{Name: "dir/a.txt", Data: []byte("first")},
+		types.BatchFile{Name: "dir/a.txt", Data: []byte("second")},
+	); err != nil {
+		t.Fatalf("BatchCreate(dir/a.txt twice) = %v, want nil: a repeated name is legal at this head, the later entry replacing the earlier one", err)
+	}
+	ufsTesting.AssertContains(t, fsys, "dir/a.txt", "second")
+	if err := ufs.BatchCreate(fsys); err != nil {
+		t.Fatalf("BatchCreate() with no files = %v, want nil", err)
+	}
+
+	var spans []sdktrace.ReadOnlySpan
+	for _, span := range r.spans.Ended() {
+		if span.Name() == "ufs."+operationNames[opBatchCreate] {
+			spans = append(spans, span)
+		}
+	}
+	if len(spans) != 2 {
+		t.Fatalf("got %d %s spans, want 2", len(spans), operationNames[opBatchCreate])
+	}
+	for _, tc := range []struct {
+		span      sdktrace.ReadOnlySpan
+		wantFiles int64
+		wantPath  string
+	}{
+		{span: spans[0], wantFiles: 2, wantPath: "dir/a.txt"},
+		{span: spans[1], wantFiles: 0, wantPath: ""},
+	} {
+		attrs := attribute.NewSet(tc.span.Attributes()...)
+		if got, _ := attrs.Value(filesKey); got.AsInt64() != tc.wantFiles {
+			t.Errorf("%s = %d, want %d", filesKey, got.AsInt64(), tc.wantFiles)
+		}
+		if got, _ := attrs.Value(pathKey); got.AsString() != tc.wantPath {
+			t.Errorf("%s = %q, want %q", pathKey, got.AsString(), tc.wantPath)
+		}
+		if got := tc.span.Status().Code; got != codes.Unset {
+			t.Errorf("status = %v, want %v", got, codes.Unset)
+		}
+	}
+	if got := r.durations(t)["batchcreate/memory/"]; got != 2 {
+		t.Errorf("duration count for a successful batch = %d, want 2 (all: %v)", got, r.durations(t))
+	}
+}
+
+// TestTelemetryBatchCreateFailure checks that a failed batch keeps the error of
+// the file system it wraps, and that the operation is still reported with the
+// status, the recorded error and the error type that a reader looks for.
+func TestTelemetryBatchCreateFailure(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{err: fs.ErrPermission, want: "batchcreate/memory/permission"},
+		{err: fs.ErrClosed, want: "batchcreate/memory/other"},
+		// A driver naming an operation of its own, which no decorator of this
+		// package produces, so the identity check below cannot pass for an
+		// error the decorator rebuilt while reporting the batch.
+		{err: &fs.PathError{Op: "bolt-write", Path: "a.txt", Err: fs.ErrPermission}, want: "batchcreate/memory/permission"},
+	} {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			t.Parallel()
+			r := newRecorder()
+			fsys := r.wrap(t.Context(), t, &closedBatchFS{WriteFS: core.MakeMemFS(memFSName), err: tc.err}, both)
+			defer ufsTesting.ValidateClose(t, fsys)()
+
+			if err := ufs.BatchCreate(fsys, types.BatchFile{Name: "a.txt", Data: []byte("a")}); err != tc.err {
+				t.Errorf("BatchCreate() = %v, want the wrapped file system's %v unchanged", err, tc.err)
+			}
+
+			spans := r.spans.Ended()
+			if len(spans) != 1 {
+				t.Fatalf("got %d spans, want 1", len(spans))
+			}
+			if got := spans[0].Name(); got != "ufs."+operationNames[opBatchCreate] {
+				t.Errorf("span = %q, want %q", got, "ufs."+operationNames[opBatchCreate])
+			}
+			if got := spans[0].Status(); got.Code != codes.Error || got.Description != tc.err.Error() {
+				t.Errorf("status = %v %q, want %v %q", got.Code, got.Description, codes.Error, tc.err.Error())
+			}
+			if got := len(spans[0].Events()); got != 1 {
+				t.Errorf("got %d span events, want 1 recording %v", got, tc.err)
+			}
+			attrs := attribute.NewSet(spans[0].Attributes()...)
+			if got, _ := attrs.Value(pathKey); got.AsString() != "a.txt" {
+				t.Errorf("%s = %q, want a.txt", pathKey, got.AsString())
+			}
+			if got, _ := attrs.Value(filesKey); got.AsInt64() != 1 {
+				t.Errorf("%s = %d, want 1", filesKey, got.AsInt64())
+			}
+			if got := r.durations(t)[tc.want]; got != 1 {
+				t.Errorf("duration count for %q = %d, want 1 (all: %v)", tc.want, got, r.durations(t))
+			}
+		})
+	}
+}
+
+// TestTelemetryNoBatchFallback checks what a batch costs on a file system
+// without types.BatchCreateFS: the decorator does not claim the interface,
+// because the fallback is not atomic, so ufs.BatchCreate writes one file at a
+// time through the decorator and each of those operations is reported.
+func TestTelemetryNoBatchFallback(t *testing.T) {
+	t.Parallel()
+	r := newRecorder()
+	fsys := r.wrap(t.Context(), t, struct{ types.WriteFS }{core.MakeMemFS(memFSName)}, both)
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	if _, ok := fsys.(types.BatchCreateFS); ok {
+		t.Fatalf("%T is a types.BatchCreateFS, want none: writing files one at a time is not a batch", fsys)
+	}
+	if err := ufs.BatchCreate(fsys,
+		types.BatchFile{Name: "dir/a.txt", Data: []byte("a")},
+		types.BatchFile{Name: "b.txt", Data: []byte("b")},
+	); err != nil {
+		t.Fatalf("BatchCreate() = %v, want nil", err)
+	}
+	ufsTesting.AssertContains(t, fsys, "dir/a.txt", "a")
+
+	counts := map[string]int{}
+	for _, span := range r.spans.Ended() {
+		counts[span.Name()]++
+	}
+	for _, name := range []string{"ufs." + operationNames[opMkdirAll], "ufs." + operationNames[opCreate]} {
+		if counts[name] == 0 {
+			t.Errorf("no %s span (all: %v), want the fallback's operations reported one by one", name, counts)
+		}
+	}
+	if counts["ufs."+operationNames[opBatchCreate]] != 0 {
+		t.Errorf("a %s span was reported by a decorator that is not a types.BatchCreateFS", operationNames[opBatchCreate])
 	}
 }
 
@@ -685,6 +1009,91 @@ func BenchmarkTelemetryStat(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			if _, err := fsys.Stat("."); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// BenchmarkTelemetryBatchCreate measures the batch wrapper in the shape of
+// BenchmarkTelemetryStat: the file system alone, the decorator with no SDK
+// installed, and the decorator with one. The last case is the same three files
+// through a file system that cannot write batches, which the decorator reports
+// one operation per file.
+func BenchmarkTelemetryBatchCreate(b *testing.B) {
+	files := []types.BatchFile{
+		{Name: "bench/a.txt", Data: []byte("a")},
+		{Name: "bench/b.txt", Data: []byte("b")},
+		{Name: "bench/c.txt", Data: []byte("c")},
+	}
+	inner := core.MakeMemFS(memFSName)
+	defer ufsTesting.ValidateClose(b, inner)()
+
+	b.Run("inner", func(b *testing.B) {
+		batched := &batchFS{WriteFS: inner}
+		b.ReportAllocs()
+		for b.Loop() {
+			if err := batched.BatchCreate(files); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	// No SDK is installed, the cost every user of the decorator pays.
+	for _, bc := range []struct {
+		name string
+		opts Options
+	}{
+		{name: "noop", opts: both},
+		{name: "noop_traces", opts: Options{Traces: true}},
+		{name: "noop_metrics", opts: Options{Metrics: true}},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			fsys, err := wrap(b.Context(), &batchFS{WriteFS: inner}, bc.opts)
+			if err != nil {
+				b.Fatal(err)
+			}
+			batched, ok := fsys.(types.BatchCreateFS)
+			if !ok {
+				b.Fatalf("%T does not write batches, want a decorator of a batch writer", fsys)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := batched.BatchCreate(files); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+
+	b.Run("sdk", func(b *testing.B) {
+		r := &recorder{
+			tp: sdktrace.NewTracerProvider(),
+			mp: sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader())),
+		}
+		fsys := r.wrap(b.Context(), b, &batchFS{WriteFS: inner}, both)
+		batched, ok := fsys.(types.BatchCreateFS)
+		if !ok {
+			b.Fatalf("%T does not write batches, want a decorator of a batch writer", fsys)
+		}
+		b.ReportAllocs()
+		for b.Loop() {
+			if err := batched.BatchCreate(files); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	// The decorator over a file system that cannot write batches, where each
+	// file is a reported operation of its own.
+	b.Run("fallback", func(b *testing.B) {
+		fsys, err := wrap(b.Context(), struct{ types.WriteFS }{inner}, both)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportAllocs()
+		for b.Loop() {
+			if err := ufs.BatchCreate(fsys, files...); err != nil {
 				b.Fatal(err)
 			}
 		}

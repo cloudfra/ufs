@@ -72,3 +72,26 @@ func TestBatchCreateFallbackError(t *testing.T) {
 	}
 	assertFileContent(t, fsys, "a.txt", "a")
 }
+
+// TestBatchCreateFallbackDuplicateName checks that the fallback rejects a
+// repeated name before writing any of the batch.
+func TestBatchCreateFallbackDuplicateName(t *testing.T) {
+	t.Parallel()
+	fsys := mustBaseFS(t, "memory://")
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+	err := BatchCreate(fsys,
+		types.BatchFile{Name: "a.txt", Data: []byte("a")},
+		types.BatchFile{Name: "b.txt", Data: []byte("b")},
+		types.BatchFile{Name: "a.txt", Data: []byte("again")},
+	)
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) || pathErr.Op != batchCreateOp || pathErr.Path != "a.txt" {
+		t.Fatalf("BatchCreate() = %#v, want an *fs.PathError for %s of a.txt", err, batchCreateOp)
+	}
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Errorf("BatchCreate() = %v, want it to wrap %v", err, fs.ErrInvalid)
+	}
+	assertNotExist(t, fsys, "a.txt")
+	assertNotExist(t, fsys, "b.txt")
+}

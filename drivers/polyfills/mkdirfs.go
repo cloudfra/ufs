@@ -15,6 +15,7 @@
 package polyfills
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -29,7 +30,9 @@ import (
 //
 // fsys's own [types.MkdirFS] implementation is used when it has one, and is
 // otherwise emulated with [types.MkdirAllFS] restricted to the leaf. A file
-// system that implements neither gets an unimplemented error.
+// system that implements neither gets an unimplemented error. The emulation
+// refuses a name whose path runs through a regular file with an error wrapping
+// [fs.ErrExist], and passes on any other reason the parent cannot be inspected.
 func Mkdir(fsys fs.FS, name string, perm fs.FileMode) error {
 	if cFS, ok := fsys.(types.MkdirFS); ok {
 		return cFS.Mkdir(name, perm)
@@ -48,8 +51,19 @@ func Mkdir(fsys fs.FS, name string, perm fs.FileMode) error {
 // parent to exist already keeps the single-level semantics Mkdir promises.
 func mkdirFromMkdirAllFS(fsys types.MkdirAllFS, name string, perm fs.FileMode) error {
 	parentDir := path.Dir(name)
-	if isDir(fsys, parentDir) {
+	stat, err := fs.Stat(fsys, parentDir)
+	if err == nil && stat.IsDir() {
 		return fsys.MkdirAll(name, perm)
+	}
+	// The parent cannot hold the new level, so the refusal names the deepest
+	// blocking node, which is not always the parent itself.
+	if conflict := CheckDirFileConflict(fsys, "mkdir", name, true); conflict != nil {
+		return conflict
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		// An unreadable parent is the file system's verdict, not a missing
+		// level: inventing a reason here would hide it from the caller.
+		return err
 	}
 	return ufserrors.NewPathError("mkdir", name, fmt.Errorf("%q must be a directory to create %q", parentDir, name))
 }

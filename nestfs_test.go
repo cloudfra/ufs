@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 
@@ -799,6 +801,488 @@ func TestNestFSMissingDirectory(t *testing.T) {
 		if _, err := fsys.Stat(name); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("Stat(%q) = %v, want %v", name, err, fs.ErrNotExist)
 		}
+	}
+}
+
+func TestNestFSOpenFile(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	oFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("New returned %T, want a types.OpenFileFS", fsys)
+	}
+
+	f, err := oFS.OpenFile("file.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile(file.txt, create) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("first"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	f, err = oFS.OpenFile("file.txt", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(file.txt, read) = %v, want nil", err)
+	}
+	data, readErr := io.ReadAll(f)
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+	if readErr != nil {
+		t.Fatalf("ReadAll() = %v, want nil", readErr)
+	}
+	if string(data) != "first" {
+		t.Errorf("read file %q, want %q", data, "first")
+	}
+
+	if err := fsys.MkdirAll("dir", 0o755); err != nil {
+		t.Fatalf("MkdirAll(dir) = %v, want nil", err)
+	}
+	for _, tc := range []struct {
+		name string
+		flag int
+		want error
+	}{
+		{"file.txt", os.O_WRONLY | os.O_CREATE | os.O_EXCL, fs.ErrExist},
+		{"missing.txt", os.O_RDONLY, fs.ErrNotExist},
+		{"dir", os.O_WRONLY | os.O_TRUNC, fs.ErrInvalid},
+		{"/file.txt", os.O_RDONLY, fs.ErrInvalid},
+	} {
+		if _, err := oFS.OpenFile(tc.name, tc.flag, 0o644); !errors.Is(err, tc.want) {
+			t.Errorf("OpenFile(%q, %d) = %v, want %v", tc.name, tc.flag, err, tc.want)
+		}
+	}
+}
+
+// TestNestFSOpenFileInPlace edits a file where it stands, which is what a
+// non-truncating write needs from the file system below the nest.
+func TestNestFSOpenFileInPlace(t *testing.T) {
+	t.Parallel()
+	fsys := mustNestFS(t, t.TempDir())
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	f, err := fsys.Create("file.txt")
+	if err != nil {
+		t.Fatalf("Create(file.txt) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("abcdefg"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	oFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("mustNestFS returned %T, want a types.OpenFileFS", fsys)
+	}
+	file, err := oFS.OpenFile("file.txt", os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(file.txt, write) = %v, want nil", err)
+	}
+	if _, err := file.WriteString("xyz"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	data, err := fsys.ReadFile("file.txt")
+	if err != nil {
+		t.Fatalf("ReadFile(file.txt) = %v, want nil", err)
+	}
+	if string(data) != "xyzdefg" {
+		t.Errorf("read file %q, want %q", data, "xyzdefg")
+	}
+	info, err := fsys.Stat("file.txt")
+	if err != nil {
+		t.Fatalf("Stat(file.txt) = %v, want nil", err)
+	}
+	if info.Size() != 7 {
+		t.Errorf("Stat(file.txt) size = %d, want 7: a non-truncating write keeps the content behind it", info.Size())
+	}
+}
+
+func TestNestFSOpenFileMount(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:?a%2Fb=memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	oFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("New returned %T, want a types.OpenFileFS", fsys)
+	}
+
+	f, err := oFS.OpenFile("a/b/file.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile(a/b/file.txt, create) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("mounted"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	data, err := fsys.ReadFile("a/b/file.txt")
+	if err != nil {
+		t.Fatalf("ReadFile(a/b/file.txt) = %v, want nil", err)
+	}
+	if string(data) != "mounted" {
+		t.Errorf("read file %q, want %q", data, "mounted")
+	}
+
+	_, err = oFS.OpenFile("a/b/missing.txt", os.O_RDONLY, 0)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("OpenFile(a/b/missing.txt) = %v, want %v", err, fs.ErrNotExist)
+	}
+	pathErr, ok := err.(*fs.PathError)
+	if !ok {
+		t.Fatalf("OpenFile(a/b/missing.txt) = %v, want an *fs.PathError", err)
+	}
+	if pathErr.Path != "a/b/missing.txt" {
+		t.Errorf("OpenFile(a/b/missing.txt) error path = %q, want %q", pathErr.Path, "a/b/missing.txt")
+	}
+}
+
+func TestNestFSOpenFileMountParentDirectory(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:?a%2Fb=memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	oFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("New returned %T, want a types.OpenFileFS", fsys)
+	}
+
+	f, err := oFS.OpenFile("a/b/held.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile(a/b/held.txt, create) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("held"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	// A read-only open of the directory that holds the mount lists the mount.
+	dir, err := oFS.OpenFile("a", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(a) = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, dir)()
+	readDir, ok := dir.(fs.ReadDirFile)
+	if !ok {
+		t.Fatalf("OpenFile(a) returned %T, want an fs.ReadDirFile", dir)
+	}
+	entries, err := readDir.ReadDir(-1)
+	if err != nil {
+		t.Fatalf("ReadDir() = %v, want nil", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "b" {
+		t.Errorf("ReadDir() = %v, want [b]", entries)
+	}
+
+	// A writable open is refused: no flags may put a file where the mount hangs.
+	for _, flag := range []int{
+		os.O_WRONLY,
+		os.O_RDWR,
+		os.O_WRONLY | os.O_CREATE,
+		os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
+	} {
+		if _, err := oFS.OpenFile("a", flag, 0o644); !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("OpenFile(a, %d) = %v, want %v", flag, err, fs.ErrInvalid)
+		}
+	}
+	if _, err := oFS.OpenFile("a", os.O_RDONLY|os.O_CREATE|os.O_EXCL, 0o644); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("OpenFile(a, create|exclusive) = %v, want %v", err, fs.ErrExist)
+	}
+
+	// The tree still hangs from a: the directory is a directory, it still lists
+	// the mount, and the content below it is still there.
+	info, err := fsys.Stat("a")
+	if err != nil {
+		t.Fatalf("Stat(a) = %v, want nil", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("Stat(a) mode = %v, want a directory", info.Mode())
+	}
+	entries, err = fsys.ReadDir("a")
+	if err != nil {
+		t.Fatalf("ReadDir(a) = %v, want nil", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "b" {
+		t.Errorf("ReadDir(a) = %v, want [b]", entries)
+	}
+	data, err := fsys.ReadFile("a/b/held.txt")
+	if err != nil {
+		t.Fatalf("ReadFile(a/b/held.txt) = %v, want nil", err)
+	}
+	if string(data) != "held" {
+		t.Errorf("read file %q, want %q", data, "held")
+	}
+}
+
+// TestNestFSOpenFileMountParentBase checks that a refused writable open leaves
+// the file system below the nest alone: a regular file where the mount parent
+// is would hide the mount from Stat and ReadDir.
+func TestNestFSOpenFileMountParentBase(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	fsys := makeNestFS(t.Context(), mustBaseFS(t, "file://"+dir))
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	if err := fsys.addMount("sub/inner", makeNestFS(t.Context(), mustBaseFS(t, "memory:"))); err != nil {
+		t.Fatalf("addMount(sub/inner) = %v, want nil", err)
+	}
+
+	for _, flag := range []int{
+		os.O_WRONLY,
+		os.O_WRONLY | os.O_CREATE,
+		os.O_RDWR | os.O_TRUNC,
+	} {
+		if _, err := fsys.OpenFile("sub", flag, 0o644); !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("OpenFile(sub, %d) = %v, want %v", flag, err, fs.ErrInvalid)
+		}
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "sub")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the base file system has %v at sub, want no entry there", err)
+	}
+}
+
+// TestNestFSOpenFileMountRoot opens a mounted file system at its own root, the
+// one directory that only exists because of the mount.
+func TestNestFSOpenFileMountRoot(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory:?a%2Fb=memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	oFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("New returned %T, want a types.OpenFileFS", fsys)
+	}
+
+	f, err := oFS.OpenFile("a/b/held.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatalf("OpenFile(a/b/held.txt, create) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("held"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	root, err := oFS.OpenFile("a/b", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(a/b) = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, root)()
+	info, err := root.Stat()
+	if err != nil {
+		t.Fatalf("Stat() = %v, want nil", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("Stat() mode = %v, want a directory", info.Mode())
+	}
+	readDir, ok := root.(fs.ReadDirFile)
+	if !ok {
+		t.Fatalf("OpenFile(a/b) returned %T, want an fs.ReadDirFile", root)
+	}
+	entries, err := readDir.ReadDir(-1)
+	if err != nil {
+		t.Fatalf("ReadDir() = %v, want nil", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "held.txt" {
+		t.Errorf("ReadDir() = %v, want [held.txt]", entries)
+	}
+
+	for _, flag := range []int{os.O_WRONLY, os.O_RDWR, os.O_WRONLY | os.O_CREATE} {
+		if _, err := oFS.OpenFile("a/b", flag, 0o644); !errors.Is(err, fs.ErrInvalid) {
+			t.Errorf("OpenFile(a/b, %d) = %v, want %v", flag, err, fs.ErrInvalid)
+		}
+	}
+	if _, err := oFS.OpenFile("a/b", os.O_RDONLY|os.O_CREATE|os.O_EXCL, 0o644); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("OpenFile(a/b, create|exclusive) = %v, want %v", err, fs.ErrExist)
+	}
+}
+
+// TestNestFSOpenFileRoot opens the root of the nest itself, which is a
+// directory whichever file system the nest wraps.
+func TestNestFSOpenFileRoot(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"memory:", "file://" + t.TempDir()} {
+		fsys := mustNestFS(t, name)
+		defer ufsTesting.ValidateClose(t, fsys)()
+		oFS, ok := fsys.(types.OpenFileFS)
+		if !ok {
+			t.Fatalf("New(%s) returned %T, want a types.OpenFileFS", name, fsys)
+		}
+
+		f, err := fsys.Create("file.txt")
+		if err != nil {
+			t.Fatalf("Create(file.txt) = %v, want nil", err)
+		}
+		if _, err := f.WriteString("at the root"); err != nil {
+			t.Fatalf("WriteString() = %v, want nil", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatalf("Close() = %v, want nil", err)
+		}
+
+		root, err := oFS.OpenFile(".", os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("OpenFile(.) over %s = %v, want nil", name, err)
+		}
+		defer ufsTesting.ValidateClose(t, root)()
+		readDir, ok := root.(fs.ReadDirFile)
+		if !ok {
+			t.Fatalf("OpenFile(.) returned %T, want an fs.ReadDirFile", root)
+		}
+		entries, err := readDir.ReadDir(-1)
+		if err != nil {
+			t.Fatalf("ReadDir() = %v, want nil", err)
+		}
+		if len(entries) != 1 || entries[0].Name() != "file.txt" {
+			t.Errorf("ReadDir() over %s = %v, want [file.txt]", name, entries)
+		}
+
+		for _, flag := range []int{os.O_WRONLY, os.O_WRONLY | os.O_CREATE} {
+			if _, err := oFS.OpenFile(".", flag, 0o644); !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("OpenFile(., %d) over %s = %v, want %v", flag, name, err, fs.ErrInvalid)
+			}
+		}
+		if _, err := oFS.OpenFile(".", os.O_RDONLY|os.O_CREATE|os.O_EXCL, 0o644); !errors.Is(err, fs.ErrExist) {
+			t.Errorf("OpenFile(., create|exclusive) over %s = %v, want %v", name, err, fs.ErrExist)
+		}
+	}
+}
+
+// TestNestFSOpenFileDirectoryHandle lists a directory through a handle as
+// [nestFS.ReadDir] and [nestFS.Open] do, so that a mount below it is visible
+// either way.
+func TestNestFSOpenFileDirectoryHandle(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := osutil.MkdirAll(filepath.Join(dir, "sub")); err != nil {
+		t.Fatal(err)
+	}
+	if err := osutil.WriteFile(filepath.Join(dir, "sub", "on.txt"), []byte("on the base")); err != nil {
+		t.Fatal(err)
+	}
+
+	fsys := makeNestFS(t.Context(), mustBaseFS(t, "file://"+dir))
+	defer ufsTesting.ValidateClose(t, fsys)()
+	if err := fsys.addMount("sub/inner", makeNestFS(t.Context(), mustBaseFS(t, "memory:"))); err != nil {
+		t.Fatalf("addMount(sub/inner) = %v, want nil", err)
+	}
+
+	want := []string{"inner", "on.txt"}
+	handle, err := fsys.OpenFile("sub", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(sub) = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, handle)()
+	if got := handleNames(t, handle); !slices.Equal(got, want) {
+		t.Errorf("OpenFile(sub) handle listed %v, want %v", got, want)
+	}
+
+	opened, err := fsys.Open("sub")
+	if err != nil {
+		t.Fatalf("Open(sub) = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, opened)()
+	if got := handleNames(t, opened); !slices.Equal(got, want) {
+		t.Errorf("Open(sub) handle listed %v, want %v", got, want)
+	}
+
+	entries, err := fsys.ReadDir("sub")
+	if err != nil {
+		t.Fatalf("ReadDir(sub) = %v, want nil", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if !slices.Equal(names, want) {
+		t.Errorf("ReadDir(sub) = %v, want %v", names, want)
+	}
+}
+
+// handleNames lists a handle that can list a directory.
+func handleNames(tb testing.TB, file fs.File) []string {
+	tb.Helper()
+	readDir, ok := file.(fs.ReadDirFile)
+	if !ok {
+		tb.Fatalf("handle %T is not an fs.ReadDirFile", file)
+	}
+	entries, err := readDir.ReadDir(-1)
+	if err != nil {
+		tb.Fatalf("ReadDir() = %v, want nil", err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+func TestNestFSOpenFileAppend(t *testing.T) {
+	t.Parallel()
+	fsys := mustNestFS(t, t.TempDir())
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	f, err := fsys.Create("file.txt")
+	if err != nil {
+		t.Fatalf("Create(file.txt) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("first"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	oFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("mustNestFS returned %T, want a types.OpenFileFS", fsys)
+	}
+	f, err = oFS.OpenFile("file.txt", os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(file.txt, append) = %v, want nil", err)
+	}
+	if _, err := f.WriteString(" second"); err != nil {
+		t.Fatalf("WriteString() = %v, want nil", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	data, err := fsys.ReadFile("file.txt")
+	if err != nil {
+		t.Fatalf("ReadFile(file.txt) = %v, want nil", err)
+	}
+	if string(data) != "first second" {
+		t.Errorf("read file %q, want %q", data, "first second")
 	}
 }
 

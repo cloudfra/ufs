@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -67,6 +68,57 @@ func BenchmarkNestFSReadFile(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+	if err := nfs.Close(); err != nil {
+		b.Errorf("failed to close nfs: %v", err)
+	}
+}
+
+// BenchmarkNestFSOpenFileSmall prices an OpenFile of a small file against Open,
+// which takes the same path through the mount layer.
+func BenchmarkNestFSOpenFileSmall(b *testing.B) {
+	benchmarkNestFSOpen(b, "small.dat", bytes.Repeat([]byte("Nest"), 256))
+}
+
+// BenchmarkNestFSOpenFileLarge prices the same pair once the content is large
+// enough for an extra copy per open to show up.
+func BenchmarkNestFSOpenFileLarge(b *testing.B) {
+	benchmarkNestFSOpen(b, "large.dat", bytes.Repeat([]byte("Nest"), 1<<15))
+}
+
+// benchmarkNestFSOpen opens an existing name read-only through both entry
+// points over a localFS base, whose own OpenFile answers the call directly.
+func benchmarkNestFSOpen(b *testing.B, name string, content []byte) {
+	dir := b.TempDir()
+	lfs := mustBaseFS(b, dir)
+	if err := osutil.WriteFile(filepath.Join(dir, name), content); err != nil {
+		b.Fatal(err)
+	}
+	nfs := makeNestFS(context.Background(), lfs)
+
+	b.Run("OpenFile", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			handle, err := nfs.OpenFile(name, os.O_RDONLY, 0)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := handle.Close(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("Open", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			handle, err := nfs.Open(name)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if err := handle.Close(); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 	if err := nfs.Close(); err != nil {
 		b.Errorf("failed to close nfs: %v", err)
 	}

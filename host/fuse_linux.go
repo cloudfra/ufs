@@ -115,19 +115,28 @@ func mount(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServe
 		},
 	}
 
-	server, err := fusefs.Mount(mountPath, root, opts)
+	// fusefs.Mount waits for the mount itself, so waiting again would repeat its
+	// blocking open against a live mount. Its calls are spelled out here because
+	// it discards the server when that wait fails, leaving a mount this process
+	// can neither unmount nor account for.
+	server, err := fuse.NewServer(fusefs.NewNodeFS(root, opts), mountPath, &opts.MountOptions)
 	if err != nil {
 		claimed.release()
 		return nil, err
 	}
+
+	go server.Serve()
+	hostServer := &fuseHostServer{server: server, volume: claimed}
+	// Recorded before waiting so that ReleaseMounts can unmount a mount whose
+	// wait failed.
+	claimed.setServer(hostServer)
 	if err := server.WaitMount(); err != nil {
-		// The slot stays claimed: the mount may have started anyway, and an
-		// untracked volume would leave the next mount exposed to it.
-		return nil, err
+		// The slot stays claimed: this mounted the volume and go-fuse keeps its
+		// serve loop running, so an untracked volume would expose it to the next
+		// mount.
+		return nil, fmt.Errorf("%w: the volume at %q stays held until ReleaseMounts closes it", err, mountPath)
 	}
 
-	hostServer := &fuseHostServer{server: server, volume: claimed}
-	claimed.setServer(hostServer)
 	go func() {
 		<-ctx.Done()
 		if err := hostServer.Close(); err != nil {

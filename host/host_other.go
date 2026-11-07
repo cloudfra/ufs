@@ -24,6 +24,9 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
+// volumeLimit is zero because no volume is ever mounted on these platforms.
+const volumeLimit = 0
+
 func mount(_ context.Context, _ types.ReadFS, _ string) (MountServer, error) {
 	return nil, fmt.Errorf("host mount is not implemented on %s/%s", runtime.GOOS, runtime.GOARCH)
 }

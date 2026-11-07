@@ -41,6 +41,9 @@ const (
 	// timeoutParam is the URI query parameter for bolt.Options.Timeout.
 	timeoutParam = "ufs.timeout"
 
+	// batchCreateOp is the op of the errors of BatchCreate, as in ufs.
+	batchCreateOp = "batchcreate"
+
 	// defaultTimeout is how long opening waits for the file lock when the
 	// URI does not set timeoutParam.
 	defaultTimeout = time.Minute

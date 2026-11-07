@@ -21,6 +21,18 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
+// Args for conformance tests.
+//
+// Each argument is optional and calls out a deviation from the conformance test.
+type Args struct {
+	// ReadOnly indicates that the file system is read-only.
+	// If the conformance test would normally exercise a write, it will assert the appropriate error is returned for a read-only file system.
+	ReadOnly bool
+
+	// Bucket indicates that the file system may not have an explicit directory structure.
+	Bucket bool
+}
+
 var invalidPaths = []string{
 	"/absolute/path",
 	"../relative/path",
@@ -29,16 +41,16 @@ var invalidPaths = []string{
 
 // FS runs the full read-write conformance suite against file systems
 // returned by createFSFunc.
-func FS(t *testing.T, createFSFunc func(t *testing.T) ufs.FS) {
+func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
 	createWriteFSFunc := func(t *testing.T) types.WriteFS {
 		return createFSFunc(t)
 	}
-	MkdirAll(t, createWriteFSFunc)
-	ReadFile(t, createWriteFSFunc)
-	DirFileConflicts(t, createWriteFSFunc)
-	Rename(t, createWriteFSFunc)
-	BatchCreate(t, createWriteFSFunc)
-	ReadFS(t, func(t *testing.T) types.ReadFS {
+	MkdirAll(t, args, createWriteFSFunc)
+	ReadFile(t, args, createWriteFSFunc)
+	DirFileConflicts(t, args, createWriteFSFunc)
+	Rename(t, args, createWriteFSFunc)
+	BatchCreate(t, args, createWriteFSFunc)
+	ReadFS(t, args, func(t *testing.T) types.ReadFS {
 		return createFSFunc(t)
 	})
 }

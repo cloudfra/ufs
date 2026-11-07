@@ -32,18 +32,7 @@ import (
 // name fails before anything is written. A batch that fails on a file system
 // that implements [types.BatchCreateFS] must write nothing. Its files are kept
 // below "bc", apart from anything a test backend is seeded with.
-func BatchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS) {
-	batchCreate(t, createFS, true)
-}
-
-// BatchCreateWithBuckets is [BatchCreate] for bucket-backed file systems,
-// where a file and a directory can share a name, so that conflict is not
-// checked.
-func BatchCreateWithBuckets(t *testing.T, createFS func(*testing.T) types.WriteFS) {
-	batchCreate(t, createFS, false)
-}
-
-func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConflicts bool) {
+func BatchCreate(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
 	t.Run("BatchCreate", func(t *testing.T) {
 		t.Parallel()
 
@@ -154,7 +143,7 @@ func batchCreate(t *testing.T, createFS func(*testing.T) types.WriteFS, dirConfl
 			})
 		}
 
-		if !dirConflicts {
+		if args.Bucket {
 			return
 		}
 		conflicts := []struct {

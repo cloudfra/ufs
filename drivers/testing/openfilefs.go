@@ -45,20 +45,20 @@ var openFileAccessFlags = []struct {
 // and bare-write groups need a handle that edits content in place, which the
 // create-based emulation refuses on purpose, and the directory group needs
 // [types.MkdirAllFS] to create the directory it opens.
-func OpenFile(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
-	openFileMissing(t, createFSFunc)
-	openFileCreate(t, createFSFunc)
-	openFileExclusive(t, createFSFunc)
-	openFileTruncate(t, createFSFunc)
-	openFileKeepExisting(t, createFSFunc)
-	openFileAppend(t, createFSFunc)
-	openFileAccess(t, createFSFunc)
-	openFileDirectory(t, createFSFunc)
-	openFileInvalidPaths(t, createFSFunc)
-	openFileReopen(t, createFSFunc)
+func OpenFile(t *testing.T, args Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
+	openFileMissing(t, args, createFSFunc)
+	openFileCreate(t, args, createFSFunc)
+	openFileExclusive(t, args, createFSFunc)
+	openFileTruncate(t, args, createFSFunc)
+	openFileKeepExisting(t, args, createFSFunc)
+	openFileAppend(t, args, createFSFunc)
+	openFileAccess(t, args, createFSFunc)
+	openFileDirectory(t, args, createFSFunc)
+	openFileInvalidPaths(t, args, createFSFunc)
+	openFileReopen(t, args, createFSFunc)
 }
 
-func openFileMissing(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileMissing(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileMissing", func(t *testing.T) {
 		t.Parallel()
 		for _, access := range openFileAccessFlags {
@@ -86,7 +86,7 @@ func openFileMissing(t *testing.T, createFSFunc func(t *testing.T) types.OpenFil
 	})
 }
 
-func openFileCreate(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileCreate(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileCreate", func(t *testing.T) {
 		t.Parallel()
 		for _, access := range openFileAccessFlags {
@@ -130,7 +130,7 @@ func openFileCreate(t *testing.T, createFSFunc func(t *testing.T) types.OpenFile
 	})
 }
 
-func openFileExclusive(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileExclusive(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileExclusive", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -168,7 +168,7 @@ func openFileExclusive(t *testing.T, createFSFunc func(t *testing.T) types.OpenF
 	})
 }
 
-func openFileTruncate(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileTruncate(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileTruncate", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -196,7 +196,7 @@ func openFileTruncate(t *testing.T, createFSFunc func(t *testing.T) types.OpenFi
 
 // openFileKeepExisting wants a write that keeps the content already in the
 // file, which only a file system carrying its own flags can do.
-func openFileKeepExisting(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileKeepExisting(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileKeepExisting", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -221,7 +221,7 @@ func openFileKeepExisting(t *testing.T, createFSFunc func(t *testing.T) types.Op
 
 // openFileAppend pins an append over an existing name: the handle starts from
 // the content already there, and every write lands at the end of the file.
-func openFileAppend(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileAppend(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileAppend", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -253,7 +253,7 @@ func openFileAppend(t *testing.T, createFSFunc func(t *testing.T) types.OpenFile
 
 // openFileAccess wants a bare write over existing content to reach only that
 // content's tail, so it needs a file system carrying its own flags too.
-func openFileAccess(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileAccess(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileAccess", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -318,7 +318,7 @@ func openFileAccess(t *testing.T, createFSFunc func(t *testing.T) types.OpenFile
 	})
 }
 
-func openFileDirectory(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileDirectory(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileDirectory", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -386,7 +386,7 @@ func openFileDirectory(t *testing.T, createFSFunc func(t *testing.T) types.OpenF
 	})
 }
 
-func openFileInvalidPaths(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileInvalidPaths", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)
@@ -414,7 +414,7 @@ func openFileInvalidPaths(t *testing.T, createFSFunc func(t *testing.T) types.Op
 	})
 }
 
-func openFileReopen(t *testing.T, createFSFunc func(t *testing.T) types.OpenFileFS) {
+func openFileReopen(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.OpenFileFS) {
 	t.Run("OpenFileReopen", func(t *testing.T) {
 		t.Parallel()
 		fsys := createFSFunc(t)

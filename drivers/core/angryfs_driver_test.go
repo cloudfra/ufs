@@ -26,11 +26,11 @@ func TestAngryFSDriver(t *testing.T) {
 	createFSFunc := func(_ *testing.T) types.WriteFS {
 		return core.MakeAngryFS("angry://test")
 	}
-	// ufsdriversTesting.MkdirAll(t, createFSFunc)
-	// ufsdriversTesting.ReadFile(t, createFSFunc)
-	// ufsdriversTesting.DirFileConflicts(t, createFSFunc)
-	ufsdriversTesting.InvalidPathsForWriteFS(t, createFSFunc)
-	// ufsdriversTesting.ReadDir(t, createFSFunc)
-	// ufsdriversTesting.Close(t, createFSFunc)
-	// ufsdriversTesting.Create(t, createFSFunc)
+	// ufsdriversTesting.MkdirAll(t, ufsdriversTesting.Args{}, createFSFunc)
+	// ufsdriversTesting.ReadFile(t, ufsdriversTesting.Args{}, createFSFunc)
+	// ufsdriversTesting.DirFileConflicts(t, ufsdriversTesting.Args{}, createFSFunc)
+	ufsdriversTesting.InvalidPathsForWriteFS(t, ufsdriversTesting.Args{}, createFSFunc)
+	// ufsdriversTesting.ReadDir(t, ufsdriversTesting.Args{}, createFSFunc)
+	// ufsdriversTesting.Close(t, ufsdriversTesting.Args{}, createFSFunc)
+	// ufsdriversTesting.Create(t, ufsdriversTesting.Args{}, createFSFunc)
 }

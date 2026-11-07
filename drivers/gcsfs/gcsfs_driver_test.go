@@ -23,7 +23,7 @@ import (
 )
 
 func TestGCSFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFSWithBuckets(t, func(t *testing.T) types.WriteFS {
+	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{Bucket: true}, func(t *testing.T) types.WriteFS {
 		ctx := t.Context()
 		name := "gs://first"
 		client := gcsfs.CreateFakeGcsBackend(t)

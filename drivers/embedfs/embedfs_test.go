@@ -28,7 +28,7 @@ import (
 )
 
 func TestDriverTest(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, func(t *testing.T) types.ReadFS {
+	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.ReadFS {
 		return makeTestEmbedFS(t, "ok")
 	})
 }

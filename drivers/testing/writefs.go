@@ -49,7 +49,7 @@ func WriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Writ
 }
 
 func writeFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
-	MkdirAll(t, args, createFSFunc)
+	mkdirAll(t, args, createFSFunc)
 	ReadFile(t, args, createFSFunc)
 	DirFileConflicts(t, args, createFSFunc)
 	InvalidPathsForWriteFS(t, args, createFSFunc)
@@ -146,7 +146,7 @@ func ReadDir(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Writ
 // of files, and verifies they can be read back.
 func ReadWriteFiles(t *testing.T, newFSFunc func(ctx context.Context, name string) (types.WriteFS, error), name string) {
 	t.Helper()
-	fsys := mustWriteFS(t, newFSFunc, name)
+	fsys := mustMakeWriteFS(t, newFSFunc, name)
 
 	wantFiles := []string{"a", "ab/b/c", "ab/d/c", "def", "abc", "abc.txt", "temp/abc.txt"}
 
@@ -288,50 +288,6 @@ func wantDirTree(leaves []string, leafEntries ...string) map[string][]string {
 		sort.Strings(names)
 	}
 	return want
-}
-
-// MkdirAll verifies that MkdirAll creates every missing directory in a path,
-// that each one is reported as a directory and listed by its parent next to
-// its siblings, and that repeating the call on existing directories succeeds.
-func MkdirAll(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
-	if args.Bucket {
-		t.Run("MkdirAll", func(t *testing.T) {
-			t.Parallel()
-			fsys := createFSFunc(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			for _, dir := range mkdirAllLeaves {
-				if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-					t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
-				}
-				name := path.Join(dir, "file")
-				f, err := fsys.Create(name)
-				if err != nil {
-					t.Fatalf("Create(%q) = %v, want nil", name, err)
-				}
-				if err := f.Close(); err != nil {
-					t.Fatalf("Close() = %v, want nil", err)
-				}
-			}
-			ufsTesting.AssertDirsInOrder(t, fsys, wantDirTree(mkdirAllLeaves, "file"))
-		})
-	} else {
-		t.Run("MkdirAll", func(t *testing.T) {
-			t.Parallel()
-			fsys := createFSFunc(t)
-			defer ufsTesting.ValidateClose(t, fsys)()
-			for _, dir := range mkdirAllLeaves {
-				if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-					t.Fatalf("MkdirAll(%q) = %v, want nil", dir, err)
-				}
-			}
-			ufsTesting.AssertDirsInOrder(t, fsys, wantDirTree(mkdirAllLeaves))
-			for _, dir := range mkdirAllLeaves {
-				if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-					t.Errorf("MkdirAll(%q) on existing directories = %v, want nil", dir, err)
-				}
-			}
-		})
-	}
 }
 
 // ReadFile verifies that data written to a file can be read back.
@@ -527,20 +483,6 @@ func Close(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
 	})
 }
 
-func mustWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (types.WriteFS, error), name string) types.WriteFS {
-	tb.Helper()
-
-	fsys, err := newFSFunc(tb.Context(), name)
-	if err != nil {
-		tb.Fatalf("FileSystem %q has an error, %s", name, err)
-	}
-	if fsys == nil {
-		tb.Fatalf("FileSystem %q is nil", name)
-	}
-
-	return fsys
-}
-
 func mkdirForTest(tb testing.TB, fsys types.WriteFS, dirs ...string) {
 	tb.Helper()
 	dir := path.Join(dirs...)
@@ -685,4 +627,29 @@ func Create(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
 			})
 		}
 	})
+}
+
+func mustWriteFS(tb testing.TB, fsys fs.FS) types.WriteFS {
+	tb.Helper()
+
+	fsysT, ok := fsys.(types.WriteFS)
+	if !ok {
+		tb.Fatalf("fs.FS is not a WriteFS, %+v", fsys)
+	}
+
+	return fsysT
+}
+
+func mustMakeWriteFS(tb testing.TB, newFSFunc func(context.Context, string) (types.WriteFS, error), name string) types.WriteFS {
+	tb.Helper()
+
+	fsys, err := newFSFunc(tb.Context(), name)
+	if err != nil {
+		tb.Fatalf("FileSystem %q has an error, %s", name, err)
+	}
+	if fsys == nil {
+		tb.Fatalf("FileSystem %q is nil", name)
+	}
+
+	return fsys
 }

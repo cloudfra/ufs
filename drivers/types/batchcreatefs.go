@@ -14,16 +14,12 @@
 
 package types
 
-import (
-	"io/fs"
-)
-
 // BatchCreateFS is an optional interface for a file system that can write
 // several whole files as one atomic operation, such as a database that writes
 // them in one transaction. It is not embedded in [WriteFS]; call
 // [BatchCreate] to write a batch to any [WriteFS].
 type BatchCreateFS interface {
-	fs.FS
+	SimpleFS
 
 	// BatchCreate writes every file in files, in order. Missing parent
 	// directories are created as MkdirAll creates them, an existing file is

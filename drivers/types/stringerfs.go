@@ -16,10 +16,9 @@ package types
 
 import (
 	"fmt"
-	"io/fs"
 )
 
-// StringerFS is a file system that can describe itself. It pairs [fs.FS]
+// StringerFS is a file system that can describe itself. It pairs [SimpleFS]
 // with [fmt.Stringer] so that a wrapper can print the file system it
 // holds instead of a bare Go value; internal helpers such as the one in package
 // fsutil prefer this method when it is available.
@@ -29,6 +28,6 @@ import (
 // backends. It is intended for debugging and logging only: it is not
 // round-trippable, so use [URIGetFS] when a file system must be reconstructed.
 type StringerFS interface {
-	fs.FS
+	SimpleFS
 	fmt.Stringer
 }

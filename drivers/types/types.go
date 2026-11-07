@@ -13,11 +13,12 @@
 // limitations under the License.
 
 // Package types defines the core interfaces and value types of the ufs
-// file-system model: the read-only ([ReadFS]) and read-write ([WriteFS])
-// file-system interfaces, the optional capability interfaces a backend can
-// implement (for example [BatchCreateFS], [CopyFileFS] and [Watcher]), the
-// file-handle and file-information types, and the device information a file
-// system reports. The public constructors in the ufs package, the individual
-// drivers, and the ops helpers all program against these types, so a driver
-// that implements them composes with the rest of the project.
+// file-system model: the smallest file system ([SimpleFS]), the read-only
+// ([ReadFS]) and read-write ([WriteFS]) file-system interfaces, the optional
+// capability interfaces a backend can implement (for example [BatchCreateFS],
+// [CopyFileFS] and [Watcher]), the file-handle and file-information types, and
+// the device information a file system reports. The public constructors in the
+// ufs package, the individual drivers, and the ops helpers all program against
+// these types, so a driver that implements them composes with the rest of the
+// project.
 package types

@@ -18,7 +18,7 @@ import "io/fs"
 
 // OpenFileFS provides OpenFile extension for WriteFS.
 type OpenFileFS interface {
-	fs.FS
+	SimpleFS
 
 	// OpenFile is the generalized open call; most users will use Open or Create instead.
 	OpenFile(name string, flag int, perm fs.FileMode) (File, error)

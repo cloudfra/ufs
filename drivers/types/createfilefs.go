@@ -14,12 +14,10 @@
 
 package types
 
-import "io/fs"
-
 // CreateFileFS is an optional interface that a file system may implement to support
 // file creation.
 type CreateFileFS interface {
-	fs.FS
+	SimpleFS
 
 	// Create opens a new writable file at name, replacing any existing file at
 	// that path. Parent directories are not created automatically; call

@@ -14,12 +14,10 @@
 
 package types
 
-import "io/fs"
-
 // ClosestParentFS is an optional interface for a file system that can report the
 // closest existing node above a path in one call.
 type ClosestParentFS interface {
-	fs.FS
+	SimpleFS
 
 	// ClosestParent returns the closest node that exists at or above name, name
 	// itself included, and reports whether that node is a directory. An error

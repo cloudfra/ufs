@@ -14,8 +14,6 @@
 
 package types
 
-import "io/fs"
-
 // MountedArchiveDirFS is an optional interface implemented by file systems
 // that expose the contents of an archive as a virtual directory next to the
 // archive file, such as "data.zip.d" for "data.zip". Walkers such as
@@ -24,7 +22,7 @@ import "io/fs"
 // A file system that wraps another one should forward the method, otherwise
 // the wrapped file system's archive directories look like ordinary ones.
 type MountedArchiveDirFS interface {
-	fs.FS
+	SimpleFS
 
 	// IsMountedArchiveDir reports whether name, a path of a directory in this
 	// file system that satisfies [fs.ValidPath], is a virtual directory backed

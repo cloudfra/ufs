@@ -14,11 +14,6 @@
 
 package types
 
-import (
-	"io"
-	"io/fs"
-)
-
 // ExternalPathGetFS is an optional interface implemented by file systems that
 // can expose a concrete external path for a virtual file. The returned value may
 // be an absolute local path, a URL, or any other identifier that allows
@@ -27,9 +22,7 @@ import (
 // This is useful when passing a file to a library or tool that does not
 // understand [fs.FS] or the virtual path abstraction.
 type ExternalPathGetFS interface {
-	fs.FS
-
-	io.Closer
+	SimpleFS
 
 	// ExternalPath returns the canonical external path for the file at path.
 	// Implementations that do not support this operation should return an empty

@@ -28,7 +28,7 @@ import (
 )
 
 func TestGitFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFSWithBuckets(t, func(t *testing.T) types.WriteFS {
+	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{Bucket: true}, func(t *testing.T) types.WriteFS {
 		srcDir, err := osutil.MkdirTemp("", "gitfssrc*.git")
 		if err != nil {
 			t.Fatal(err)

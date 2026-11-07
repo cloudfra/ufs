@@ -24,7 +24,7 @@ import (
 )
 
 func TestReadWrapFSDriver(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, func(_ *testing.T) types.ReadFS {
+	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{ReadOnly: true}, func(_ *testing.T) types.ReadFS {
 		return readwrapfs.FromFS(core.MakeMemFS("memory://test"))
 	})
 }

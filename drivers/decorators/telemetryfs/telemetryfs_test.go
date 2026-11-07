@@ -635,7 +635,7 @@ func TestTelemetryForwardsWatch(t *testing.T) {
 // TestTelemetryFSDriver runs the shared file system tests through the
 // decorator, which must not change how the file system behaves.
 func TestTelemetryFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) types.WriteFS {
+	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.WriteFS {
 		return newRecorder().wrap(t.Context(), t, core.MakeMemFS(memFSName), both)
 	})
 }

@@ -23,7 +23,7 @@ import (
 )
 
 func TestNestedMemFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, func(t *testing.T) types.WriteFS {
+	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.WriteFS {
 		name := "memory://test"
 		fsys, err := ufs.NewNestFS(t.Context(), name)
 		if err != nil {

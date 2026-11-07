@@ -42,7 +42,7 @@ var renameTree = map[string]string{
 // has one: files and directory trees move with their content, and a missing
 // source, an existing destination, the root, a move into itself and invalid
 // paths fail with the documented errors and change nothing.
-func Rename(t *testing.T, createFS func(*testing.T) types.WriteFS) {
+func Rename(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
 	t.Run("Rename", func(t *testing.T) {
 		t.Parallel()
 

@@ -59,6 +59,14 @@ func writeFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Writ
 	Rename(t, args, createFSFunc)
 	BatchCreate(t, args, createFSFunc)
 	Conventions(t, args, createFSFunc)
+
+	exampleFS := createFSFunc(t)
+	if _, ok := exampleFS.(types.CopyFileFS); ok {
+		CopyFileFS(t, args, func(t *testing.T) fs.FS {
+			return createFSFunc(t)
+		})
+	}
+
 	readFS(t, args, func(t *testing.T) types.ReadFS {
 		return createFSFunc(t)
 	})

@@ -53,19 +53,28 @@ const copyFileLargeBufferSize = 64 * 1024
 //
 // A copy stands on its own, so editing the destination afterwards may not
 // change the source. The permission bits a copy carries are not checked.
-func CopyFileFS(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func CopyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
 	if createFSFunc == nil {
 		t.Fatal("createFSFunc is nil")
 	}
-	copyFileCopies(t, createFSFunc)
-	copyFileRefusals(t, createFSFunc)
-	copyFileIndependent(t, createFSFunc)
-	copyFileLarge(t, createFSFunc)
-	copyFileInvalidPaths(t, createFSFunc)
+	copyFileFS(t, args, func(t *testing.T) types.CopyFileFS {
+		return mustCopyFileFS(t, createFSFunc)
+	})
+}
+
+func copyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+	if createFSFunc == nil {
+		t.Fatal("createFSFunc is nil")
+	}
+	copyFileCopies(t, args, createFSFunc)
+	copyFileRefusals(t, args, createFSFunc)
+	copyFileIndependent(t, args, createFSFunc)
+	copyFileLarge(t, args, createFSFunc)
+	copyFileInvalidPaths(t, args, createFSFunc)
 }
 
 // copyFileCopies checks the copies that must succeed and the tree each leaves.
-func copyFileCopies(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileCopies(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
 	t.Run("CopyFile", func(t *testing.T) {
 		t.Parallel()
 
@@ -114,7 +123,7 @@ func copyFileCopies(t *testing.T, createFSFunc func(t *testing.T) types.CopyFile
 
 // copyFileRefusals checks the copies that must fail, the error each reports,
 // and that the tree is left exactly as it was.
-func copyFileRefusals(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileRefusals(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
 	t.Run("CopyFileRefusals", func(t *testing.T) {
 		t.Parallel()
 
@@ -168,7 +177,7 @@ func copyFileRefusals(t *testing.T, createFSFunc func(t *testing.T) types.CopyFi
 
 // copyFileIndependent checks that a copy is its own file: editing the
 // destination may not change the source, and a copy of a copy carries the edit.
-func copyFileIndependent(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileIndependent(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
 	t.Run("CopyFileIndependent", func(t *testing.T) {
 		t.Parallel()
 		fsys, wFS := newCopyFS(t, createFSFunc)
@@ -187,7 +196,7 @@ func copyFileIndependent(t *testing.T, createFSFunc func(t *testing.T) types.Cop
 
 // copyFileLarge checks that a file larger than a copy buffer arrives whole and
 // in order, which a copy that repeats, drops or reorders a buffer does not.
-func copyFileLarge(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileLarge(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
 	t.Run("CopyFileLarge", func(t *testing.T) {
 		t.Parallel()
 		fsys, wFS := newCopyFS(t, createFSFunc)
@@ -202,7 +211,7 @@ func copyFileLarge(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileF
 
 // copyFileInvalidPaths checks that CopyFile refuses a path that is not valid
 // for the file system, both as the source and as the destination.
-func copyFileInvalidPaths(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
 	t.Run("CopyFileInvalidPaths", func(t *testing.T) {
 		t.Parallel()
 
@@ -320,4 +329,14 @@ func copyFileLargeContent() string {
 		sb.WriteString(strings.Repeat(string(rune('a'+i)), copyFileLargeBufferSize))
 	}
 	return sb.String()
+}
+
+func mustCopyFileFS(t *testing.T, createFSFunc func(t *testing.T) fs.FS) types.CopyFileFS {
+	t.Helper()
+	fsys := createFSFunc(t)
+	cfsys, ok := fsys.(types.CopyFileFS)
+	if !ok {
+		t.Fatalf("%T does not implement types.CopyFileFS", fsys)
+	}
+	return cfsys
 }

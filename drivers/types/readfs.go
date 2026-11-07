@@ -15,17 +15,16 @@
 package types
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 )
 
 // ReadFS is a read-only file system. In addition to the standard [fs.FS]
-// interface it requires [io.Closer] for lifecycle management and the four
-// extended read interfaces from the standard library. Every read-only backend
-// must also support the capability interfaces below, so that [StringerFS] can
-// describe it, [URIGetFS] can report where it came from, and
-// [DeviceInfoGetFS] can report which device backs each path. Callers should
-// always Close a ReadFS when they are done with it.
+// interface it requires [io.Closer] for lifecycle management, the four
+// extended read interfaces from the standard library, and [fmt.Stringer] so
+// that every implementation can describe itself. Callers should always Close
+// a ReadFS when they are done with it.
 type ReadFS interface {
 	fs.FS
 	io.Closer
@@ -34,7 +33,16 @@ type ReadFS interface {
 	fs.ReadLinkFS
 	fs.StatFS
 
-	StringerFS
-	URIGetFS
-	DeviceInfoGetFS
+	fmt.Stringer
+
+	DeviceInfoGet
+
+	// TODO: Implement ExternalPathGet
+
+	URIGet
+
+	// String returns a human-readable description of the file system that
+	// shows how it is composed — wrapper layers, mount points, and the
+	// underlying storage backends. It is intended for debugging and logging.
+	String() string
 }

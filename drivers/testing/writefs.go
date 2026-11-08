@@ -53,7 +53,6 @@ func writeFSInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) ty
 	InvalidPathsForWriteFS(t, args, createFSFunc)
 	ReadDir(t, args, createFSFunc)
 	Close(t, args, createFSFunc)
-	Create(t, args, createFSFunc)
 	Rename(t, args, createFSFunc)
 	BatchCreate(t, args, createFSFunc)
 	Conventions(t, args, createFSFunc)
@@ -536,95 +535,6 @@ func InvalidPathsForWriteFS(t *testing.T, _ Args, createFS func(*testing.T) type
 			}
 		})
 	}
-}
-
-// Create verifies that files created and written in nested directories can be
-// read back via ReadFile, Open, and Lstat, and are not reported as symlinks.
-func Create(t *testing.T, _ Args, createFS func(*testing.T) types.WriteFS) {
-	t.Run("Create", func(t *testing.T) {
-		t.Parallel()
-		fsys := createFS(t)
-		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-
-		filenames := []string{"b/a/c", "b/b", "b/c", "c", "d/e/f/g", "d/e/g", "a/b/c/d/e/f/g"}
-
-		for _, filename := range filenames {
-			t.Run(fmt.Sprintf("Create/%s", filename), func(t *testing.T) {
-				dir := path.Dir(filename)
-				if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-					t.Errorf("cannot Mkdir(%q), %s", dir, err)
-				}
-
-				t.Run("Create", func(t *testing.T) {
-					f, err := fsys.Create(filename)
-					if err != nil {
-						t.Fatalf("Open(%q) failed, %s", filename, err)
-					}
-					bytesWritten, err := f.WriteString(filename)
-					if err != nil {
-						t.Errorf("WriteString(%q) failed to write, %s", filename, err)
-					}
-					if bytesWritten != len(filename) {
-						t.Errorf("WriteString(%q) bytesWritten mismatch, want: %d, got: %d", filename, len(filename), bytesWritten)
-					}
-					if err := f.Close(); err != nil {
-						t.Errorf("Close() got error, %s", err)
-					}
-				})
-
-				t.Run("ReadFile", func(t *testing.T) {
-					data, err := fsys.ReadFile(filename)
-					if err != nil {
-						t.Errorf("ReadFile(%q) got error, %s", filename, err)
-					}
-					gotData := string(data)
-					if gotData != filename {
-						t.Errorf("ReadFile(%q) mismatch, got: %q, want: %q", filename, gotData, filename)
-					}
-				})
-
-				t.Run("Open", func(t *testing.T) {
-					rf, err := fsys.Open(filename)
-					if err != nil {
-						t.Fatalf("Open(%q) got error, %s", filename, err)
-					}
-					data, err := io.ReadAll(rf)
-					if err != nil {
-						t.Errorf("io.ReadAll(%q) got error, %s", filename, err)
-					}
-					if err := rf.Close(); err != nil {
-						t.Errorf("Close() got error, %s", err)
-					}
-					gotData := string(data)
-					if gotData != filename {
-						t.Errorf("io.ReadAll(%q) mismatch, got: %q, want: %q", filename, gotData, filename)
-					}
-				})
-
-				t.Run("ReadLink", func(t *testing.T) {
-					lfilename, err := fsys.ReadLink(filename)
-					if err == nil {
-						t.Errorf("ReadLink(%q) error was nil", filename)
-					} else if _, ok := err.(*fs.PathError); !ok {
-						t.Errorf("ReadLink(%q) error was not of type *fs.PathError, %s", filename, err)
-					}
-					if lfilename != "" {
-						t.Errorf("ReadLink(%q) mismatch, got: %q, want: ''", filename, lfilename)
-					}
-				})
-
-				t.Run("Lstat", func(t *testing.T) {
-					stat, err := fsys.Lstat(filename)
-					if err != nil {
-						t.Errorf("Lstat(%q) got error, %s", filename, err)
-					}
-					if stat == nil {
-						t.Errorf("Lstat(%q) returned nil FileInfo", filename)
-					}
-				})
-			})
-		}
-	})
 }
 
 func mustWriteFS(tb testing.TB, fsys fs.FS) types.WriteFS {

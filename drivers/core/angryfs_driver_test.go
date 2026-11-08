@@ -32,5 +32,4 @@ func TestAngryFSDriver(t *testing.T) {
 	ufsdriversTesting.InvalidPathsForWriteFS(t, ufsdriversTesting.Args{}, createFSFunc)
 	// ufsdriversTesting.ReadDir(t, ufsdriversTesting.Args{}, createFSFunc)
 	// ufsdriversTesting.Close(t, ufsdriversTesting.Args{}, createFSFunc)
-	// ufsdriversTesting.Create(t, ufsdriversTesting.Args{}, createFSFunc)
 }

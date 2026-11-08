@@ -47,30 +47,17 @@ const copyFileLargeBuffers = 8
 
 const copyFileLargeBufferSize = 64 * 1024
 
-// CopyFileFS verifies that a file system's CopyFile copies the content of a
-// file and nothing else: a missing source, a taken destination, a directory
-// source, the root and an invalid path fail without changing the tree.
-//
-// A copy stands on its own, so editing the destination afterwards may not
-// change the source. The permission bits a copy carries are not checked.
-func CopyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) fs.FS) {
-	if createFSFunc == nil {
-		t.Fatal("createFSFunc is nil")
-	}
-	copyFileFS(t, args, func(t *testing.T) types.CopyFileFS {
-		return mustCopyFileFS(t, createFSFunc)
+func copyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	requireType[types.CopyFileFS](t, args)
+	t.Run("CopyFileFS", func(t *testing.T) {
+		t.Parallel()
+		createFunc := mustFSTypeFunc[types.CopyFileFS](t, createFSFunc)
+		copyFileCopies(t, args, createFunc)
+		copyFileRefusals(t, args, createFunc)
+		copyFileIndependent(t, args, createFunc)
+		copyFileLarge(t, args, createFunc)
+		copyFileInvalidPaths(t, args, createFunc)
 	})
-}
-
-func copyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
-	if createFSFunc == nil {
-		t.Fatal("createFSFunc is nil")
-	}
-	copyFileCopies(t, args, createFSFunc)
-	copyFileRefusals(t, args, createFSFunc)
-	copyFileIndependent(t, args, createFSFunc)
-	copyFileLarge(t, args, createFSFunc)
-	copyFileInvalidPaths(t, args, createFSFunc)
 }
 
 // copyFileCopies checks the copies that must succeed and the tree each leaves.
@@ -329,14 +316,4 @@ func copyFileLargeContent() string {
 		sb.WriteString(strings.Repeat(string(rune('a'+i)), copyFileLargeBufferSize))
 	}
 	return sb.String()
-}
-
-func mustCopyFileFS(t *testing.T, createFSFunc func(t *testing.T) fs.FS) types.CopyFileFS {
-	t.Helper()
-	fsys := createFSFunc(t)
-	cfsys, ok := fsys.(types.CopyFileFS)
-	if !ok {
-		t.Fatalf("%T does not implement types.CopyFileFS", fsys)
-	}
-	return cfsys
 }

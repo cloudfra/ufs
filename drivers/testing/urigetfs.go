@@ -24,8 +24,8 @@ import (
 )
 
 func uriGetFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
-	requireType[types.URIGetFS](t, args)
 	t.Run("URIGetFS", func(t *testing.T) {
+		requireType[types.URIGetFS](t, args)
 		t.Parallel()
 		createFunc := mustFSTypeFunc[types.URIGetFS](t, createFSFunc)
 		uriGetReadOnly(t, args, createFunc)

@@ -48,8 +48,8 @@ const copyFileLargeBuffers = 8
 const copyFileLargeBufferSize = 64 * 1024
 
 func copyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
-	requireType[types.CopyFileFS](t, args)
 	t.Run("CopyFileFS", func(t *testing.T) {
+		requireType[types.CopyFileFS](t, args)
 		t.Parallel()
 		createFunc := mustFSTypeFunc[types.CopyFileFS](t, createFSFunc)
 		copyFileCopies(t, args, createFunc)

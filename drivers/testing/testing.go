@@ -15,7 +15,6 @@
 package testing
 
 import (
-	"io/fs"
 	"reflect"
 	"testing"
 
@@ -50,6 +49,9 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	exampleFS := createFSFunc(t)
 	args.fsType = reflect.TypeOf(exampleFS)
 	ufsTesting.ValidateClose(t, exampleFS)()
+
+	copyFileFS(t, args, createFSFunc)
+
 	switch {
 	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):
 		fsInternal(t, args, func(t *testing.T) ufs.FS {
@@ -79,11 +81,6 @@ func fsInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS)
 	BatchCreate(t, args, createWriteFSFunc)
 
 	exampleFS := createFSFunc(t)
-	if _, ok := exampleFS.(types.CopyFileFS); ok {
-		CopyFileFS(t, args, func(t *testing.T) fs.FS {
-			return createFSFunc(t)
-		})
-	}
 	if _, ok := exampleFS.(types.ReadFS); ok {
 		readFS(t, args, func(t *testing.T) types.ReadFS {
 			return createFSFunc(t)
@@ -107,6 +104,12 @@ func WriteFile(tb testing.TB, fsys types.WriteFS, name, content string) {
 	}
 }
 
+func requireType[T any](tb testing.TB, args Args) {
+	if !args.fsType.AssignableTo(reflect.TypeFor[T]()) {
+		tb.Skip("FS type does not implement the interface requred for this test")
+	}
+}
+
 func mustFSType[T types.SimpleFS](t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) T {
 	t.Helper()
 	fsys := createFSFunc(t)
@@ -115,4 +118,17 @@ func mustFSType[T types.SimpleFS](t *testing.T, createFSFunc func(t *testing.T) 
 		t.Fatalf("%T does not implement %s", fsys, reflect.TypeFor[T]())
 	}
 	return cFsys
+}
+
+func mustFSTypeFunc[T types.SimpleFS](t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) func(t *testing.T) T {
+	t.Helper()
+	return func(t *testing.T) T {
+		t.Helper()
+		fsys := createFSFunc(t)
+		cFsys, ok := fsys.(T)
+		if !ok {
+			t.Fatalf("%T does not implement %s", fsys, reflect.TypeFor[T]())
+		}
+		return cFsys
+	}
 }

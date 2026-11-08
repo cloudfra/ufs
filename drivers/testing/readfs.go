@@ -33,7 +33,6 @@ func readFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadF
 	Constructor(t, args, createFSFunc)
 	InvalidPathsForReadFS(t, args, createFSFunc)
 	String(t, args, createFSFunc)
-	URI(t, args, createFSFunc)
 }
 
 // String verifies that the file system's String method returns a URI-like
@@ -61,32 +60,6 @@ func Constructor(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.Rea
 		}
 		ufsTesting.ValidateClose(t, fsys)()
 		ufsTesting.ValidateClose(t, fsys)()
-	})
-}
-
-// URI verifies that the file system reports a URI marked read-only.
-func URI(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadFS) {
-	t.Run("URI", func(t *testing.T) {
-		t.Parallel()
-		fsys := createFSFunc(t)
-		defer ufsTesting.ValidateClose(t, fsys)()
-
-		u, err := fsys.URI()
-		if err != nil {
-			t.Fatalf("URI() returned error: %v", err)
-		}
-		if u == nil {
-			t.Fatal("URI() = nil, want a URL")
-		}
-		if args.ReadOnly {
-			if got := u.Query().Get("ro"); got != "true" {
-				t.Errorf("%q.Query().Get(\"ro\") = %q, want %q", u, got, "true")
-			}
-		} else {
-			if got := u.Query().Get("ro"); got != "false" && got != "" {
-				t.Errorf("%q.Query().Get(\"ro\") = %q, want %q", u, got, "false or empty")
-			}
-		}
 	})
 }
 

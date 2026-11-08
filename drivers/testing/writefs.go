@@ -481,7 +481,7 @@ func Close(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
 	})
 }
 
-func mkdirForTest(tb testing.TB, fsys types.WriteFS, dirs ...string) {
+func mkdirForTest(tb testing.TB, fsys types.MkdirAllFS, dirs ...string) {
 	tb.Helper()
 	dir := path.Join(dirs...)
 	if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {

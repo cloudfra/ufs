@@ -47,22 +47,28 @@ const copyFileLargeBuffers = 8
 
 const copyFileLargeBufferSize = 64 * 1024
 
+type copyFileFSForTest interface {
+	types.CopyFileFS
+	types.MkdirAllFS
+	types.CreateFileFS
+}
+
 func copyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
-	t.Run("CopyFileFS", func(t *testing.T) {
+	t.Run("copyFileFS", func(t *testing.T) {
 		requireType[types.CopyFileFS](t, args)
 		t.Parallel()
-		createFunc := mustFSTypeFunc[types.CopyFileFS](t, createFSFunc)
-		copyFileCopies(t, args, createFunc)
-		copyFileRefusals(t, args, createFunc)
-		copyFileIndependent(t, args, createFunc)
-		copyFileLarge(t, args, createFunc)
-		copyFileInvalidPaths(t, args, createFunc)
+		copyFileFSInvalidPath(t, args, requireFSTypeFunc[types.CopyFileFS](t, createFSFunc))
+		copyFileInvalidPaths(t, args, requireFSTypeFunc[types.CopyFileFS](t, createFSFunc))
+		copyFileCopies(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
+		copyFileRefusals(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
+		copyFileIndependent(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
+		copyFileLarge(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
 	})
 }
 
 // copyFileCopies checks the copies that must succeed and the tree each leaves.
-func copyFileCopies(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
-	t.Run("CopyFile", func(t *testing.T) {
+func copyFileCopies(t *testing.T, _ Args, createFSFunc func(t *testing.T) copyFileFSForTest) {
+	t.Run("copyFileCopies", func(t *testing.T) {
 		t.Parallel()
 
 		copies := []struct {
@@ -98,7 +104,7 @@ func copyFileCopies(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.
 		for _, tc := range copies {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
-				fsys, _ := newCopyFS(t, createFSFunc)
+				fsys := newCopyFS(t, createFSFunc)
 				if err := fsys.CopyFile(tc.src, tc.dst); err != nil {
 					t.Fatalf("CopyFile(%q, %q) = %v", tc.src, tc.dst, err)
 				}
@@ -110,7 +116,7 @@ func copyFileCopies(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.
 
 // copyFileRefusals checks the copies that must fail, the error each reports,
 // and that the tree is left exactly as it was.
-func copyFileRefusals(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileRefusals(t *testing.T, _ Args, createFSFunc func(t *testing.T) copyFileFSForTest) {
 	t.Run("CopyFileRefusals", func(t *testing.T) {
 		t.Parallel()
 
@@ -143,7 +149,7 @@ func copyFileRefusals(t *testing.T, _ Args, createFSFunc func(t *testing.T) type
 		for _, tc := range refusals {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
-				fsys, _ := newCopyFS(t, createFSFunc)
+				fsys := newCopyFS(t, createFSFunc)
 				err := fsys.CopyFile(tc.src, tc.dst)
 				if err == nil {
 					t.Fatalf("CopyFile(%q, %q) = nil, want an error", tc.src, tc.dst)
@@ -164,14 +170,14 @@ func copyFileRefusals(t *testing.T, _ Args, createFSFunc func(t *testing.T) type
 
 // copyFileIndependent checks that a copy is its own file: editing the
 // destination may not change the source, and a copy of a copy carries the edit.
-func copyFileIndependent(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileIndependent(t *testing.T, _ Args, createFSFunc func(t *testing.T) copyFileFSForTest) {
 	t.Run("CopyFileIndependent", func(t *testing.T) {
 		t.Parallel()
-		fsys, wFS := newCopyFS(t, createFSFunc)
+		fsys := newCopyFS(t, createFSFunc)
 		if err := fsys.CopyFile("c/a.txt", "c/f.txt"); err != nil {
 			t.Fatalf("CopyFile(c/a.txt, c/f.txt) = %v", err)
 		}
-		WriteFile(t, wFS, "c/f.txt", "edited")
+		WriteFile(t, fsys, "c/f.txt", "edited")
 		assertCopyContent(t, fsys, "c/a.txt", "a")
 		assertCopyContent(t, fsys, "c/f.txt", "edited")
 		if err := fsys.CopyFile("c/f.txt", "c/g.txt"); err != nil {
@@ -183,12 +189,12 @@ func copyFileIndependent(t *testing.T, _ Args, createFSFunc func(t *testing.T) t
 
 // copyFileLarge checks that a file larger than a copy buffer arrives whole and
 // in order, which a copy that repeats, drops or reorders a buffer does not.
-func copyFileLarge(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+func copyFileLarge(t *testing.T, _ Args, createFSFunc func(t *testing.T) copyFileFSForTest) {
 	t.Run("CopyFileLarge", func(t *testing.T) {
 		t.Parallel()
-		fsys, wFS := newCopyFS(t, createFSFunc)
+		fsys := newCopyFS(t, createFSFunc)
 		content := copyFileLargeContent()
-		WriteFile(t, wFS, "c/large.txt", content)
+		WriteFile(t, fsys, "c/large.txt", content)
 		if err := fsys.CopyFile("c/large.txt", "c/large-copy.txt"); err != nil {
 			t.Fatalf("CopyFile(c/large.txt, c/large-copy.txt) = %v", err)
 		}
@@ -198,8 +204,29 @@ func copyFileLarge(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.C
 
 // copyFileInvalidPaths checks that CopyFile refuses a path that is not valid
 // for the file system, both as the source and as the destination.
+func copyFileFSInvalidPath(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+	t.Run("copyFileFSInvalidPath", func(t *testing.T) {
+		t.Parallel()
+
+		fsys := createFSFunc(t)
+
+		for _, p := range invalidPaths {
+			t.Run(p, func(t *testing.T) {
+				t.Run("src", func(t *testing.T) {
+					ufsTesting.AssertInvalidPathError(t, p, fsys.CopyFile(p, "good.txt"), "copy")
+				})
+				t.Run("dest", func(t *testing.T) {
+					ufsTesting.AssertInvalidPathError(t, p, fsys.CopyFile("good.txt", p), "copy")
+				})
+			})
+		}
+	})
+}
+
+// copyFileInvalidPaths checks that CopyFile refuses a path that is not valid
+// for the file system, both as the source and as the destination.
 func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
-	t.Run("CopyFileInvalidPaths", func(t *testing.T) {
+	t.Run("copyFileInvalidPaths", func(t *testing.T) {
 		t.Parallel()
 
 		for _, name := range append(invalidPaths, "", "c/", "c//a.txt", "./c/a.txt") {
@@ -216,13 +243,12 @@ func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) 
 			} {
 				t.Run(tc.name+"_"+label, func(t *testing.T) {
 					t.Parallel()
-					fsys, _ := newCopyFS(t, createFSFunc)
+					fsys := createFSFunc(t)
 					err := fsys.CopyFile(tc.src, tc.dst)
 					if !errors.Is(err, fs.ErrInvalid) {
 						t.Errorf("CopyFile(%q, %q) = %v, want %v", tc.src, tc.dst, err, fs.ErrInvalid)
 					}
-					var pathErr *fs.PathError
-					if !errors.As(err, &pathErr) {
+					if _, ok := errors.AsType[*fs.PathError](err); !ok {
 						t.Errorf("CopyFile(%q, %q) = %T, want an *fs.PathError", tc.src, tc.dst, err)
 					}
 					assertCopyTree(t, fsys, copyFileTree)
@@ -234,23 +260,19 @@ func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) 
 
 // newCopyFS returns a file system from createFSFunc seeded with copyFileTree,
 // which needs a file system that can write.
-func newCopyFS(t *testing.T, createFSFunc func(t *testing.T) types.CopyFileFS) (types.CopyFileFS, types.WriteFS) {
+func newCopyFS(t *testing.T, createFSFunc func(t *testing.T) copyFileFSForTest) copyFileFSForTest {
 	t.Helper()
 	fsys := createFSFunc(t)
 	if closer, ok := fsys.(io.Closer); ok {
 		t.Cleanup(ufsTesting.ValidateClose(t, closer))
 	}
-	wFS, ok := fsys.(types.WriteFS)
-	if !ok {
-		t.Fatalf("%T does not implement types.WriteFS, which this suite needs to seed the tree", fsys)
-	}
 	for _, dir := range copyFileDirs {
-		mkdirForTest(t, wFS, dir)
+		mkdirForTest(t, fsys, dir)
 	}
 	for name, content := range copyFileTree {
-		WriteFile(t, wFS, name, content)
+		WriteFile(t, fsys, name, content)
 	}
-	return fsys, wFS
+	return fsys
 }
 
 // copyFileWant returns copyFileTree plus the entries a successful copy added.

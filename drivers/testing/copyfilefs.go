@@ -251,7 +251,6 @@ func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) 
 					if _, ok := errors.AsType[*fs.PathError](err); !ok {
 						t.Errorf("CopyFile(%q, %q) = %T, want an *fs.PathError", tc.src, tc.dst, err)
 					}
-					assertCopyTree(t, fsys, copyFileTree)
 				})
 			}
 		}

@@ -24,9 +24,11 @@ import (
 )
 
 // Copy copies the single file at srcFilename in srcFS to destFilename in destFS.
-// The parent directory of destFilename must already exist. The destination file
-// is created (or truncated) via [types.WriteFS]. An error from closing the
-// destination file is returned, since the copy may not have been persisted.
+// The parent directory of destFilename must already exist. When both names are
+// in one file system that can copy a file by itself, that copy is used and an
+// existing destination is refused. Otherwise the destination file is created (or
+// truncated) via [types.WriteFS]. An error from closing the destination file is
+// returned, since the copy may not have been persisted.
 func Copy(srcFS fs.FS, srcFilename string, destFS fs.FS, destFilename string) error {
 	if copyFS, ok := srcFS.(types.CopyFileFS); ok && types.SameFS(srcFS, destFS) {
 		return copyFS.CopyFile(srcFilename, destFilename)

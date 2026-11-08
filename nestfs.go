@@ -54,6 +54,10 @@ const (
 	// renameOp is the operation name recorded in the errors that Rename
 	// returns.
 	renameOp = "rename"
+
+	// copyOp is the operation name recorded in the errors that CopyFile
+	// returns.
+	copyOp = "copy"
 )
 
 // FSArgs holds optional parameters for constructing a nestFS.
@@ -65,6 +69,7 @@ var (
 	_ FS                        = (*nestFS)(nil)
 	_ fs.GlobFS                 = (*nestFS)(nil)
 	_ AbsPathGetter             = (*nestFS)(nil)
+	_ types.CopyFileFS          = (*nestFS)(nil)
 	_ types.MountedArchiveDirFS = (*nestFS)(nil)
 	_ types.DeviceInfoGet       = (*mountMap)(nil)
 )
@@ -328,6 +333,12 @@ func (fsys *nestFS) DeviceInfo() types.DeviceMap {
 }
 
 func (fsys *nestFS) URI() (*url.URL, error) {
+	// types.Equals asks for the URI of any file system it is given, including a
+	// closed one, and treats only an error as "no URI" because a nil URL would be
+	// dereferenced.
+	if fsys.fsys == nil {
+		return nil, fmt.Errorf("cannot get the URI of a closed file system, %w", fs.ErrClosed)
+	}
 	base, err := fsys.fsys.URI()
 	if base == nil || err != nil {
 		return nil, nil
@@ -944,11 +955,11 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		return ufserrors.NewLinkError(renameOp, oldPath, newPath, err)
 	}
 
-	src, err := fsys.renameLevels(oldPath)
+	src, err := fsys.pathLevels(oldPath)
 	if err != nil {
 		return linkErr(err)
 	}
-	dst, err := fsys.renameLevels(newPath)
+	dst, err := fsys.pathLevels(newPath)
 	if err != nil {
 		return linkErr(err)
 	}
@@ -964,16 +975,16 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		return linkErr(fmt.Errorf("archive content cannot be changed, %w", fs.ErrPermission))
 	}
 
-	var unmount []renameLevel
+	var unmount []pathLevel
 	for _, level := range src {
 		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
 			if !isArchiveMountPath(mountPath) {
 				return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrPermission))
 			}
-			unmount = append(unmount, renameLevel{level.fsys, mountPath})
+			unmount = append(unmount, pathLevel{level.fsys, mountPath})
 		}
 		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
-			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
+			unmount = append(unmount, pathLevel{level.fsys, level.name + archiveDirExt})
 		}
 	}
 	for _, level := range dst {
@@ -983,10 +994,10 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 			}
 			// The rename fails if newPath exists, so on success an archive
 			// mounted below it is left from a removed one.
-			unmount = append(unmount, renameLevel{level.fsys, mountPath})
+			unmount = append(unmount, pathLevel{level.fsys, mountPath})
 		}
 		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
-			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
+			unmount = append(unmount, pathLevel{level.fsys, level.name + archiveDirExt})
 		}
 	}
 	if archive.IsMountablePath(dstLeaf.name) {
@@ -1017,6 +1028,107 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		}
 	}
 	return nil
+}
+
+// CopyFile copies the file at srcPath to dstPath. Paths are resolved through
+// nested mounts the way [nestFS.Rename] resolves them: within one mounted file
+// system the copy is made there, so a back end that can copy without moving the
+// bytes keeps that, and between two the content is read from one and written
+// into the other.
+//
+// It reports the errors [types.CopyFileFS] describes, and fails with
+// [fs.ErrPermission] when srcPath is a path that only exists as a directory
+// because a mount is below it. It fails with [fs.ErrExist] when dstPath is such
+// a directory, or is an archive whose content directory (dstPath plus ".d")
+// already exists, which the copy would hide. An archive mount left over by a
+// copy onto its archive file is unmounted and mounted again when next opened.
+func (fsys *nestFS) CopyFile(srcPath, dstPath string) error {
+	if err := fsys.validPath(copyOp, srcPath); err != nil {
+		return err
+	}
+	if err := fsys.validPath(copyOp, dstPath); err != nil {
+		return err
+	}
+	linkErr := func(err error) error {
+		return ufserrors.NewLinkError(copyOp, srcPath, dstPath, err)
+	}
+
+	src, err := fsys.pathLevels(srcPath)
+	if err != nil {
+		return linkErr(err)
+	}
+	dst, err := fsys.pathLevels(dstPath)
+	if err != nil {
+		return linkErr(err)
+	}
+	srcLeaf, dstLeaf := src[len(src)-1], dst[len(dst)-1]
+	if srcLeaf.fsys.fsys == nil || dstLeaf.fsys.fsys == nil {
+		return linkErr(fs.ErrClosed)
+	}
+	if pathutil.IsCwd(srcLeaf.name) || pathutil.IsCwd(dstLeaf.name) {
+		// srcPath or dstPath is the root of a mount, which is a directory.
+		return linkErr(fs.ErrPermission)
+	}
+	var unmount []pathLevel
+	for _, level := range src {
+		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
+			// srcPath is a directory here because a mount is below it, so the
+			// file that the mount hides is not the one the caller named.
+			return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrPermission))
+		}
+	}
+	for _, level := range dst {
+		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
+			// dstPath is a directory here because a mount is below it, which
+			// the file system that holds it does not know about.
+			return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrExist))
+		}
+		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
+			// The copy replaces the archive file whose content is mounted at
+			// level.name plus archiveDirExt, so that mount must be mounted again.
+			unmount = append(unmount, pathLevel{level.fsys, level.name + archiveDirExt})
+		}
+	}
+	if archive.IsMountablePath(dstLeaf.name) {
+		contentDir := dstLeaf.name + archiveDirExt
+		if _, err := dstLeaf.fsys.fsys.Lstat(contentDir); err == nil {
+			return linkErr(fmt.Errorf("%q would be hidden by the archive, %w", contentDir, fs.ErrExist))
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return linkErr(err)
+		}
+	}
+
+	// A copy stays native only when one file system holds both names.
+	// types.SameFS compares the data behind the two nests, which their URIs
+	// cannot do because two separate mounts of one driver can share a URI.
+	if types.SameFS(srcLeaf.fsys.fsys, dstLeaf.fsys.fsys) {
+		err = polyfills.CopyFile(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
+	} else {
+		err = copyFileBetweenMounts(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)
+	}
+	if err != nil {
+		return linkErr(err)
+	}
+	for _, mount := range unmount {
+		// The copy itself succeeded, so a mount that cannot be closed here is
+		// left for a later close rather than reported as a failed copy.
+		if removeErr := mount.fsys.mounts.remove(mount.name); removeErr != nil {
+			slog.Warn("cannot unmount after copy", "path", mount.name, "error", removeErr)
+		}
+	}
+	return nil
+}
+
+// copyFileBetweenMounts copies the file srcName in srcFS to dstName in dstFS,
+// two different mounted file systems. [ops.Copy] would create the destination,
+// so a name that is already taken is refused here first.
+func copyFileBetweenMounts(srcFS fs.FS, srcName string, dstFS types.WriteFS, dstName string) error {
+	if _, err := fs.Stat(dstFS, dstName); err == nil {
+		return ufserrors.NewPathError(copyOp, dstName, fs.ErrExist)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return ops.Copy(srcFS, srcName, dstFS, dstName)
 }
 
 // closeOnRelease reports whether releasing means closing fsys outright rather
@@ -1068,32 +1180,32 @@ func (fsys *nestFS) Release() error {
 	return fsys.mounts.releaseAll()
 }
 
-// renameLevel is a nestFS that a path passes through and the path within it.
-type renameLevel struct {
+// pathLevel is a nestFS that a path passes through and the path within it.
+type pathLevel struct {
 	fsys *nestFS
 	name string
 }
 
-// renameLevels returns each nestFS that name passes through, from fsys to the
+// pathLevels returns each nestFS that name passes through, from fsys to the
 // one whose file system holds name. Unlike getFSAndSubpath it also descends
 // into a nestFS mounted as a file system (as [FSBuilder.MountFS] allows), so
 // the file system of the last level is not a nestFS and has no mounts or
 // archive directories of its own.
-func (fsys *nestFS) renameLevels(name string) ([]renameLevel, error) {
-	levels := []renameLevel{{fsys, name}}
+func (fsys *nestFS) pathLevels(name string) ([]pathLevel, error) {
+	levels := []pathLevel{{fsys, name}}
 	for current := fsys; ; {
 		next, subName, err := current.getFSAndSubpath(name)
 		if err != nil {
 			return nil, err
 		}
 		if next != current {
-			levels = append(levels, renameLevel{next, subName})
+			levels = append(levels, pathLevel{next, subName})
 		}
 		inner, ok := next.fsys.(*nestFS)
 		if !ok {
 			return levels, nil
 		}
-		levels = append(levels, renameLevel{inner, subName})
+		levels = append(levels, pathLevel{inner, subName})
 		current, name = inner, subName
 	}
 }

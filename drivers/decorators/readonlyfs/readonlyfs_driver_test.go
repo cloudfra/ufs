@@ -24,7 +24,7 @@ import (
 )
 
 func TestReadOnlyFSDriver(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{ReadOnly: true}, func(_ *testing.T) types.ReadFS {
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(_ *testing.T) types.SimpleFS {
 		return readonlyfs.New(core.MakeMemFS("memory://test"))
 	})
 }

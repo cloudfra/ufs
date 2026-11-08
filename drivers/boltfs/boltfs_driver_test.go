@@ -24,7 +24,7 @@ import (
 )
 
 func TestBoltFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.WriteFS {
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.SimpleFS {
 		name := testBoltFSURI(t)
 		fsys, err := makeBoltFS(name)
 		if err != nil {

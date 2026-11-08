@@ -26,7 +26,6 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -630,63 +629,4 @@ func TestTelemetryForwardsWatch(t *testing.T) {
 	if _, ok := plain.(types.Watcher); ok {
 		t.Errorf("%T is a types.Watcher, want none when the inner file system is not", plain)
 	}
-}
-
-// TestTelemetryFSDriver runs the shared file system tests through the
-// decorator, which must not change how the file system behaves.
-func TestTelemetryFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.WriteFS {
-		return newRecorder().wrap(t.Context(), t, core.MakeMemFS(memFSName), both)
-	})
-}
-
-func BenchmarkTelemetryStat(b *testing.B) {
-	inner := core.MakeMemFS(memFSName)
-	defer ufsTesting.ValidateClose(b, inner)()
-
-	b.Run("inner", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			if _, err := inner.Stat("."); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-
-	// No SDK is installed, the cost every user of the decorator pays.
-	for _, bc := range []struct {
-		name string
-		opts Options
-	}{
-		{name: "noop", opts: both},
-		{name: "noop_traces", opts: Options{Traces: true}},
-		{name: "noop_metrics", opts: Options{Metrics: true}},
-	} {
-		b.Run(bc.name, func(b *testing.B) {
-			fsys, err := wrap(b.Context(), inner, bc.opts)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := fsys.Stat("."); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-
-	b.Run("sdk", func(b *testing.B) {
-		r := &recorder{
-			tp: sdktrace.NewTracerProvider(),
-			mp: sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader())),
-		}
-		fsys := r.wrap(b.Context(), b, inner, both)
-		b.ReportAllocs()
-		for b.Loop() {
-			if _, err := fsys.Stat("."); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
 }

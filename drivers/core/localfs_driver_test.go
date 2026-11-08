@@ -23,7 +23,7 @@ import (
 )
 
 func TestLocalFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.WriteFS {
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.SimpleFS {
 		dir := t.TempDir()
 		fsys, err := core.MakeLocalFS(dir)
 		if err != nil {

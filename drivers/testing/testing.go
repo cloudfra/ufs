@@ -16,10 +16,12 @@ package testing
 
 import (
 	"io/fs"
+	"reflect"
 	"testing"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 // Args for conformance tests.
@@ -32,6 +34,8 @@ type Args struct {
 
 	// Bucket indicates that the file system may not have an explicit directory structure.
 	Bucket bool
+
+	fsType reflect.Type
 }
 
 var invalidPaths = []string{
@@ -42,7 +46,29 @@ var invalidPaths = []string{
 
 // FS runs the full read-write conformance suite against file systems
 // returned by createFSFunc.
-func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
+func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	exampleFS := createFSFunc(t)
+	args.fsType = reflect.TypeOf(exampleFS)
+	ufsTesting.ValidateClose(t, exampleFS)()
+	switch {
+	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):
+		fsInternal(t, args, func(t *testing.T) ufs.FS {
+			return mustFSType[ufs.FS](t, createFSFunc)
+		})
+	case args.fsType.AssignableTo(reflect.TypeFor[types.WriteFS]()) && !args.ReadOnly:
+		writeFS(t, args, func(t *testing.T) types.WriteFS {
+			return mustFSType[types.WriteFS](t, createFSFunc)
+		})
+	case args.fsType.AssignableTo(reflect.TypeFor[types.ReadFS]()):
+		readFS(t, args, func(t *testing.T) types.ReadFS {
+			return mustFSType[types.ReadFS](t, createFSFunc)
+		})
+	default:
+		t.Fatalf("%q is not a supported file system, %+v", args.fsType, exampleFS)
+	}
+}
+
+func fsInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
 	createWriteFSFunc := func(t *testing.T) types.WriteFS {
 		return createFSFunc(t)
 	}
@@ -59,7 +85,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
 		})
 	}
 	if _, ok := exampleFS.(types.ReadFS); ok {
-		ReadFS(t, args, func(t *testing.T) types.ReadFS {
+		readFS(t, args, func(t *testing.T) types.ReadFS {
 			return createFSFunc(t)
 		})
 	}
@@ -79,4 +105,14 @@ func WriteFile(tb testing.TB, fsys types.WriteFS, name, content string) {
 	if err := f.Close(); err != nil {
 		tb.Fatalf("Close(%q) = %v", name, err)
 	}
+}
+
+func mustFSType[T types.SimpleFS](t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) T {
+	t.Helper()
+	fsys := createFSFunc(t)
+	cFsys, ok := fsys.(T)
+	if !ok {
+		t.Fatalf("%T does not implement %s", fsys, reflect.TypeFor[T]())
+	}
+	return cFsys
 }

@@ -23,7 +23,7 @@ import (
 )
 
 func TestMemFSDriver(t *testing.T) {
-	ufsdriversTesting.WriteFS(t, ufsdriversTesting.Args{}, func(_ *testing.T) types.WriteFS {
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, func(_ *testing.T) types.SimpleFS {
 		return core.MakeMemFS("memory://test")
 	})
 }

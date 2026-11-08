@@ -688,6 +688,11 @@ func TestNestFSValidPathClosed(t *testing.T) {
 	if _, err := nfs.Lstat("foo.txt"); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("Lstat on closed nestFS = %v, want fs.ErrClosed", err)
 	}
+	// types.Equals calls URI on whatever it is given, including a closed file
+	// system, and dereferences a nil URL rather than treating it as an error.
+	if _, err := nfs.URI(); !errors.Is(err, fs.ErrClosed) {
+		t.Errorf("URI on closed nestFS = %v, want fs.ErrClosed", err)
+	}
 }
 
 func TestNestFSStaleArchiveMountPruned(t *testing.T) {

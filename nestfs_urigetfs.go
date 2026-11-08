@@ -18,11 +18,19 @@ package ufs
 // file system's URI with the mounts written into it.
 
 import (
+	"fmt"
+	"io/fs"
 	"net/url"
 	"strings"
 )
 
 func (fsys *nestFS) URI() (*url.URL, error) {
+	// types.Equals asks for the URI of any file system it is given, including a
+	// closed one, and treats only an error as "no URI" because a nil URL would be
+	// dereferenced.
+	if fsys.fsys == nil {
+		return nil, fmt.Errorf("cannot get the URI of a closed file system, %w", fs.ErrClosed)
+	}
 	base, err := fsys.fsys.URI()
 	if base == nil || err != nil {
 		return nil, nil

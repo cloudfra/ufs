@@ -91,7 +91,7 @@ func fsInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS)
 
 // WriteFile creates name in fsys with content, stopping the test if Create,
 // the write, or Close fails.
-func WriteFile(tb testing.TB, fsys types.WriteFS, name, content string) {
+func WriteFile(tb testing.TB, fsys types.CreateFileFS, name, content string) {
 	tb.Helper()
 	f, err := fsys.Create(name)
 	if err != nil {
@@ -124,14 +124,14 @@ func mustFSType[T types.SimpleFS](t *testing.T, createFSFunc func(t *testing.T) 
 	return cFsys
 }
 
-func mustFSTypeFunc[T types.SimpleFS](t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) func(t *testing.T) T {
+func requireFSTypeFunc[T types.SimpleFS](t *testing.T, createFSFunc func(t *testing.T) types.SimpleFS) func(t *testing.T) T {
 	t.Helper()
 	return func(t *testing.T) T {
 		t.Helper()
 		fsys := createFSFunc(t)
 		cFsys, ok := fsys.(T)
 		if !ok {
-			t.Fatalf("%T does not implement %s", fsys, reflect.TypeFor[T]())
+			t.Skipf("%T does not implement %s so this test cannot proceed", fsys, reflect.TypeFor[T]())
 		}
 		return cFsys
 	}

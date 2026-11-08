@@ -34,21 +34,19 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// WriteFS runs the write conformance suite against file systems returned by
-// createFSFunc.
-func WriteFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
-	writeFS(t, args, createFSFunc)
+func writeFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
+	writeFSInternal(t, args, createFSFunc)
 
 	// TODO: This should work for all WriteFS implementations, but some backends (like gcsfs) don't support this yet. So we only run this test for WriteFS implementations that are not buckets.
 	if !args.Bucket {
 		// args.Bucket = false
-		writeFS(t, args, func(t *testing.T) types.WriteFS {
+		writeFSInternal(t, args, func(t *testing.T) types.WriteFS {
 			return ufs.WrapNestFS(t.Context(), createFSFunc(t))
 		})
 	}
 }
 
-func writeFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
+func writeFSInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS) {
 	mkdirAll(t, args, createFSFunc)
 	ReadFile(t, args, createFSFunc)
 	DirFileConflicts(t, args, createFSFunc)

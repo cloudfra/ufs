@@ -206,7 +206,7 @@ func (fsys *gcsFS) DeviceInfo() types.DeviceMap {
 }
 
 func (fsys *gcsFS) URI() (*url.URL, error) {
-	vals := url.Values{"ro": {"true"}}
+	vals := url.Values{}
 	if fsys.subscription != "" {
 		vals.Set("subscription", fsys.subscription)
 	}

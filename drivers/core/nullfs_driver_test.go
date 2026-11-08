@@ -30,7 +30,7 @@ func TestNullFSDriver(t *testing.T) {
 	createFSFunc := func(_ *testing.T) types.WriteFS {
 		return core.MakeNullFS("null://test")
 	}
-	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.ReadFS {
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.SimpleFS {
 		return createFSFunc(t)
 	})
 	ufsdriversTesting.InvalidPathsForWriteFS(t, ufsdriversTesting.Args{ReadOnly: true}, createFSFunc)

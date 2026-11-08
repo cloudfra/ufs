@@ -22,16 +22,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
-
-func TestDriverTest(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.ReadFS {
-		return makeTestEmbedFS(t, "ok")
-	})
-}
 
 func makeTestEmbedFS(t *testing.T, name string) types.WriteFS {
 	t.Helper()

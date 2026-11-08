@@ -51,6 +51,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	ufsTesting.ValidateClose(t, exampleFS)()
 
 	copyFileFS(t, args, createFSFunc)
+	uriGetFS(t, args, createFSFunc)
 
 	switch {
 	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):
@@ -106,7 +107,7 @@ func WriteFile(tb testing.TB, fsys types.WriteFS, name, content string) {
 
 func requireType[T any](tb testing.TB, args Args) {
 	if !args.fsType.AssignableTo(reflect.TypeFor[T]()) {
-		tb.Skip("FS type does not implement the interface requred for this test")
+		tb.Skip("FS type does not implement the interface required for this test")
 	}
 }
 

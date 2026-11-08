@@ -105,6 +105,9 @@ func WriteFile(tb testing.TB, fsys types.WriteFS, name, content string) {
 	}
 }
 
+// requireType skips the calling test when the file system under test does not
+// implement T. Callers must pass the t of a suite's own subtest because
+// skipping a wrapper skips every suite that would run after it.
 func requireType[T any](tb testing.TB, args Args) {
 	if !args.fsType.AssignableTo(reflect.TypeFor[T]()) {
 		tb.Skip("FS type does not implement the interface required for this test")

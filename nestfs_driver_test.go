@@ -32,3 +32,21 @@ func TestNestedMemFSDriver(t *testing.T) {
 		return fsys
 	})
 }
+
+// TestNestedLocalFSOpenFileDriver runs the shared OpenFile conformance suite
+// through nestFS instead of only against the file system underneath it, which
+// is what checks that the mount layer keeps the flag contract intact.
+func TestNestedLocalFSOpenFileDriver(t *testing.T) {
+	ufsdriversTesting.OpenFile(t, ufsdriversTesting.Args{}, func(t *testing.T) types.OpenFileFS {
+		name := "file://" + t.TempDir()
+		fsys, err := ufs.NewNestFS(t.Context(), name)
+		if err != nil {
+			t.Fatalf("cannot create nestFS %q, %s", name, err)
+		}
+		openFileFS, ok := fsys.(types.OpenFileFS)
+		if !ok {
+			t.Fatalf("nestFS %q does not implement types.OpenFileFS", name)
+		}
+		return openFileFS
+	})
+}

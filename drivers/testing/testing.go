@@ -53,6 +53,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	copyFileFS(t, args, createFSFunc)
 	uriGetFS(t, args, createFSFunc)
 	createFileFS(t, args, createFSFunc)
+	renameFileFS(t, args, createFSFunc)
 
 	switch {
 	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):
@@ -79,7 +80,6 @@ func fsInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS)
 	mkdirAll(t, args, createWriteFSFunc)
 	ReadFile(t, args, createWriteFSFunc)
 	DirFileConflicts(t, args, createWriteFSFunc)
-	Rename(t, args, createWriteFSFunc)
 	BatchCreate(t, args, createWriteFSFunc)
 
 	exampleFS := createFSFunc(t)

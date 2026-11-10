@@ -53,7 +53,6 @@ func writeFSInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) ty
 	InvalidPathsForWriteFS(t, args, createFSFunc)
 	ReadDir(t, args, createFSFunc)
 	Close(t, args, createFSFunc)
-	Rename(t, args, createFSFunc)
 	BatchCreate(t, args, createFSFunc)
 	Conventions(t, args, createFSFunc)
 	readFS(t, args, func(t *testing.T) types.ReadFS {

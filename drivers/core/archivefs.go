@@ -72,7 +72,7 @@ func (fsys *archiveFS) URI() (*url.URL, error) {
 }
 
 func (fsys *archiveFS) String() string {
-	return fmt.Sprintf("archiveFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
+	return types.Description(map[string]any{"archiveFS": ufs.URIOrDefault(fsys, fsys.name)})
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {

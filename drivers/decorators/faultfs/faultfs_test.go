@@ -18,7 +18,6 @@ import (
 	"errors"
 	"io/fs"
 	"net/url"
-	"strings"
 	"syscall"
 	"testing"
 	"testing/synctest"
@@ -428,11 +427,8 @@ func TestFaultInjectorString(t *testing.T) {
 	}
 
 	got := fsys.String()
-	if !strings.Contains(got, "faultFS(") {
-		t.Errorf("String() = %q, want to contain %q", got, "faultFS(")
-	}
-	if !strings.Contains(got, nullFSPrefix) {
-		t.Errorf("String() = %q, want to contain %q", got, nullFSPrefix)
+	if want := `{"faultFS":` + inner.String() + `}`; got != want {
+		t.Errorf("String() = %q, want %q", got, want)
 	}
 }
 

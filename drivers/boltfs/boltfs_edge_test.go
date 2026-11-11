@@ -256,7 +256,7 @@ func TestBoltFSURIAndString(t *testing.T) {
 	if got, want := u.Path, pathutil.CoerceUnix(dbPath); got != want {
 		t.Errorf("URI().Path = %q, want %q", got, want)
 	}
-	if got, want := fsys.String(), "boltFS("+u.String()+")"; got != want {
+	if got, want := fsys.String(), `{"boltFS":"`+u.String()+`"}`; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 	ufsTesting.ValidateClose(t, fsys)()

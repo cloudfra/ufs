@@ -421,7 +421,7 @@ func TestTelemetryString(t *testing.T) {
 	inner := core.MakeMemFS(memFSName)
 	fsys := newRecorder().wrap(t.Context(), t, inner, both)
 	defer ufsTesting.ValidateClose(t, fsys)()
-	if got, want := fsys.String(), fmt.Sprintf("telemetryFS(%s)", inner); got != want {
+	if got, want := fsys.String(), `{"telemetryFS":`+inner.String()+`}`; got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 }

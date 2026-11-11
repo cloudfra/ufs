@@ -219,7 +219,7 @@ func (fsys *gcsFS) URI() (*url.URL, error) {
 }
 
 func (fsys *gcsFS) String() string {
-	return fmt.Sprintf("gcsFS(%s)", ufs.URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir))
+	return types.Description(map[string]any{"gcsFS": ufs.URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir)})
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {

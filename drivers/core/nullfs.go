@@ -138,7 +138,7 @@ func (fsys *nullFS) URI() (*url.URL, error) {
 }
 
 func (fsys *nullFS) String() string {
-	return fmt.Sprintf("nullFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
+	return types.Description(map[string]any{"nullFS": ufs.URIOrDefault(fsys, fsys.name)})
 }
 
 func (fsys *nullFS) Open(name string) (fs.File, error) {

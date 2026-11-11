@@ -15,7 +15,6 @@
 package ufs
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -350,19 +349,28 @@ func (fsys *nestFS) URI() (*url.URL, error) {
 }
 
 func (fsys *nestFS) String() string {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "nestFS(%s)", fsys.fsys.String())
 	fsys.mounts.mu.RLock()
 	defer fsys.mounts.mu.RUnlock()
-	mountPaths := make([]string, 0, len(fsys.mounts.m))
-	for p := range fsys.mounts.m {
-		mountPaths = append(mountPaths, p)
+	parts := make(map[string]any, len(fsys.mounts.m)+1)
+	parts["/"] = types.Nested(fsys.fsys.String())
+	for p, mfs := range fsys.mounts.m {
+		parts["/"+p] = types.Nested(mountDescription(mfs))
 	}
-	sort.Strings(mountPaths)
-	for _, p := range mountPaths {
-		fmt.Fprintf(&b, "\n  %s -> %s", p, fsys.mounts.m[p].String())
+	return types.Description(map[string]any{"nestFS": parts})
+}
+
+// mountDescription describes a mounted file system without the nest layer that
+// mounting wraps around it. That layer holds no mounts of its own, so it would
+// repeat itself at every mount of the description.
+func mountDescription(mfs *nestFS) string {
+	mfs.mounts.mu.RLock()
+	base := mfs.fsys
+	mountless := len(mfs.mounts.m) == 0
+	mfs.mounts.mu.RUnlock()
+	if mountless {
+		return base.String()
 	}
-	return b.String()
+	return mfs.String()
 }
 
 func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error) ([]fs.DirEntry, error) {

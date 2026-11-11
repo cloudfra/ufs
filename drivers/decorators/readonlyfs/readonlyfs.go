@@ -120,7 +120,7 @@ func (fsys *readOnlyFS) URI() (*url.URL, error) {
 }
 
 func (fsys *readOnlyFS) String() string {
-	return fsutil.String(fsys.ReadFS)
+	return types.Description(map[string]any{"readOnlyFS": types.Nested(fsutil.String(fsys.ReadFS))})
 }
 
 // Stat masks the wrapped file system's mode bits.

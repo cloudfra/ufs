@@ -17,7 +17,6 @@ package core
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/url"
@@ -63,7 +62,7 @@ func (fsys *localFS) URI() (*url.URL, error) {
 }
 
 func (fsys *localFS) String() string {
-	return fmt.Sprintf("localFS(%s)", ufs.URIOrDefault(fsys, fsys.osFS.Name()))
+	return types.Description(map[string]any{"localFS": ufs.URIOrDefault(fsys, fsys.osFS.Name())})
 }
 
 func (fsys *localFS) GetAbsPath(name string) (string, error) {

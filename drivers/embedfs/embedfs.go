@@ -43,7 +43,7 @@ func (fsys *embedFS) URI() (*url.URL, error) {
 }
 
 func (fsys *embedFS) String() string {
-	return fmt.Sprintf("embedFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
+	return types.Description(map[string]any{"embedFS": ufs.URIOrDefault(fsys, fsys.name)})
 }
 
 func (fsys *embedFS) Open(name string) (fs.File, error) {

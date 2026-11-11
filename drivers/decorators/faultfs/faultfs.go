@@ -31,6 +31,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/ops"
@@ -162,7 +163,7 @@ func (fsys *faultFS) URI() (*url.URL, error) {
 }
 
 func (fsys *faultFS) String() string {
-	return fmt.Sprintf("faultFS(%s)", fsys.inner)
+	return types.Description(map[string]any{"faultFS": types.Nested(fsutil.String(fsys.inner))})
 }
 
 func (fsys *faultFS) maybeInjectFault(op, name string) error {

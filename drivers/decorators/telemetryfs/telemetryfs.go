@@ -59,6 +59,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/ops"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -337,7 +338,7 @@ func (fsys *telemetryFS) URI() (*url.URL, error) {
 }
 
 func (fsys *telemetryFS) String() string {
-	return fmt.Sprintf("telemetryFS(%s)", fsys.inner)
+	return types.Description(map[string]any{"telemetryFS": types.Nested(fsutil.String(fsys.inner))})
 }
 
 // begin starts reporting an operation. The results are passed to end once the

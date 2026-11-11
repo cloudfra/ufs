@@ -56,6 +56,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	renameFileFS(t, args, createFSFunc)
 	removeFS(t, args, createFSFunc)
 	removeAllFS(t, args, createFSFunc)
+	releaseFS(t, args, createFSFunc)
 
 	switch {
 	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):

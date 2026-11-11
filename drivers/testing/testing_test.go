@@ -50,6 +50,7 @@ func TestCapabilityGateSkipsOnlyItsOwnSuite(t *testing.T) {
 		{name: "uriGetFS", suite: uriGetFS},
 		{name: "removeFS", suite: removeFS},
 		{name: "removeAllFS", suite: removeAllFS},
+		{name: "releaseFS", suite: releaseFS},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			returned := false

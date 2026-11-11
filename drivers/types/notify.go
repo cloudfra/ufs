@@ -50,5 +50,13 @@ type Watcher interface {
 	//
 	// The hook is called serially from a single background goroutine; it
 	// should not block for long.
+	//
+	// Report a name that does not satisfy [fs.ValidPath] with an
+	// [fs.PathError] whose Op is "watch" and whose Path is name, wrapping
+	// [fs.ErrInvalid]. A file system that looks name up before refusing the
+	// watch reports a directory it does not hold in the same shape wrapping
+	// [fs.ErrNotExist], and a name that is a file rather than a directory
+	// wrapping [fs.ErrInvalid]. Where the watch is refused for a reason that
+	// has nothing to do with name, that reason goes in the error instead.
 	Watch(ctx context.Context, name string, hook NotifyHook) (io.Closer, error)
 }

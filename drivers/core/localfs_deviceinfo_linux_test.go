@@ -132,6 +132,41 @@ func TestLinuxDeviceMapFromReader_InterleavingMounts(t *testing.T) {
 	}
 }
 
+func TestLinuxDeviceMapFromReader_MountChainReportedOutOfOrder(t *testing.T) {
+	t.Parallel()
+	// /proc/self/mounts lists mounts in the order they were made, so a deep
+	// mount can be reported above the shallower mount that changes the device
+	// under the root. The map must hold "." on the hard disk, "mnt" on the
+	// memory device, and "mnt/data" back on the hard disk, while "mnt/data/bind"
+	// repeats its parent's device and gets no entry.
+	const mounts = `/dev/sda1 / ext4 rw 0 0
+/dev/sda1 /mnt/data/bind ext4 rw 0 0
+/dev/sda1 /mnt/data ext4 rw 0 0
+tmpfs /mnt tmpfs rw 0 0
+`
+	got := linuxDeviceMapFromReader("/", strings.NewReader(mounts))
+
+	if di := got["."]; di.Name() != "/dev/sda1" {
+		t.Errorf("root name = %q, want /dev/sda1", di.Name())
+	}
+	if di, ok := got["mnt"]; !ok {
+		t.Error("missing mnt entry")
+	} else if di.Name() != "tmpfs" {
+		t.Errorf("mnt name = %q, want tmpfs", di.Name())
+	}
+	if di, ok := got["mnt/data"]; !ok {
+		t.Errorf("missing mnt/data entry, which is where the hard disk returns: %v", got)
+	} else if di.Name() != "/dev/sda1" {
+		t.Errorf("mnt/data name = %q, want /dev/sda1", di.Name())
+	}
+	if di, ok := got["mnt/data/bind"]; ok {
+		t.Errorf("mnt/data/bind = %s, want no entry: it names the device that already backs mnt/data", di)
+	}
+	if got.Backing("mnt/data/bind/deeper").Name() != "/dev/sda1" {
+		t.Errorf("Backing(mnt/data/bind/deeper) = %s, want the hard disk", got.Backing("mnt/data/bind/deeper"))
+	}
+}
+
 func TestLinuxBaseDevice(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

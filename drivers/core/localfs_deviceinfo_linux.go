@@ -21,6 +21,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -83,6 +84,16 @@ func parseLinuxMounts(r io.Reader) []linuxMountEntry {
 
 func buildLinuxDeviceMap(rootPath string, entries []linuxMountEntry) types.DeviceMap {
 	result := types.DeviceMap{".": types.DefaultDeviceInfo}
+
+	// A mount is compared against the device backing the path above it, so the
+	// list is walked shallowest first rather than in the order the kernel
+	// happened to report it.
+	slices.SortStableFunc(entries, func(a, b linuxMountEntry) int {
+		if depth := strings.Count(a.mountPoint, "/") - strings.Count(b.mountPoint, "/"); depth != 0 {
+			return depth
+		}
+		return strings.Compare(a.mountPoint, b.mountPoint)
+	})
 
 	// Find the mount that best covers rootPath (longest prefix match).
 	bestMatchLen := -1

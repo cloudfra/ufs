@@ -35,9 +35,13 @@ import (
 // file handle: the raw content, the current read/write offset, the file's
 // mode/modTime, and whether the content has been modified since it was last
 // persisted, all guarded by a single mutex. It implements Stat, Read, ReadAt,
-// Seek, Write and WriteString. Writes only modify the in-memory buffer; each
-// embedding driver supplies its own Close to decide how, and when, the
-// content is persisted back to its backing store (see [File.TakeDirty]).
+// Seek, Write, WriteString and Close. Writes only modify the in-memory buffer;
+// each embedding driver supplies its own Close to decide how, and when, the
+// content is persisted back to its backing store (see [File.TakeDirty]), and
+// calls [File.Close] to mark the handle spent. A closed File refuses Read,
+// ReadAt, Write and WriteString with [fs.ErrClosed], while Stat and Seek keep
+// answering: the conformance suite leaves those two open because a kernel-backed
+// handle refuses them and an in-memory handle has no need to.
 type File struct {
 	mu      sync.Mutex
 	path    string
@@ -50,6 +54,10 @@ type File struct {
 	// since the last TakeDirty) and has not yet been persisted back to the
 	// backing store.
 	dirty bool
+
+	// closed records that Close ran, so a handle the caller finished with
+	// cannot keep mutating content its driver already persisted.
+	closed bool
 }
 
 // New returns a File populated with path, content, mode and modTime. The
@@ -68,6 +76,25 @@ func (f *File) Path() string {
 	return f.path
 }
 
+// Close marks the handle spent so that its later reads and writes are refused.
+// It keeps no content: the embedding driver persists what the handle buffered
+// before calling Close. Closing an already closed File does nothing.
+func (f *File) Close() error {
+	f.mu.Lock()
+	f.closed = true
+	f.mu.Unlock()
+	return nil
+}
+
+// checkClosedLocked returns the error a closed handle gives for op, or nil
+// while the handle is open. f.mu must be held.
+func (f *File) checkClosedLocked(op string) error {
+	if !f.closed {
+		return nil
+	}
+	return ufserrors.NewPathError(op, f.path, fs.ErrClosed)
+}
+
 // Stat returns the file's current name, size, mode and modification time.
 func (f *File) Stat() (fs.FileInfo, error) {
 	f.mu.Lock()
@@ -80,6 +107,10 @@ func (f *File) Stat() (fs.FileInfo, error) {
 // once the offset reaches the end of the content.
 func (f *File) Read(p []byte) (int, error) {
 	f.mu.Lock()
+	if err := f.checkClosedLocked("read"); err != nil {
+		f.mu.Unlock()
+		return 0, err
+	}
 	if f.offset >= int64(f.content.Len()) {
 		f.mu.Unlock()
 		return 0, io.EOF
@@ -94,6 +125,10 @@ func (f *File) Read(p []byte) (int, error) {
 // returns [io.EOF] alongside the final bytes of the content.
 func (f *File) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.Lock()
+	if err := f.checkClosedLocked("read"); err != nil {
+		f.mu.Unlock()
+		return 0, err
+	}
 	if off < 0 {
 		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("readat", f.path, fmt.Errorf("offset %d is negative: %w", off, fs.ErrInvalid))
@@ -140,10 +175,15 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 // extending the file (zero-filling any gap left by a Seek past the end), and
 // marks the file dirty. It never touches the backing store.
 func (f *File) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	if err := f.checkClosedLocked("write"); err != nil {
+		f.mu.Unlock()
+		return 0, err
+	}
 	if len(p) == 0 {
+		f.mu.Unlock()
 		return 0, nil
 	}
-	f.mu.Lock()
 	n := copy(f.overwritableLocked(len(p)), p)
 	f.content.Write(p[n:])
 	f.offset += int64(len(p))
@@ -155,10 +195,15 @@ func (f *File) Write(p []byte) (int, error) {
 // WriteString is like [File.Write] but takes a string, avoiding a []byte
 // conversion.
 func (f *File) WriteString(s string) (int, error) {
+	f.mu.Lock()
+	if err := f.checkClosedLocked("write"); err != nil {
+		f.mu.Unlock()
+		return 0, err
+	}
 	if len(s) == 0 {
+		f.mu.Unlock()
 		return 0, nil
 	}
-	f.mu.Lock()
 	n := copy(f.overwritableLocked(len(s)), s)
 	f.content.WriteString(s[n:])
 	f.offset += int64(len(s))

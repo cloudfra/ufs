@@ -204,6 +204,59 @@ func TestBoltFileCloseAfterFSClose(t *testing.T) {
 	}
 }
 
+func TestBoltFileClosedHandle(t *testing.T) {
+	fsys := newTestBoltFS(t)
+
+	f, err := fsys.Create("kept.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("kept"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	// The first Close persisted what the handle buffered, so a later write
+	// through that same handle must not reach the database again.
+	testCases := []struct {
+		name string
+		call func(f types.File) (int, error)
+	}{
+		{name: "Read", call: func(f types.File) (int, error) { return f.Read(make([]byte, 8)) }},
+		{name: "ReadAt", call: func(f types.File) (int, error) { return f.ReadAt(make([]byte, 8), 0) }},
+		{name: "Write", call: func(f types.File) (int, error) { return f.Write([]byte("mutated")) }},
+		{name: "WriteString", call: func(f types.File) (int, error) { return f.WriteString("mutated") }},
+		{name: "WriteEmpty", call: func(f types.File) (int, error) { return f.Write(nil) }},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			n, err := tc.call(f)
+			if n != 0 {
+				t.Errorf("%s() = %d, want 0", tc.name, n)
+			}
+			if !errors.Is(err, fs.ErrClosed) {
+				t.Errorf("%s() on a closed handle = %v, want fs.ErrClosed", tc.name, err)
+			}
+		})
+	}
+
+	t.Run("second_close", func(t *testing.T) {
+		if err := f.Close(); err != nil {
+			t.Errorf("second Close() = %v, want nil", err)
+		}
+	})
+
+	content, err := fsys.ReadFile("kept.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "kept" {
+		t.Errorf("stored content = %q, want %q", content, "kept")
+	}
+}
+
 func TestBoltFileOpenedForReadCloseIsNoop(t *testing.T) {
 	fsys := newTestBoltFS(t)
 	ufsdriversTesting.WriteFile(t, fsys, "r.txt", "read only")

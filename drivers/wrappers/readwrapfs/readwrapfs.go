@@ -60,9 +60,9 @@ func (fsys *readWrapFS) URI() (*url.URL, error) {
 
 func (fsys *readWrapFS) String() string {
 	if _, ok := fsys.fsys.(fmt.Stringer); ok {
-		return fmt.Sprintf("readWrapFS(%s)", fsutil.String(fsys.fsys))
+		return types.Description(map[string]any{"readWrapFS": types.Nested(fsutil.String(fsys.fsys))})
 	}
-	return fmt.Sprintf("readWrapFS(%T)", fsys.fsys)
+	return types.Description(map[string]any{"readWrapFS": fmt.Sprintf("%T", fsys.fsys)})
 }
 
 func (fsys *readWrapFS) Open(name string) (fs.File, error) {

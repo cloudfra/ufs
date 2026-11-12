@@ -21,7 +21,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -127,8 +126,8 @@ func TestReadOnlyString(t *testing.T) {
 	inner := newInner(t)
 	fsys := New(inner)
 
-	if got := fsys.String(); !strings.Contains(got, nullFSPrefix) {
-		t.Errorf("String() should contain %q, got: %q", nullFSPrefix, got)
+	if want := `{"readOnlyFS":` + inner.String() + `}`; fsys.String() != want {
+		t.Errorf("String() = %q, want %q", fsys.String(), want)
 	}
 }
 

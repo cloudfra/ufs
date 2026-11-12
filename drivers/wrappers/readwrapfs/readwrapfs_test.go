@@ -48,7 +48,7 @@ func TestFromFSString(t *testing.T) {
 	fsys := FromFS(testMapFS)
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	want := "readWrapFS(fstest.MapFS)"
+	want := `{"readWrapFS":"fstest.MapFS"}`
 	if got := fsys.(interface{ String() string }).String(); got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}

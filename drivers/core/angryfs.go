@@ -65,7 +65,7 @@ func (fsys *angryFS) URI() (*url.URL, error) {
 }
 
 func (fsys *angryFS) String() string {
-	return fmt.Sprintf("angryFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
+	return types.Description(map[string]any{"angryFS": ufs.URIOrDefault(fsys, fsys.name)})
 }
 
 func (fsys *angryFS) Open(name string) (fs.File, error) {

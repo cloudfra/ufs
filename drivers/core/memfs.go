@@ -193,7 +193,7 @@ func (fsys *memFS) URI() (*url.URL, error) {
 }
 
 func (fsys *memFS) String() string {
-	return fmt.Sprintf("memFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
+	return types.Description(map[string]any{"memFS": ufs.URIOrDefault(fsys, fsys.name)})
 }
 
 func (fsys *memFS) isClosed() bool {

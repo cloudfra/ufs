@@ -18,7 +18,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -53,8 +52,9 @@ func TestNewEmbedFSURI(t *testing.T) {
 		} else if got := u.String(); got != tc.wantURI {
 			t.Errorf("New(%q).URI() = %q, want %q", tc.name, got, tc.wantURI)
 		}
-		if got := fsys.String(); !strings.Contains(got, "embedFS(") {
-			t.Errorf("New(%q).String() = %q, want embedFS(...) wrapper", tc.name, got)
+		wantDescription := `{"embedFS":"` + tc.wantURI + `"}`
+		if got := fsys.String(); got != wantDescription {
+			t.Errorf("New(%q).String() = %q, want %q", tc.name, got, wantDescription)
 		}
 		if err := fsys.Close(); err != nil {
 			t.Errorf("Close() = %v", err)

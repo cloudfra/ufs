@@ -439,7 +439,7 @@ func (fsys *boltFS) URI() (*url.URL, error) {
 }
 
 func (fsys *boltFS) String() string {
-	return fmt.Sprintf("boltFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
+	return types.Description(map[string]any{"boltFS": ufs.URIOrDefault(fsys, fsys.name)})
 }
 
 func (fsys *boltFS) isClosed() bool {

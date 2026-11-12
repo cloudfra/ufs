@@ -47,7 +47,10 @@ func (fsys *tempMountFS) URI() (*url.URL, error) {
 }
 
 func (fsys *tempMountFS) String() string {
-	return fmt.Sprintf("tempMountFS(%s, tmpDir=%s)", ufs.URIOrDefault(fsys, fsys.uri), pathutil.CoerceUnix(fsys.name))
+	return types.Description(map[string]any{"tempMountFS": map[string]any{
+		"tmpDir": pathutil.CoerceUnix(fsys.name),
+		"uri":    ufs.URIOrDefault(fsys, fsys.uri),
+	}})
 }
 
 func (fsys *tempMountFS) GetAbsPath(name string) (string, error) {

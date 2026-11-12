@@ -81,20 +81,9 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 }
 
 func fsInternal(t *testing.T, args Args, createFSFunc func(t *testing.T) ufs.FS) {
-	createWriteFSFunc := func(t *testing.T) types.WriteFS {
+	writeFSInternal(t, args, func(t *testing.T) types.WriteFS {
 		return createFSFunc(t)
-	}
-	mkdirAll(t, args, createWriteFSFunc)
-	ReadFile(t, args, createWriteFSFunc)
-	DirFileConflicts(t, args, createWriteFSFunc)
-	BatchCreate(t, args, createWriteFSFunc)
-
-	exampleFS := createFSFunc(t)
-	if _, ok := exampleFS.(types.ReadFS); ok {
-		readFS(t, args, func(t *testing.T) types.ReadFS {
-			return createFSFunc(t)
-		})
-	}
+	})
 }
 
 // WriteFile creates name in fsys with content, stopping the test if Create,

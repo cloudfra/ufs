@@ -54,11 +54,6 @@ const removeSiblingName = "r/c.txt.bak"
 // systems, and the cases that remove it are not run for them.
 const removeEmptyDir = "r/emptydir"
 
-// removeInvalidNames extend the shared invalidPaths list with the names only
-// Remove has to refuse: the empty name, an absolute path, a trailing
-// separator, an empty element, and paths holding a dot element.
-var removeInvalidNames = append(invalidPaths, "", "/", "r/", "r//c.txt", "r/./c.txt", "r/b/../c.txt", "r/c.txt/")
-
 // removeDeletesTestFS is the minimum set of interfaces removeDeletes needs: it
 // seeds removeTree with MkdirAll and Create, removes through Remove, and reads
 // the result back through Stat and ReadFile.
@@ -83,7 +78,7 @@ type removeRefusedTestFS interface {
 }
 
 // removeInvalidNamesTestFS is the minimum set of interfaces
-// removeInvalidNames needs: it only asks Remove for names that must be
+// removeInvalidPaths needs: it only asks Remove for names that must be
 // refused, which every file system checks before it looks anything up, so
 // nothing has to be seeded or read back.
 type removeInvalidNamesTestFS interface {
@@ -388,7 +383,7 @@ func removeInvalidPaths(t *testing.T, createFSFunc func(t *testing.T) removeInva
 		fsys := createFSFunc(t)
 		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
-		for _, name := range removeInvalidNames {
+		for _, name := range invalidPaths {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				err := fsys.Remove(name)

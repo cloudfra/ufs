@@ -15,7 +15,10 @@
 package testing
 
 import (
+	"errors"
+	"io/fs"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -37,10 +40,77 @@ type Args struct {
 	fsType reflect.Type
 }
 
+// invalidPaths are the name spellings every file system must refuse: one per
+// class of invalid name, each written against no suite's own tree so that every
+// suite that validates a name asserts the same set.
 var invalidPaths = []string{
 	"/absolute/path",
 	"../relative/path",
 	"invalid/../path",
+	"a/b/../c",
+	"",
+	"/",
+	"a//b",
+	"a/",
+	"a/b/",
+	"a/./b",
+	"./a",
+}
+
+// pathVariations returns the spellings of name that a file system normalizing
+// "." and ".." elements would read as naming the same file. None of them is a
+// valid ufs path, so an operation given a pair of names must refuse each one
+// before it decides anything about the pair.
+func pathVariations(name string) []string {
+	// A directory hierarchy added in front of name and cancelled by the same
+	// number of ".." elements, one level deep and two, names the same file.
+	variations := []string{"./" + name, name + "/", "x/../" + name, "x/y/../../" + name}
+	for i := range len(name) {
+		if name[i] != '/' {
+			continue
+		}
+		prefix, suffix := name[:i+1], name[i+1:]
+		variations = append(variations,
+			prefix+"./"+suffix,
+			prefix+"//"+suffix,
+			prefix+"../"+name,
+			prefix+"x/../"+suffix,
+			prefix+"x/y/../../"+suffix,
+		)
+	}
+	return variations
+}
+
+// assertPairPathVariations calls op over srcPath and dstPath for every pairing
+// of a pathVariations spelling of one with a pathVariations spelling of the
+// other, each of which must be refused as an invalid name. afterCall runs after
+// every call so that the caller can assert the file system was left as it was.
+// opName labels op in failures and subtest names.
+func assertPairPathVariations(t *testing.T, opName string, op func(srcPath, dstPath string) error, afterCall func(t *testing.T), srcPath, dstPath string) {
+	t.Helper()
+
+	for _, src := range pathVariations(srcPath) {
+		for _, dst := range pathVariations(dstPath) {
+			t.Run(pathLabel(src)+"_"+pathLabel(dst), func(t *testing.T) {
+				err := op(src, dst)
+				if !errors.Is(err, fs.ErrInvalid) {
+					t.Errorf("%s(%q, %q) = %v, want an error wrapping %v", opName, src, dst, err, fs.ErrInvalid)
+				}
+				if _, ok := errors.AsType[*fs.PathError](err); !ok {
+					t.Errorf("%s(%q, %q) = %T, want an *fs.PathError", opName, src, dst, err)
+				}
+				afterCall(t)
+			})
+		}
+	}
+}
+
+// pathLabel returns name spelled so that it can be a subtest name.
+func pathLabel(name string) string {
+	if name == "" {
+		return "empty"
+	}
+	return strings.ReplaceAll(name, "/", "_")
 }
 
 // FS runs the full read-write conformance suite against file systems

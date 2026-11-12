@@ -49,11 +49,6 @@ var renameDirs = []string{"r/a/sub", "r/ax", "r/b"}
 // systems, and the cases that move onto it are not run for them.
 const renameEmptyDir = "r/emptydir"
 
-// renameRefusedPaths extend the shared invalidPaths list with the names that
-// only rename has to refuse: the empty name, an absolute path, a trailing
-// separator, an empty element, and paths holding a dot element.
-var renameRefusedPaths = append(invalidPaths, "", "/", "r/", "r//c.txt", "r/./a2", "r/b/../a2", "r/c.txt/")
-
 // renameMovesTestFS is the minimum set of interfaces renameMoves needs: it
 // seeds renameTree with MkdirAll and Create, renames through Rename, and reads
 // the result back through Stat and ReadFile.
@@ -120,6 +115,7 @@ func renameFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types
 		}
 		renameMoves(t, requireFSTypeFunc[renameMovesTestFS](t, createFSFunc))
 		renameRefused(t, args, requireFSTypeFunc[renameRefusedTestFS](t, createFSFunc))
+		renameSameFileVariations(t, requireFSTypeFunc[renameRefusedTestFS](t, createFSFunc))
 		renameInvalidPaths(t, requireFSTypeFunc[renameInvalidPathsTestFS](t, createFSFunc))
 	})
 }
@@ -276,6 +272,19 @@ func assertRenameRefused(t *testing.T, fsys renameRefusedTestFS, oldPath, newPat
 	assertRenameTree(t, fsys, renameTree)
 }
 
+// renameSameFileVariations checks that renaming a file onto itself is refused
+// however its two names are spelled, so that the self-move rule cannot be
+// avoided by writing the same file differently on each side.
+func renameSameFileVariations(t *testing.T, createFSFunc func(t *testing.T) renameRefusedTestFS) {
+	t.Run("RenameSameFileVariations", func(t *testing.T) {
+		t.Parallel()
+		fsys := newRenameFS(t, createFSFunc)
+		assertPairPathVariations(t, "Rename", fsys.Rename,
+			func(t *testing.T) { assertRenameTree(t, fsys, renameTree) },
+			"r/c.txt", "r/c.txt")
+	})
+}
+
 // renameInvalidPaths checks that Rename refuses every invalid name on either
 // side with an *fs.PathError for rename, which is what
 // [pathutil.ValidateRename] returns before a file system looks anything up.
@@ -285,7 +294,7 @@ func renameInvalidPaths(t *testing.T, createFSFunc func(t *testing.T) renameInva
 		fsys := createFSFunc(t)
 		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
-		for _, name := range renameRefusedPaths {
+		for _, name := range invalidPaths {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				ufsTesting.AssertInvalidPathError(t, name, fsys.Rename(name, "r/d.txt"), "rename")

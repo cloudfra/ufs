@@ -20,7 +20,6 @@ import (
 	"io/fs"
 	"maps"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/cloudfra/ufs"
@@ -32,20 +31,6 @@ import (
 func readFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadFS) {
 	Constructor(t, args, createFSFunc)
 	InvalidPathsForReadFS(t, args, createFSFunc)
-	String(t, args, createFSFunc)
-}
-
-// String verifies that the file system's String method returns a URI-like
-// description containing "//".
-func String(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.ReadFS) {
-	t.Run("String", func(t *testing.T) {
-		t.Parallel()
-		fsys := createFSFunc(t)
-		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
-		if got := fsys.String(); !strings.Contains(got, "//") {
-			t.Errorf("%s.String() should contain %q: got: %q", fsys, "//", got)
-		}
-	})
 }
 
 // Constructor verifies that createFSFunc returns a non-nil file system that

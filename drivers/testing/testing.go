@@ -59,6 +59,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	releaseFS(t, args, createFSFunc)
 	watcher(t, args, createFSFunc)
 	mountedArchiveDirFS(t, args, createFSFunc)
+	stringerFS(t, args, createFSFunc)
 
 	switch {
 	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):

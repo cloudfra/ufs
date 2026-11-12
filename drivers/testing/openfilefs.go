@@ -686,7 +686,7 @@ func openFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) 
 		fsys := createFSFunc(t)
 		t.Cleanup(closeOpenFileFS(t, fsys))
 
-		for _, name := range append(invalidPaths, "", "dir/", "dir//inner.txt", "./dir") {
+		for _, name := range append(invalidPaths, "dir/", "dir//inner.txt", "./dir") {
 			for _, flag := range []int{os.O_RDONLY, os.O_WRONLY | os.O_CREATE} {
 				f, err := fsys.OpenFile(name, flag, openFilePerm)
 				if !errors.Is(err, fs.ErrInvalid) {

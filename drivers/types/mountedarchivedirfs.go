@@ -16,7 +16,8 @@ package types
 
 // MountedArchiveDirFS is an optional interface implemented by file systems
 // that expose the contents of an archive as a virtual directory next to the
-// archive file, such as "data.zip.d" for "data.zip". Walkers such as
+// archive file. That directory is named after the archive with ".d" appended,
+// so the content of "data.zip" is reached at "data.zip.d". Walkers such as
 // ops.Walk use it to skip those directories.
 //
 // A file system that wraps another one should forward the method, otherwise

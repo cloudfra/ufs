@@ -15,12 +15,18 @@
 package ufs
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
+	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
@@ -32,6 +38,120 @@ type uriGetter struct {
 
 func (u *uriGetter) URI() (*url.URL, error) {
 	return url.Parse(u.name)
+}
+
+// staticURIFS is an fs.FS that reports a fixed URI and error.
+type staticURIFS struct {
+	fstest.MapFS
+	uri *url.URL
+	err error
+}
+
+func (fsys staticURIFS) URI() (*url.URL, error) {
+	return fsys.uri, fsys.err
+}
+
+func TestURIOf(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := root.Close(); err != nil {
+			t.Errorf("Close() = %v", err)
+		}
+	})
+	wantDir := (&url.URL{Scheme: "file", Path: pathutil.CoerceUnix(dir)}).String()
+
+	var nilRoot *os.Root
+	testCases := []struct {
+		name string
+		fsys fs.FS
+		want string // empty means a nil URL
+	}{
+		{name: "URIGet", fsys: staticURIFS{uri: &url.URL{Scheme: "memory"}}, want: "memory:"},
+		{name: "URIGet without a URI", fsys: staticURIFS{}},
+		{name: "os.DirFS", fsys: os.DirFS(dir), want: wantDir},
+		{name: "os.DirFS with an empty directory", fsys: os.DirFS("")},
+		{name: "os.Root.FS", fsys: root.FS(), want: wantDir},
+		{name: "nil os.Root.FS", fsys: nilRoot.FS()},
+		{name: "unknown type", fsys: fstest.MapFS{}},
+		{name: "nil", fsys: nil},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := URIOf(tc.fsys)
+			if err != nil {
+				t.Fatalf("URIOf() = %v, want nil", err)
+			}
+			if tc.want == "" {
+				if got != nil {
+					t.Errorf("URIOf() = %q, want nil", got)
+				}
+				return
+			}
+			if got == nil || got.String() != tc.want {
+				t.Errorf("URIOf() = %v, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestURIOfReturnsURIGetError(t *testing.T) {
+	t.Parallel()
+	wantErr := errors.New("no uri")
+	got, err := URIOf(staticURIFS{err: wantErr})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("URIOf() = (%v, %v), want %v", got, err, wantErr)
+	}
+}
+
+func TestURIOfPrefersURIGet(t *testing.T) {
+	t.Parallel()
+	// localFS wraps an os.Root; its own URI must win over type sniffing.
+	dir := t.TempDir()
+	fsys, err := New(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	want, err := fsys.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := URIOf(fsys)
+	if err != nil {
+		t.Fatalf("URIOf() = %v, want nil", err)
+	}
+	if got.String() != want.String() {
+		t.Errorf("URIOf() = %q, want %q", got, want)
+	}
+}
+
+func TestURIOfRelativeDirFS(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	// Chdir may resolve symlinks in the temp directory, so compare against
+	// the working directory as the process sees it.
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := URIOf(os.DirFS("sub"))
+	if err != nil {
+		t.Fatalf("URIOf() = %v, want nil", err)
+	}
+	want := (&url.URL{Scheme: "file", Path: pathutil.CoerceUnix(filepath.Join(cwd, "sub"))}).String()
+	if got == nil || got.String() != want {
+		t.Errorf("URIOf() = %v, want %q", got, want)
+	}
 }
 
 func TestUriOrDefault(t *testing.T) {

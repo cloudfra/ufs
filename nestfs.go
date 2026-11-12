@@ -604,7 +604,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
-	return polyfills.ToBufferedFile(f, true, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, true, polyfills.BufferArgs{Mode: mountFS.args.BufMode})
 }
 
 func (fsys *nestFS) Close() error {
@@ -634,7 +634,7 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
 	}
-	return polyfills.ToBufferedFile(f, false, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, false, polyfills.BufferArgs{Mode: mountFS.args.BufMode})
 }
 
 // OpenFile opens name with the os.OpenFile flags in flag and the permission

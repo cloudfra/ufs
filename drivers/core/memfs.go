@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
+	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -41,11 +43,13 @@ const (
 )
 
 var (
-	_ types.File     = (*memFile)(nil)
-	_ types.WriteFS  = (*memFS)(nil)
-	_ fs.GlobFS      = (*memFS)(nil)
-	_ fs.ReadDirFile = (*memDirFile)(nil)
-	_ types.Watcher  = (*memFS)(nil)
+	_ types.File       = (*memFile)(nil)
+	_ types.File       = (*memOpenFile)(nil)
+	_ types.WriteFS    = (*memFS)(nil)
+	_ types.OpenFileFS = (*memFS)(nil)
+	_ fs.GlobFS        = (*memFS)(nil)
+	_ fs.ReadDirFile   = (*memDirFile)(nil)
+	_ types.Watcher    = (*memFS)(nil)
 )
 
 func init() {
@@ -139,6 +143,86 @@ func (f *memFile) notifyWrite() {
 }
 
 func (f *memFile) Close() error {
+	return nil
+}
+
+// memOpenFile is the handle OpenFile gives back, so it knows the access mode
+// the flags asked for and whether a write belongs at the end of the file.
+//
+// A file system that answers OpenFile itself enforces the mode on its own
+// handle. The access wrapper in the polyfills package stands in only for the
+// ones whose handle comes back from Open or Create without a mode attached.
+type memOpenFile struct {
+	*memFile
+	access  int
+	appends bool
+	closed  bool
+}
+
+// checkRead refuses a read the access mode does not allow. Package os reports
+// the bare descriptor error here; memFS reports [fs.ErrPermission] the way the
+// polyfill wrapper does, which is a choice issue #548 still holds open.
+func (f *memOpenFile) checkRead(op string) error {
+	if f.closed {
+		return ufserrors.NewPathError(op, f.Path(), fs.ErrClosed)
+	}
+	if f.access == os.O_WRONLY {
+		return ufserrors.NewPathError(op, f.Path(), fs.ErrPermission)
+	}
+	return nil
+}
+
+// checkWrite refuses a write the access mode does not allow, and moves an
+// appending handle to the end of its own content first.
+func (f *memOpenFile) checkWrite() error {
+	if f.closed {
+		return ufserrors.NewPathError("write", f.Path(), fs.ErrClosed)
+	}
+	if f.access == os.O_RDONLY {
+		return ufserrors.NewPathError("write", f.Path(), fs.ErrPermission)
+	}
+	if f.appends {
+		if _, err := f.Seek(0, io.SeekEnd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *memOpenFile) Read(p []byte) (int, error) {
+	if err := f.checkRead("read"); err != nil {
+		return 0, err
+	}
+	return f.memFile.Read(p)
+}
+
+// ReadAt reports the read operation, the name package os gives a failed read
+// through any method of an open file.
+func (f *memOpenFile) ReadAt(p []byte, off int64) (int, error) {
+	if err := f.checkRead("read"); err != nil {
+		return 0, err
+	}
+	return f.memFile.ReadAt(p, off)
+}
+
+func (f *memOpenFile) Write(p []byte) (int, error) {
+	if err := f.checkWrite(); err != nil {
+		return 0, err
+	}
+	return f.memFile.Write(p)
+}
+
+func (f *memOpenFile) WriteString(s string) (int, error) {
+	if err := f.checkWrite(); err != nil {
+		return 0, err
+	}
+	return f.memFile.WriteString(s)
+}
+
+// Close marks the handle closed so its later reads and writes are refused. The
+// content a write reached before Close stays in the file system.
+func (f *memOpenFile) Close() error {
+	f.closed = true
 	return nil
 }
 
@@ -331,6 +415,97 @@ func (fsys *memFS) Create(name string) (types.File, error) {
 		fsys: fsys,
 		File: buffile.New(name, nil, node.mode, node.modTime),
 	}, nil
+}
+
+// OpenFile opens name with the os.OpenFile flags in flag and the permission
+// bits in perm, creating the file when os.O_CREATE asks for it and keeping the
+// content already there when the flags do not truncate it.
+//
+// The access mode is the low two bits of flag, so os.O_CREATE, os.O_EXCL,
+// os.O_TRUNC and os.O_APPEND never change which methods the handle allows. The
+// only other value those two bits hold is os.O_WRONLY together with os.O_RDWR,
+// which names no mode: package os opens it but reports a descriptor error for
+// every read and write through the handle, while memFS allows both directions.
+//
+// A new file keeps the permission bits it is asked for, unchanged: memFS has no
+// umask, so no masking step is applied here or by Create, which has no
+// permission argument and uses every bit set.
+//
+// A read-only open ignores os.O_TRUNC, the way the polyfill standing in for a
+// file system without this interface does. Package os passes that combination
+// through, which truncates on Linux and refuses the open on Windows, so no rule
+// for it is asserted anywhere in this repository.
+//
+// The root is a directory like any other name here: a read-only open of it
+// returns a listable handle and a writable open is refused. The polyfill refuses
+// the root outright because it can only emulate a file.
+//
+// Every handle holds a private copy of the content, and each write publishes
+// that copy, so two open handles overwrite one another rather than each other's
+// changes. This is how Create already behaves; it reaches OpenFile through the
+// same handle.
+func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	if fsys.isClosed() {
+		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
+	}
+	if err := pathutil.Validate("open", name); err != nil {
+		return nil, err
+	}
+
+	access := flag & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR)
+	writable := access != os.O_RDONLY
+	now := time.Now()
+
+	fsys.mu.Lock()
+	node, existed := fsys.nodes[name]
+	switch {
+	case existed && flag&(os.O_CREATE|os.O_EXCL) == os.O_CREATE|os.O_EXCL:
+		fsys.mu.Unlock()
+		return nil, ufserrors.NewPathError("open", name, fs.ErrExist)
+	case !existed && flag&os.O_CREATE == 0:
+		fsys.mu.Unlock()
+		return nil, ufserrors.NewPathError("open", name, fs.ErrNotExist)
+	case existed && node.isDir:
+		fsys.mu.Unlock()
+		if writable {
+			return nil, ufserrors.NewPathError("open", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
+		}
+		dir, err := fsys.openDir(name)
+		if err != nil {
+			return nil, err
+		}
+		return polyfills.ToFile(dir), nil
+	case !existed:
+		if dir := path.Dir(name); dir != pathutil.CwdPath {
+			if err := fsys.checkDirsLocked(dir); err != nil {
+				fsys.mu.Unlock()
+				return nil, ufserrors.NewPathError("open", name, err)
+			}
+		}
+		node = &memNode{
+			name:    path.Base(name),
+			mode:    perm,
+			modTime: now,
+		}
+		fsys.nodes[name] = node
+		fsys.ensureParentsLocked(name, now)
+		fsys.notify(types.NotifyCreate, name)
+	case writable && flag&os.O_TRUNC != 0:
+		node.content = nil
+		node.modTime = now
+		fsys.notify(types.NotifyWrite, name)
+	}
+
+	f := &memOpenFile{
+		memFile: &memFile{
+			fsys: fsys,
+			File: buffile.New(name, bytes.Clone(node.content), node.mode, node.modTime),
+		},
+		access:  access,
+		appends: flag&os.O_APPEND != 0,
+	}
+	fsys.mu.Unlock()
+	return f, nil
 }
 
 func (fsys *memFS) MkdirAll(name string, perm fs.FileMode) error {

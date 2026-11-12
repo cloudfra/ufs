@@ -39,6 +39,7 @@ type ReleaseFS interface {
 	// Release files and mount locks to allow other applications access to the
 	// resources. Every resource is attempted: Release returns the errors it met
 	// joined, and a resource it could not let go of is left for a later release
-	// or close to try again.
+	// or close to try again. A file system that has acquired nothing for itself
+	// has nothing to let go of, and answers nil.
 	Release() error
 }

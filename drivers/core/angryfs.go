@@ -42,7 +42,7 @@ var (
 )
 
 func init() {
-	ufs.Register(ufs.NewDriver("angry", newAngryFS, isAngryFSUri, 1, false, false))
+	ufs.Register(ufs.NewDriver("angry", newAngryFS, isAngryFSUri, ufs.PriorityDefault, false, false))
 }
 
 type angryFS struct {

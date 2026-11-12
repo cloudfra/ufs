@@ -54,6 +54,7 @@ func TestCapabilityGateSkipsOnlyItsOwnSuite(t *testing.T) {
 		{name: "watcher", suite: watcher},
 		{name: "mountedArchiveDirFS", suite: mountedArchiveDirFS},
 		{name: "stringerFS", suite: stringerFS},
+		{name: "deviceInfoGet", suite: deviceInfoGet},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			returned := false

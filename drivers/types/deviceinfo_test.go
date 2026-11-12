@@ -352,6 +352,52 @@ func TestCombineDeviceInfo(t *testing.T) {
 				"faster":    fakeUsbDeviceInfo,
 			},
 		},
+		{
+			// [DeviceInfoGet.DeviceInfo] says the map is minimal: a mount naming
+			// the device that already backs its parent adds no entry, while a
+			// device that returns below a different device keeps one. The
+			// nested keys of one incoming map arrive in map order, so they are
+			// combined shallowest first.
+			name: "an entry only where the device changes",
+			src:  NewDeviceMap(fakeHddDeviceInfo),
+			incoming: []mountInfo{
+				{
+					mountPath: "dev",
+					incoming: DeviceMap{
+						".":         fakeUsbDeviceInfo,
+						"hdd":       fakeHddDeviceInfo,
+						"hdd/slow":  fakeHddDeviceInfo,
+						"hdd/other": fakeUsbDeviceInfo,
+					},
+				},
+			},
+			want: DeviceMap{
+				".":             fakeHddDeviceInfo,
+				"dev":           fakeUsbDeviceInfo,
+				"dev/hdd":       fakeHddDeviceInfo,
+				"dev/hdd/other": fakeUsbDeviceInfo,
+			},
+		},
+		{
+			// A shallower mount combined after a deeper one makes the deeper
+			// entry redundant, so it is dropped from the result.
+			name: "a shallower mount makes a deeper entry redundant",
+			src:  NewDeviceMap(fakeHddDeviceInfo),
+			incoming: []mountInfo{
+				{
+					mountPath: "dev/usb/deep",
+					incoming:  NewDeviceMap(fakeUsbDeviceInfo),
+				},
+				{
+					mountPath: "dev/usb",
+					incoming:  NewDeviceMap(fakeUsbDeviceInfo),
+				},
+			},
+			want: DeviceMap{
+				".":       fakeHddDeviceInfo,
+				"dev/usb": fakeUsbDeviceInfo,
+			},
+		},
 	}
 
 	for _, tc := range tests {

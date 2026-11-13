@@ -31,11 +31,9 @@ import (
 // be created first, and each holds its own name as its content.
 var createFileNames = []string{"b/a/c", "b/b", "b/c", "c", "d/e/f/g", "d/e/g", "a/b/c/d/e/f/g"}
 
-// createRefusedNames are names Create must refuse. The shared invalidPaths list
-// is extended with names that are only refused once a file is asked for: the
-// empty name, the root, a trailing separator, an empty element, and a path
-// holding a dot element.
-var createRefusedNames = append(invalidPaths, "", "/", "dir/", "dir//inner.txt", "./dir", "x/./y.txt")
+// createRefusedNames are the names Create must refuse: the shared invalidPaths
+// list plus the invalid spellings written against the tree createFiles seeds.
+var createRefusedNames = append(invalidPaths, "dir/", "dir//inner.txt", "./dir", "x/./y.txt")
 
 // createFilesTestFS is the minimum set of interfaces createFiles needs: it
 // seeds directories with MkdirAll, creates a file with Create, and reads the

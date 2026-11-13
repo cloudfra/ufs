@@ -90,9 +90,9 @@ const watchSilenceWindow = 500 * time.Millisecond
 const watchHookHold = 2 * time.Millisecond
 
 // watcherInvalidNames extends invalidPaths with the names only Watch has to
-// refuse: the empty name, the root spelled with a dot element, and paths holding
-// a dot or dot-dot element in the middle.
-var watcherInvalidNames = append(invalidPaths, "", "./watch", "watch/./file.txt", "watch/../outside.txt")
+// refuse: the root spelled with a dot element, and paths holding a dot or
+// dot-dot element in the middle.
+var watcherInvalidNames = append(invalidPaths, "./watch", "watch/./file.txt", "watch/../outside.txt")
 
 // watchMissingNames are the watch targets that no file system holds.
 var watchMissingNames = []string{watchMissingDir, watchMissingDir + "/deeper"}

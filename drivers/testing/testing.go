@@ -41,6 +41,11 @@ var invalidPaths = []string{
 	"/absolute/path",
 	"../relative/path",
 	"invalid/../path",
+	"",
+	"/",
+	"a//b",
+	"a/",
+	"a/./b",
 }
 
 // FS runs the full read-write conformance suite against file systems

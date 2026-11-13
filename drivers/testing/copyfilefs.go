@@ -229,7 +229,7 @@ func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) 
 	t.Run("copyFileInvalidPaths", func(t *testing.T) {
 		t.Parallel()
 
-		for _, name := range append(invalidPaths, "", "c/", "c//a.txt", "./c/a.txt") {
+		for _, name := range append(invalidPaths, "c/", "c//a.txt", "./c/a.txt") {
 			label := strings.ReplaceAll(name, "/", "_")
 			if label == "" {
 				label = "empty"

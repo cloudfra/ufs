@@ -54,10 +54,9 @@ const removeSiblingName = "r/c.txt.bak"
 // systems, and the cases that remove it are not run for them.
 const removeEmptyDir = "r/emptydir"
 
-// removeInvalidNames extend the shared invalidPaths list with the names only
-// Remove has to refuse: the empty name, an absolute path, a trailing
-// separator, an empty element, and paths holding a dot element.
-var removeInvalidNames = append(invalidPaths, "", "/", "r/", "r//c.txt", "r/./c.txt", "r/b/../c.txt", "r/c.txt/")
+// removeInvalidNames extend the shared invalidPaths list with the invalid
+// spellings written against the tree removeDeletes seeds.
+var removeInvalidNames = append(invalidPaths, "r/", "r//c.txt", "r/./c.txt", "r/b/../c.txt", "r/c.txt/")
 
 // removeDeletesTestFS is the minimum set of interfaces removeDeletes needs: it
 // seeds removeTree with MkdirAll and Create, removes through Remove, and reads

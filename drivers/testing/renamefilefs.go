@@ -49,10 +49,9 @@ var renameDirs = []string{"r/a/sub", "r/ax", "r/b"}
 // systems, and the cases that move onto it are not run for them.
 const renameEmptyDir = "r/emptydir"
 
-// renameRefusedPaths extend the shared invalidPaths list with the names that
-// only rename has to refuse: the empty name, an absolute path, a trailing
-// separator, an empty element, and paths holding a dot element.
-var renameRefusedPaths = append(invalidPaths, "", "/", "r/", "r//c.txt", "r/./a2", "r/b/../a2", "r/c.txt/")
+// renameRefusedPaths extend the shared invalidPaths list with the invalid
+// spellings written against the tree renameMoves seeds.
+var renameRefusedPaths = append(invalidPaths, "r/", "r//c.txt", "r/./a2", "r/b/../a2", "r/c.txt/")
 
 // renameMovesTestFS is the minimum set of interfaces renameMoves needs: it
 // seeds renameTree with MkdirAll and Create, renames through Rename, and reads

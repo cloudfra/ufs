@@ -135,8 +135,10 @@ func (fsys *archiveFS) ReadLink(name string) (string, error) {
 }
 
 func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
-	// Archives contain no symlinks, so Lstat == Stat.
-	return fsys.Stat(name)
+	// Archives contain no symlinks, so Lstat == Stat. The error is relabeled
+	// so it reports the caller's op, as other Lstat delegations do.
+	val, err := fsys.Stat(name)
+	return ufserrors.ChangePathErrorOp(val, err, "lstat")
 }
 
 func (fsys *archiveFS) Remove(name string) error {

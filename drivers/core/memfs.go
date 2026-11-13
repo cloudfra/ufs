@@ -192,6 +192,13 @@ func (fsys *memFS) URI() (*url.URL, error) {
 	return url.Parse(fsys.name)
 }
 
+// IsSame reports whether other is this file system, which is the only way to
+// reach its nodes: two memFS values given the same URI hold separate data.
+func (fsys *memFS) IsSame(other fs.FS) bool {
+	otherMem, ok := types.InnermostFS(other).(*memFS)
+	return ok && fsys == otherMem
+}
+
 func (fsys *memFS) String() string {
 	return types.Description(map[string]any{"memFS": ufs.URIOrDefault(fsys, fsys.name)})
 }

@@ -227,6 +227,8 @@ func classify(err error) errorClass {
 	}
 }
 
+var _ types.WrapperFS = (*telemetryFS)(nil)
+
 type telemetryFS struct {
 	inner types.WriteFS
 	cfg   Options
@@ -246,6 +248,8 @@ type telemetryFS struct {
 	recordAttrs [numOperations][numErrorClasses][]metric.RecordOption
 }
 
+var _ types.WrapperFS = (*watchTelemetryFS)(nil)
+
 // watchTelemetryFS is the decorator for a file system that implements
 // [types.Watcher]. It is a separate type so that the decorator only claims to
 // watch when the file system it wraps does.
@@ -257,6 +261,12 @@ type watchTelemetryFS struct {
 // Watch forwards to the wrapped file system. It is not reported.
 func (fsys *watchTelemetryFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
 	return fsys.watcher.Watch(ctx, name, hook)
+}
+
+// IsSame reports whether other holds the wrapped file system's data, since
+// reporting operations does not change what is stored.
+func (fsys *watchTelemetryFS) IsSame(other fs.FS) bool {
+	return types.SameFS(fsys.inner, other)
 }
 
 // newTelemetryFS wraps inner as a [types.WriteFS] that reports its operations to
@@ -335,6 +345,18 @@ func (fsys *telemetryFS) URI() (*url.URL, error) {
 		return nil, err
 	}
 	return ufs.AppendURIOption(u, optionName, fsys.cfg)
+}
+
+// InnerFS returns the file system whose operations are reported, see
+// [types.WrapperFS].
+func (fsys *telemetryFS) InnerFS() fs.FS {
+	return fsys.inner
+}
+
+// IsSame reports whether other holds the wrapped file system's data, since
+// reporting operations does not change what is stored.
+func (fsys *telemetryFS) IsSame(other fs.FS) bool {
+	return types.SameFS(fsys.inner, other)
 }
 
 func (fsys *telemetryFS) String() string {

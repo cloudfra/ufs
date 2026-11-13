@@ -445,3 +445,35 @@ func TestLocalFSOpenFile(t *testing.T) {
 		}
 	})
 }
+
+// TestLocalFSIsSame checks that two localFS over one directory hold the same
+// data, which lets an operation between them stay inside that directory.
+func TestLocalFSIsSame(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := newLocalFS(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, first)()
+
+	second, err := newLocalFS(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, second)()
+
+	if !types.SameFS(first, second) {
+		t.Error("two localFS over one directory should report the same data")
+	}
+
+	other, err := newLocalFS(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, other)()
+
+	if types.SameFS(first, other) {
+		t.Error("localFS over different directories should not report the same data")
+	}
+}

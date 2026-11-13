@@ -438,6 +438,13 @@ func (fsys *boltFS) URI() (*url.URL, error) {
 	return &url.URL{Scheme: boltFSScheme, Path: pathutil.CoerceUnix(fsys.absPath), RawQuery: fsys.opts.query()}, nil
 }
 
+// IsSame reports whether other opens one database file, which is the store that
+// both file systems read and write.
+func (fsys *boltFS) IsSame(other fs.FS) bool {
+	otherBolt, ok := types.InnermostFS(other).(*boltFS)
+	return ok && fsys.absPath == otherBolt.absPath
+}
+
 func (fsys *boltFS) String() string {
 	return types.Description(map[string]any{"boltFS": ufs.URIOrDefault(fsys, fsys.name)})
 }

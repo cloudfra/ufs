@@ -348,6 +348,59 @@ func (fsys *nestFS) URI() (*url.URL, error) {
 	return &u, nil
 }
 
+// IsSame reports whether other nests one file system under one set of mounts,
+// which is a comparison the URI cannot make because two file systems can report
+// the same URI while holding separate data. A read-only view or other wrapper
+// around a nest is compared as the nest underneath it.
+func (fsys *nestFS) IsSame(other fs.FS) bool {
+	otherNest, ok := types.InnermostFS(other).(*nestFS)
+	if !ok || otherNest == nil {
+		return false
+	}
+	if fsys == otherNest {
+		return true
+	}
+	if !types.SameFS(fsys.fsys, otherNest.fsys) {
+		return false
+	}
+	return fsys.sameMounts(otherNest)
+}
+
+// sameMounts reports whether fsys and other mount the same file systems at the
+// same paths, ignoring archive mounts, which ufs opens for itself and are not
+// part of how the nest was built.
+func (fsys *nestFS) sameMounts(other *nestFS) bool {
+	fsys.mounts.mu.RLock()
+	defer fsys.mounts.mu.RUnlock()
+	other.mounts.mu.RLock()
+	defer other.mounts.mu.RUnlock()
+
+	mounts, otherMounts := fsys.mounts.mounted(), other.mounts.mounted()
+	if len(mounts) != len(otherMounts) {
+		return false
+	}
+	for mountPath, mount := range mounts {
+		otherMount, ok := otherMounts[mountPath]
+		if !ok || !types.SameFS(mount, otherMount) {
+			return false
+		}
+	}
+	return true
+}
+
+// mounted returns the mounts that a caller configured, which leaves out the
+// archive content directories nestFS opens on its own.
+func (m *mountMap) mounted() map[string]*nestFS {
+	mounts := make(map[string]*nestFS, len(m.m))
+	for mountPath, mount := range m.m {
+		if isArchiveMountPath(mountPath) {
+			continue
+		}
+		mounts[mountPath] = mount
+	}
+	return mounts
+}
+
 func (fsys *nestFS) String() string {
 	fsys.mounts.mu.RLock()
 	defer fsys.mounts.mu.RUnlock()
@@ -945,10 +998,10 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		}
 	}
 
-	// TODO: Compare the file systems the nestFS values wrap rather than the
-	// wrappers. types.Equals compares URIs and two separate mounts of one
-	// driver can share a URI, so these pointers are compared directly.
-	if srcLeaf.fsys == dstLeaf.fsys {
+	// A rename stays native only when one file system holds both paths.
+	// types.SameFS compares the data behind the two nests, which their URIs
+	// cannot do because two separate mounts of one driver can share a URI.
+	if types.SameFS(srcLeaf.fsys.fsys, dstLeaf.fsys.fsys) {
 		err = ops.Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
 	} else {
 		err = ops.RenameByCopy(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)

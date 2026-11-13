@@ -227,3 +227,25 @@ func TestFromFSEmbedFS(t *testing.T) {
 		t.Error("ReadFile() returned empty data, want non-empty")
 	}
 }
+
+// TestFromFSIsSame checks that a readWrapFS reports the data of the file system
+// it wraps, which the wrapped file system cannot do itself because it does not
+// recognize the wrapper.
+func TestFromFSIsSame(t *testing.T) {
+	t.Parallel()
+
+	inner := &closableMapFS{MapFS: testMapFS}
+	wrapped := FromFS(inner)
+
+	if !types.SameFS(wrapped, inner) {
+		t.Error("a readWrapFS and the file system it wraps should report the same data")
+	}
+	if !types.SameFS(wrapped, FromFS(inner)) {
+		t.Error("two readWrapFS over one file system should report the same data")
+	}
+
+	separate := &closableMapFS{MapFS: testMapFS}
+	if types.SameFS(wrapped, FromFS(separate)) {
+		t.Error("readWrapFS over different file systems should not report the same data")
+	}
+}

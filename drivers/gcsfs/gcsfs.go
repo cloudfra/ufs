@@ -218,6 +218,13 @@ func (fsys *gcsFS) URI() (*url.URL, error) {
 	}, nil
 }
 
+// IsSame reports whether other reads one bucket and prefix through one client,
+// which is one set of objects.
+func (fsys *gcsFS) IsSame(other fs.FS) bool {
+	otherGCS, ok := types.InnermostFS(other).(*gcsFS)
+	return ok && fsys.client == otherGCS.client && fsys.bucket == otherGCS.bucket && fsys.baseDir == otherGCS.baseDir
+}
+
 func (fsys *gcsFS) String() string {
 	return types.Description(map[string]any{"gcsFS": ufs.URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir)})
 }

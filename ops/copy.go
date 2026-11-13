@@ -28,7 +28,7 @@ import (
 // is created (or truncated) via [types.WriteFS]. An error from closing the
 // destination file is returned, since the copy may not have been persisted.
 func Copy(srcFS fs.FS, srcFilename string, destFS fs.FS, destFilename string) error {
-	if copyFS, ok := srcFS.(types.CopyFileFS); ok && types.Equals(srcFS, destFS) {
+	if copyFS, ok := srcFS.(types.CopyFileFS); ok && types.SameFS(srcFS, destFS) {
 		return copyFS.CopyFile(srcFilename, destFilename)
 	}
 	copyDestFS, ok := destFS.(types.CreateFileFS)

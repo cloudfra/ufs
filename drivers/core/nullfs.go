@@ -137,6 +137,13 @@ func (fsys *nullFS) URI() (*url.URL, error) {
 	return u, nil
 }
 
+// IsSame reports whether other is a nullFS with the same name, which holds the
+// same data because nullFS stores nothing.
+func (fsys *nullFS) IsSame(other fs.FS) bool {
+	otherNull, ok := types.InnermostFS(other).(*nullFS)
+	return ok && fsys.name == otherNull.name
+}
+
 func (fsys *nullFS) String() string {
 	return types.Description(map[string]any{"nullFS": ufs.URIOrDefault(fsys, fsys.name)})
 }

@@ -29,7 +29,10 @@ import (
 	"github.com/cloudfra/ufs/ops"
 )
 
-var _ localFSInterface = (*tempMountFS)(nil)
+var (
+	_ localFSInterface = (*tempMountFS)(nil)
+	_ types.WrapperFS  = (*tempMountFS)(nil)
+)
 
 type tempMountFS struct {
 	lfs    types.WriteFS
@@ -44,6 +47,18 @@ func (fsys *tempMountFS) DeviceInfo() types.DeviceMap {
 
 func (fsys *tempMountFS) URI() (*url.URL, error) {
 	return url.Parse(fsys.uri)
+}
+
+// InnerFS returns the file system holding the temporary directory, see
+// [types.WrapperFS].
+func (fsys *tempMountFS) InnerFS() fs.FS {
+	return fsys.lfs
+}
+
+// IsSame reports whether other holds the temporary directory this tempMountFS
+// writes to, which no other tempMountFS shares.
+func (fsys *tempMountFS) IsSame(other fs.FS) bool {
+	return types.SameFS(fsys.lfs, other)
 }
 
 func (fsys *tempMountFS) String() string {

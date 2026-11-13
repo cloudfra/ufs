@@ -37,7 +37,10 @@ import (
 	"github.com/cloudfra/ufs/ops"
 )
 
-var _ types.WriteFS = (*faultFS)(nil)
+var (
+	_ types.WriteFS   = (*faultFS)(nil)
+	_ types.WrapperFS = (*faultFS)(nil)
+)
 
 const (
 	optionName = "fault"
@@ -160,6 +163,18 @@ func (fsys *faultFS) URI() (*url.URL, error) {
 		return nil, err
 	}
 	return ufs.AppendURIOption(u, optionName, fsys.cfg)
+}
+
+// InnerFS returns the file system whose operations are faulted, see
+// [types.WrapperFS].
+func (fsys *faultFS) InnerFS() fs.FS {
+	return fsys.inner
+}
+
+// IsSame reports whether other holds the wrapped file system's data, since the
+// injected faults do not change what is stored.
+func (fsys *faultFS) IsSame(other fs.FS) bool {
+	return types.SameFS(fsys.inner, other)
 }
 
 func (fsys *faultFS) String() string {

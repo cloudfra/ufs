@@ -61,6 +61,13 @@ func (fsys *localFS) URI() (*url.URL, error) {
 	return &url.URL{Scheme: "file", Path: pathutil.CoerceUnix(fsys.osFS.Name())}, nil
 }
 
+// IsSame reports whether other is a localFS over one directory, whose files are
+// shared by every handle opened on it.
+func (fsys *localFS) IsSame(other fs.FS) bool {
+	otherLocal, ok := types.InnermostFS(other).(*localFS)
+	return ok && fsys.osFS.Name() == otherLocal.osFS.Name()
+}
+
 func (fsys *localFS) String() string {
 	return types.Description(map[string]any{"localFS": ufs.URIOrDefault(fsys, fsys.osFS.Name())})
 }

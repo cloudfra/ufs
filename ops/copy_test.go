@@ -17,8 +17,10 @@ package ops_test
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/ops"
@@ -75,6 +77,50 @@ func TestCopy(t *testing.T) {
 	}
 	if string(data) != "hello world" {
 		t.Errorf("copy content = %q, want %q", data, "hello world")
+	}
+}
+
+func TestCopySameURISeparateFileSystems(t *testing.T) {
+	src, err := ufs.New(t.Context(), "memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, src)()
+	dest, err := ufs.New(t.Context(), "memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, dest)()
+
+	f, err := src.Create("hello.txt")
+	if err != nil {
+		t.Fatalf("Create(hello.txt) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("hello world"); err != nil {
+		t.Fatalf("WriteString() = %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v", err)
+	}
+
+	if err := ops.Copy(src, "hello.txt", dest, "copy.txt"); err != nil {
+		t.Fatalf("Copy() = %v, want nil", err)
+	}
+
+	rf, err := dest.Open("copy.txt")
+	if err != nil {
+		t.Fatalf("Open(copy.txt) in destFS = %v, want nil", err)
+	}
+	defer ufsTesting.ValidateClose(t, rf)()
+	data, err := io.ReadAll(rf)
+	if err != nil {
+		t.Fatalf("ReadAll() = %v, want nil", err)
+	}
+	if string(data) != "hello world" {
+		t.Errorf("copy content = %q, want %q", data, "hello world")
+	}
+	if _, err := src.Open("copy.txt"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Open(copy.txt) in srcFS = %v, want file does not exist", err)
 	}
 }
 

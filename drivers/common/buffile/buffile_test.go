@@ -456,8 +456,105 @@ func TestFileWrite(t *testing.T) {
 	}
 }
 
+func TestFileClose(t *testing.T) {
+	t.Run("refuses_reads_and_writes", func(t *testing.T) {
+		f := newTestFile("closed.txt", "abc")
+		if err := f.Close(); err != nil {
+			t.Fatalf("Close() = %v, want nil", err)
+		}
+		testCases := []struct {
+			name string
+			call func(f *File) (int, error)
+			op   string
+		}{
+			{name: "read", call: func(f *File) (int, error) { return f.Read(make([]byte, 4)) }, op: "read"},
+			{name: "read_at", call: func(f *File) (int, error) { return f.ReadAt(make([]byte, 4), 0) }, op: "read"},
+			{name: "write", call: func(f *File) (int, error) { return f.Write([]byte("x")) }, op: "write"},
+			{name: "write_empty", call: func(f *File) (int, error) { return f.Write(nil) }, op: "write"},
+			{name: "write_string", call: func(f *File) (int, error) { return f.WriteString("x") }, op: "write"},
+			{name: "write_string_empty", call: func(f *File) (int, error) { return f.WriteString("") }, op: "write"},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				n, err := tc.call(f)
+				if n != 0 {
+					t.Errorf("n = %d, want 0", n)
+				}
+				var pathErr *fs.PathError
+				if !errors.As(err, &pathErr) {
+					t.Fatalf("err = %v (%T), want *fs.PathError", err, err)
+				}
+				if pathErr.Op != tc.op {
+					t.Errorf("Op = %q, want %q", pathErr.Op, tc.op)
+				}
+				if pathErr.Path != "closed.txt" {
+					t.Errorf("Path = %q, want %q", pathErr.Path, "closed.txt")
+				}
+				if !errors.Is(err, fs.ErrClosed) {
+					t.Errorf("err = %v, want wrapping fs.ErrClosed", err)
+				}
+			})
+		}
+	})
+
+	t.Run("second_close_is_a_no_op", func(t *testing.T) {
+		f := newTestFile("twice.txt", "abc")
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Errorf("second Close() = %v, want nil", err)
+		}
+	})
+
+	t.Run("close_keeps_the_buffered_write", func(t *testing.T) {
+		// An embedding driver persists what the handle buffered around Close, so
+		// closing must neither drop it nor let a later write extend it.
+		f := newTestFile("kept.txt", "abc")
+		if _, err := f.Seek(0, io.SeekEnd); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString("X"); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString("mutated"); !errors.Is(err, fs.ErrClosed) {
+			t.Fatalf("WriteString() after Close = %v, want fs.ErrClosed", err)
+		}
+		content, _, ok := f.TakeDirty(time.Now())
+		if !ok {
+			t.Fatal("TakeDirty() ok = false, want the write made before Close")
+		}
+		if string(content) != "abcX" {
+			t.Errorf("content = %q, want %q", string(content), "abcX")
+		}
+	})
+
+	t.Run("stat_and_seek_still_answer", func(t *testing.T) {
+		// The merged OpenFile suite leaves these two unasserted for a closed
+		// handle, so File keeps answering them.
+		f := newTestFile("stat.txt", "abc")
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		info, err := f.Stat()
+		if err != nil {
+			t.Fatalf("Stat() = %v, want nil", err)
+		}
+		if info.Size() != 3 {
+			t.Errorf("Size() = %d, want 3", info.Size())
+		}
+		if pos, err := f.Seek(1, io.SeekStart); err != nil || pos != 1 {
+			t.Errorf("Seek(1, io.SeekStart) = (%d, %v), want (1, nil)", pos, err)
+		}
+	})
+}
+
 func TestFileTakeDirty(t *testing.T) {
 	f := newTestFile("d.txt", "abc")
+
 	if _, _, ok := f.TakeDirty(time.Now()); ok {
 		t.Error("TakeDirty() on unmodified file ok = true, want false")
 	}

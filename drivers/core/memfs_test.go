@@ -112,6 +112,15 @@ func TestMemFileOperations(t *testing.T) {
 		t.Errorf("Read() = %q, want %q", string(buf), "hello world")
 	}
 
+	// Read after EOF
+	n, err = f.Read(buf)
+	if n != 0 {
+		t.Errorf("Read() after EOF = %d, want 0", n)
+	}
+	if err != io.EOF {
+		t.Errorf("Read() error after EOF = %v, want io.EOF", err)
+	}
+
 	// Close
 	if err := f.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil", err)
@@ -133,15 +142,6 @@ func TestMemFileOperations(t *testing.T) {
 	}
 	if info.Mode() != fs.ModePerm {
 		t.Errorf("Mode() = %v, want %v", info.Mode(), fs.ModePerm)
-	}
-
-	// Read after EOF
-	n, err = f.Read(buf)
-	if n != 0 {
-		t.Errorf("Read() after EOF = %d, want 0", n)
-	}
-	if err != io.EOF {
-		t.Errorf("Read() error after EOF = %v, want io.EOF", err)
 	}
 }
 
@@ -815,6 +815,62 @@ func TestMemFileDirRead(t *testing.T) {
 				t.Errorf("Read() on directory %q returned %d bytes, want 0", dirPath, n)
 			}
 		})
+	}
+}
+
+func TestMemFileClosedHandle(t *testing.T) {
+	fsys, err := newMemFS(t.Context(), "memory://test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := fsys.Create("kept.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("kept"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+
+	// memFS keeps a handle's writes in the node as they land, so a handle the
+	// caller already closed must stop taking new ones.
+	testCases := []struct {
+		name string
+		call func(f types.File) (int, error)
+	}{
+		{name: "Read", call: func(f types.File) (int, error) { return f.Read(make([]byte, 8)) }},
+		{name: "ReadAt", call: func(f types.File) (int, error) { return f.ReadAt(make([]byte, 8), 0) }},
+		{name: "Write", call: func(f types.File) (int, error) { return f.Write([]byte("mutated")) }},
+		{name: "WriteString", call: func(f types.File) (int, error) { return f.WriteString("mutated") }},
+		{name: "WriteEmpty", call: func(f types.File) (int, error) { return f.Write(nil) }},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			n, err := tc.call(f)
+			if n != 0 {
+				t.Errorf("%s() = %d, want 0", tc.name, n)
+			}
+			if !errors.Is(err, fs.ErrClosed) {
+				t.Errorf("%s() on a closed handle = %v, want fs.ErrClosed", tc.name, err)
+			}
+		})
+	}
+
+	t.Run("second_close", func(t *testing.T) {
+		if err := f.Close(); err != nil {
+			t.Errorf("second Close() = %v, want nil", err)
+		}
+	})
+
+	content, err := fsys.ReadFile("kept.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "kept" {
+		t.Errorf("stored content = %q, want %q", content, "kept")
 	}
 }
 

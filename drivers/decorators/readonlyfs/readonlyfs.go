@@ -32,7 +32,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var _ types.WriteFS = (*readOnlyFS)(nil)
+var (
+	_ types.WriteFS   = (*readOnlyFS)(nil)
+	_ types.WrapperFS = (*readOnlyFS)(nil)
+)
 
 const (
 	optionName = "readOnly"
@@ -85,6 +88,18 @@ func wrap(_ context.Context, inner types.WriteFS, opts Options) (types.WriteFS, 
 // [fs.ErrPermission] for all write operations.
 type readOnlyFS struct {
 	types.ReadFS
+}
+
+// InnerFS returns the file system whose data is presented read-only, see
+// [types.WrapperFS].
+func (fsys *readOnlyFS) InnerFS() fs.FS {
+	return fsys.ReadFS
+}
+
+// IsSame reports whether other holds the wrapped file system's data, since the
+// read-only view stores nothing of its own.
+func (fsys *readOnlyFS) IsSame(other fs.FS) bool {
+	return types.SameFS(fsys.ReadFS, other)
 }
 
 // IsMountedArchiveDir forwards to the wrapped file system, see

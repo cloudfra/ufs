@@ -52,6 +52,8 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 
 	copyFileFS(t, args, createFSFunc)
 	uriGetFS(t, args, createFSFunc)
+	comparableFS(t, args, createFSFunc)
+	wrapperFS(t, args, createFSFunc)
 	mkdirAllFS(t, args, createFSFunc)
 	createFileFS(t, args, createFSFunc)
 	renameFileFS(t, args, createFSFunc)

@@ -64,6 +64,13 @@ func (fsys *angryFS) URI() (*url.URL, error) {
 	return u, nil
 }
 
+// IsSame reports whether other is an angryFS with the same name, which holds
+// the same data because angryFS stores nothing.
+func (fsys *angryFS) IsSame(other fs.FS) bool {
+	otherAngry, ok := types.InnermostFS(other).(*angryFS)
+	return ok && fsys.name == otherAngry.name
+}
+
 func (fsys *angryFS) String() string {
 	return types.Description(map[string]any{"angryFS": ufs.URIOrDefault(fsys, fsys.name)})
 }

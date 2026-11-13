@@ -1043,3 +1043,24 @@ func TestMemFSDirFileConflictErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestMemFSIsSame checks that a memFS is the same as only itself: two memFS
+// opened with one URI hold separate nodes, so their URI cannot answer the
+// question of whether an operation between them stays inside one store.
+func TestMemFSIsSame(t *testing.T) {
+	t.Parallel()
+
+	first := makeMemFS("memory://store")
+	if !types.SameFS(first, first) {
+		t.Error("SameFS(memFS, the same memFS) = false, want true")
+	}
+
+	second := makeMemFS("memory://store")
+	if types.SameFS(first, second) {
+		t.Error("SameFS(two memFS opened with one URI) = true, want false, because each holds its own nodes")
+	}
+
+	if !types.Equals(first, second) {
+		t.Fatal("Equals(two memFS opened with one URI) = false, want true")
+	}
+}

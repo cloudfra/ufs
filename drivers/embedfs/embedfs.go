@@ -42,6 +42,15 @@ func (fsys *embedFS) URI() (*url.URL, error) {
 	return &url.URL{Scheme: "embed", Path: "/" + fsys.name, RawQuery: "ro=true"}, nil
 }
 
+// IsSame reports whether other is this file system, since two embedFS values
+// over one embedded file system cannot be recognized as holding the same bytes.
+// The embedded file system is a value that each embedFS copies, so it holds no
+// identity that the two could compare.
+func (fsys *embedFS) IsSame(other fs.FS) bool {
+	otherEmbed, ok := types.InnermostFS(other).(*embedFS)
+	return ok && fsys == otherEmbed
+}
+
 func (fsys *embedFS) String() string {
 	return types.Description(map[string]any{"embedFS": ufs.URIOrDefault(fsys, fsys.name)})
 }

@@ -38,6 +38,8 @@ type ReadFS interface {
 
 	URIGet
 
+	ComparableFS
+
 	// String returns a human-readable description of the file system that
 	// shows how it is composed — wrapper layers, mount points, and the
 	// underlying storage backends. It is intended for debugging and logging.

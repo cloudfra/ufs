@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
@@ -269,5 +270,34 @@ func TestTempMountFSCloseReportsBothErrors(t *testing.T) {
 	}
 	if !errors.Is(err, cleanupErr) {
 		t.Errorf("Close() error should contain cleanup error, got: %v", err)
+	}
+}
+
+// TestTempMountFSIsSame checks that a tempMountFS reports the data of the file
+// system holding its temporary directory, so that an operation between the two
+// stays inside that directory.
+func TestTempMountFSIsSame(t *testing.T) {
+	t.Parallel()
+
+	local, err := makeLocalFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ufsTesting.ValidateClose(t, local))
+	mount := makeTempMountFS(local, "test://", "test://", func() error { return nil })
+
+	if !types.SameFS(mount, local) {
+		t.Error("a tempMountFS and the file system holding its directory should report the same data")
+	}
+
+	otherLocal, err := makeLocalFS(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ufsTesting.ValidateClose(t, otherLocal))
+	other := makeTempMountFS(otherLocal, "test://", "test://", func() error { return nil })
+
+	if types.SameFS(mount, other) {
+		t.Error("two tempMountFS over different directories should not report the same data")
 	}
 }

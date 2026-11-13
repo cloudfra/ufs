@@ -71,6 +71,13 @@ func (fsys *archiveFS) URI() (*url.URL, error) {
 	return &url.URL{Scheme: "archive", Path: p, RawQuery: "ro=true"}, nil
 }
 
+// IsSame reports whether other reads one opened archive under one name, which
+// is one set of entries that cannot change.
+func (fsys *archiveFS) IsSame(other fs.FS) bool {
+	otherArchive, ok := types.InnermostFS(other).(*archiveFS)
+	return ok && fsys.name == otherArchive.name && types.SameFS(fsys.fsys, otherArchive.fsys)
+}
+
 func (fsys *archiveFS) String() string {
 	return types.Description(map[string]any{"archiveFS": ufs.URIOrDefault(fsys, fsys.name)})
 }

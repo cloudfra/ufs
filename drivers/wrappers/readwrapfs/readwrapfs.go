@@ -27,7 +27,10 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-var _ types.ReadFS = (*readWrapFS)(nil)
+var (
+	_ types.ReadFS    = (*readWrapFS)(nil)
+	_ types.WrapperFS = (*readWrapFS)(nil)
+)
 
 type readWrapFS struct {
 	fsys fs.FS
@@ -56,6 +59,18 @@ func (fsys *readWrapFS) URI() (*url.URL, error) {
 		return u, nil
 	}
 	return nil, nil
+}
+
+// InnerFS returns the file system whose data is read through this wrapper, see
+// [types.WrapperFS].
+func (fsys *readWrapFS) InnerFS() fs.FS {
+	return fsys.fsys
+}
+
+// IsSame reports whether other holds the wrapped file system's data, since
+// readWrapFS stores nothing of its own.
+func (fsys *readWrapFS) IsSame(other fs.FS) bool {
+	return types.SameFS(fsys.fsys, other)
 }
 
 func (fsys *readWrapFS) String() string {

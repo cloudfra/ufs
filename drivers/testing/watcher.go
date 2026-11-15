@@ -89,11 +89,6 @@ const watchSilenceWindow = 500 * time.Millisecond
 // system that calls the hook from more than one goroutine at a time.
 const watchHookHold = 2 * time.Millisecond
 
-// watcherInvalidNames extends invalidPaths with the names only Watch has to
-// refuse: the empty name, the root spelled with a dot element, and paths holding
-// a dot or dot-dot element in the middle.
-var watcherInvalidNames = append(invalidPaths, "", "./watch", "watch/./file.txt", "watch/../outside.txt")
-
 // watchMissingNames are the watch targets that no file system holds.
 var watchMissingNames = []string{watchMissingDir, watchMissingDir + "/deeper"}
 
@@ -176,7 +171,7 @@ func watcherInvalidPaths(t *testing.T, createFSFunc func(t *testing.T) watcherRe
 		fsys := createFSFunc(t)
 		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
-		for _, name := range watcherInvalidNames {
+		for _, name := range invalidPaths {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				closer, err := fsys.Watch(t.Context(), name, watchNoHook)

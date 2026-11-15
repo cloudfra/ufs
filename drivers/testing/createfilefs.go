@@ -31,12 +31,6 @@ import (
 // be created first, and each holds its own name as its content.
 var createFileNames = []string{"b/a/c", "b/b", "b/c", "c", "d/e/f/g", "d/e/g", "a/b/c/d/e/f/g"}
 
-// createRefusedNames are names Create must refuse. The shared invalidPaths list
-// is extended with names that are only refused once a file is asked for: the
-// empty name, the root, a trailing separator, an empty element, and a path
-// holding a dot element.
-var createRefusedNames = append(invalidPaths, "", "/", "dir/", "dir//inner.txt", "./dir", "x/./y.txt")
-
 // createFilesTestFS is the minimum set of interfaces createFiles needs: it
 // seeds directories with MkdirAll, creates a file with Create, and reads the
 // result back through ReadFile, Open, ReadLink and Lstat.
@@ -290,7 +284,7 @@ func createRefused(t *testing.T, _ Args, createFSFunc func(t *testing.T) createR
 		fsys := createFSFunc(t)
 		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
-		for _, name := range createRefusedNames {
+		for _, name := range invalidPaths {
 			f, err := fsys.Create(name)
 			if !errors.Is(err, fs.ErrInvalid) {
 				t.Errorf("Create(%q) = %v, want an error wrapping %v", name, err, fs.ErrInvalid)

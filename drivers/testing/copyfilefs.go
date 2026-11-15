@@ -58,9 +58,10 @@ func copyFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.S
 		requireType[types.CopyFileFS](t, args)
 		t.Parallel()
 		copyFileFSInvalidPath(t, args, requireFSTypeFunc[types.CopyFileFS](t, createFSFunc))
-		copyFileInvalidPaths(t, args, requireFSTypeFunc[types.CopyFileFS](t, createFSFunc))
+		copyFileInvalidPaths(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
 		copyFileCopies(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
 		copyFileRefusals(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
+		copyFileSameFileVariations(t, args, requireFSTypeFunc[types.CopyFileFS](t, createFSFunc))
 		copyFileIndependent(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
 		copyFileLarge(t, args, requireFSTypeFunc[copyFileFSForTest](t, createFSFunc))
 	})
@@ -143,6 +144,13 @@ func copyFileRefusals(t *testing.T, _ Args, createFSFunc func(t *testing.T) copy
 			{name: "DirSource", src: "c/dir", dst: "c/copied", wantDstAbsent: true},
 			{name: "DirSourceOverFile", src: "c/dir", dst: "c/other/e.txt"},
 			{name: "SubDirSource", src: "c/dir/sub", dst: "c/copied", wantDstAbsent: true},
+			// A directory copied into its own subtree, and up over its own
+			// parent, are refused today only because the destination already
+			// exists. Issue #686 asks whether they should be refused for
+			// being nested, so only the refusal and the untouched tree are
+			// pinned here.
+			{name: "DirIntoOwnSubDir", src: "c/dir", dst: "c/dir/sub"},
+			{name: "DirUpOverOwnParent", src: "c/dir/sub", dst: "c/dir"},
 			{name: "FromRoot", src: ".", dst: "c/copied", wantErr: fs.ErrPermission, wantDstAbsent: true},
 			{name: "ToRoot", src: "c/a.txt", dst: ".", wantErr: fs.ErrPermission},
 		}
@@ -163,6 +171,30 @@ func copyFileRefusals(t *testing.T, _ Args, createFSFunc func(t *testing.T) copy
 						t.Errorf("Stat(%q) after a failed CopyFile = %v, want %v", tc.dst, err, fs.ErrNotExist)
 					}
 				}
+			})
+		}
+	})
+}
+
+// copyFileSameFileVariations checks that a self-copy is refused however its two
+// names are spelled, so that the rule cannot be avoided by writing the same file
+// differently on each side. The file system is left empty because the refusal
+// must come from validating the names, not from what the names refer to.
+func copyFileSameFileVariations(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+	t.Run("CopyFileSameFileVariations", func(t *testing.T) {
+		t.Parallel()
+
+		for _, name := range []string{"c/a.txt", "c/dir/b.txt"} {
+			t.Run(pathLabel(name), func(t *testing.T) {
+				fsys := createFSFunc(t)
+				t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+				assertPairPathVariations(t, "CopyFile", fsys.CopyFile,
+					func(t *testing.T) {
+						if _, err := fs.Stat(fsys, name); !errors.Is(err, fs.ErrNotExist) {
+							t.Errorf("Stat(%q) after a refused CopyFile = %v, want %v", name, err, fs.ErrNotExist)
+						}
+					},
+					name, name)
 			})
 		}
 	})
@@ -224,16 +256,14 @@ func copyFileFSInvalidPath(t *testing.T, _ Args, createFSFunc func(t *testing.T)
 }
 
 // copyFileInvalidPaths checks that CopyFile refuses a path that is not valid
-// for the file system, both as the source and as the destination.
-func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.CopyFileFS) {
+// for the file system, both as the source and as the destination, over a seeded
+// tree so that the refusal cannot be an accident of a missing file and nothing
+// is written.
+func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) copyFileFSForTest) {
 	t.Run("copyFileInvalidPaths", func(t *testing.T) {
 		t.Parallel()
 
-		for _, name := range append(invalidPaths, "", "c/", "c//a.txt", "./c/a.txt") {
-			label := strings.ReplaceAll(name, "/", "_")
-			if label == "" {
-				label = "empty"
-			}
+		for _, name := range invalidPaths {
 			for _, tc := range []struct {
 				name     string
 				src, dst string
@@ -241,9 +271,9 @@ func copyFileInvalidPaths(t *testing.T, _ Args, createFSFunc func(t *testing.T) 
 				{name: "AsSource", src: name, dst: "c/copied.txt"},
 				{name: "AsDestination", src: "c/a.txt", dst: name},
 			} {
-				t.Run(tc.name+"_"+label, func(t *testing.T) {
+				t.Run(tc.name+"_"+pathLabel(name), func(t *testing.T) {
 					t.Parallel()
-					fsys := createFSFunc(t)
+					fsys := newCopyFS(t, createFSFunc)
 					err := fsys.CopyFile(tc.src, tc.dst)
 					if !errors.Is(err, fs.ErrInvalid) {
 						t.Errorf("CopyFile(%q, %q) = %v, want %v", tc.src, tc.dst, err, fs.ErrInvalid)

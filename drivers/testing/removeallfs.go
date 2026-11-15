@@ -60,11 +60,6 @@ const removeAllSiblingName = "r/c.txt.bak"
 // systems, and the case that removes it is not run for them.
 const removeAllEmptyDir = "r/emptydir"
 
-// removeAllInvalidNames extend the shared invalidPaths list with the names only
-// RemoveAll has to refuse: the empty name, an absolute path, a trailing
-// separator, an empty element, and paths holding a dot element.
-var removeAllInvalidNames = append(invalidPaths, "", "/", "r/", "r//c.txt", "r/./c.txt", "r/b/../c.txt", "r/c.txt/")
-
 // removeAllMissingNames are the names no file system holds. RemoveAll is a
 // no-op that returns nil for each of them: a name below a directory that does
 // not exist, and a name below a file that does.
@@ -409,7 +404,7 @@ func removeAllInvalidPaths(t *testing.T, createFSFunc func(t *testing.T) removeA
 		fsys := createFSFunc(t)
 		t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 
-		for _, name := range removeAllInvalidNames {
+		for _, name := range invalidPaths {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				err := fsys.RemoveAll(name)

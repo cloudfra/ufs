@@ -114,7 +114,12 @@ func (vrd *nullReadDirFile) Close() error {
 	return nil
 }
 
-func (vrd *nullReadDirFile) ReadDir(_ int) ([]fs.DirEntry, error) {
+// ReadDir reports an empty listing: a nullFS directory holds no entries, so a
+// bounded read is already at the end of the directory.
+func (vrd *nullReadDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	if n > 0 {
+		return nil, io.EOF
+	}
 	return []fs.DirEntry{}, nil
 }
 
@@ -219,7 +224,12 @@ func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	return []fs.DirEntry{}, nil
 }
 
-func (fsys *nullFS) Glob(_ string) ([]string, error) {
+// Glob matches nothing because a nullFS holds no entries, but a malformed
+// pattern still reports [path.ErrBadPattern].
+func (fsys *nullFS) Glob(pattern string) ([]string, error) {
+	if _, err := path.Match(pattern, ""); err != nil {
+		return nil, err
+	}
 	return []string{}, nil
 }
 

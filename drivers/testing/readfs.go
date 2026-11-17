@@ -17,20 +17,234 @@
 package testing
 
 import (
+	"bytes"
+	"io"
 	"io/fs"
 	"maps"
+	"path"
 	"slices"
 	"testing"
+	"testing/fstest"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
 func readFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.ReadFS) {
 	Constructor(t, args, createFSFunc)
 	InvalidPathsForReadFS(t, args, createFSFunc)
+	readConsistency(t, args, createFSFunc)
+}
+
+// readConsistency verifies that every read path of a file system reports the
+// same tree: the listing it yields must satisfy the io/fs conventions and agree
+// across Open, ReadDir, ReadFile, Lstat and ReadLink.
+func readConsistency(t *testing.T, _ Args, createFSFunc func(t *testing.T) types.ReadFS) {
+	t.Run("ReadConsistency", func(t *testing.T) {
+		t.Run("Conventions", func(t *testing.T) {
+			t.Parallel()
+			fsys := createFSFunc(t)
+			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+			names, err := ops.List(fsys, pathutil.CwdPath)
+			if err != nil {
+				t.Fatalf("List() = %v", err)
+			}
+			if err := fstest.TestFS(fsys, names...); err != nil {
+				t.Errorf("fstest.TestFS() = %v", err)
+			}
+		})
+		t.Run("Listings", func(t *testing.T) {
+			t.Parallel()
+			fsys := createFSFunc(t)
+			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+			readDirListings(t, fsys)
+		})
+		t.Run("EntryInfo", func(t *testing.T) {
+			t.Parallel()
+			fsys := createFSFunc(t)
+			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+			entryInfo(t, fsys)
+		})
+		t.Run("ReadPaths", func(t *testing.T) {
+			t.Parallel()
+			fsys := createFSFunc(t)
+			t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+			readPaths(t, fsys)
+		})
+	})
+}
+
+// dirListings returns the listing of every directory reachable from the root,
+// keyed by directory. A directory that fails to list is omitted and reported.
+func dirListings(t *testing.T, fsys types.ReadFS) map[string][]fs.DirEntry {
+	t.Helper()
+	listings := make(map[string][]fs.DirEntry)
+	dirs := []string{pathutil.CwdPath}
+	for len(dirs) > 0 {
+		dir := dirs[0]
+		dirs = dirs[1:]
+		entries, err := fsys.ReadDir(dir)
+		if err != nil {
+			t.Errorf("ReadDir(%q) = %v", dir, err)
+			continue
+		}
+		listings[dir] = entries
+		for _, entry := range entries {
+			if entry.IsDir() {
+				dirs = append(dirs, path.Join(dir, entry.Name()))
+			}
+		}
+	}
+	return listings
+}
+
+// readDirListings verifies that each listing is sorted, that every name it
+// reports opens, and that an opened directory handle lists what ReadDir reports.
+func readDirListings(t *testing.T, fsys types.ReadFS) {
+	t.Helper()
+	listings := dirListings(t, fsys)
+	for _, dir := range slices.Sorted(maps.Keys(listings)) {
+		entries := listings[dir]
+		for i := 1; i < len(entries); i++ {
+			if entries[i-1].Name() > entries[i].Name() {
+				t.Errorf("ReadDir(%q) lists %q before %q, want sorted by name", dir, entries[i-1].Name(), entries[i].Name())
+			}
+		}
+		for _, entry := range entries {
+			name := path.Join(dir, entry.Name())
+			file, err := fsys.Open(name)
+			if err != nil {
+				t.Errorf("Open(%q) = %v, want the name listed by ReadDir(%q) to open", name, err, dir)
+				continue
+			}
+			if entry.IsDir() {
+				handle, ok := file.(fs.ReadDirFile)
+				if !ok {
+					t.Errorf("Open(%q) = %T, want a directory handle that is fs.ReadDirFile", name, file)
+				} else {
+					handleEntries, err := handle.ReadDir(-1)
+					if err != nil {
+						t.Errorf("ReadDir(-1) on the handle from Open(%q) = %v", name, err)
+					} else if !sameNames(listings[name], handleEntries) {
+						t.Errorf("the handle from Open(%q) lists %v, ReadDir(%q) lists %v, want the same names in the same order",
+							name, namesOf(handleEntries), name, namesOf(listings[name]))
+					}
+				}
+			}
+			if err := file.Close(); err != nil {
+				t.Errorf("Close() on the handle from Open(%q) = %v", name, err)
+			}
+		}
+	}
+}
+
+// entryInfo verifies that the [fs.DirEntry] a listing reports describes the
+// same node as Lstat does, and that every listed symbolic link names a target.
+func entryInfo(t *testing.T, fsys types.ReadFS) {
+	t.Helper()
+	listings := dirListings(t, fsys)
+	for _, dir := range slices.Sorted(maps.Keys(listings)) {
+		for _, entry := range listings[dir] {
+			name := path.Join(dir, entry.Name())
+			info, err := fsys.Lstat(name)
+			if err != nil {
+				t.Errorf("Lstat(%q) = %v, want the name listed by ReadDir(%q) to exist", name, err, dir)
+				continue
+			}
+			listed, err := entry.Info()
+			if err != nil {
+				t.Errorf("Info() on the entry for %q listed by ReadDir(%q) = %v", name, dir, err)
+				continue
+			}
+			if listed.Name() != info.Name() || listed.IsDir() != info.IsDir() || listed.Size() != info.Size() || listed.Mode() != info.Mode() {
+				t.Errorf("the entry for %q listed by ReadDir(%q) is %q size %d mode %v, Lstat is %q size %d mode %v",
+					name, dir, listed.Name(), listed.Size(), listed.Mode(),
+					info.Name(), info.Size(), info.Mode())
+			}
+			if info.Mode().Type() == fs.ModeSymlink {
+				target, err := fsys.ReadLink(name)
+				if err != nil {
+					t.Errorf("ReadLink(%q) = %v, want the symbolic link listed by ReadDir(%q) to name a target", name, err, dir)
+				} else if target == "" {
+					t.Errorf("ReadLink(%q) = %q, want a target", name, target)
+				}
+			}
+		}
+	}
+}
+
+// readPaths verifies that ReadFile and an opened handle report the same content
+// and metadata for every regular file, and that nothing exists below one.
+func readPaths(t *testing.T, fsys types.ReadFS) {
+	t.Helper()
+	listings := dirListings(t, fsys)
+	for _, dir := range slices.Sorted(maps.Keys(listings)) {
+		for _, entry := range listings[dir] {
+			// Symbolic links are pinned by entryInfo: reading through one is not
+			// defined the same way by every driver.
+			if !entry.Type().IsRegular() {
+				continue
+			}
+			name := path.Join(dir, entry.Name())
+			data, err := fsys.ReadFile(name)
+			if err != nil {
+				t.Errorf("ReadFile(%q) = %v", name, err)
+				continue
+			}
+			file, err := fsys.Open(name)
+			if err != nil {
+				t.Errorf("Open(%q) = %v", name, err)
+				continue
+			}
+			opened, err := io.ReadAll(file)
+			if err != nil {
+				t.Errorf("ReadAll() on the handle from Open(%q) = %v", name, err)
+			} else if !bytes.Equal(opened, data) {
+				t.Errorf("ReadAll() on the handle from Open(%q) = %q, ReadFile(%q) = %q, want the same content", name, opened, name, data)
+			}
+			info, err := file.Stat()
+			if err != nil {
+				t.Errorf("Stat() on the handle from Open(%q) = %v", name, err)
+			} else if info.Name() != path.Base(name) || info.Size() != int64(len(data)) {
+				t.Errorf("Stat() on the handle from Open(%q) = %q size %d, want %q size %d", name, info.Name(), info.Size(), path.Base(name), len(data))
+			}
+			if err := file.Close(); err != nil {
+				t.Errorf("Close() on the handle from Open(%q) = %v", name, err)
+			}
+			below := name + "/below"
+			if _, err := fsys.Lstat(below); err == nil {
+				t.Errorf("Lstat(%q) = nil, want an error because %q is a regular file", below, name)
+			}
+			if _, err := fsys.ReadFile(below); err == nil {
+				t.Errorf("ReadFile(%q) = nil, want an error because %q is a regular file", below, name)
+			}
+		}
+	}
+}
+
+// namesOf returns the names in entries, for failures.
+func namesOf(entries []fs.DirEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+// sameNames reports whether both listings hold the same names in the same order.
+func sameNames(first, second []fs.DirEntry) bool {
+	if len(first) != len(second) {
+		return false
+	}
+	for i := range first {
+		if first[i].Name() != second[i].Name() {
+			return false
+		}
+	}
+	return true
 }
 
 // Constructor verifies that createFSFunc returns a non-nil file system that

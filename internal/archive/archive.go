@@ -163,7 +163,7 @@ func (fsys *archiveFS) ensureIndexed() {
 // skip the detect-and-retry dance entirely.
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if fsys.isIndexed.Load() {
-		return fsys.fsys.Open(name)
+		return snapshotDir(fsys.fsys.Open(name))
 	}
 
 	f, err := fsys.fsys.Open(name)
@@ -171,17 +171,68 @@ func (fsys *archiveFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 	if name == "." {
-		return f, nil
+		return snapshotDirFile(f), nil
 	}
 	info, statErr := f.Stat()
 	if statErr != nil || info.Name() == path.Base(name) {
-		return f, nil
+		return snapshotDirFile(f), nil
 	}
 	if err := f.Close(); err != nil {
 		return nil, fmt.Errorf("cannot close %q, %w", name, err)
 	}
 	fsys.ensureIndexed()
-	return fsys.fsys.Open(name)
+	return snapshotDir(fsys.fsys.Open(name))
+}
+
+// snapshotDir adapts an archive library handle for a directory so that it
+// reports the end of its listing, which io/fs requires and the library does
+// not: its handles answer every ReadDir with the whole listing again.
+func snapshotDir(file fs.File, err error) (fs.File, error) {
+	if err != nil {
+		return nil, err
+	}
+	return snapshotDirFile(file), nil
+}
+
+func snapshotDirFile(file fs.File) fs.File {
+	dir, ok := file.(fs.ReadDirFile)
+	if !ok {
+		return file
+	}
+	return &snapshotDirFileHandle{ReadDirFile: dir}
+}
+
+// snapshotDirFileHandle answers ReadDir from one snapshot of the directory
+// listing, tracking the position the library's handle does not.
+type snapshotDirFileHandle struct {
+	fs.ReadDirFile
+	entries []fs.DirEntry
+	off     int
+	listed  bool
+}
+
+func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
+	if !dir.listed {
+		entries, err := dir.ReadDirFile.ReadDir(-1)
+		if err != nil {
+			return nil, err
+		}
+		dir.entries = entries
+		dir.listed = true
+	}
+	rest := dir.entries[dir.off:]
+	if n <= 0 {
+		dir.off = len(dir.entries)
+		return rest, nil
+	}
+	if len(rest) == 0 {
+		return nil, io.EOF
+	}
+	if n < len(rest) {
+		rest = rest[:n]
+	}
+	dir.off += len(rest)
+	return rest, nil
 }
 
 // Stat forwards to the library's own Stat rather than leaving callers to the

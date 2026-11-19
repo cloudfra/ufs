@@ -22,7 +22,7 @@ require (
 	github.com/fsouza/fake-gcs-server v1.56.1
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/google/go-cmp v0.7.0
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.34.0
 	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/mholt/archives v0.1.5
 	github.com/mikelolasagasti/xz v1.0.1

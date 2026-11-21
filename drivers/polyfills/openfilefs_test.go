@@ -261,8 +261,10 @@ func TestOpenFile(t *testing.T) {
 			wantCloses: 1,
 		},
 		{
-			// A read-only open cannot change the file at all, so the truncate flag
-			// says nothing, the way it does for a read-only [os.OpenFile].
+			// A read-only open cannot change the file at all, so the emulation
+			// leaves the content alone. This is where it departs from a local
+			// file: Linux truncates under a read-only open too, and this path
+			// can only replace a whole file through Create.
 			name:       "a read-only open ignores the truncate flag",
 			wrap:       plainFSSet,
 			seed:       seedAlpha,
@@ -323,6 +325,21 @@ func TestOpenFile(t *testing.T) {
 			seed:       seedDirD,
 			file:       "d",
 			flag:       os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
+			wantErr:    "is a directory",
+			wantErrIs:  fs.ErrInvalid,
+			wantFiles:  map[string]string{},
+			wantDirs:   []string{"d"},
+			wantCloses: 1,
+		},
+		{
+			// A truncate is a write to the name even under a read-only access
+			// mode, so a local open of a directory carrying one is refused the
+			// same way.
+			name:       "a read-only open of a directory cannot truncate it",
+			wrap:       createFSSet,
+			seed:       seedDirD,
+			file:       "d",
+			flag:       os.O_RDONLY | os.O_TRUNC,
 			wantErr:    "is a directory",
 			wantErrIs:  fs.ErrInvalid,
 			wantFiles:  map[string]string{},

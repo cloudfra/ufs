@@ -476,8 +476,13 @@ func (fsys *memFS) Create(name string) (types.File, error) {
 // The root is a directory like any other name here: a read-only open returns a
 // listable handle, a writable open is refused as a directory, and
 // os.O_CREATE|os.O_EXCL on an existing directory is refused as an existing name.
-// Those are the three answers Linux gives for a directory. The polyfill refuses
-// the root outright because it can only emulate a file.
+// A read-only open that carries os.O_TRUNC is refused as a directory too,
+// because Linux counts the truncate as a write when it validates an open. Those
+// are the answers Linux gives for a directory. The polyfill refuses the root
+// outright because it can only emulate a file.
+//
+// A name that is missing gets its parent directories created, which is what
+// Create does; a local open reports the parent is missing instead.
 //
 // Every handle holds a private copy of the content, and each write publishes
 // that copy, so two open handles overwrite one another rather than each other's
@@ -497,8 +502,8 @@ func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File
 	reads, writes := polyfills.OpenFileAccess(flag)
 	// A directory is refused whenever the access bits ask for anything but a
 	// plain read, including the value that names no mode, which is how open(2)
-	// answers EISDIR. It says nothing about os.O_TRUNC, which is applied to the
-	// stored file on its own.
+	// answers EISDIR. os.O_TRUNC is applied to a stored file on its own,
+	// whatever these bits say, but it refuses a directory on its own too.
 	writable := access != os.O_RDONLY
 	now := time.Now()
 
@@ -513,7 +518,10 @@ func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File
 		return nil, ufserrors.NewPathError("open", name, fs.ErrNotExist)
 	case existed && node.isDir:
 		fsys.mu.Unlock()
-		if writable {
+		// The truncate is a write to the name even when the access bits ask
+		// only to read, so a read-only open of a directory that carries
+		// os.O_TRUNC is refused the way a writable one is.
+		if writable || flag&os.O_TRUNC != 0 {
 			return nil, ufserrors.NewPathError("open", name, fmt.Errorf("is a directory: %w", fs.ErrInvalid))
 		}
 		dir, err := fsys.openDir(name)

@@ -1378,7 +1378,7 @@ func TestMemFSOpenFile(t *testing.T) {
 		// Linux takes the root of a tree, so a writable open of it is refused as a
 		// directory and an exclusive create of it is refused as an existing name.
 		// The polyfill refuses the root outright because it can only emulate a file.
-		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
+		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_RDONLY | os.O_TRUNC, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
 			_, err := ofs.OpenFile(pathutil.CwdPath, flag, 0o644)
 			if flag&os.O_EXCL != 0 {
 				if !errors.Is(err, fs.ErrExist) {
@@ -1396,13 +1396,24 @@ func TestMemFSOpenFile(t *testing.T) {
 		if err := fsys.MkdirAll("dir", 0o755); err != nil {
 			t.Fatal(err)
 		}
+		// A read-only open of a directory without a truncate is the one open
+		// Linux grants it: a handle that can be listed.
+		f, err := ofs.OpenFile("dir", os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("OpenFile(dir, O_RDONLY) failed: %v", err)
+		}
+		defer ufsTesting.ValidateClose(t, f)()
+		if _, ok := f.(fs.ReadDirFile); !ok {
+			t.Error("OpenFile(dir, O_RDONLY) = a handle that cannot be listed")
+		}
 		// The shared suite checks only that a writable open of a directory comes
 		// back as a path error naming it, because a plain os.File carries the bare
-		// EISDIR. memFS states which sentinel its refusal carries. The two refusals
+		// EISDIR. memFS states which sentinel its refusal carries. The refusals
 		// are measured against Linux, which answers EISDIR for a writable open and
-		// EEXIST for os.O_CREATE|os.O_EXCL, and it answers EISDIR for the value that
-		// names no access mode too.
-		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_RDWR, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
+		// EEXIST for os.O_CREATE|os.O_EXCL; it answers EISDIR for the value that
+		// names no access mode too, and for a read-only open carrying
+		// os.O_TRUNC, since the truncate counts as a write to the name.
+		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_RDWR, os.O_RDONLY | os.O_TRUNC, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
 			_, err := ofs.OpenFile("dir", flag, 0o644)
 			if flag&os.O_EXCL != 0 {
 				if !errors.Is(err, fs.ErrExist) {

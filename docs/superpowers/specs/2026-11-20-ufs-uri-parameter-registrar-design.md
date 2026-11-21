@@ -636,6 +636,17 @@ a single `ufs.ro=true`.
 3. Does a `MountSpec`'s `Options` get the same unknown-name rule as the URI, or
    does only the URI get the central check? A mistyped section in a mount spec is
    as silent today as an unknown `ufs.` parameter is.
+4. Does `ufs.New` (`construct.go:221`) widen to `FS` along with
+   `newFromMountSpec` (`construct.go:554`)? Step 4 assumes yes. The value
+   returned is the same either way; keeping them narrow only means every caller
+   that wants the nest surface type-asserts first. Recommendation: widen both.
+5. What happens to a mount whose name is `ro` once `ro` names a decorator?
+   `construct.go:243` already drops it silently today, so
+   `ufs.New("memory:?ro=memory:")` mounts nothing without an error. Options:
+   leave it, make a bare `ro` carrying a non-boolean value a construction error,
+   or namespace mount names so a name cannot collide with a parameter.
+   Recommendation: leave it in this refactor and tighten it later; renaming mount
+   names is a URI-format change.
 
 ## Changes from the rough spec
 

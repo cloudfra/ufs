@@ -175,7 +175,8 @@ and no compatibility window is kept.
 A decorator in `drivers/decorators/*` embeds `types.FS` rather than listing
 methods, and does not need the root package to do it: `types.FS` is the
 definition, `ufs.FS` is `type FS = types.FS` at `ufs.go:58`, and `drivers/types`
-imports no package that imports it.
+imports no ufs package that could import it - its only in-repo import is
+`internal/osutil` (`direntry.go:21`), which imports none.
 
 ## Taking and tacking parameters
 
@@ -473,8 +474,10 @@ changes signatures; steps 5 and 6 change what a URI means.
 - Files: `drivers/types/fs.go` (new), `ufs.go`.
 - Contracts: `types.FS` is the composite at `ufs.go:58` today, doc comment
   included; `ufs.go:58` becomes `type FS = types.FS`. `drivers/types` imports no
-  package that imports it, so no cycle appears. The alias form is already used at
-  `nestfs.go:43` (`type bufferMode = polyfills.BufferMode`).
+  ufs package that could import it - its only in-repo import is
+  `internal/osutil` (`direntry.go:21`), which imports none - so no cycle appears.
+  The alias form is already used at `nestfs.go:43` (`type bufferMode =
+  polyfills.BufferMode`).
 - URL parameters: none.
 - Behavior: none - refactor only.
 - Tests: none; the compiler proves both names denote one interface.

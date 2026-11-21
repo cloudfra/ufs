@@ -37,9 +37,9 @@ something is there and that it is blocked. What it does not get is access —
 opening, reading, writing, copying, renaming or removing that entry fails.
 
 The policy is configurable, and the driver ships one: the security-sensitive
-file policy, which marks private keys, keystores, `.env` files, PKCS#12 and JWK
-documents and SSH keys by name, and marks by content any file that holds
-sensitive material such as a private key. Restricting that catalog is what
+file policy, which marks private keys, keystores, `.env` files, PKCS#12 bundles
+and SSH keys by name, and marks by content any file that holds sensitive
+material such as a private key. Restricting that catalog is what
 issue #689 asks for; the driver around it is general, so a policy for other
 sensitive content configures the same driver instead of adding a second
 wrapper.
@@ -162,13 +162,16 @@ Rejected:
 `AbsPathGetter` (`nestfs.go:67`) and `types.MountedArchiveDirFS`
 (`nestfs.go:68`) — and memFS implements `fs.GlobFS` and `types.Watcher` itself
 (`drivers/core/memfs.go:46` and `:48`), as localFS does (`drivers/core/localfs.go:52`).
-The enumerators and iterators are the one place where every driver on main does
-use a `drivers/polyfills` factory. Nothing in the contract keeps it that way:
-those interfaces are optional exactly so a driver can replace the polyfilled
-path with its own, and a policy written only in the polyfilled methods
-disappears the day a driver does. So the driver implements the optional
-surfaces itself and consults the policy in each, rather than forwarding them to
-an inner that has no idea a policy exists:
+The enumerators and iterators are the one surface no driver on main implements
+at all: `ops.ListFiles` and `ops.ForEachFilename` fall back to a `fs.WalkDir`
+over the file system they are handed (`ops/list.go:37`, `ops/foreach.go:32`).
+Nothing in the contract keeps it that way: those interfaces are optional exactly
+so a driver can replace the fallback with its own, and a policy written only in
+the methods that fallback happens to call disappears the day a driver does —
+`nestFS` already writes its own file path instead of taking the
+`drivers/polyfills` one (`nestfs.go:733` and `:751`). So the driver implements
+the optional surfaces itself and consults the policy in each, rather than
+forwarding them to an inner that has no idea a policy exists:
 
 | Surface                                                                                                            | Implemented here                                  | Why                                                                                                                            |
 | :----------------------------------------------------------------------------------------------------------------- | :------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------- |
@@ -262,11 +265,17 @@ owner decision rather than something this PR can settle by itself:
 Option 2 is the better long-term shape, because it tests the guarantee the
 driver makes instead of excusing it from one that it does not. The evidence that
 this needs ruling, and not a workaround: PR #691, which implements the first
-revision's read-only shape, fails `ReadConsistency` on current `main` —
-`Open("keys/server.key") = … protected by the key material policy, want the
-name listed by ReadDir("keys") to open` in `Listings`, the matching `Lstat`
-failure in `EntryInfo`, and `fstest.TestFS() = …` in `Conventions`. That is the
-same conflict, arriving from the other direction.
+revision's read-only shape, is the same conflict arriving from the other
+direction. On current `main` its `refuse` driver fails all four subgroups —
+`Open("keys/server.key") = open keys/server.key: protected by the key material
+policy, want the name listed by ReadDir("keys") to open` in `Listings`
+(`readfs.go:63`), the matching `Lstat(…) … want the name listed by ReadDir(…) to
+exist` in `EntryInfo` (`:69`), `ReadFile("keys/server.key") = readfile
+keys/server.key: protected by the key material policy` in `ReadPaths` (`:75`),
+and `fstest.TestFS() = TestFS found errors:` in `Conventions` (`:56`). Its
+`hide` driver passes the same group whole, which pins the cause: what the suite
+objects to is a name that is listed but not reachable, not a guard that
+refuses.
 
 ### Matching by name
 
@@ -376,10 +385,12 @@ type guardFile struct {
 `guardFile.Read` delegates, scans what came back, and returns an `ErrProtected`
 `*fs.PathError` whose `Op` is `read`: the bytes before the match are handed
 over, the matching bytes and everything after them are not. A chunk boundary
-cannot hide a match, because a scan carries the last `len(marker)-1` bytes of
-the previous chunk into the next one. A file whose name says nothing and whose
-content does is therefore broken in the middle of a read rather than handed
-over whole.
+cannot hide a match, because a scan carries the tail of the previous chunk into
+the next one: `len(marker)-1` bytes for each marker, and for the PEM check the
+previous chunk's unterminated trailing line, because a PEM label is not bounded
+in length and no fixed byte look-back covers it. A file whose name says nothing
+and whose content does is therefore broken in the middle of a read rather than
+handed over whole.
 
 The consequences are stated rather than buried:
 
@@ -429,7 +440,15 @@ wraps both the file-system sentinel and the policy reason:
 ```go
 // ErrProtected names the reason a restricting file system refused: the path is
 // restricted by its access policy. It unwraps to fs.ErrPermission.
-var ErrProtected = errors.New("restricted by the access policy")
+var ErrProtected error = protectedError{}
+
+// protectedError is a type rather than errors.New because errors.New cannot
+// unwrap to a standard sentinel; its Is method is what makes a refusal answer
+// to errors.Is(err, fs.ErrPermission). PR #691 ships this shape already.
+type protectedError struct{}
+
+func (protectedError) Error() string { return "restricted by the access policy" }
+func (protectedError) Is(target error) bool { return target == fs.ErrPermission }
 ```
 
 `errors.Is(err, fs.ErrPermission)` and `errors.Is(err, ErrProtected)` both
@@ -524,8 +543,9 @@ var DefaultMarkers = []string{
 	"\"private_key\"",
 }
 
-// ErrProtected names the reason a restricting file system refused a path.
-var ErrProtected = errors.New("restricted by the access policy")
+// ErrProtected names the reason a restricting file system refused a path. It
+// unwraps to fs.ErrPermission, as the "Errors" section spells out.
+var ErrProtected error = protectedError{}
 
 // SensitiveFilePolicy is the shipped policy: a name catalog and a content
 // catalog. It is what the zero Options selects.
@@ -593,13 +613,13 @@ stated rather than assumed.
    cannot know what it holds, so it keeps its real size and mod-time until a
    read breaks. Through a `host` mount the masked size is what `stat(2)`
    reports, because `host/fuse_linux.go` builds its attributes with
-   `fuseAttrFromFileInfo` over what `Stat` returns (`:193` for `Getattr`, `:210`
-   for `Lookup`).
+   `fuseAttrFromFileInfo` over what `Stat` returns (`:198` in `Getattr`, `:209`
+   in `Lookup`).
 6. **Copy or rename into an unrestricted name.** Closed by the surface: because
    the driver is a `ufs.FS`, it has `CopyFile` and `RenameFile` to police, and
    it refuses when *either* endpoint is restricted. Checking only the
    destination is the bug that turns a copy into a read.
-7. **A cache above the driver.** If a caching layer (`simplecachefs`, #613)
+7. **A cache above the driver.** If a caching layer (`simplecachefs`, #534)
    sits outside it, key content already fetched stays reachable through that
    layer. The documented ordering rule is that the driver goes outermost on the
    access path; decorator ordering is an open decision.
@@ -620,14 +640,14 @@ stated rather than assumed.
 
 Phase 1 (the implementation PR this spec precedes):
 
-| Path                                                     | Change                                                                                                                                                                                                                                     |
-| :------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `internal/patternutil/patternutil.go`                    | New. `Match` and `Validate` over `path.Match`, whole-path and per-component. Written already in PR #691 and reusable as it stands.                                                                                                         |
-| `internal/patternutil/patternutil_test.go`               | New. Component and whole-path matching, malformed pattern reporting, empty list matching nothing. Same as PR #691.                                                                                                                         |
-| `drivers/wrappers/restrictfs/restrictfs.go`              | New. `Policy`, `Options`, `SensitiveFilePolicy`, the defaults, `New`, and `restrictFS` with every method in the enforcement table plus the interface assertions.                                                                           |
-| `drivers/wrappers/restrictfs/restrictfs_test.go`         | New. Policy tables, a refusal case per method, masked metadata for a restricted entry, and pattern validation errors.                                                                                                                      |
-| `drivers/wrappers/restrictfs/restrictfs_driver_test.go`  | New. `ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, …)` over a seeded nest; reachability groups gated on the owner's ruling in Testing.                                                                                              |
-| `docs/superpowers/specs/2026-11-16-keyguardfs-design.md` | This file.                                                                                                                                                                                                                                 |
+| Path                                                     | Change                                                                                                                                                                                                                                                        |
+| :------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- -------------------|
+| `internal/patternutil/patternutil.go`                    | New. `Match` and `Validate` over `path.Match`, whole-path and per-component. Written already in PR #691 and reusable as it stands.                                                                                                                            |
+| `internal/patternutil/patternutil_test.go`               | New. Component and whole-path matching, malformed pattern reporting, empty list matching nothing. Same as PR #691.                                                                                                                                            |
+| `drivers/wrappers/restrictfs/restrictfs.go`              | New. `Policy`, `Options`, `SensitiveFilePolicy`, the defaults, `New`, and `restrictFS` with every method in the enforcement table plus the interface assertions.                                                                                              |
+| `drivers/wrappers/restrictfs/restrictfs_test.go`         | New. Policy tables, a refusal case per method, masked metadata for a restricted entry, and pattern validation errors.                                                                                                                                         |
+| `drivers/wrappers/restrictfs/restrictfs_driver_test.go`  | New. `ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, …)` over a seeded nest; the funnel run over a restricted fixture waits on the owner's ruling in Testing.                                                                                              |
+| `docs/superpowers/specs/2026-11-16-keyguardfs-design.md` | This file.                                                                                                                                                                                                                                                    |
 
 No existing file changes in phase 1: the driver registers nothing, so
 `drivers/all/all.go` is untouched, and no caller is modified. `host` needs no
@@ -669,11 +689,17 @@ entry, and its presentation modes are all different.
   subdirectory. The content assertions in the shared suites are only meaningful
   with non-empty fixtures, so the seed matters.
 - Which shared groups pass today, and which need an owner decision, is the
-  table in "What the read-consistency suite says about this". Until that
-  decision lands, the driver test runs the funnel with the three reachability
-  groups skipped and says why in a comment, rather than pretending they pass.
-  `wrapperFS`'s `innerListsSameEntries` passes unchanged, because `restrict`
-  filters nothing.
+  table in "What the read-consistency suite says about this". The funnel has no
+  way to skip a group today: `Args` carries only `ReadOnly` and `Bucket`
+  (`drivers/testing/testing.go:32`). So "run the funnel with the reachability
+  groups skipped" is not available, and PR #691 shows what that means in
+  practice — its driver test runs the funnel, and its `refuse` driver is red in
+  `ReadConsistency` on CI. Until the owner rules, the interim is to land phase 1
+  without running the funnel over a fixture that holds a restricted entry, and
+  to say so in a comment in the driver test rather than pretending the groups
+  pass; adding the opt-out to `drivers/testing` in the same PR is option 1
+  landing early, which is the owner's call. `wrapperFS`'s
+  `innerListsSameEntries` passes unchanged, because `restrict` filters nothing.
 - Refusal coverage, in `restrictfs_test.go`, one case per method: `Open`,
   `OpenFile`, `ReadFile`, `ReadLink`, `CreateFile`, `MkdirAll`, `Remove`,
   `RemoveAll`, `RenameFile` (both endpoints), `CopyFile` (both endpoints),
@@ -686,8 +712,8 @@ entry, and its presentation modes are all different.
 - Matching coverage: whole-path patterns, component patterns (`.ssh` covering
   `.ssh/id_ed25519`), a pattern that matches nothing, a malformed pattern
   rejected by `New`, content detection on a PEM key, on an unusual PEM label,
-  on a marker, off when `ChunkBytes` is negative, and a marker that straddles a
-  chunk boundary.
+  on a marker, off when `ChunkBytes` is negative, and a marker or a PEM header
+  that straddles a chunk boundary.
 - Read-break coverage: a file whose name is clean and whose sensitive bytes sit
   at offset 0, at a chunk boundary, and past the first chunk. The assertions are
   the number of bytes returned before the failure and that the failure is

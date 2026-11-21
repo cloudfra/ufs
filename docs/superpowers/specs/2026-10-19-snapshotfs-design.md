@@ -19,9 +19,11 @@ lock against another process, another host, or a remote that moves.
 
 - **Writable snapshots.** A snapshot is read-only. Staging writes on top of a
   snapshot and flushing them back is a separate feature; `core.NewTempMountFS`
-  already gives writable scratch on top of any read-only FS, which covers the
-  common case. See "Prior art" for why this spec drops the writable-overlay
-  model of the earlier draft.
+  gives writable scratch by running a prepare function over a directory it
+  creates (`drivers/gitfs/gitfs.go:93` is that pattern with a git prepare
+  function), which covers the common case at the cost of a copy rather than a
+  layer. See "Prior art" for why this spec drops the writable-overlay model of
+  the earlier draft.
 - **Cross-process or durable snapshots.** No file locks, no on-disk
   checkpoints, no guarantee against a second process writing the host
   directory behind `localFS`, a `gs://` bucket, or a git remote.
@@ -68,10 +70,13 @@ spec, dropping the writable view and taking the conformance helpers under
 branches; what this document settles is that one contract wins, and the suite
 under "Testing" is the check its survivor has to pass.
 
-## Core API (`drivers/types/snapshot.go`)
+## Core API (`drivers/types/snapshotfs.go`)
 
 Small optional interfaces, in the style of `drivers/types/batchfile.go`. They
-are **not** embedded in `ReadFS` or `WriteFS`.
+are **not** embedded in `ReadFS` or `WriteFS`. The file name follows the
+`<capability>fs.go` pattern the package already uses for interfaces
+(`comparablefs.go`, `copyfilefs.go`) and is the path PR #628 already adds, so
+the interface either replaces that file or moves its contents out of it.
 
 ```go
 // SnapshotFS is an optional interface for a file system that can hand out an
@@ -207,7 +212,7 @@ if err != nil {
         // temporary directory it created:
         //   NewTempMountFS(ctx context.Context, uri string,
         //           prepare func(string) error) (types.WriteFS, error)
-        // (drivers/core/tempmountfs.go:113). copyInto walks fsys into the
+        // (drivers/core/tempmountfs.go:131). copyInto walks fsys into the
         // directory it is handed.
         scratch, err := core.NewTempMountFS(ctx, "scratch://snapshot", copyInto(fsys))
         if err != nil {
@@ -335,16 +340,18 @@ drivers/gitfs/
 - **Views are read from the object store, not checked out.** `Open`/`Stat`/
   `ReadDir`/`ReadFile`/`ReadLink` resolve a path against the commit's tree and
   stream the blob. No per-snapshot working tree, so a repository with a hundred
-  open snapshots costs one clone. This follows the "minimize work" priority in
-  `CLAUDE.md`; a checkout per snapshot is the fallback, not the default.
+  open snapshots costs one clone. This follows "Performance through minimizing
+  work" (`CLAUDE.md:16`); a checkout per snapshot is the fallback, not the
+  default.
 - **`GetAbsPath` on a gitfs view returns the not-supported error, which is a
   change from the current gitFS.** A view has no host path because nothing is
-  checked out. Today's gitFS does answer `ufs.AbsPath`: `New` returns
-  `core.NewTempMountFS` over a `localFS`, and the wrapper forwards the call, so
-  a name resolves inside the temporary clone directory — a path that exists
-  only while that file system is open. A view must stop answering it, so a
-  caller that needs real paths (host mounts, `ExternalPathGet`) asks for
-  checkout mode instead, a separate option because it changes the cost model.
+  checked out. Today's gitFS does answer `ufs.AbsPath` (`path.go:43`) because
+  `New` returns `core.NewTempMountFS` over a `localFS`, and the wrapper forwards
+  the call, so a name resolves inside the temporary clone directory — a path
+  that exists only while that file system is open. A view must stop answering
+  it, so a caller that needs real paths (host mounts, `ExternalPathGet`) asks
+  for checkout mode instead, a separate option because it changes the cost
+  model.
 - **Identifiers are lowercase hex commit ids.** `SnapshotID()` is the commit
   the configured ref points at. `Snapshots()` walks commits reachable from
   that ref. Ref names (`main`, `v1.2.3`) are accepted by `OpenSnapshot` and
@@ -393,32 +400,41 @@ later one: the slice that adds the interface also adds the helpers and runs
 them. They are the only place where two competing accounts of what a snapshot
 *is* can be checked against the same promises, which is what turns the
 interface question into a test result instead of a matter of taste. They export
-conformance helpers in the shape of `drivers/testing/batchcreate.go`:
+conformance helpers in the shape of `drivers/testing/batchcreatefs.go`:
 
 ```go
 // Snapshot verifies that fsys hands out immutable views: a view shows the state
 // as of Snapshot, survives later writes to fsys, and reports fs.ErrClosed once
 // its source is closed.
-func Snapshot(t *testing.T, createFS func(*testing.T) types.WriteFS)
+func Snapshot(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS)
 
 // SnapshotReadOnly is the subset of Snapshot that needs no writes: the view
 // matches its source exactly and reports fs.ErrClosed after the source is
 // closed. It is what a read-only source — a view, or a nestFS over read-only
 // mounts — is run through.
-func SnapshotReadOnly(t *testing.T, createFS func(*testing.T) types.ReadFS)
+func SnapshotReadOnly(t *testing.T, args Args, createFS func(*testing.T) types.ReadFS)
 
 // SnapshotHistory is Snapshot for file systems that implement
 // types.SnapshotHistoryFS: ids are listed, reopened, and stable.
-func SnapshotHistory(t *testing.T, createFS func(*testing.T) types.WriteFS)
+func SnapshotHistory(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS)
 ```
 
 `Snapshot` takes a `types.WriteFS` fixture for the same reason `BatchCreate`
-does (`drivers/testing/batchcreate.go:35`): every case that proves a view is
-*frozen* writes to the source after the snapshot is taken, and a
-`func(*testing.T) types.ReadFS` fixture cannot express those cases at all — it
-would leave the suite's central claim untested. Read-only sources are not
-dropped; they run through `SnapshotReadOnly`, which is also how a driver checks
-that a view of a view is equivalent to the first.
+does (`drivers/testing/batchcreatefs.go:35`), and so does every other exported
+helper in the package (`drivers/testing/testing.go:32`). `args` is not
+decoration: the shared funnel `FS` (`drivers/testing/testing.go:118`) sets
+`args.fsType` from the driver's example and routes every capability suite
+through it, and a helper that cannot take `args` cannot be routed by it. That
+switch has no `types.SnapshotFS` case, so the first slice adds one alongside the
+helpers — otherwise the helpers exist and nothing runs them for a driver that
+merely implements the interface. `Args.ReadOnly`
+(`drivers/testing/testing.go:35`) is not a substitute for `SnapshotReadOnly`: a
+read-only source has no `types.WriteFS` fixture to hand the funnel at all. Every
+case that proves a view is *frozen* writes to the source after the snapshot is
+taken, and a `func(*testing.T) types.ReadFS` fixture cannot express those cases
+at all — it would leave the suite's central claim untested. Read-only sources
+are not dropped; they run through `SnapshotReadOnly`, which is also how a driver
+checks that a view of a view is equivalent to the first.
 
 Cases:
 

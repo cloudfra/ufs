@@ -179,7 +179,7 @@ type memOpenFile struct {
 // handle of any mode answers with [fs.ErrClosed] rather than claiming the mode
 // was the reason.
 func (f *memOpenFile) checkRead(op string) error {
-	if f.File.Closed() {
+	if f.Closed() {
 		return ufserrors.NewPathError(op, f.Path(), fs.ErrClosed)
 	}
 	if !f.reads {
@@ -193,7 +193,7 @@ func (f *memOpenFile) checkRead(op string) error {
 // the same choice checkRead documents, and a closed handle is refused ahead of
 // the mode for the same reason.
 func (f *memOpenFile) checkWrite() error {
-	if f.File.Closed() {
+	if f.Closed() {
 		return ufserrors.NewPathError("write", f.Path(), fs.ErrClosed)
 	}
 	if !f.writes {
@@ -244,7 +244,7 @@ func (f *memOpenFile) WriteString(s string) (int, error) {
 // and Create keep Close idempotent. The content a write reached before Close
 // stays in the file system.
 func (f *memOpenFile) Close() error {
-	if f.File.Closed() {
+	if f.Closed() {
 		return ufserrors.NewPathError("close", f.Path(), fs.ErrClosed)
 	}
 	return f.memFile.Close()

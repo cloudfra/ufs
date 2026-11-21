@@ -36,5 +36,5 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
 	}
-	return polyfills.ToBufferedFile(f, false, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, false, polyfills.BufferArgs{Mode: mountFS.args.BufMode})
 }

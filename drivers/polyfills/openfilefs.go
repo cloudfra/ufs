@@ -91,8 +91,7 @@ func OpenFile(fsys fs.FS, name string, flag int, perm fs.FileMode) (types.File, 
 		// it is refused here rather than returned as a handle that fails when
 		// written to. A truncate counts as that write even when the access bits
 		// ask only to read, which is how a local open answers.
-		isADir := fmt.Errorf("%q is a directory, %w", name, fs.ErrInvalid)
-		return nil, ufserrors.NewPathError(openFileOp, name, isADir)
+		return nil, underDirError(openFileOp, name, name)
 	}
 
 	if !writable {

@@ -257,6 +257,28 @@ func (f brokenFS) Open(name string) (fs.File, error) {
 
 func (f brokenFS) Mkdir(name string, perm fs.FileMode) error { return f.mkdir(name, perm) }
 
+// brokenMkdirAllFS implements [types.MkdirAllFS] but cannot be queried.
+type brokenMkdirAllFS struct{ *store }
+
+func (f brokenMkdirAllFS) Open(name string) (fs.File, error) {
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+}
+
+func (f brokenMkdirAllFS) MkdirAll(name string, perm fs.FileMode) error {
+	return f.mkdirAll(name, perm)
+}
+
+// noopMkdirAllFS implements [types.MkdirAllFS], accepting the call and leaving
+// the tree alone.
+type noopMkdirAllFS struct{ *store }
+
+func (f noopMkdirAllFS) Open(name string) (fs.File, error) { return f.open(name) }
+
+func (f noopMkdirAllFS) MkdirAll(name string, _ fs.FileMode) error {
+	f.mkdirAllCalls = append(f.mkdirAllCalls, name)
+	return nil
+}
+
 // openFileMkdirAllFS implements [types.OpenFileFS] and [types.MkdirAllFS], the
 // pair that lets an emulated batch place a file in a directory that is not there
 // yet.

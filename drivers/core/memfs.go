@@ -170,34 +170,16 @@ type memOpenFile struct {
 	reads   bool
 	writes  bool
 	appends bool
-	closed  bool
-}
-
-// openFileAccess reports which directions the access bits of an open flag
-// allow. Those two bits hold four values, and the fourth one — os.O_WRONLY
-// together with os.O_RDWR — names no mode. Linux still opens it and hands back a
-// descriptor that answers every read and every write with EBADF, so memFS gives
-// a handle that allows neither direction rather than treating the extra bit as
-// permission for both.
-func openFileAccess(access int) (reads, writes bool) {
-	switch access {
-	case os.O_RDONLY:
-		return true, false
-	case os.O_WRONLY:
-		return false, true
-	case os.O_RDWR:
-		return true, true
-	default:
-		return false, false
-	}
 }
 
 // checkRead refuses a read the access mode does not allow. Package os reports
 // the bare EBADF here, which matches no io/fs sentinel; memFS reports
 // [fs.ErrPermission] the way the polyfill wrapper does, which is a choice issue
-// #548 still holds open.
+// #548 still holds open. A closed handle is refused first, because a closed
+// handle of any mode answers with [fs.ErrClosed] rather than claiming the mode
+// was the reason.
 func (f *memOpenFile) checkRead(op string) error {
-	if f.closed {
+	if f.File.Closed() {
 		return ufserrors.NewPathError(op, f.Path(), fs.ErrClosed)
 	}
 	if !f.reads {
@@ -208,9 +190,10 @@ func (f *memOpenFile) checkRead(op string) error {
 
 // checkWrite refuses a write the access mode does not allow, and moves an
 // appending handle to the end of its own content first. The error sentinel is
-// the same choice checkRead documents.
+// the same choice checkRead documents, and a closed handle is refused ahead of
+// the mode for the same reason.
 func (f *memOpenFile) checkWrite() error {
-	if f.closed {
+	if f.File.Closed() {
 		return ufserrors.NewPathError("write", f.Path(), fs.ErrClosed)
 	}
 	if !f.writes {
@@ -256,15 +239,15 @@ func (f *memOpenFile) WriteString(s string) (int, error) {
 
 // Close marks the handle closed so its later reads and writes are refused, and
 // reports [fs.ErrClosed] for a second Close the way a closed os.File does. The
-// content a write reached before Close stays in the file system. Handles from
-// Open and Create keep their idempotent Close; only this one carries the mode
-// and closed state that makes the refusal meaningful.
+// shared buffered handle keeps the closed state and refuses reads and writes on
+// its own; only the second Close is refused here, because the handles from Open
+// and Create keep Close idempotent. The content a write reached before Close
+// stays in the file system.
 func (f *memOpenFile) Close() error {
-	if f.closed {
+	if f.File.Closed() {
 		return ufserrors.NewPathError("close", f.Path(), fs.ErrClosed)
 	}
-	f.closed = true
-	return nil
+	return f.memFile.Close()
 }
 
 // memDirFile is an open directory handle. It snapshots the directory entries at
@@ -511,7 +494,7 @@ func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File
 	}
 
 	access := flag & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR)
-	reads, writes := openFileAccess(access)
+	reads, writes := polyfills.OpenFileAccess(flag)
 	// A directory is refused whenever the access bits ask for anything but a
 	// plain read, including the value that names no mode, which is how open(2)
 	// answers EISDIR. It says nothing about os.O_TRUNC, which is applied to the

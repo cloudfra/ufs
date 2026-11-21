@@ -286,6 +286,23 @@ func TestOpenFile(t *testing.T) {
 			wantCloses: 1,
 		},
 		{
+			// os.O_WRONLY together with os.O_RDWR is the fourth value the two access
+			// bits hold. It names no mode, so the handle stands in for a Linux
+			// descriptor that answers every read and every write with a descriptor
+			// error, and the file keeps what the create left behind.
+			name:         "a flag that names no access mode allows neither direction",
+			wrap:         createFSSet,
+			seed:         seedAlpha,
+			file:         "a.txt",
+			flag:         os.O_WRONLY | os.O_RDWR | os.O_TRUNC,
+			write:        "beta",
+			wantWriteErr: "permission denied",
+			wantReadErr:  "permission denied",
+			wantFiles:    map[string]string{"a.txt": ""},
+			wantOpens:    1,
+			wantCloses:   1,
+		},
+		{
 			// A file written through this polyfill starts out empty, so there is
 			// nothing for O_APPEND to go past.
 			name:      "O_APPEND starts from an empty file",

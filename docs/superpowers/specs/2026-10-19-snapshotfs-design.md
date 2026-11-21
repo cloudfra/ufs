@@ -57,6 +57,17 @@ is what lets a repository, a bolt database and an in-memory tree each answer
 the same question with their own cheapest mechanism — the same shape
 `BatchCreateFS` uses for atomic batch writes.
 
+The model this spec dropped is still open elsewhere: #628 defines a
+`types.SnapshotFS` whose view is a writable overlay on a frozen parent, and
+#629 implements that contract in a second git driver. Both merge against this
+branch, and the two contracts cannot both land, because one interface cannot
+both forbid and allow writes through a view. This document is the read-only
+model, which leaves those two branches two honest options: re-base on this
+spec, dropping the writable view and taking the conformance helpers under
+"Testing", or close. Picking between them belongs to whoever picks up those
+branches; what this document settles is that one contract wins, and the suite
+under "Testing" is the check its survivor has to pass.
+
 ## Core API (`drivers/types/snapshot.go`)
 
 Small optional interfaces, in the style of `drivers/types/batchfile.go`. They

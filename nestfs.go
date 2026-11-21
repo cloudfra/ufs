@@ -1036,11 +1036,12 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 // bytes keeps that, and between two the content is read from one and written
 // into the other.
 //
-// It reports the errors [types.CopyFileFS] describes, and fails with
-// [fs.ErrPermission] when srcPath is a path that only exists as a directory
-// because a mount is below it. It fails with [fs.ErrExist] when dstPath is such
-// a directory, or is an archive whose content directory (dstPath plus ".d")
-// already exists, which the copy would hide. An archive mount left over by a
+// It reports the errors [types.CopyFileFS] describes. It fails with
+// [fs.ErrPermission] when srcPath only exists as a directory because a mount is
+// below it, and with [fs.ErrExist] when dstPath only exists as such a directory,
+// or is an archive whose content directory (dstPath plus ".d") already exists,
+// which the copy would hide. A dstPath inside the content of a mounted archive
+// is refused because that content is read-only. An archive mount left over by a
 // copy onto its archive file is unmounted and mounted again when next opened.
 func (fsys *nestFS) CopyFile(srcPath, dstPath string) error {
 	if err := fsys.validPath(copyOp, srcPath); err != nil {

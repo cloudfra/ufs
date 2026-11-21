@@ -173,6 +173,24 @@ func TestNestFSCopyFileArchive(t *testing.T) {
 	assertFileContent(t, fsys, "a.zip.d/in.txt", "other")
 }
 
+// TestNestFSCopyFileFromArchive checks that a copy can read from the content of
+// a mounted archive, which is one side of a copy between two file systems.
+func TestNestFSCopyFileFromArchive(t *testing.T) {
+	t.Parallel()
+	fsys, err := New(t.Context(), "memory://?out=memory://")
+	ufsTesting.Must(t, err)
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+	writeTestFile(t, fsys, "a.zip", makeTestZip(t, "in"))
+	// Reading the content directory of an archive mounts it.
+	assertFileContent(t, fsys, "a.zip.d/in.txt", "in")
+
+	if err := ops.Copy(fsys, "a.zip.d/in.txt", fsys, "out/taken.txt"); err != nil {
+		t.Fatalf("Copy(a.zip.d/in.txt, out/taken.txt) = %v, want nil", err)
+	}
+	assertFileContent(t, fsys, "out/taken.txt", "in")
+	assertFileContent(t, fsys, "a.zip.d/in.txt", "in")
+}
+
 // TestNestFSCopyFileClosed checks that a copy through a closed nestFS fails
 // without touching any mount.
 func TestNestFSCopyFileClosed(t *testing.T) {

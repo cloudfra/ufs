@@ -45,3 +45,6 @@ const (
 	// URI does not set timeoutParam.
 	defaultTimeout = time.Minute
 )
+
+// batchCreateOp is the op of the errors of BatchCreate, as in ufs.
+const batchCreateOp = "batchcreate"

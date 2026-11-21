@@ -245,6 +245,14 @@ with `pathutil.ValidateFileName` and writes each file with MkdirAll + Create
 (not atomic, Perm ignored). Writing one file this way is the single-operation
 WriteFile. New drivers are covered by `BatchCreate` in `drivers/testing`.
 
+nestFS does not implement `BatchCreateFS` (mounts are not atomic together);
+`ufs.BatchCreate` instead resolves every file with `mountLevels` first
+(refusing archive content, mount points and names above a mount before
+writing anything), splits the batch by backing file system, and writes each
+part with its BatchCreate (atomic per part) or file by file, in order of the
+first file; an error stops later parts. Archives mounted for replaced files
+are unmounted.
+
 ### Conventions
 
 * Keep structs private; expose construction via the public New() factory.

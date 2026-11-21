@@ -38,10 +38,8 @@ func BatchCreate(fsys types.WriteFS, files ...types.BatchFile) error {
 	if b, ok := fsys.(types.BatchCreateFS); ok {
 		return b.BatchCreate(files)
 	}
-	for _, file := range files {
-		if err := pathutil.ValidateFileName(batchCreateOp, file.Name); err != nil {
-			return err
-		}
+	if err := types.ValidateBatchFiles(batchCreateOp, files); err != nil {
+		return err
 	}
 	for _, file := range files {
 		if err := createBatchFile(fsys, file); err != nil {

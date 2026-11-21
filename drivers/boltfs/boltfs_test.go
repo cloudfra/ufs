@@ -105,6 +105,14 @@ func TestBoltFileOperations(t *testing.T) {
 		t.Errorf("Read() = %q, want %q", string(buf), "hello world")
 	}
 
+	n, err = f.Read(buf)
+	if n != 0 {
+		t.Errorf("Read() after EOF = %d, want 0", n)
+	}
+	if err != io.EOF {
+		t.Errorf("Read() error after EOF = %v, want io.EOF", err)
+	}
+
 	if err := f.Close(); err != nil {
 		t.Errorf("Close() = %v, want nil", err)
 	}
@@ -124,14 +132,6 @@ func TestBoltFileOperations(t *testing.T) {
 	}
 	if info.Mode() != fs.ModePerm {
 		t.Errorf("Mode() = %v, want %v", info.Mode(), fs.ModePerm)
-	}
-
-	n, err = f.Read(buf)
-	if n != 0 {
-		t.Errorf("Read() after EOF = %d, want 0", n)
-	}
-	if err != io.EOF {
-		t.Errorf("Read() error after EOF = %v, want io.EOF", err)
 	}
 }
 

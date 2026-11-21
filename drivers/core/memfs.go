@@ -98,8 +98,13 @@ type memFile struct {
 func (f *memFile) Write(p []byte) (int, error) {
 	f.syncMu.Lock()
 	n, err := f.File.Write(p)
-	f.syncToFS()
+	if err == nil {
+		f.syncToFS()
+	}
 	f.syncMu.Unlock()
+	if err != nil {
+		return n, err
+	}
 
 	f.notifyWrite()
 	return n, err
@@ -108,8 +113,13 @@ func (f *memFile) Write(p []byte) (int, error) {
 func (f *memFile) WriteString(s string) (int, error) {
 	f.syncMu.Lock()
 	n, err := f.File.WriteString(s)
-	f.syncToFS()
+	if err == nil {
+		f.syncToFS()
+	}
 	f.syncMu.Unlock()
+	if err != nil {
+		return n, err
+	}
 
 	f.notifyWrite()
 	return n, err
@@ -138,8 +148,11 @@ func (f *memFile) notifyWrite() {
 	}
 }
 
+// Close marks the handle closed so that its later reads and writes are
+// refused. A memFS handle pushes each write to its node as it lands, so Close
+// has nothing left to persist.
 func (f *memFile) Close() error {
-	return nil
+	return f.File.Close()
 }
 
 // memDirFile is an open directory handle. It snapshots the directory entries at

@@ -215,15 +215,16 @@ type boltFile struct {
 // Close persists any buffered writes to the bolt database, if the file was
 // modified since it was opened, and fires a NotifyWrite event. It is safe to
 // call multiple times; if persisting fails the content stays dirty so a later
-// Close retries it.
+// Close retries it. The handle is left closed, so it can no longer write what
+// a later Close would persist.
 func (f *boltFile) Close() error {
 	if f.fsys == nil {
-		return nil
+		return f.File.Close()
 	}
 	modTime := time.Now()
 	content, mode, ok := f.TakeDirty(modTime)
 	if !ok {
-		return nil
+		return f.File.Close()
 	}
 	name := f.Path()
 	if err := f.fsys.writeFileContent(name, mode, modTime, content); err != nil {
@@ -231,7 +232,7 @@ func (f *boltFile) Close() error {
 		return ufserrors.NewPathError("close", name, err)
 	}
 	f.fsys.notify(types.NotifyWrite, name)
-	return nil
+	return f.File.Close()
 }
 
 // writeFileContent persists content (with the given mode/modTime) to the

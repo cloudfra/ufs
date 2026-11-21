@@ -497,6 +497,21 @@ func TestFileClose(t *testing.T) {
 		}
 	})
 
+	t.Run("closed_is_reported", func(t *testing.T) {
+		// A driver whose handle also enforces an access mode asks which refusal
+		// a later operation deserves.
+		f := newTestFile("state.txt", "abc")
+		if f.Closed() {
+			t.Error("Closed() = true before Close, want false")
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if !f.Closed() {
+			t.Error("Closed() = false after Close, want true")
+		}
+	})
+
 	t.Run("second_close_is_a_no_op", func(t *testing.T) {
 		f := newTestFile("twice.txt", "abc")
 		if err := f.Close(); err != nil {

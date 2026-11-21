@@ -261,8 +261,10 @@ func TestOpenFile(t *testing.T) {
 			wantCloses: 1,
 		},
 		{
-			// A read-only open cannot change the file at all, so the truncate flag
-			// says nothing, the way it does for a read-only [os.OpenFile].
+			// A read-only open cannot change the file at all, so the emulation
+			// leaves the content alone. This is where it departs from a local
+			// file: Linux truncates under a read-only open too, and this path
+			// can only replace a whole file through Create.
 			name:       "a read-only open ignores the truncate flag",
 			wrap:       plainFSSet,
 			seed:       seedAlpha,
@@ -286,6 +288,23 @@ func TestOpenFile(t *testing.T) {
 			wantCloses: 1,
 		},
 		{
+			// os.O_WRONLY together with os.O_RDWR is the fourth value the two access
+			// bits hold. It names no mode, so the handle stands in for a Linux
+			// descriptor that answers every read and every write with a descriptor
+			// error, and the file keeps what the create left behind.
+			name:         "a flag that names no access mode allows neither direction",
+			wrap:         createFSSet,
+			seed:         seedAlpha,
+			file:         "a.txt",
+			flag:         os.O_WRONLY | os.O_RDWR | os.O_TRUNC,
+			write:        "beta",
+			wantWriteErr: "permission denied",
+			wantReadErr:  "permission denied",
+			wantFiles:    map[string]string{"a.txt": ""},
+			wantOpens:    1,
+			wantCloses:   1,
+		},
+		{
 			// A file written through this polyfill starts out empty, so there is
 			// nothing for O_APPEND to go past.
 			name:      "O_APPEND starts from an empty file",
@@ -306,6 +325,21 @@ func TestOpenFile(t *testing.T) {
 			seed:       seedDirD,
 			file:       "d",
 			flag:       os.O_WRONLY | os.O_CREATE | os.O_TRUNC,
+			wantErr:    "is a directory",
+			wantErrIs:  fs.ErrInvalid,
+			wantFiles:  map[string]string{},
+			wantDirs:   []string{"d"},
+			wantCloses: 1,
+		},
+		{
+			// A truncate is a write to the name even under a read-only access
+			// mode, so a local open of a directory carrying one is refused the
+			// same way.
+			name:       "a read-only open of a directory cannot truncate it",
+			wrap:       createFSSet,
+			seed:       seedDirD,
+			file:       "d",
+			flag:       os.O_RDONLY | os.O_TRUNC,
 			wantErr:    "is a directory",
 			wantErrIs:  fs.ErrInvalid,
 			wantFiles:  map[string]string{},

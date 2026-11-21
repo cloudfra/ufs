@@ -86,6 +86,16 @@ func (f *File) Close() error {
 	return nil
 }
 
+// Closed reports whether Close has run. An embedding driver whose handle also
+// enforces an access mode reads it to decide which refusal a later operation
+// gets, since its own guard runs before the one here.
+func (f *File) Closed() bool {
+	f.mu.Lock()
+	closed := f.closed
+	f.mu.Unlock()
+	return closed
+}
+
 // checkClosedLocked returns the error a closed handle gives for op, or nil
 // while the handle is open. f.mu must be held.
 func (f *File) checkClosedLocked(op string) error {

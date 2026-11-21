@@ -44,7 +44,8 @@ var (
 
 // ModeRefuse and ModeHide say how a protected file is presented to a caller.
 const (
-	// ModeRefuse lists and describes a protected file, and refuses to read it.
+	// ModeRefuse lists a protected file, and refuses to read it or to describe
+	// it.
 	ModeRefuse = "refuse"
 	// ModeHide reports a protected file as missing to every operation,
 	// including the listings that name it.

@@ -23,11 +23,13 @@ package keyguardfs
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"path"
 	"slices"
 
+	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -140,7 +142,69 @@ func (fsys *keyGuardFS) Open(name string) (fs.File, error) {
 		return nil, fsys.denied("open", name)
 	}
 
-	return fsys.inner.Open(name)
+	file, err := fsys.inner.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if !fsys.hiding() {
+		return file, nil
+	}
+
+	// The handle of a directory lists its entries itself, so a guard that hides
+	// names has to filter that handle too. Otherwise Open(dir) hands out the
+	// names that ReadDir(dir) withholds. The handle is adapted with
+	// [polyfills.ToFile] first, because it never drops a capability: fs.ReadDirFile
+	// is how nestFS recognizes a mounted directory, and io.Seeker and io.ReaderAt
+	// are how the hosts serve a read at an offset. A handle of a ufs driver is
+	// already a [types.File], so the usual case adds no adaptation.
+	dir, ok := polyfills.ToFile(file).(hiddenDirFile)
+	if !ok {
+		return file, nil
+	}
+
+	return &hiddenDirHandle{hiddenDirFile: dir, guard: fsys, dir: name}, nil
+}
+
+// hiddenDirFile is the handle of a directory, with the methods a guard keeps
+// when it filters a listing.
+type hiddenDirFile interface {
+	types.File
+	fs.ReadDirFile
+}
+
+// hiddenDirHandle answers ReadDir from one filtered snapshot of the listing,
+// tracking the position that the guarded handle does not. The snapshot keeps a
+// call with a count limit from losing the entries behind a run of hidden ones.
+type hiddenDirHandle struct {
+	hiddenDirFile
+	guard   *keyGuardFS
+	dir     string
+	entries []fs.DirEntry
+	off     int
+}
+
+func (dir *hiddenDirHandle) ReadDir(count int) ([]fs.DirEntry, error) {
+	if dir.entries == nil {
+		entries, err := dir.hiddenDirFile.ReadDir(-1)
+		if err != nil {
+			return nil, err
+		}
+		dir.entries = dir.guard.visible(dir.dir, entries)
+	}
+	rest := dir.entries[dir.off:]
+	if count <= 0 {
+		dir.off = len(dir.entries)
+		return rest, nil
+	}
+	if len(rest) == 0 {
+		return nil, io.EOF
+	}
+	if count < len(rest) {
+		rest = rest[:count]
+	}
+	dir.off += len(rest)
+
+	return rest, nil
 }
 
 func (fsys *keyGuardFS) ReadDir(name string) ([]fs.DirEntry, error) {
@@ -159,16 +223,7 @@ func (fsys *keyGuardFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		return entries, nil
 	}
 
-	// A hidden file keeps its place in the tree, so only the listings naming it
-	// change.
-	visible := make([]fs.DirEntry, 0, len(entries))
-	for _, entry := range entries {
-		if !fsys.protected(path.Join(name, entry.Name())) {
-			visible = append(visible, entry)
-		}
-	}
-
-	return visible, nil
+	return fsys.visible(name, entries), nil
 }
 
 func (fsys *keyGuardFS) ReadFile(name string) ([]byte, error) {
@@ -213,6 +268,20 @@ func (fsys *keyGuardFS) ReadLink(name string) (string, error) {
 	}
 
 	return fsys.inner.ReadLink(name)
+}
+
+// visible returns the entries of the listing of dir that this guard leaves
+// visible, in the order the guarded file system reported them. A hidden file
+// keeps its place in the tree, so only the listings naming it change.
+func (fsys *keyGuardFS) visible(dir string, entries []fs.DirEntry) []fs.DirEntry {
+	visible := make([]fs.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		if !fsys.protected(path.Join(dir, entry.Name())) {
+			visible = append(visible, entry)
+		}
+	}
+
+	return visible
 }
 
 // protected reports whether this guard's policy covers name.

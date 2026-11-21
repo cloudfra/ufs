@@ -63,7 +63,7 @@ func newTestFS(t *testing.T, name string, data []byte) types.WriteFS {
 }
 
 func TestDriverTest(t *testing.T) {
-	ufsdriversTesting.ReadFS(t, func(t *testing.T) types.ReadFS {
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.SimpleFS {
 		return newTestFS(t, "document.yaml", []byte(document))
 	})
 }
@@ -802,13 +802,35 @@ func TestURI(t *testing.T) {
 		if got := u.String(); got != tc.wantURI {
 			t.Errorf("New(%q).URI() = %q, want %q", tc.name, got, tc.wantURI)
 		}
-		if got := fsys.String(); !strings.HasPrefix(got, "yamlFS(") {
-			t.Errorf("New(%q).String() = %q, want a yamlFS(...) wrapper", tc.name, got)
+		wantDescription := `{"yamlFS":"` + tc.wantURI + `"}`
+		if got := fsys.String(); got != wantDescription {
+			t.Errorf("New(%q).String() = %q, want %q", tc.name, got, wantDescription)
 		}
 		info := fsys.DeviceInfo()
 		if _, ok := info["."]; !ok {
 			t.Errorf("New(%q).DeviceInfo() = %q, want an entry for %q", tc.name, info, ".")
 		}
+	}
+}
+
+// TestIsSame checks that a yamlFS is the same as only itself. New builds a tree
+// from the document, so two yamlFS over one document hold separate trees, which
+// their identical URI cannot tell apart.
+func TestIsSame(t *testing.T) {
+	t.Parallel()
+
+	first := newTestFS(t, "document.yaml", []byte(document))
+	if !types.SameFS(first, first) {
+		t.Error("SameFS(yamlFS, the same yamlFS) = false, want true")
+	}
+
+	second := newTestFS(t, "document.yaml", []byte(document))
+	if types.SameFS(first, second) {
+		t.Error("SameFS(two yamlFS over one document) = true, want false, because New built a tree for each")
+	}
+
+	if !types.Equals(first, second) {
+		t.Error("Equals(two yamlFS named the same) = false, want true, because their URIs match")
 	}
 }
 

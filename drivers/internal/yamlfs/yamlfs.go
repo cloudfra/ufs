@@ -89,8 +89,16 @@ func (fsys *yamlFS) URI() (*url.URL, error) {
 	return &url.URL{Scheme: "yaml", Path: "/" + fsys.name, RawQuery: "ro=true"}, nil
 }
 
+// IsSame reports whether other is this file system. New builds a tree from the
+// document, so two yamlFS values over one document hold separate trees, and the
+// entries of one cannot be recognized as the entries of the other.
+func (fsys *yamlFS) IsSame(other fs.FS) bool {
+	otherYaml, ok := types.InnermostFS(other).(*yamlFS)
+	return ok && fsys == otherYaml
+}
+
 func (fsys *yamlFS) String() string {
-	return fmt.Sprintf("yamlFS(%s)", ufs.URIOrDefault(fsys, fsys.name))
+	return types.Description(map[string]any{"yamlFS": ufs.URIOrDefault(fsys, fsys.name)})
 }
 
 func (fsys *yamlFS) Close() error {

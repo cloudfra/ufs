@@ -33,7 +33,11 @@ import (
 )
 
 // maxDepth caps how deeply a document may nest, so that a value aliased into
-// itself is reported instead of overflowing the stack.
+// itself is reported instead of overflowing the stack. No real document nests
+// this deep, so this cap is only a guard against that cycle: a document can
+// expand without limit while staying shallow, because every alias and every
+// merge key adds directory slots without adding depth. maxEntrySlots is what
+// bounds that shape.
 const maxDepth = 512
 
 // maxEntrySlots caps how much a document may hold, counting each entry plus

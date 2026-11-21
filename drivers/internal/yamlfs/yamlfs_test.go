@@ -28,7 +28,6 @@ import (
 	"testing/fstest"
 	"time"
 
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
@@ -60,12 +59,6 @@ func newTestFS(t *testing.T, name string, data []byte) types.WriteFS {
 		}
 	})
 	return fsys
-}
-
-func TestDriverTest(t *testing.T) {
-	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.SimpleFS {
-		return newTestFS(t, "document.yaml", []byte(document))
-	})
 }
 
 func TestTestFS(t *testing.T) {

@@ -69,8 +69,15 @@ func makeGuard(opts keyguardfs.Options) func(*testing.T) types.SimpleFS {
 	}
 }
 
+// TestKeyGuardFSRefuseDriver runs the shared conformance suites over a guard
+// whose policy names nothing in the fixture, pinning the path validation and
+// delegation every operation performs before it consults the policy. Refuse
+// mode lists a protected name and refuses to open it, which the shared
+// read-consistency suite forbids for every driver, so what each mode does to a
+// protected name is pinned in keyguardfs_test.go instead.
 func TestKeyGuardFSRefuseDriver(t *testing.T) {
-	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, makeGuard(keyguardfs.Options{}))
+	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true},
+		makeGuard(keyguardfs.Options{Patterns: []string{"no-such-name"}}))
 }
 
 func TestKeyGuardFSHideDriver(t *testing.T) {

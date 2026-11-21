@@ -167,31 +167,53 @@ func (f *memFile) Close() error {
 // ones whose handle comes back from Open or Create without a mode attached.
 type memOpenFile struct {
 	*memFile
-	access  int
+	reads   bool
+	writes  bool
 	appends bool
 	closed  bool
 }
 
+// openFileAccess reports which directions the access bits of an open flag
+// allow. Those two bits hold four values, and the fourth one — os.O_WRONLY
+// together with os.O_RDWR — names no mode. Linux still opens it and hands back a
+// descriptor that answers every read and every write with EBADF, so memFS gives
+// a handle that allows neither direction rather than treating the extra bit as
+// permission for both.
+func openFileAccess(access int) (reads, writes bool) {
+	switch access {
+	case os.O_RDONLY:
+		return true, false
+	case os.O_WRONLY:
+		return false, true
+	case os.O_RDWR:
+		return true, true
+	default:
+		return false, false
+	}
+}
+
 // checkRead refuses a read the access mode does not allow. Package os reports
-// the bare descriptor error here; memFS reports [fs.ErrPermission] the way the
-// polyfill wrapper does, which is a choice issue #548 still holds open.
+// the bare EBADF here, which matches no io/fs sentinel; memFS reports
+// [fs.ErrPermission] the way the polyfill wrapper does, which is a choice issue
+// #548 still holds open.
 func (f *memOpenFile) checkRead(op string) error {
 	if f.closed {
 		return ufserrors.NewPathError(op, f.Path(), fs.ErrClosed)
 	}
-	if f.access == os.O_WRONLY {
+	if !f.reads {
 		return ufserrors.NewPathError(op, f.Path(), fs.ErrPermission)
 	}
 	return nil
 }
 
 // checkWrite refuses a write the access mode does not allow, and moves an
-// appending handle to the end of its own content first.
+// appending handle to the end of its own content first. The error sentinel is
+// the same choice checkRead documents.
 func (f *memOpenFile) checkWrite() error {
 	if f.closed {
 		return ufserrors.NewPathError("write", f.Path(), fs.ErrClosed)
 	}
-	if f.access == os.O_RDONLY {
+	if !f.writes {
 		return ufserrors.NewPathError("write", f.Path(), fs.ErrPermission)
 	}
 	if f.appends {
@@ -232,9 +254,15 @@ func (f *memOpenFile) WriteString(s string) (int, error) {
 	return f.memFile.WriteString(s)
 }
 
-// Close marks the handle closed so its later reads and writes are refused. The
-// content a write reached before Close stays in the file system.
+// Close marks the handle closed so its later reads and writes are refused, and
+// reports [fs.ErrClosed] for a second Close the way a closed os.File does. The
+// content a write reached before Close stays in the file system. Handles from
+// Open and Create keep their idempotent Close; only this one carries the mode
+// and closed state that makes the refusal meaningful.
 func (f *memOpenFile) Close() error {
+	if f.closed {
+		return ufserrors.NewPathError("close", f.Path(), fs.ErrClosed)
+	}
 	f.closed = true
 	return nil
 }
@@ -439,31 +467,41 @@ func (fsys *memFS) Create(name string) (types.File, error) {
 
 // OpenFile opens name with the os.OpenFile flags in flag and the permission
 // bits in perm, creating the file when os.O_CREATE asks for it and keeping the
-// content already there when the flags do not truncate it.
+// content already there when the flags do not truncate it. The rules follow what
+// package os does on Linux, which is the platform the localFS driver measures
+// against. The places where the two platforms this repository runs on disagree
+// are named below.
 //
-// The access mode is the low two bits of flag, so os.O_CREATE, os.O_EXCL,
+// The access mode is the low two bits of flag — O_ACCMODE on Linux, which is
+// what os.O_RDONLY|os.O_WRONLY|os.O_RDWR masks — so os.O_CREATE, os.O_EXCL,
 // os.O_TRUNC and os.O_APPEND never change which methods the handle allows. The
-// only other value those two bits hold is os.O_WRONLY together with os.O_RDWR,
-// which names no mode: package os opens it but reports a descriptor error for
-// every read and write through the handle, while memFS allows both directions.
+// fourth value those two bits hold, os.O_WRONLY together with os.O_RDWR, names
+// no mode: Linux opens it and hands back a descriptor that refuses every read
+// and every write, and memFS gives a handle that refuses both directions.
+//
+// os.O_TRUNC clears the stored content whatever the access mode says, which is
+// what Linux does: a read-only open truncates there too, and so does the value
+// that names no mode. Package os refuses a read-only truncate on Windows, and
+// the polyfill standing in for a file system without this interface keeps the
+// content, so the shared conformance suite states no rule for the combination
+// and memFS follows Linux.
 //
 // A new file keeps the permission bits it is asked for, unchanged: memFS has no
 // umask, so no masking step is applied here or by Create, which has no
 // permission argument and uses every bit set.
 //
-// A read-only open ignores os.O_TRUNC, the way the polyfill standing in for a
-// file system without this interface does. Package os passes that combination
-// through, which truncates on Linux and refuses the open on Windows, so no rule
-// for it is asserted anywhere in this repository.
-//
-// The root is a directory like any other name here: a read-only open of it
-// returns a listable handle and a writable open is refused. The polyfill refuses
+// The root is a directory like any other name here: a read-only open returns a
+// listable handle, a writable open is refused as a directory, and
+// os.O_CREATE|os.O_EXCL on an existing directory is refused as an existing name.
+// Those are the three answers Linux gives for a directory. The polyfill refuses
 // the root outright because it can only emulate a file.
 //
 // Every handle holds a private copy of the content, and each write publishes
 // that copy, so two open handles overwrite one another rather than each other's
 // changes. This is how Create already behaves; it reaches OpenFile through the
-// same handle.
+// same handle. Linux keeps one file behind every descriptor, so this is where a
+// memFS handle and a local handle diverge in content rather than only in the
+// error they report.
 func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
 	if fsys.isClosed() {
 		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
@@ -473,6 +511,11 @@ func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File
 	}
 
 	access := flag & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR)
+	reads, writes := openFileAccess(access)
+	// A directory is refused whenever the access bits ask for anything but a
+	// plain read, including the value that names no mode, which is how open(2)
+	// answers EISDIR. It says nothing about os.O_TRUNC, which is applied to the
+	// stored file on its own.
 	writable := access != os.O_RDONLY
 	now := time.Now()
 
@@ -510,7 +553,7 @@ func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File
 		fsys.nodes[name] = node
 		fsys.ensureParentsLocked(name, now)
 		fsys.notify(types.NotifyCreate, name)
-	case writable && flag&os.O_TRUNC != 0:
+	case flag&os.O_TRUNC != 0:
 		node.content = nil
 		node.modTime = now
 		fsys.notify(types.NotifyWrite, name)
@@ -521,7 +564,8 @@ func (fsys *memFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File
 			fsys: fsys,
 			File: buffile.New(name, bytes.Clone(node.content), node.mode, node.modTime),
 		},
-		access:  access,
+		reads:   reads,
+		writes:  writes,
 		appends: flag&os.O_APPEND != 0,
 	}
 	fsys.mu.Unlock()

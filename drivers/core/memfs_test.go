@@ -1214,11 +1214,19 @@ func TestMemFSOpenFile(t *testing.T) {
 			t.Fatalf("OpenFile failed: %v", err)
 		}
 		defer ufsTesting.ValidateClose(t, f)()
-		// A read-only open ignores os.O_TRUNC, the way the polyfill for a file
-		// system without OpenFile does. Package os truncates on Linux and refuses
-		// the open on Windows, so memFS states its own rule here.
-		if got := stored(t, "rotrunc.txt"); got != "kept" {
-			t.Errorf("content = %q, want %q", got, "kept")
+		// Linux applies os.O_TRUNC whatever the access bits say, so a read-only
+		// open empties the name and its own handle reads back nothing. Package os
+		// refuses this open on Windows, and the polyfill standing in for a file
+		// system without OpenFile keeps the content, which is why the shared suite
+		// states nothing here while memFS follows Linux.
+		if _, rerr := f.Read(make([]byte, 4)); !errors.Is(rerr, io.EOF) {
+			t.Errorf("Read on the truncating read-only handle = %v, want %v", rerr, io.EOF)
+		}
+		if got := stored(t, "rotrunc.txt"); got != "" {
+			t.Errorf("content = %q, want none", got)
+		}
+		if _, werr := f.WriteString("x"); !errors.Is(werr, fs.ErrPermission) {
+			t.Errorf("WriteString on a read-only handle = %v, want ErrPermission", werr)
 		}
 	})
 
@@ -1255,9 +1263,9 @@ func TestMemFSOpenFile(t *testing.T) {
 	t.Run("access_mode_bits", func(t *testing.T) {
 		// Only the low two bits of flag choose an access mode, so the create,
 		// truncate and append bits cannot reach the guards. os.O_WRONLY together
-		// with os.O_RDWR is the one value those bits hold that names no mode: a
-		// local handle reports a descriptor error for every read and write through
-		// it, while memFS allows both directions.
+		// with os.O_RDWR is the fourth value those bits hold; it names no mode, and
+		// a local handle for it refuses every read and every write with a descriptor
+		// error, so memFS refuses both directions too.
 		for _, tc := range []struct {
 			name        string
 			flag        int
@@ -1267,9 +1275,10 @@ func TestMemFSOpenFile(t *testing.T) {
 			{"read_only", os.O_RDONLY, false, true},
 			{"write_only", os.O_WRONLY, true, false},
 			{"read_write", os.O_RDWR, false, false},
-			{"both_write_bits", os.O_WRONLY | os.O_RDWR, false, false},
+			{"both_write_bits", os.O_WRONLY | os.O_RDWR, true, true},
 			{"read_only_with_other_flags", os.O_RDONLY | os.O_CREATE | os.O_TRUNC | os.O_APPEND, false, true},
 			{"write_only_with_other_flags", os.O_WRONLY | os.O_CREATE | os.O_TRUNC | os.O_APPEND, true, false},
+			{"both_write_bits_with_other_flags", os.O_WRONLY | os.O_RDWR | os.O_CREATE | os.O_TRUNC | os.O_APPEND, true, true},
 		} {
 			seed(t, "bits.txt", "abcdef")
 			f, err := ofs.OpenFile("bits.txt", tc.flag, 0)
@@ -1290,17 +1299,57 @@ func TestMemFSOpenFile(t *testing.T) {
 		}
 	})
 
+	t.Run("no_mode_flag_still_truncates", func(t *testing.T) {
+		// The truncate bit is decided on its own, apart from the access bits: Linux
+		// empties the name for a flag whose access mode names nothing, and then
+		// refuses every read and write through the handle it hands back.
+		seed(t, "nomode.txt", "abcdef")
+		f, err := ofs.OpenFile("nomode.txt", os.O_WRONLY|os.O_RDWR|os.O_TRUNC, 0)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		defer ufsTesting.ValidateClose(t, f)()
+		if got := stored(t, "nomode.txt"); got != "" {
+			t.Errorf("content = %q, want none", got)
+		}
+		_, readErr := f.Read(make([]byte, 4))
+		_, readAtErr := f.ReadAt(make([]byte, 4), 0)
+		_, writeErr := f.WriteString("x")
+		for _, tc := range []struct {
+			method string
+			err    error
+		}{
+			{"Read", readErr},
+			{"ReadAt", readAtErr},
+			{"WriteString", writeErr},
+		} {
+			if !errors.Is(tc.err, fs.ErrPermission) {
+				t.Errorf("%s on the no-mode handle = %v, want ErrPermission", tc.method, tc.err)
+			}
+		}
+	})
+
 	t.Run("second_close", func(t *testing.T) {
 		f, err := ofs.OpenFile("twice.txt", os.O_RDWR|os.O_CREATE, 0)
 		if err != nil {
 			t.Fatalf("OpenFile failed: %v", err)
 		}
 		writeAndClose(t, f, "after")
-		// Package os reports a descriptor error for a second Close. memFS keeps
-		// Close idempotent so a deferred cleanup cannot mask the first error, and
-		// the shared suite leaves a second Close unasserted on purpose.
-		if err := f.Close(); err != nil {
-			t.Errorf("second Close = %v, want nil", err)
+		// A closed os.File reports a descriptor error for a second Close, so this
+		// handle reports fs.ErrClosed, which is the io/fs sentinel for it. The shared
+		// suite leaves the second Close unasserted because a handle that keeps its
+		// content in memory has no state to refuse, and the Open and Create handles
+		// of this file keep Close idempotent.
+		err = f.Close()
+		if !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("second Close = %v, want ErrClosed", err)
+		}
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) && pathErr.Op != "close" {
+			t.Errorf("second Close Op = %q, want close", pathErr.Op)
+		}
+		if got := stored(t, "twice.txt"); got != "after" {
+			t.Errorf("content after the second Close = %q, want after", got)
 		}
 	})
 
@@ -1325,9 +1374,10 @@ func TestMemFSOpenFile(t *testing.T) {
 		if _, err := rdf.ReadDir(-1); err != nil {
 			t.Errorf("ReadDir failed: %v", err)
 		}
-		// memFS takes the root as a name that happens to be a directory, so a
-		// writable open of it is refused as a directory. The polyfill refuses the
-		// root outright because it can only emulate a file.
+		// memFS takes the root as a name that happens to be a directory, exactly as
+		// Linux takes the root of a tree, so a writable open of it is refused as a
+		// directory and an exclusive create of it is refused as an existing name.
+		// The polyfill refuses the root outright because it can only emulate a file.
 		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
 			_, err := ofs.OpenFile(pathutil.CwdPath, flag, 0o644)
 			if flag&os.O_EXCL != 0 {
@@ -1348,8 +1398,11 @@ func TestMemFSOpenFile(t *testing.T) {
 		}
 		// The shared suite checks only that a writable open of a directory comes
 		// back as a path error naming it, because a plain os.File carries the bare
-		// EISDIR. memFS states which sentinel its refusal carries.
-		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
+		// EISDIR. memFS states which sentinel its refusal carries. The two refusals
+		// are measured against Linux, which answers EISDIR for a writable open and
+		// EEXIST for os.O_CREATE|os.O_EXCL, and it answers EISDIR for the value that
+		// names no access mode too.
+		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_RDWR, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
 			_, err := ofs.OpenFile("dir", flag, 0o644)
 			if flag&os.O_EXCL != 0 {
 				if !errors.Is(err, fs.ErrExist) {

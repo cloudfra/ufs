@@ -539,6 +539,12 @@ func TestNewErrors(t *testing.T) {
 			wantErr: fmt.Sprintf("nests deeper than %d levels", maxDepth),
 		},
 		{
+			// The shape maxDepth guards: it stays shallow but nests without end.
+			name:    "a value aliased into itself",
+			data:    "a: &x\n  k: *x\n",
+			wantErr: fmt.Sprintf("nests deeper than %d levels", maxDepth),
+		},
+		{
 			name:    "needs more entries than the budget",
 			data:    budgetDocument(maxEntrySlots/100, 200),
 			wantErr: fmt.Sprintf("more than %d entries and directory slots", maxEntrySlots),

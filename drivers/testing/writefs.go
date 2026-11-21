@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"slices"
 	"sort"
@@ -318,23 +319,65 @@ func ReadFile(t *testing.T, _ Args, createFSFunc func(*testing.T) types.WriteFS)
 	})
 }
 
-// dirFileConflictCases are Create and MkdirAll calls that conflict with the
-// tree built by newDirFileConflictFS: each replaces a directory with a file
-// or treats a regular file as a directory. wantErr and wantOp are the values
-// memFS returns; other backends may report the conflict differently (for
-// example localFS surfaces the OS's ENOTDIR/EISDIR).
+// dirFileConflictCases are write calls that conflict with the tree built by
+// newDirFileConflictFS: each replaces a directory with a file or treats a
+// regular file as a directory. Mkdir and OpenFile are outside
+// [types.WriteFS], so their cases report false instead of a result when the
+// file system has no such method, and the case is skipped rather than passed.
+// Opening a directory for writing is not repeated here: the OpenFile suite
+// covers it in OpenFileDirectory.
+//
+// wantErr and wantOp are the values memFS returns; other backends may report
+// the conflict differently (for example localFS surfaces the OS's
+// ENOTDIR/EISDIR). openfile_under_file wants the create op because memFS has
+// no OpenFile of its own, so a file system that gives it one emulates the call
+// with Create.
 var dirFileConflictCases = []struct {
 	name    string
-	op      func(fsys types.WriteFS) error
+	op      func(fsys types.WriteFS) (error, bool)
 	wantErr error
 	wantOp  string
 }{
-	{name: "create_on_dir", op: func(fsys types.WriteFS) error { _, err := fsys.Create("dir/sub"); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_on_root", op: func(fsys types.WriteFS) error { _, err := fsys.Create(pathutil.CwdPath); return err }, wantErr: fs.ErrInvalid, wantOp: "create"},
-	{name: "create_under_file", op: func(fsys types.WriteFS) error { _, err := fsys.Create("dir/file/x"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "create_deep_under_file", op: func(fsys types.WriteFS) error { _, err := fsys.Create("dir/file/x/y"); return err }, wantErr: fs.ErrExist, wantOp: "create"},
-	{name: "mkdirall_on_file", op: func(fsys types.WriteFS) error { return fsys.MkdirAll("dir/file", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
-	{name: "mkdirall_under_file", op: func(fsys types.WriteFS) error { return fsys.MkdirAll("dir/file/x/y", fs.ModePerm) }, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "create_on_dir", op: func(fsys types.WriteFS) (error, bool) {
+		_, err := fsys.Create("dir/sub")
+		return err, true
+	}, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_on_root", op: func(fsys types.WriteFS) (error, bool) {
+		_, err := fsys.Create(pathutil.CwdPath)
+		return err, true
+	}, wantErr: fs.ErrInvalid, wantOp: "create"},
+	{name: "create_under_file", op: func(fsys types.WriteFS) (error, bool) {
+		_, err := fsys.Create("dir/file/x")
+		return err, true
+	}, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "create_deep_under_file", op: func(fsys types.WriteFS) (error, bool) {
+		_, err := fsys.Create("dir/file/x/y")
+		return err, true
+	}, wantErr: fs.ErrExist, wantOp: "create"},
+	{name: "mkdirall_on_file", op: func(fsys types.WriteFS) (error, bool) {
+		return fsys.MkdirAll("dir/file", fs.ModePerm), true
+	}, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "mkdirall_under_file", op: func(fsys types.WriteFS) (error, bool) {
+		return fsys.MkdirAll("dir/file/x/y", fs.ModePerm), true
+	}, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "mkdir_under_file", op: func(fsys types.WriteFS) (error, bool) {
+		mkdirFS, ok := fsys.(types.MkdirFS)
+		if !ok {
+			return nil, false
+		}
+		return mkdirFS.Mkdir("dir/file/x", fs.ModePerm), true
+	}, wantErr: fs.ErrExist, wantOp: "mkdir"},
+	{name: "openfile_under_file", op: func(fsys types.WriteFS) (error, bool) {
+		openFileFS, ok := fsys.(types.OpenFileFS)
+		if !ok {
+			return nil, false
+		}
+		f, err := openFileFS.OpenFile("dir/file/x", os.O_WRONLY|os.O_CREATE, openFilePerm)
+		if f != nil {
+			_ = f.Close()
+		}
+		return err, true
+	}, wantErr: fs.ErrExist, wantOp: "create"},
 }
 
 // newDirFileConflictFS returns a file system from createFS containing the
@@ -359,9 +402,10 @@ func newDirFileConflictFS(t *testing.T, createFS func(*testing.T) types.WriteFS)
 	return fsys
 }
 
-// DirFileConflicts verifies that every WriteFS rejects Create and
-// MkdirAll calls that would replace a directory with a file or place anything
-// under a regular file, and that a rejected call leaves the tree unchanged.
+// DirFileConflicts verifies that every WriteFS rejects Create, Mkdir,
+// MkdirAll and OpenFile calls that would replace a directory with a file or
+// place anything under a regular file, and that a rejected call leaves the
+// tree unchanged.
 func DirFileConflicts(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS) {
 	// TODO: Figure out some tests for buckets mode.
 	if args.Bucket {
@@ -372,7 +416,10 @@ func DirFileConflicts(t *testing.T, args Args, createFS func(*testing.T) types.W
 		for _, tc := range dirFileConflictCases {
 			t.Run(tc.name, func(t *testing.T) {
 				fsys := newDirFileConflictFS(t, createFS)
-				err := tc.op(fsys)
+				err, hasMethod := tc.op(fsys)
+				if !hasMethod {
+					t.Skip("file system has no method for this case")
+				}
 				// MEMFS ONly
 				/*
 					if !errors.Is(err, tc.wantErr) {

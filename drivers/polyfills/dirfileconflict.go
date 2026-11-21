@@ -43,7 +43,7 @@ func CheckDirFileConflict(fsys fs.FS, op, name string, isDir bool) error {
 	}
 
 	if closest == name && !isDir {
-		return ufserrors.NewPathError(op, name, fmt.Errorf("%q is a directory: %w", name, fs.ErrInvalid))
+		return underDirError(op, name, closest)
 	}
 	return nil
 }
@@ -79,4 +79,10 @@ func getClosestParent(fsys fs.FS, name string) (string, bool, error) {
 // underFileError reports that file blocks name being created at or below it.
 func underFileError(op, name, file string) error {
 	return ufserrors.NewPathError(op, name, fmt.Errorf("%q is not a directory: %w", file, fs.ErrExist))
+}
+
+// underDirError reports that dir occupies name, leaving no room for the regular
+// file op wants to place there.
+func underDirError(op, name, dir string) error {
+	return ufserrors.NewPathError(op, name, fmt.Errorf("%q is a directory: %w", dir, fs.ErrInvalid))
 }

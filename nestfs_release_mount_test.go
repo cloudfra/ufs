@@ -107,7 +107,7 @@ func registerTempArchiveDriver(t *testing.T) (uri string, tempDir *string) {
 			return &tempArchiveFS{WriteFS: archive, dir: dir}, nil
 		},
 		func(uri string) bool { return uri == name+":" },
-		1, false, true))
+		ufs.PriorityDefault, false, true))
 
 	return name + ":", tempDir
 }

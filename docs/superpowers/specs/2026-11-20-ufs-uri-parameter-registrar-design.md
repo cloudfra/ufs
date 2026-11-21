@@ -8,21 +8,25 @@ Status: design only, no implementation. Written against `main` at
 and builds on the rough spec posted in
 [comment 7031027085](https://github.com/cloudfra/ufs/issues/694#issuecomment-7031027085).
 It answers the five inline comments of review 5989349599 on this pull request.
+Code citations, call-site counts and behavior claims were re-checked against the
+commit named above; a statement that did not survive the check is corrected in
+place rather than annotated.
 The decorator that motivated the issue, restrict fs /
 [keyGuardFS](https://github.com/cloudfra/ufs/pull/690), is not merged: PR #690
 (spec) and PR #691 (name policy) are both open.
 
-Naming note: the issue says decorators "must always implement `ufs.DS`". There
-is no `ufs.DS` in the tree (`grep -rnw DS` over `*.go` and `*.md` finds
-nothing). The surface is the full `FS` interface at `ufs.go:58`
-(`types.WriteFS` + `types.OpenFileFS` + `types.RenameFileFS` +
-`types.ReleaseFS`), which is what `ufs.New` returns and what every concrete
-value already is. That interface moves to `drivers/types` as `types.FS` and the
-root name becomes an alias, `type FS = types.FS`, so `ufs.FS` and `types.FS`
-denote one interface. Decorator-facing signatures are written against
-`types.FS`, which is what lets a decorator package embed it without importing
-the root package; callers keep writing `ufs.FS`. Step 1 of the implementation
-plan is that move and nothing else.
+Naming note: the issue says decorators "must always implement `ufs.DS`". There is no
+`ufs.DS` in the tree (`grep -rnw DS` over `*.go` and `*.md` finds nothing). The
+surface is the full `FS` interface at `ufs.go:58` (`types.WriteFS` +
+`types.OpenFileFS` + `types.RenameFileFS` + `types.ReleaseFS`), which is what
+`FSBuilder.Build` (`construct.go:316`) returns and what every concrete value already
+is. `ufs.New` (`construct.go:221`) returns a narrower `types.WriteFS` today; widening
+it and `newFromMountSpec` (`construct.go:554`) to `FS` is part of step 4. That
+interface moves to `drivers/types` as `types.FS` and the root name becomes an alias,
+`type FS = types.FS`, so `ufs.FS` and `types.FS` denote one interface.
+Decorator-facing signatures are written against `types.FS`, which is what lets a
+decorator package embed it without importing the root package; callers keep writing
+`ufs.FS`. Step 1 of the implementation plan is that move and nothing else.
 
 ## Goal
 
@@ -64,9 +68,15 @@ copy, not a consume.
 Three round trips are broken today, and they are the reason the registrar needs
 to own both directions:
 
-- `memory:?options=[{readOnly: true}]` refuses `Create` with `permission
-  denied`: the entry is applied to the nest, and `nestFS.Create`
-  (`nestfs.go:676`) routes to the base, which is decorated.
+- `memory:?options=[{readOnly: true}]&sub=memory:` refuses `Create` at the root and
+  lets `Create("sub/escapes")` through: the entry decorates the nest's base, and the
+  mount opened for `sub` sits under that base undecorated. The URI the value emits
+  repeats the hole —
+  `memory:?options=%5B%7BreadOnly%3A+true%7D%5D&ro=true&sub=memory:` — and reopening it
+  reproduces it. The option form does round-trip at the root, because
+  `nestFS.Create` (`nestfs.go:676`) routes to the decorated base. Decoration has to
+  move outside the nest for the mount case, which is a second reason the registrar
+  needs to own both directions.
 - `memory:?ro=true` opens writable. Only `readWrapFS.URI()`
   (`drivers/wrappers/readwrapfs/readwrapfs.go:50-62`) emits a bare `ro`, and
   nothing reads a bare `ro` as a wrapper; the mount loop skips it
@@ -218,16 +228,20 @@ Decoration moves outside the nest, which is what makes a decorator see the
 mounted tree.
 
 ```go
-// newNestFS builds the base file system for name and puts the nest layer
+// buildNestFS builds the base file system for name and puts the nest layer
 // around it, without decorators. It returns the decorators' pending options,
-// collected from the options list and from every declared URI parameter.
-func newNestFS(ctx context.Context, name string) (*nestFS, []MountOption, error)
+// collected from the options list and from every declared URI parameter. The
+// name avoids a collision: the root package already declares newNestFS at
+// nestfs.go:1135, and openNestFS below wraps it.
+func buildNestFS(ctx context.Context, name string) (*nestFS, []MountOption, error)
 
 // decorateNest wraps n in the decorators listed in opts. The result is what a
 // caller, or a parent nest, uses for data.
 func decorateNest(ctx context.Context, n *nestFS, opts []MountOption) (FS, error)
 
 // openNestFS opens name for New: the nest, and the decorated surface over it.
+// It wraps the existing newNestFS (`nestfs.go:1135`), which `NewNestFS`
+// (`nestfs.go:1126`) and the nestfs tests keep calling unchanged.
 func openNestFS(ctx context.Context, name string) (*nestFS, FS, error)
 ```
 
@@ -258,8 +272,10 @@ it declared in `Params`, so it cannot consume a parameter that belongs to a
 driver or to another decorator.
 
 `newFromMountSpec` (`construct.go:554`) uses the same steps per entry, and
-`FSBuilder.Build` / `BuildURI` (`construct.go:316`, `construct.go:345`) reach
-them through `openNestFS` as they do now.
+`FSBuilder.Build` (`construct.go:316`) reaches them through `openNestFS` as it does
+now. `BuildURI` (`construct.go:345-358`) opens nothing: it serializes the root and the
+nested mounts with `CreateURI` (`construct.go:357`), so step 5 changes only the
+parameter names it writes.
 
 ### Decorators around a nest mean mounts are not always bare nests
 
@@ -267,9 +283,9 @@ them through `openNestFS` as they do now.
 `addAutoMount` take a `*nestFS` (`nestfs.go:497`, `nestfs.go:506`), and path
 routing calls `getFSAndSubpath`, which returns a `*nestFS`
 (`nestfs.go:577`), then uses the mount's base directly — `mountFS.fsys.Open`,
-`mountFS.fsys.Create`, `mountFS.fsys.MkdirAll` and eleven more call sites from
-`nestfs.go:645` to `nestfs.go:917`. Once a mount can be decorated, routing
-through `mountFS.fsys` skips the decorator, so a mount-level
+`mountFS.fsys.Create`, `mountFS.fsys.MkdirAll` and ten more — thirteen uses of
+`mountFS.fsys` between `nestfs.go:645` and `nestfs.go:917`. Once a mount can be
+decorated, routing through `mountFS.fsys` skips the decorator, so a mount-level
 `?ufs.ro=true` would not refuse writes. That is the correctness reason for the
 change, not a tidy-up:
 
@@ -294,15 +310,16 @@ type mountEntry struct {
 
 `mountMap` becomes `map[string]*mountEntry`. Data operations in `nestfs.go` go
 through `outer`; structural questions (`isMountParent`, `isMountPoint`, the
-listing at `nestfs.go:419-426`, `GetAbsPath`) go through `nest`. `autoMounted`
-moves out of `nestFS` into the entry, which removes the mutation in
+listing built by `getDirectoryList` (`nestfs.go:114-138`), `GetAbsPath`) go through
+`nest`. `autoMounted` moves out of `nestFS` into the entry, which removes the mutation
+in
 `addAutoMount`.
 
 Pass-through cost is real and is stated plainly: `nestFS` has 32 methods, and a
 decorator only satisfies `FS` for free by embedding it. Optional capabilities
 are not part of `FS` and are lost unless forwarded —
 `types.MountedArchiveDirFS` (asserted at `nestfs.go:65-68` and forwarded by hand
-at `readonlyfs.go:107` and `readwrapfs.go:42-46`), `types.ComparableFS`,
+at `readonlyfs.go:107` and `readwrapfs.go:45-48`), `types.ComparableFS`,
 `types.DeviceInfoGetFS`, `types.CopyFileFS`, `AbsPathGetter`, the watcher. The
 conformance suites in `drivers/testing` are the check that a forward exists;
 each decorator's test must run them against the decorated file system, not only
@@ -312,12 +329,12 @@ against the inner one.
 
 | Parameter       | Owner           | Notes                                                                                                                                       |
 | --------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ufs.ro`        | `readonlyfs`    | Renamed from the decorator name `readOnly` and from the bare `ro`. `readonlyfs.go:41`.                                                      |
+| `ufs.ro`        | `readonlyfs`    | Renamed from the decorator name `readOnly` (`readOnlyOption`, `construct.go:37`) and the bare `ro`. `readonlyfs.go:41`.                     |
 | `ufs.fault`     | `faultfs`       | Unchanged name, `faultfs.go:46`.                                                                                                            |
 | `ufs.telemetry` | `telemetryfs`   | Unchanged name, `telemetryfs.go:79`.                                                                                                        |
 | `ufs.options`   | construction    | The options list, renamed from `options` (`construct.go:46`).                                                                               |
 | `ufs.checksum`  | `httputil`      | Already prefixed (`httputil.go:44`); declared by the HTTP-shaped drivers.                                                                   |
-| `ro`            | nest mount flag | Stays bare. It is the fstab option (`construct.go:66`, applied at `construct.go:489`) and the per-mount flag skipped at `construct.go:243`. |
+| `ro`            | nest mount flag | Stays bare, in three constants: `roQueryParam` (`construct.go:41`, skipped at `:243`), `fstabReadOnly` (`:66`) and `readOnlyOption` (`:37`).|
 
 The renames happen in one step, step 5, with no alias window: `options` becomes
 `ufs.options`, the decorator name `readOnly` becomes `ro`, and the emitted pair
@@ -327,7 +344,12 @@ breaking change.
 - `construct.go:243` keeps skipping a bare `ro` mount parameter; nothing else
   reads a bare `ro`.
 - `readonlyfs.URI()` (`readonlyfs.go:123-135`) stops setting a bare `ro` and
-  emits `?ufs.ro=true` once. This is what fixes the double-application bug.
+  emits `?ufs.ro=true` once. The two spellings it emits today still produce one
+  wrapper, because `decorate` rejects a decorator listed more than once with
+  `file system decorator %q is listed more than once` (`register.go:302-305`). After
+  step 5 both spellings are claims, so a leftover is a construction error at that
+  same check rather than a silent second wrap. Keeping the pair at one is what the
+  consumption rule is for.
 - `readWrapFS.URI()` (`readwrapfs.go:50-62`) emits `?ufs.ro=true` as well, so a
   readWrap view round-trips into a nest decorated read-only. That is the
   supported path — PR #660 already dropped readWrap in favor of the read-only
@@ -340,8 +362,10 @@ breaking change.
   reopen step described under Testing.
 
 The bare `ro` mount flag stays bare, which is a decision rather than an open
-question: it is the fstab option, declared at `construct.go:66`, applied at
-`construct.go:489` and skipped by the mount loop at `construct.go:243`, so it
+question: it is the fstab option, declared as `fstabReadOnly` at `construct.go:66`
+and applied at `construct.go:489`, where it becomes a `MountOption` named
+`readOnlyOption` (`construct.go:37`), and it is skipped by the mount loop under
+`roQueryParam` (`construct.go:41`) at `construct.go:243`, so it
 names a mount property and not a decorator, and it never reaches the
 unknown-parameter check, which looks only at `ufs.`-prefixed pairs. The
 alternative is folding it into `ufs.ro` and letting the mount loop read that
@@ -369,7 +393,9 @@ on `Driver` (`register.go:55`). `boltfs` declares the five it parses
 (`drivers/boltfs/constants.go:28-42`: `nosync`, `nofreelistsync`,
 `nostatistics`, `readonly`, `timeout`; parsed by `parseBoltOptions` at
 `boltfs.go:128`). The HTTP-shaped drivers that go through `httputil.ParseURI`
-declare `checksum`. `boltfs.go:138` and `boltfs.go:150` stay as they are: a
+declare `checksum`. `boltfs.go:138`, which rejects a parameter written without the
+`ufs.` prefix, and `boltfs.go:150`, which rejects an unknown prefixed one, stay as
+they are: a
 driver still validates its own parameters, because its `CreateFunc` can be
 called directly with any string.
 
@@ -381,7 +407,7 @@ called directly with any string.
 | `uri.go`                                                       | Add `TakeURIParams` and `TackURIParam`; reimplement `AppendURIOption` and `splitURIOptions` on the shared pair-preserving walk; rename `optionsQueryParam` to `ufs.options`.                                                                            |
 | `internal/httputil/httputil.go`                                | Extract the pair walk from `ParseURI` (`:419-455`) into a module-internal helper `uri.go` calls. `ParseURI`'s behavior and its doc comment stay.                                                                                                        |
 | `register.go`                                                  | `Decorator.Params`, `Decorator.Priority`, `CreateFunc` over `FS` and `URIParams`; validation in `registerDecorator`; `Driver.Params`; claim lookup and the ambiguous-match error; `decorate` over `FS`.                                                 |
-| `construct.go`                                                 | `newNestFS`, `decorateNest`, `openNestFS` returning `(*nestFS, FS, error)`; the claim loop and the unknown-parameter check; `roQueryParam` kept, `optionsQueryParam` renamed; `New` adds mounts through the widened mount map.                          |
+| `construct.go`                                                 | `buildNestFS`, `decorateNest`, `openNestFS`; the claim loop and the unknown-parameter check; `optionsQueryParam` and `readOnlyOption` renamed, `roQueryParam` kept; `New` returns `FS`; mounts through the widened mount map                            |
 | `nestfs.go`                                                    | `mountMap` to `map[string]*mountEntry`; routing from `mountFS.fsys` to `outer`; `addMount`/`addAutoMount` signatures; `autoMounted` moved onto the entry; `URI()` (`:330-347`) tacks with the pair-preserving walk so mount values keep their encoding. |
 | `drivers/decorators/readonlyfs`                                | Option name `ro`; `URI()` emits `?ufs.ro=true` once; struct embeds `FS` and overrides the write methods.                                                                                                                                                |
 | `drivers/decorators/faultfs`, `drivers/decorators/telemetryfs` | Embed `FS`; forward the optional capabilities each keeps today; `URI()` uses `TackURIParam`.                                                                                                                                                            |
@@ -427,7 +453,9 @@ honest.
   `TestMakeBoltFSInvalidOptions` (`drivers/boltfs/boltfs_edge_test.go:426`)
   still cover bolt's own parsing.
 - Decoration-around-nest behavior: a decorator on a nest with two mounts sees
-  both, and a mount-level `?ufs.ro=true` refuses writes routed from the parent.
+  both, and a mount-level `?ufs.ro=true` refuses writes routed from the parent,
+  including writes made through the mount itself, which is the case that passes
+  today.
   Capability forwarding is checked by running the `drivers/testing` suites
   against the decorated value.
 - Mount round trip through the widened mount map: the existing
@@ -484,12 +512,17 @@ changes signatures; steps 5 and 6 change what a URI means.
 
 ### Step 4: decoration around the nest
 
-- Files: `construct.go`, `register.go`, `drivers/decorators/readonlyfs`,
-  `drivers/decorators/faultfs`, `drivers/decorators/telemetryfs`.
-- Contracts: `newNestFS`, `decorateNest` and `openNestFS`; `CreateFunc` over
-  `types.FS` and `URIParams`, with `NewDecorator[T]` following; the three
-  decorators (`readonlyfs.go:77`, `faultfs.go:90`, `telemetryfs.go:148`) embed
-  `types.FS` and forward the optional capabilities they keep today.
+- Files: `construct.go`, `nestfs.go`, `register.go`,
+  `drivers/decorators/readonlyfs`, `drivers/decorators/faultfs`,
+  `drivers/decorators/telemetryfs`.
+- Contracts: `buildNestFS`, `decorateNest` and `openNestFS`, the last two wrapping the
+  existing `newNestFS` (`nestfs.go:1135`) so `NewNestFS` and the nestfs tests stay
+  untouched; `CreateFunc` over `types.FS` and `URIParams`, with `NewDecorator[T]`
+  following; `ufs.New` (`construct.go:221`) and `newFromMountSpec` (`construct.go:554`)
+  widen their return type from `types.WriteFS` to `FS`, since a decorated nest surface
+  otherwise loses methods as soon as it passes through them; the three decorators
+  (`readonlyfs.go:77`, `faultfs.go:90`, `telemetryfs.go:148`) embed `types.FS` and
+  forward the optional capabilities they keep today.
 - URL parameters: none read yet; decorators stay on the options list.
 - Behavior: a decorator now sees the mounted tree.
 - Tests: a decorator on a nest with two mounts sees both, and the
@@ -506,13 +539,22 @@ changes signatures; steps 5 and 6 change what a URI means.
   (`register.go:258`).
 - URL parameters: the consume loop and the central unknown-parameter error;
   `options` becomes `ufs.options`, the decorator name `readOnly` becomes `ro`,
-  and the emitted pair `ro` becomes `ufs.ro`, all here with no alias window.
+  and the emitted pair `ro` becomes `ufs.ro`, all here with no alias window. The
+  decorator rename is three constants: `optionsQueryParam` (`construct.go:46`) and
+  `readOnlyOption` (`construct.go:37`, the `MountOption` name an fstab `ro` line turns
+  into at `construct.go:489`, which `defaultRootSpec` also passes at
+  `construct.go:530`) are renamed; `roQueryParam` (`construct.go:41`) is not. Renaming
+  the decorator without `readOnlyOption` leaves every fstab `ro` line and every
+  rootless mount spec failing `cannot find a ufs file system decorator for option %q`
+  (`register.go:266`).
   `boltfs` declares the five names in `drivers/boltfs/constants.go:28-42`; the
   HTTP-shaped drivers declare `checksum`.
 - Behavior: this is the step that changes what a URI means.
 - Tests: the reduce-loop table in `construct_test.go`, the two consumption
   assertions named under Testing, and `TestNewKeepsUFSParameters`
-  (`construct_test.go:128`) rewritten as `TestNewConsumesUFSParameters`.
+  (`construct_test.go:128`) rewritten as `TestNewConsumesUFSParameters`. An fstab `ro`
+  line and a mount spec whose root carries no decorator still construct, which is the
+  regression that travels with `readOnlyOption`.
 - Does not: register `drivers/wrappers/*`, or move driver parsing into the
   registrar.
 
@@ -550,11 +592,13 @@ a single `ufs.ro=true`.
 
 ## Known limitations
 
-- A mount path can no longer be a parameter name that a decorator claims. Today
-  `memory://a?ro=...` is a mount path check; after the rename a mount named
-  `ro` is still fine, but a mount named `fault` collides with `ufs.fault` only
-  in the prefixed spelling, so the collision is new only for names the caller
-  writes with the prefix.
+- A mount path cannot be a parameter name that a decorator claims. A mount named
+  `fault` collides with `ufs.fault` only in the prefixed spelling, so that collision
+  is new only for names the caller writes with the prefix. The bare spelling already
+  has this bug: `memory:?ro=memory:` drops the mount with no error, because the mount
+  loop skips `ro` at `construct.go:243` before anything looks at its value, and
+  `ReadDir(".")` then lists nothing. Step 5 neither fixes nor worsens that; whether it
+  should is part of the `ro` naming decision below.
 - Percent-encoding is normalized for the parameters this design writes, and
   preserved byte for byte for the parameters it does not. A URI whose signature
   covers a `ufs.` parameter a decorator consumed cannot be verified afterwards;

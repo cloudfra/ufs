@@ -1,8 +1,8 @@
 # UFS URI-Parameter Registrar — Design Spec
 
 Status: design only, no implementation. Written against `main` at
-`6e7dee9` ("Sync template-go and refresh dependencies (#695)"), which is
-unreleased. It answers
+`4f02af2` ("Refuse reads and writes through a closed buffered file handle
+(#677)"), which is unreleased. It answers
 [issue #694](https://github.com/cloudfra/ufs/issues/694) and the six answers in
 [comment 7031389132](https://github.com/cloudfra/ufs/issues/694#issuecomment-7031389132),
 and builds on the rough spec posted in
@@ -423,8 +423,8 @@ honest.
   `:92`) reopen the file system from `URI()` and re-run the same assertion, so
   a decorator that emits a parameter it cannot consume fails the suite. The
   promise in `drivers/types/uriget.go:23-25` finally has a check behind it.
-  `TestParseBoltOptions` (`drivers/boltfs/boltfs_edge_test.go:275`) and
-  `TestMakeBoltFSInvalidOptions` (`drivers/boltfs/boltfs_edge_test.go:373`)
+  `TestParseBoltOptions` (`drivers/boltfs/boltfs_edge_test.go:328`) and
+  `TestMakeBoltFSInvalidOptions` (`drivers/boltfs/boltfs_edge_test.go:426`)
   still cover bolt's own parsing.
 - Decoration-around-nest behavior: a decorator on a nest with two mounts sees
   both, and a mount-level `?ufs.ro=true` refuses writes routed from the parent.

@@ -49,8 +49,13 @@ const openFileOp = "open"
 // [os.O_RDONLY], [os.O_WRONLY], [os.O_RDWR], [os.O_CREATE], [os.O_EXCL] and
 // [os.O_APPEND] are honored the way package os honors them, and the handle
 // reports [fs.ErrPermission] for a method its access mode does not allow. A
-// read-only open ignores [os.O_TRUNC], as a read-only [os.OpenFile] does, and
-// [os.O_EXCL] only says anything together with [os.O_CREATE]. perm is ignored
+// flag whose access bits name no mode gives a handle that allows neither
+// direction, as [OpenFileAccess] describes. A read-only open ignores
+// [os.O_TRUNC], which is one place the emulation departs from a local file:
+// Linux truncates there, while this path can only replace a whole file through
+// Create, which a read-only open cannot ask for. A directory is refused
+// whenever the flags want a write or a truncate out of it. [os.O_EXCL] only says
+// anything together with [os.O_CREATE]. perm is ignored
 // when the file is created, because Create takes no permission bits: a file
 // system that gives a new file the mode it is asked for is a [types.OpenFileFS]
 // and is used directly. A file system with neither interface gets an
@@ -81,10 +86,11 @@ func OpenFile(fsys fs.FS, name string, flag int, perm fs.FileMode) (types.File, 
 		return nil, ufserrors.NewPathError(openFileOp, name, fs.ErrExist)
 	case !exists && flag&os.O_CREATE == 0:
 		return nil, ufserrors.NewPathError(openFileOp, name, fs.ErrNotExist)
-	case exists && writable && info.IsDir():
+	case exists && info.IsDir() && (writable || flag&os.O_TRUNC != 0):
 		// A directory cannot hold the content the caller is about to write, so
 		// it is refused here rather than returned as a handle that fails when
-		// written to.
+		// written to. A truncate counts as that write even when the access bits
+		// ask only to read, which is how a local open answers.
 		isADir := fmt.Errorf("%q is a directory, %w", name, fs.ErrInvalid)
 		return nil, ufserrors.NewPathError(openFileOp, name, isADir)
 	}
@@ -114,7 +120,29 @@ func OpenFile(fsys fs.FS, name string, flag int, perm fs.FileMode) (types.File, 
 	if err != nil {
 		return nil, err
 	}
-	return openAccess(f, name, access == os.O_RDWR, true), nil
+	reads, writes := OpenFileAccess(flag)
+	return openAccess(f, name, reads, writes), nil
+}
+
+// OpenFileAccess reports which directions the access bits of an [os.OpenFile]
+// flag allow. Those two bits hold four values, and the fourth one — os.O_WRONLY
+// together with os.O_RDWR — names no mode. Linux still opens it and hands back a
+// descriptor that answers every read and every write with EBADF, so a handle
+// for that flag allows neither direction rather than treating the extra bit as
+// permission for both. The create, truncate and append bits are carried by the
+// same flag and say nothing about a direction, which is why flag is taken
+// whole.
+func OpenFileAccess(flag int) (reads, writes bool) {
+	switch flag & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR) {
+	case os.O_RDONLY:
+		return true, false
+	case os.O_WRONLY:
+		return false, true
+	case os.O_RDWR:
+		return true, true
+	default:
+		return false, false
+	}
 }
 
 // createEmpty creates name with no content, for a read-only open of a name that

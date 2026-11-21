@@ -18,6 +18,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -1118,5 +1119,324 @@ func TestMemFSIsSame(t *testing.T) {
 
 	if !types.Equals(first, second) {
 		t.Fatal("Equals(two memFS opened with one URI) = false, want true")
+	}
+}
+
+// TestMemFSOpenFile covers the opens that the shared drivers/testing.OpenFile
+// suite deliberately leaves unasserted, plus the flag combinations memFS states.
+func TestMemFSOpenFile(t *testing.T) {
+	fsys, err := newMemFS(t.Context(), "memory://test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	ofs, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatal("memFS does not implement types.OpenFileFS")
+	}
+
+	writeAndClose := func(t *testing.T, f types.File, data string) {
+		t.Helper()
+		if _, err := f.WriteString(data); err != nil {
+			t.Fatalf("WriteString failed: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatalf("Close failed: %v", err)
+		}
+	}
+	seed := func(t *testing.T, name, data string) {
+		t.Helper()
+		f, err := fsys.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) failed: %v", name, err)
+		}
+		writeAndClose(t, f, data)
+	}
+	stored := func(t *testing.T, name string) string {
+		t.Helper()
+		got, err := fsys.ReadFile(name)
+		if err != nil {
+			t.Fatalf("ReadFile(%q) failed: %v", name, err)
+		}
+		return string(got)
+	}
+
+	t.Run("permission_bits", func(t *testing.T) {
+		f, err := ofs.OpenFile("narrow.txt", os.O_WRONLY|os.O_CREATE, 0o600)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		writeAndClose(t, f, "narrow")
+		info, err := fsys.Stat("narrow.txt")
+		if err != nil {
+			t.Fatalf("Stat failed: %v", err)
+		}
+		// memFS has no umask, so the requested bits reach the node unchanged.
+		if info.Mode() != 0o600 {
+			t.Errorf("Mode() = %v, want %v", info.Mode(), fs.FileMode(0o600))
+		}
+
+		// Create takes no permission argument and uses every bit set, the only
+		// way its mode can differ from an OpenFile of the same name.
+		seed(t, "seeded.txt", "through Create")
+		info, err = fsys.Stat("seeded.txt")
+		if err != nil {
+			t.Fatalf("Stat failed: %v", err)
+		}
+		if info.Mode() != fs.ModePerm {
+			t.Errorf("Mode() after Create = %v, want %v", info.Mode(), fs.ModePerm)
+		}
+	})
+
+	t.Run("create_in_missing_subdir", func(t *testing.T) {
+		f, err := ofs.OpenFile("sub/deep/child.txt", os.O_WRONLY|os.O_CREATE, 0o644)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		writeAndClose(t, f, "child")
+		if got := stored(t, "sub/deep/child.txt"); got != "child" {
+			t.Errorf("content = %q, want %q", got, "child")
+		}
+		info, err := fsys.Stat("sub/deep")
+		if err != nil {
+			t.Fatalf("Stat of the parent failed: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("the parent is not a directory")
+		}
+	})
+
+	t.Run("read_only_truncate", func(t *testing.T) {
+		seed(t, "rotrunc.txt", "kept")
+		f, err := ofs.OpenFile("rotrunc.txt", os.O_RDONLY|os.O_TRUNC, 0)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		defer ufsTesting.ValidateClose(t, f)()
+		// Linux applies os.O_TRUNC whatever the access bits say, so a read-only
+		// open empties the name and its own handle reads back nothing. Package os
+		// refuses this open on Windows, and the polyfill standing in for a file
+		// system without OpenFile keeps the content, which is why the shared suite
+		// states nothing here while memFS follows Linux.
+		if _, rerr := f.Read(make([]byte, 4)); !errors.Is(rerr, io.EOF) {
+			t.Errorf("Read on the truncating read-only handle = %v, want %v", rerr, io.EOF)
+		}
+		if got := stored(t, "rotrunc.txt"); got != "" {
+			t.Errorf("content = %q, want none", got)
+		}
+		if _, werr := f.WriteString("x"); !errors.Is(werr, fs.ErrPermission) {
+			t.Errorf("WriteString on a read-only handle = %v, want ErrPermission", werr)
+		}
+	})
+
+	t.Run("write_only_refuses_reads", func(t *testing.T) {
+		seed(t, "wo.txt", "abcdef")
+		f, err := ofs.OpenFile("wo.txt", os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		defer ufsTesting.ValidateClose(t, f)()
+		_, readErr := f.Read(make([]byte, 4))
+		_, readAtErr := f.ReadAt(make([]byte, 4), 1)
+		for _, tc := range []struct {
+			method string
+			err    error
+		}{
+			{"Read", readErr},
+			{"ReadAt", readAtErr},
+		} {
+			if !errors.Is(tc.err, fs.ErrPermission) {
+				t.Errorf("%s on O_WRONLY = %v, want ErrPermission", tc.method, tc.err)
+			}
+			// Package os names a failed read through an open file "read" whichever
+			// method asked for it, so the two guards must not disagree.
+			var pathErr *fs.PathError
+			if !errors.As(tc.err, &pathErr) {
+				t.Errorf("%s on O_WRONLY = %T, want an *fs.PathError", tc.method, tc.err)
+			} else if pathErr.Op != "read" {
+				t.Errorf("%s on O_WRONLY Op = %q, want read", tc.method, pathErr.Op)
+			}
+		}
+	})
+
+	t.Run("access_mode_bits", func(t *testing.T) {
+		// Only the low two bits of flag choose an access mode, so the create,
+		// truncate and append bits cannot reach the guards. os.O_WRONLY together
+		// with os.O_RDWR is the fourth value those bits hold; it names no mode, and
+		// a local handle for it refuses every read and every write with a descriptor
+		// error, so memFS refuses both directions too.
+		for _, tc := range []struct {
+			name        string
+			flag        int
+			refuseRead  bool
+			refuseWrite bool
+		}{
+			{"read_only", os.O_RDONLY, false, true},
+			{"write_only", os.O_WRONLY, true, false},
+			{"read_write", os.O_RDWR, false, false},
+			{"both_write_bits", os.O_WRONLY | os.O_RDWR, true, true},
+			{"read_only_with_other_flags", os.O_RDONLY | os.O_CREATE | os.O_TRUNC | os.O_APPEND, false, true},
+			{"write_only_with_other_flags", os.O_WRONLY | os.O_CREATE | os.O_TRUNC | os.O_APPEND, true, false},
+			{"both_write_bits_with_other_flags", os.O_WRONLY | os.O_RDWR | os.O_CREATE | os.O_TRUNC | os.O_APPEND, true, true},
+		} {
+			seed(t, "bits.txt", "abcdef")
+			f, err := ofs.OpenFile("bits.txt", tc.flag, 0)
+			if err != nil {
+				t.Fatalf("%s: OpenFile failed: %v", tc.name, err)
+			}
+			_, readErr := f.Read(make([]byte, 4))
+			_, writeErr := f.WriteString("Z")
+			if err := f.Close(); err != nil {
+				t.Fatalf("%s: Close failed: %v", tc.name, err)
+			}
+			if refused := errors.Is(readErr, fs.ErrPermission); refused != tc.refuseRead {
+				t.Errorf("%s: Read refused = %t, want %t: %v", tc.name, refused, tc.refuseRead, readErr)
+			}
+			if refused := errors.Is(writeErr, fs.ErrPermission); refused != tc.refuseWrite {
+				t.Errorf("%s: WriteString refused = %t, want %t: %v", tc.name, refused, tc.refuseWrite, writeErr)
+			}
+		}
+	})
+
+	t.Run("no_mode_flag_still_truncates", func(t *testing.T) {
+		// The truncate bit is decided on its own, apart from the access bits: Linux
+		// empties the name for a flag whose access mode names nothing, and then
+		// refuses every read and write through the handle it hands back.
+		seed(t, "nomode.txt", "abcdef")
+		f, err := ofs.OpenFile("nomode.txt", os.O_WRONLY|os.O_RDWR|os.O_TRUNC, 0)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		defer ufsTesting.ValidateClose(t, f)()
+		if got := stored(t, "nomode.txt"); got != "" {
+			t.Errorf("content = %q, want none", got)
+		}
+		_, readErr := f.Read(make([]byte, 4))
+		_, readAtErr := f.ReadAt(make([]byte, 4), 0)
+		_, writeErr := f.WriteString("x")
+		for _, tc := range []struct {
+			method string
+			err    error
+		}{
+			{"Read", readErr},
+			{"ReadAt", readAtErr},
+			{"WriteString", writeErr},
+		} {
+			if !errors.Is(tc.err, fs.ErrPermission) {
+				t.Errorf("%s on the no-mode handle = %v, want ErrPermission", tc.method, tc.err)
+			}
+		}
+	})
+
+	t.Run("second_close", func(t *testing.T) {
+		f, err := ofs.OpenFile("twice.txt", os.O_RDWR|os.O_CREATE, 0)
+		if err != nil {
+			t.Fatalf("OpenFile failed: %v", err)
+		}
+		writeAndClose(t, f, "after")
+		// A closed os.File reports a descriptor error for a second Close, so this
+		// handle reports fs.ErrClosed, which is the io/fs sentinel for it. The shared
+		// suite leaves the second Close unasserted because a handle that keeps its
+		// content in memory has no state to refuse, and the Open and Create handles
+		// of this file keep Close idempotent.
+		err = f.Close()
+		if !errors.Is(err, fs.ErrClosed) {
+			t.Errorf("second Close = %v, want ErrClosed", err)
+		}
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) && pathErr.Op != "close" {
+			t.Errorf("second Close Op = %q, want close", pathErr.Op)
+		}
+		if got := stored(t, "twice.txt"); got != "after" {
+			t.Errorf("content after the second Close = %q, want after", got)
+		}
+	})
+
+	t.Run("root", func(t *testing.T) {
+		seed(t, "top.txt", "top")
+		f, err := ofs.OpenFile(pathutil.CwdPath, os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("OpenFile(.) failed: %v", err)
+		}
+		defer ufsTesting.ValidateClose(t, f)()
+		info, err := f.Stat()
+		if err != nil {
+			t.Fatalf("Stat failed: %v", err)
+		}
+		if !info.IsDir() {
+			t.Error("IsDir() = false, want true")
+		}
+		rdf, ok := f.(fs.ReadDirFile)
+		if !ok {
+			t.Fatal("the root handle cannot be listed")
+		}
+		if _, err := rdf.ReadDir(-1); err != nil {
+			t.Errorf("ReadDir failed: %v", err)
+		}
+		// memFS takes the root as a name that happens to be a directory, exactly as
+		// Linux takes the root of a tree, so a writable open of it is refused as a
+		// directory and an exclusive create of it is refused as an existing name.
+		// The polyfill refuses the root outright because it can only emulate a file.
+		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_RDONLY | os.O_TRUNC, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
+			_, err := ofs.OpenFile(pathutil.CwdPath, flag, 0o644)
+			if flag&os.O_EXCL != 0 {
+				if !errors.Is(err, fs.ErrExist) {
+					t.Errorf("OpenFile(., %v) = %v, want ErrExist", flag, err)
+				}
+				continue
+			}
+			if !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("OpenFile(., %v) = %v, want ErrInvalid", flag, err)
+			}
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		if err := fsys.MkdirAll("dir", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// A read-only open of a directory without a truncate is the one open
+		// Linux grants it: a handle that can be listed.
+		f, err := ofs.OpenFile("dir", os.O_RDONLY, 0)
+		if err != nil {
+			t.Fatalf("OpenFile(dir, O_RDONLY) failed: %v", err)
+		}
+		defer ufsTesting.ValidateClose(t, f)()
+		if _, ok := f.(fs.ReadDirFile); !ok {
+			t.Error("OpenFile(dir, O_RDONLY) = a handle that cannot be listed")
+		}
+		// The shared suite checks only that a writable open of a directory comes
+		// back as a path error naming it, because a plain os.File carries the bare
+		// EISDIR. memFS states which sentinel its refusal carries. The refusals
+		// are measured against Linux, which answers EISDIR for a writable open and
+		// EEXIST for os.O_CREATE|os.O_EXCL; it answers EISDIR for the value that
+		// names no access mode too, and for a read-only open carrying
+		// os.O_TRUNC, since the truncate counts as a write to the name.
+		for _, flag := range []int{os.O_WRONLY, os.O_RDWR | os.O_TRUNC, os.O_WRONLY | os.O_RDWR, os.O_RDONLY | os.O_TRUNC, os.O_WRONLY | os.O_CREATE | os.O_EXCL} {
+			_, err := ofs.OpenFile("dir", flag, 0o644)
+			if flag&os.O_EXCL != 0 {
+				if !errors.Is(err, fs.ErrExist) {
+					t.Errorf("OpenFile(dir, %v) = %v, want ErrExist", flag, err)
+				}
+				continue
+			}
+			if !errors.Is(err, fs.ErrInvalid) {
+				t.Errorf("OpenFile(dir, %v) = %v, want ErrInvalid", flag, err)
+			}
+		}
+	})
+}
+
+func TestMemFSOpenFileClosed(t *testing.T) {
+	fsys, err := newMemFS(t.Context(), "memory://test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fsys.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fsys.(types.OpenFileFS).OpenFile("file.txt", os.O_RDONLY, 0); !errors.Is(err, fs.ErrClosed) {
+		t.Errorf("OpenFile on closed memFS = %v, want fs.ErrClosed", err)
 	}
 }

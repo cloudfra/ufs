@@ -58,6 +58,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/fsutil"
@@ -162,6 +163,7 @@ type operation uint8
 
 const (
 	opOpen operation = iota
+	opOpenFile
 	opStat
 	opLstat
 	opReadDir
@@ -176,8 +178,12 @@ const (
 )
 
 // operationNames uses the op names that the path errors of this module use.
+// opOpenFile is the exception: the path errors of an OpenFile say "open" like
+// Open's do, but the report names it after the method so that the two stay told
+// apart.
 var operationNames = [numOperations]string{
 	opOpen:      "open",
+	opOpenFile:  "openfile",
 	opStat:      "stat",
 	opLstat:     "lstat",
 	opReadDir:   "readdir",
@@ -413,8 +419,24 @@ func (fsys *telemetryFS) Open(name string) (fs.File, error) {
 	return f, err
 }
 
+// OpenFile opens with [polyfills.OpenFile], which uses the wrapped file system's
+// own OpenFile when it has one, and reports it as the "openfile" operation.
+func (fsys *telemetryFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	span, start := fsys.begin(opOpenFile)
+	f, err := polyfills.OpenFile(fsys.inner, name, flag, perm)
+	fsys.end(opOpenFile, name, span, start, err)
+	return f, err
+}
+
 func (fsys *telemetryFS) Close() error {
 	return fsys.inner.Close()
+}
+
+// Release lets go of nothing: the decorator holds no resource of its own, and
+// the file system it wraps was handed to it by the caller, which is the
+// caller's to release, see [types.ReleaseFS]. It is not reported.
+func (fsys *telemetryFS) Release() error {
+	return nil
 }
 
 func (fsys *telemetryFS) Stat(name string) (fs.FileInfo, error) {

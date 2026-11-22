@@ -22,6 +22,7 @@ import (
 	"context"
 	"io/fs"
 	"net/url"
+	"os"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/polyfills"
@@ -110,11 +111,12 @@ func (fsys *readOnlyFS) IsMountedArchiveDir(name string) bool {
 	return ok && m.IsMountedArchiveDir(name)
 }
 
-// New wraps inner as an [WriteFS] whose write operations (Create, MkdirAll,
-// Remove, RemoveAll, Rename) always return [fs.ErrPermission], and whose Stat,
-// Lstat, ReadDir and Open results never report write permission bits, so an
-// emulator such as a FUSE server does not advertise the files as writable. Every
-// other read operation delegates to inner unchanged.
+// New wraps inner as an [types.WriteFS] whose write operations (Create, MkdirAll,
+// Remove, RemoveAll, Rename) always return [fs.ErrPermission], as does an OpenFile
+// given a flag that writes, creates or truncates, and whose Stat, Lstat, ReadDir,
+// Open and OpenFile results never report write permission bits, so an emulator
+// such as a FUSE server does not advertise the files as writable. Every other read
+// operation delegates to inner unchanged.
 func New(inner types.ReadFS) types.WriteFS {
 	return &readOnlyFS{
 		ReadFS: inner,
@@ -171,6 +173,25 @@ func (fsys *readOnlyFS) Open(name string) (fs.File, error) {
 	return maskFileMode(f), nil
 }
 
+// OpenFile opens name with the [os.OpenFile] flags in flag, refusing every flag
+// that writes, creates or truncates: those opens are writes, and a write of
+// this file system always returns [fs.ErrPermission]. The handle of an allowed
+// open reports the wrapped file's mode without its write permission bits, as
+// [Open] does.
+func (fsys *readOnlyFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	if _, writes := polyfills.OpenFileAccess(flag); writes || flag&(os.O_CREATE|os.O_TRUNC) != 0 {
+		if err := pathutil.Validate("open", name); err != nil {
+			return nil, err
+		}
+		return nil, ufserrors.NewPathError("open", name, fs.ErrPermission)
+	}
+	f, err := polyfills.OpenFile(fsys.ReadFS, name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return maskFileMode(f), nil
+}
+
 func (fsys *readOnlyFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
@@ -204,6 +225,13 @@ func (fsys *readOnlyFS) RemoveAll(name string) error {
 		return err
 	}
 	return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
+}
+
+// Release lets go of nothing: the view holds no resource of its own, and the
+// file system it wraps was handed to it by the caller, which is the caller's to
+// release, see [types.ReleaseFS].
+func (fsys *readOnlyFS) Release() error {
+	return nil
 }
 
 func maskFileInfo(info fs.FileInfo, err error) (fs.FileInfo, error) {
@@ -259,7 +287,7 @@ type readDirTypesFile interface {
 // already a [types.File] is returned by ToFile unchanged, so the usual case costs
 // one wrapper. Masking is idempotent, so a handle that already reports no write
 // bits is wrapped only to report the same mode.
-func maskFileMode(f fs.File) fs.File {
+func maskFileMode(f fs.File) types.File {
 	adapted := polyfills.ToFile(f)
 	if dir, ok := adapted.(readDirTypesFile); ok {
 		return &readOnlyReadDirFile{readDirTypesFile: dir}

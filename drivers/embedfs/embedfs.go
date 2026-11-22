@@ -21,8 +21,8 @@ import (
 	"io/fs"
 	"net/url"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -52,7 +52,7 @@ func (fsys *embedFS) IsSame(other fs.FS) bool {
 }
 
 func (fsys *embedFS) String() string {
-	return types.Description(map[string]any{"embedFS": ufs.URIOrDefault(fsys, fsys.name)})
+	return types.Description(map[string]any{"embedFS": uri.OrDefault(fsys, fsys.name)})
 }
 
 func (fsys *embedFS) Open(name string) (fs.File, error) {

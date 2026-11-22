@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -57,18 +58,13 @@ func (fsys *readWrapFS) URI() (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO: use the URI query parameter helpers to record this parameter, so the
-	// wrapped file system's own parameters keep the order and escaping they were
-	// written with.
-	//
-	// The copy comes before the edit: RawQuery is a plain field, so writing it
-	// through would change the URL the wrapped file system handed back, which the
-	// URI suite tells a file system it must keep for itself.
-	out := *u
-	v := out.Query()
-	v.Set("ro", "true")
-	out.RawQuery = v.Encode()
-	return &out, nil
+	// Added with uri.AddParameter rather than the base package's helper: the base
+	// package's tests import this driver, so importing the base package back
+	// would close an import cycle in their build. The pair walk leaves the
+	// wrapped file system's own parameters in the order and escaping they were
+	// written in, and returns a copy, so the wrapped file system keeps the URL it
+	// handed over.
+	return uri.AddParameter(u, "ro", "true")
 }
 
 // InnerFS returns the file system whose data is read through this wrapper, see

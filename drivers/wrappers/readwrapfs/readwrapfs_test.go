@@ -309,9 +309,12 @@ func TestFromFSURI(t *testing.T) {
 			wantURI: "mem://x?ro=true",
 		},
 		{
+			// The wrapped parameters keep the order they were written in, not the
+			// sorted order url.Values.Encode would produce, because a URI can be
+			// signed over its exact query string.
 			name:    "existing parameters are kept",
 			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", RawQuery: "b=2&a=1"}},
-			wantURI: "mem:?a=1&b=2&ro=true",
+			wantURI: "mem:?b=2&a=1&ro=true",
 		},
 		{
 			name:    "ro is set once",

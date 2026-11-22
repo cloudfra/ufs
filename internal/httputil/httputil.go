@@ -41,11 +41,8 @@ const (
 	// checksum of a downloaded file as "<algorithm>:<hex digest>", where
 	// algorithm is sha256, sha384, sha512, sha3-256, sha3-384 or sha3-512. A
 	// bare hex digest is treated as sha256. Case is ignored.
-	URLQueryParamChecksum = "ufs.checksum"
-	// uriParamPrefix marks query parameters that are addressed to ufs rather
-	// than to the server hosting the file.
-	uriParamPrefix        = "ufs."
-	maxDownloadSize int64 = 4 << 30 // 4 GiB
+	URLQueryParamChecksum       = "ufs.checksum"
+	maxDownloadSize       int64 = 4 << 30 // 4 GiB
 	// partialFileSuffix marks a file whose download has not finished.
 	partialFileSuffix = ".partial"
 )
@@ -424,20 +421,21 @@ func ParseURI(uri string) (*url.URL, map[string]string, error) {
 	if parsed.RawQuery == "" {
 		return parsed, nil, nil
 	}
-	// The query is edited pair by pair rather than through url.Values:
+	// The query is edited pair by pair rather than through url.Values, because
 	// Values.Encode sorts and re-encodes every remaining parameter, which
 	// breaks URLs signed over their exact query string, and Query silently
 	// drops malformed pairs, which would skip a malformed checksum.
+	// [QueryPair] explains the walk this shares with ufs's URI parameter helpers.
+	pairs := SplitQueryParts(parsed.RawQuery)
 	var params map[string]string
-	var kept []string
-	for pair := range strings.SplitSeq(parsed.RawQuery, "&") {
-		rawKey, rawValue, _ := strings.Cut(pair, "=")
-		key, err := url.QueryUnescape(rawKey)
-		if err != nil || !strings.HasPrefix(key, uriParamPrefix) {
+	kept := make([]QueryPair, 0, len(pairs))
+	for _, pair := range pairs {
+		key, err := pair.Key()
+		if err != nil || !strings.HasPrefix(key, URIParamPrefix) {
 			kept = append(kept, pair)
 			continue
 		}
-		value, err := url.QueryUnescape(rawValue)
+		value, err := pair.Value()
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid value for query parameter %q: %w", key, err)
 		}
@@ -449,7 +447,7 @@ func ParseURI(uri string) (*url.URL, map[string]string, error) {
 		}
 	}
 	if params != nil {
-		parsed.RawQuery = strings.Join(kept, "&")
+		parsed.RawQuery = JoinQuery(kept)
 	}
 	return parsed, params, nil
 }

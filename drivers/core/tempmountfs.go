@@ -22,6 +22,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -64,7 +65,7 @@ func (fsys *tempMountFS) IsSame(other fs.FS) bool {
 func (fsys *tempMountFS) String() string {
 	return types.Description(map[string]any{"tempMountFS": map[string]any{
 		"tmpDir": pathutil.CoerceUnix(fsys.name),
-		"uri":    ufs.URIOrDefault(fsys, fsys.uri),
+		"uri":    uri.OrDefault(fsys, fsys.uri),
 	}})
 }
 

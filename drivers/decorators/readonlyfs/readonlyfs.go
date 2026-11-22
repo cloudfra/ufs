@@ -26,6 +26,7 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -128,10 +129,13 @@ func (fsys *readOnlyFS) URI() (*url.URL, error) {
 	if u == nil {
 		return nil, nil
 	}
-	v := u.Query()
-	v.Set("ro", "true")
-	u.RawQuery = v.Encode()
-	return ufs.AppendURIOption(u, optionName, Options{Enabled: true})
+	// Tacked rather than set through url.Values, so the parameters the wrapped
+	// file system reported keep the order and escaping they were written with.
+	tacked, err := uri.AddParameter(u, "ro", "true")
+	if err != nil {
+		return nil, err
+	}
+	return uri.AppendOption(tacked, optionName, Options{Enabled: true})
 }
 
 func (fsys *readOnlyFS) String() string {

@@ -59,6 +59,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/ops"
 	"go.opentelemetry.io/otel"
@@ -344,7 +345,7 @@ func (fsys *telemetryFS) URI() (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ufs.AppendURIOption(u, optionName, fsys.cfg)
+	return uri.AppendOption(u, optionName, fsys.cfg)
 }
 
 // InnerFS returns the file system whose operations are reported, see

@@ -77,6 +77,7 @@ import (
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -447,7 +448,7 @@ func (fsys *boltFS) IsSame(other fs.FS) bool {
 }
 
 func (fsys *boltFS) String() string {
-	return types.Description(map[string]any{"boltFS": ufs.URIOrDefault(fsys, fsys.name)})
+	return types.Description(map[string]any{"boltFS": uri.OrDefault(fsys, fsys.name)})
 }
 
 func (fsys *boltFS) isClosed() bool {

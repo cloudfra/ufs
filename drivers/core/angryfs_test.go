@@ -68,6 +68,34 @@ func TestNewAngryFS(t *testing.T) {
 	}
 }
 
+// TestAngryFSURI pins the parameter angryFS reports: ufs's read-only marker
+// carries the "ufs." prefix, so a name read back by ufs.New holds a parameter
+// addressed to ufs rather than a file system mounted at "ro".
+func TestAngryFSURI(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "angry://test", want: "angry://test?ufs.ro=true"},
+		{name: "angry://test?dir=memory%3A", want: "angry://test?dir=memory%3A&ufs.ro=true"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := &angryFS{name: tc.name}
+			u, err := fsys.URI()
+			if err != nil {
+				t.Fatalf("URI() = %v, want nil", err)
+			}
+			if u == nil {
+				t.Fatal("URI() = nil, want a URL")
+			}
+			if got := u.String(); got != tc.want {
+				t.Errorf("URI() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestAngryFSOperations verifies that every FS read/write operation on
 // angryFS returns fs.ErrInvalid regardless of the path argument.
 func TestAngryFSOperations(t *testing.T) {

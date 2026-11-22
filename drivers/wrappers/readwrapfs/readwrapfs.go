@@ -49,7 +49,7 @@ func (fsys *readWrapFS) IsMountedArchiveDir(name string) bool {
 	return ok && m.IsMountedArchiveDir(name)
 }
 
-// URI reports the wrapped file system's URI with ro=true added. The wrapper
+// URI reports the wrapped file system's URI with ufs.ro=true added. The wrapper
 // never reports a nil URL: [polyfills.URI] names the wrapped [fs.FS] only when
 // its type reveals a source a URI can name, and returns
 // [polyfills.ErrUnsupportedURI] when it does not.
@@ -64,7 +64,7 @@ func (fsys *readWrapFS) URI() (*url.URL, error) {
 	// wrapped file system's own parameters in the order and escaping they were
 	// written in, and returns a copy, so the wrapped file system keeps the URL it
 	// handed over.
-	return uri.AddParameter(u, "ro", "true")
+	return uri.AddParameter(u, "ufs.ro", "true")
 }
 
 // InnerFS returns the file system whose data is read through this wrapper, see

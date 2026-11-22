@@ -61,7 +61,7 @@ func (fsys *angryFS) URI() (*url.URL, error) {
 	}
 	// Tacked rather than set through url.Values, so a name that already carries
 	// parameters keeps them in the order and escaping it was written with.
-	return uri.AddParameter(u, "ro", "true")
+	return uri.AddParameter(u, "ufs.ro", "true")
 }
 
 // IsSame reports whether other is an angryFS with the same name, which holds

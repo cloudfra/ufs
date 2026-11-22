@@ -231,11 +231,11 @@ func TestGCSSubscriptionFromURI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error getting FS.URI(), %s", err)
 	}
-	if got := u.Query().Get("subscription"); got != "projects/my-proj/subscriptions/my-sub" {
+	if got := u.Query().Get(subscriptionParam); got != "projects/my-proj/subscriptions/my-sub" {
 		t.Fatalf("URI subscription = %q, want %q", got, "projects/my-proj/subscriptions/my-sub")
 	}
 
-	bucket, dir, err := parseGCSPath("gs://test-bucket/some/prefix?subscription=projects/my-proj/subscriptions/my-sub", "test")
+	bucket, dir, err := parseGCSPath("gs://test-bucket/some/prefix?"+subscriptionParam+"=projects/my-proj/subscriptions/my-sub", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,6 +244,45 @@ func TestGCSSubscriptionFromURI(t *testing.T) {
 	}
 	if dir != "some/prefix" {
 		t.Fatalf("dir = %q, want %q", dir, "some/prefix")
+	}
+}
+
+// TestGCSSubscriptionParam checks which spelling of the subscription parameter
+// makeGCSFSWithClient reads. A query parameter written without the "ufs."
+// prefix names a mount point inside the file system rather than a setting of
+// it, so only the prefixed one configures the subscription Watch pulls from.
+func TestGCSSubscriptionParam(t *testing.T) {
+	t.Parallel()
+	const subscription = "projects/my-proj/subscriptions/my-sub"
+	tests := []struct {
+		name string
+		uri  string
+		want string
+	}{
+		{
+			name: "prefixed parameter",
+			uri:  "gs://test-bucket/some/prefix?ufs.subscription=" + subscription,
+			want: subscription,
+		},
+		{
+			name: "parameter without the prefix is a mount point",
+			uri:  "gs://test-bucket/some/prefix?subscription=" + subscription,
+			want: "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// The client is only stored here: no request is made, so a nil
+			// client is enough to read the URI.
+			fsys, err := makeGCSFSWithClient(t.Context(), nil, tc.uri)
+			if err != nil {
+				t.Fatalf("makeGCSFSWithClient(%q) = %v, want nil", tc.uri, err)
+			}
+			if fsys.subscription != tc.want {
+				t.Errorf("subscription of %q = %q, want %q", tc.uri, fsys.subscription, tc.want)
+			}
+		})
 	}
 }
 

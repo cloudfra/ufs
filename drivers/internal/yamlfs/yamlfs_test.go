@@ -789,8 +789,8 @@ func TestURI(t *testing.T) {
 		name    string
 		wantURI string
 	}{
-		{"", "yaml:///?ro=true"},
-		{"document.yaml", "yaml:///document.yaml?ro=true"},
+		{"", "yaml:///?ufs.ro=true"},
+		{"document.yaml", "yaml:///document.yaml?ufs.ro=true"},
 	} {
 		fsys := newTestFS(t, tc.name, []byte(document))
 		u, err := fsys.URI()

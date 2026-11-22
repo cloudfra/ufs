@@ -42,9 +42,9 @@ func TestNewEmbedFSURI(t *testing.T) {
 		name    string
 		wantURI string
 	}{
-		{"", "embed:///?ro=true"},
-		{"assets", "embed:///assets?ro=true"},
-		{"data/files", "embed:///data/files?ro=true"},
+		{"", "embed:///?ufs.ro=true"},
+		{"assets", "embed:///assets?ufs.ro=true"},
+		{"data/files", "embed:///data/files?ufs.ro=true"},
 	} {
 		fsys := New(tc.name, ufsTesting.TestAssetsFS())
 		if u, err := fsys.URI(); err != nil {

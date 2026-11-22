@@ -86,7 +86,7 @@ func (fsys *yamlFS) DeviceInfo() types.DeviceMap {
 }
 
 func (fsys *yamlFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "yaml", Path: "/" + fsys.name, RawQuery: "ro=true"}, nil
+	return &url.URL{Scheme: "yaml", Path: "/" + fsys.name, RawQuery: "ufs.ro=true"}, nil
 }
 
 // IsSame reports whether other is this file system. New builds a tree from the

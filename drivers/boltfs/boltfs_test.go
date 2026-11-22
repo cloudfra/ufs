@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -47,6 +49,39 @@ func newTestBoltFS(t *testing.T) types.WriteFS {
 		}
 	})
 	return fsys
+}
+
+// TestBoltFSReadonlyURIReopens hands the URI of a read-only view of a bolt
+// database back to ufs.New. boltFS checks every query parameter of the name it
+// is asked to open, so this fails as soon as ufs forwards one of its own markers
+// to a driver: the URI a file system reports must name that same file system
+// again, including for a driver that does not ignore a parameter it did not write.
+func TestBoltFSReadonlyURIReopens(t *testing.T) {
+	name := testBoltFSURI(t)
+	fsys, err := ufs.New(t.Context(), name)
+	if err != nil {
+		t.Fatalf("New(%q) = %v, want nil", name, err)
+	}
+	ro := readonlyfs.New(fsys)
+	u, err := ro.URI()
+	if err != nil {
+		t.Fatalf("URI() of the read-only view = %v, want nil", err)
+	}
+	if u == nil {
+		t.Fatal("URI() of the read-only view = nil, want a URL")
+	}
+	// A bolt database is locked while open, so the first handle goes before the
+	// URI is read back.
+	if err := fsys.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+	reopened, err := ufs.New(t.Context(), u.String())
+	if err != nil {
+		t.Fatalf("New(%q) = %v, want the reported URI to open the same file system", u, err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Errorf("Close() of the reopened file system = %v, want nil", err)
+	}
 }
 
 func TestIsBoltFSUri(t *testing.T) {

@@ -216,7 +216,7 @@ func TestReadOnlyURI(t *testing.T) {
 		// the decorator pairs follow in the order they were applied. Rebuilding the
 		// query through url.Values would sort them, which breaks a URI signed over
 		// its exact query string.
-		if got, want := u.String(), "memory://test?cache=null%3A&ro=true&options=%5B%7BreadOnly%3A+true%7D%5D"; got != want {
+		if got, want := u.String(), "memory://test?cache=null%3A&ufs.ro=true&ufs.options=%5B%7BreadOnly%3A+true%7D%5D"; got != want {
 			t.Errorf("URI() = %q, want %q", got, want)
 		}
 	})

@@ -47,12 +47,18 @@ import (
 // time. It is a failure to answer, not an answer that there is no locatable
 // source.
 //
-// Read-only backends commonly include the query parameter ro=true to indicate
-// the underlying scheme is read-only.
+// A URI parameter that ufs or one of its drivers owns is named with the "ufs."
+// prefix, as ufs.ro, ufs.options or ufs.checksum are. A query parameter written
+// without it is a mount point inside the file system, so a backend that reports
+// a setting of its own has to name it with the prefix.
 //
-// Decorators record themselves, in the order they were applied, in the options
-// query parameter via [github.com/cloudfra/ufs/drivers/uri.AppendOption] so
-// that ufs.New applies them again.
+// Read-only backends commonly include the query parameter ufs.ro=true to
+// indicate the underlying scheme is read-only.
+//
+// Decorators record themselves, in the order they were applied, in the
+// ufs.options query parameter via
+// [github.com/cloudfra/ufs/drivers/uri.AppendOption] so that ufs.New applies
+// them again.
 type URIGet interface {
 	// URI returns the canonical identifier for this file system as a [*url.URL].
 	//
@@ -71,6 +77,8 @@ type URIGet interface {
 	//
 	// Wrappers such as nestFS include mount information in the query string so the
 	// full virtual composition is preserved. Read-only backends commonly include a
-	// ro=true query parameter to indicate that writes are not supported.
+	// ufs.ro=true query parameter to indicate that writes are not supported; a
+	// parameter ufs or a driver owns carries that "ufs." prefix, because a query
+	// parameter written without one names a mount point.
 	URI() (*url.URL, error)
 }

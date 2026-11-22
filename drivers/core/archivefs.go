@@ -69,7 +69,7 @@ func (fsys *archiveFS) URI() (*url.URL, error) {
 	if len(p) > 0 && p[0] != '/' {
 		p = "/" + p
 	}
-	return &url.URL{Scheme: "archive", Path: p, RawQuery: "ro=true"}, nil
+	return &url.URL{Scheme: "archive", Path: p, RawQuery: "ufs.ro=true"}, nil
 }
 
 // IsSame reports whether other reads one opened archive under one name, which

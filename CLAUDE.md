@@ -117,16 +117,17 @@ accept several shapes), and applies the decorators in list order: the first
 wraps the source, the last is the outermost layer.
 
 A decorator's `URI()` must call `uri.AppendOption` on the URI of the FS it
-wraps. That records the decorator in the reserved `options` query parameter
-(the same list in YAML flow form, e.g. `options=[{readOnly: true}]`), which
-`New` reads back to re-apply the decorators in order, so the URI round-trips.
-The parameter name, its records and the add/remove helpers live in
-`drivers/uri` (`uri.OptionsParam`, `uri.Option`, `uri.AppendOption`,
-`uri.RemoveOptions`) rather than in the base package, because a decorator must
-be able to record itself without importing `ufs`.
-`options`, like `ro`, is therefore not usable as a mount point in a URI. The
-same holds for names that start with `ufs.` (e.g. `ufs.checksum`): they are
-parameters for the driver and stay with the base URI.
+wraps. That records the decorator in the reserved `ufs.options` query
+parameter (the same list in YAML flow form, e.g.
+`ufs.options=[{readOnly: true}]`), which `New` reads back to re-apply the
+decorators in order, so the URI round-trips. The parameter name, its records
+and the add/remove helpers live in `drivers/uri` (`uri.OptionsParam`,
+`uri.Option`, `uri.AppendOption`, `uri.RemoveOptions`) rather than in the base
+package, because a decorator must be able to record itself without importing
+`ufs`. Every parameter ufs or a driver owns is named with the `ufs.` prefix
+(`ufs.ro`, `ufs.options`, `ufs.checksum`, `ufs.readonly`); a query parameter
+written without that prefix is a mount point inside the FS, so the prefixed
+names stay with the base URI and are not usable as a mount point.
 
 The fstab `ro` option and the implicit read-only null root both map to the
 `readOnly` option, so they need `drivers/decorators/readonlyfs` imported.

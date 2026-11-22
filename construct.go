@@ -37,22 +37,19 @@ const (
 	// the implicit root map to. It is served by drivers/decorators/readonlyfs.
 	readOnlyOption = "readOnly"
 
-	// roQueryParam is the URI query parameter that marks a read-only file
-	// system; it is not a mount point.
-	roQueryParam = "ro"
-
-	// optionsQueryParam is the URI query parameter that holds the decorators
-	// of a file system, in the order they are applied; it is not a mount
-	// point. Its value is the options list of a [MountSpec] in YAML flow form.
-	// The parameter and its records are held by drivers/uri, which a decorator
-	// can use without importing this package.
-	optionsQueryParam = uri.OptionsParam
-
 	// ufsQueryParamPrefix starts the name of a URI query parameter that is
 	// addressed to ufs or one of its drivers, such as [URLQueryParamChecksum].
 	// Such a parameter belongs to the file system whose URI carries it; it is
-	// not a mount point.
+	// not a mount point. Every parameter ufs itself writes into a URI carries
+	// it, which is what separates ufs's own settings from a mount point.
 	ufsQueryParamPrefix = "ufs."
+
+	// roQueryParam is the URI query parameter that marks a read-only file
+	// system; it is not a mount point. The read-only layer itself is re-applied
+	// from [uri.OptionsParam], so ufs takes this marker back out before a
+	// driver is asked to open the name: a driver that checks its query
+	// parameters would otherwise refuse a URI ufs reported for that driver.
+	roQueryParam = ufsQueryParamPrefix + "ro"
 
 	// embedFSPrefix is the scheme of drivers/embedfs, which has no URI-based
 	// constructor.
@@ -88,6 +85,12 @@ const (
 //	fsys, _ := ufs.New(ctx, uri)
 //
 // Returns an error if name or any nested URI cannot be parsed.
+//
+// A single-segment mount-point path may not begin with "ufs.", because [New]
+// reads a query parameter with that prefix as one addressed to ufs: such a path
+// is taken as a ufs setting, the file system is not mounted there, and nothing
+// reports that the mount was dropped. CreateURI does not reject the path either.
+// A path holding a slash ("a/ufs.foo") names a mount point like any other path.
 func CreateURI(name string, nested map[string]string) (string, error) {
 	u, err := nameToURI(name)
 	if err != nil {
@@ -221,6 +224,15 @@ func nameToURI(name string) (*url.URL, error) {
 // contents. No explicit configuration is required.
 //
 // Use [CreateURI] to pre-configure additional mount points before calling New.
+//
+// A query parameter of the URI names a file system mounted inside the base at a
+// path equal to that parameter's name, which is how [CreateURI] records mounts:
+// "memory://x?cache=null://" mounts null:// at "cache". A parameter addressed to
+// ufs or to a driver carries the "ufs." prefix (ufs.ro, ufs.options,
+// ufs.checksum) and is never a mount point, so a mount path that begins with
+// "ufs." cannot be written in a URI. A parameter written without a value names
+// the local file system, which for a relative name is the working directory:
+// "memory://?ro" mounts the working directory at "ro".
 func New(ctx context.Context, name string) (types.WriteFS, error) {
 	if specs := parseMountSpec(name); specs != nil {
 		return newFromMountSpec(ctx, specs)
@@ -232,10 +244,14 @@ func New(ctx context.Context, name string) (types.WriteFS, error) {
 		baseURI.RawQuery = ""
 		baseURI.Fragment = ""
 		// The decorators of the base and the parameters addressed to ufs
-		// travel with it; every other query parameter is a mount point.
+		// travel with it; every other query parameter is a mount point. Both
+		// are recognized by their prefix, which is why ufs's own parameters
+		// (roQueryParam and the options parameter among them) are spelled with it.
+		// The prefix only keeps those two from being opened as mounts here:
+		// [newDecoratedFS] takes them back out before a driver sees the name.
 		baseQuery := url.Values{}
 		for param, values := range query {
-			if param == optionsQueryParam || strings.HasPrefix(param, ufsQueryParamPrefix) {
+			if strings.HasPrefix(param, ufsQueryParamPrefix) {
 				baseQuery[param] = values
 			}
 		}
@@ -243,12 +259,14 @@ func New(ctx context.Context, name string) (types.WriteFS, error) {
 		nFS, err := openNestFS(ctx, baseURI.String())
 		if err == nil {
 			for mountPath, mountURI := range query {
-				if mountPath == roQueryParam || baseQuery.Has(mountPath) {
+				if baseQuery.Has(mountPath) {
 					continue
 				}
 				mountFS, err := openNestFS(ctx, mountURI[0])
 				if err != nil {
-					return nil, ufserrors.Join(err, nFS.Close())
+					// The mount URI alone cannot say which mount point failed: a
+					// driver error such as "repository not found" names no path.
+					return nil, ufserrors.Join(fmt.Errorf("mount point %q: %w", mountPath, err), nFS.Close())
 				}
 				if err := nFS.addMount(mountPath, mountFS); err != nil {
 					return nil, ufserrors.Join(err, mountFS.Close(), nFS.Close())
@@ -515,7 +533,10 @@ var defaultRootSpec = MountSpec{
 }
 
 // newDecoratedFS opens name via newBaseFS and wraps it with the decorators in
-// the options query parameter of name, if any, followed by those in opts.
+// the ufs.options query parameter of name, if any, followed by those in opts.
+// ufs's own parameters, ufs.options and ufs.ro, are taken out of name before
+// newBaseFS is called, so a driver is never handed a parameter of ufs's that it
+// cannot interpret.
 func newDecoratedFS(ctx context.Context, name string, opts []MountOption) (types.WriteFS, error) {
 	name, uriOpts, err := splitURIOptions(name)
 	if err != nil {
@@ -523,6 +544,14 @@ func newDecoratedFS(ctx context.Context, name string, opts []MountOption) (types
 	}
 	if len(uriOpts) > 0 {
 		opts = append(uriOpts, opts...)
+	}
+	// The read-only layer comes from ufs.options above, so ufs.ro is only a
+	// marker for whoever reads a URI back: taking it out here is what lets a
+	// driver that checks its query parameters open the URI that ufs reports for
+	// a read-only view of that very driver.
+	name, _, err = uri.RemoveParameter(name, []string{roQueryParam})
+	if err != nil {
+		return nil, ufserrors.NewPathError(mountOp, name, err)
 	}
 	baseFS, err := newBaseFS(ctx, name)
 	if err != nil {

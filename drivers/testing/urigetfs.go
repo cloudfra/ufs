@@ -104,14 +104,24 @@ func uriGetReadOnly(t *testing.T, args Args, createFSFunc func(t *testing.T) typ
 		if u == nil {
 			t.Fatal("URI() = nil, want a URL")
 		}
+		// ufs.ro is ufs's read-only marker. It is spelled with the "ufs." prefix
+		// that every parameter ufs writes into a URI carries, which is what
+		// tells a driver setting apart from a mount point.
 		if args.ReadOnly {
-			if got := u.Query().Get("ro"); got != "true" {
-				t.Errorf("%q.Query().Get(\"ro\") = %q, want %q", u, got, "true")
+			if got := u.Query().Get("ufs.ro"); got != "true" {
+				t.Errorf("%q.Query().Get(\"ufs.ro\") = %q, want %q", u, got, "true")
 			}
 		} else {
-			if got := u.Query().Get("ro"); got != "false" && got != "" {
-				t.Errorf("%q.Query().Get(\"ro\") = %q, want %q", u, got, "false or empty")
+			if got := u.Query().Get("ufs.ro"); got != "false" && got != "" {
+				t.Errorf("%q.Query().Get(\"ufs.ro\") = %q, want %q", u, got, "false or empty")
 			}
 		}
+		// The un-prefixed spellings are deliberately not forbidden here. "ro" and
+		// "options" are ordinary mount-point names once they lose the prefix, so a
+		// nest reporting "memory://base?ro=null%3A" is correct and reopens as
+		// itself; a name list in a shared suite would call that a bug. The spelling
+		// each driver writes is pinned by that driver's own URI test, and the
+		// assertion above catches a read-only file system that drops the prefix,
+		// because ufs.ro then reads back empty.
 	})
 }

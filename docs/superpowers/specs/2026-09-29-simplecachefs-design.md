@@ -67,6 +67,7 @@ var (
 
 - Every field is a YAML-serializable value. Sizes and durations are
   human-readable strings; fractions are floats from 0 to 1.
+
 - Each string field has an exported conversion method that parses it,
   applies the default when it is empty, and reports a parse failure with the
   field name:
@@ -82,10 +83,13 @@ var (
 - Sizes are parsed with `github.com/dustin/go-humanize` `ParseBytes`, so
   `256MiB` is 256 × 2²⁰ and `256MB` (or `256mb`) is 256 × 10⁶. A bare number
   is bytes. Durations are parsed with `time.ParseDuration`.
+
 - A zero fraction takes its default.
+
 - The default `MaxFileSize` is half of the soft-to-hard gap of the smallest
   tier: `(1 − SoftLimit) × min(MemorySize, StorageSize) / 2`. With the
   defaults that is 25.6 MiB.
+
 - `New` validates the resolved config and returns an error for any
   nonsensical or ambiguous value:
   - A size or duration that doesn't parse, a size of `0` or more than
@@ -100,6 +104,7 @@ var (
   - Memory-only: `StorageSize`, `FlushThreshold` or `SyncLog` set, since
     none has a meaning without a warm tier.
   - A `Policy` other than `fifo` (including `lru`, which is not implemented).
+
 - The config also carries an unexported clock (`now func() time.Time`) so
   tests control TTL and timers.
 

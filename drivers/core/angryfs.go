@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -58,10 +59,9 @@ func (fsys *angryFS) URI() (*url.URL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("URI %q is not valid, %w", fsys.name, err)
 	}
-	v := u.Query()
-	v.Set("ro", "true")
-	u.RawQuery = v.Encode()
-	return u, nil
+	// Tacked rather than set through url.Values, so a name that already carries
+	// parameters keeps them in the order and escaping it was written with.
+	return uri.AddParameter(u, "ro", "true")
 }
 
 // IsSame reports whether other is an angryFS with the same name, which holds
@@ -72,7 +72,7 @@ func (fsys *angryFS) IsSame(other fs.FS) bool {
 }
 
 func (fsys *angryFS) String() string {
-	return types.Description(map[string]any{"angryFS": ufs.URIOrDefault(fsys, fsys.name)})
+	return types.Description(map[string]any{"angryFS": uri.OrDefault(fsys, fsys.name)})
 }
 
 func (fsys *angryFS) Open(name string) (fs.File, error) {

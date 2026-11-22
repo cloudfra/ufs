@@ -27,6 +27,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -69,7 +70,7 @@ func (fsys *localFS) IsSame(other fs.FS) bool {
 }
 
 func (fsys *localFS) String() string {
-	return types.Description(map[string]any{"localFS": ufs.URIOrDefault(fsys, fsys.osFS.Name())})
+	return types.Description(map[string]any{"localFS": uri.OrDefault(fsys, fsys.osFS.Name())})
 }
 
 func (fsys *localFS) GetAbsPath(name string) (string, error) {

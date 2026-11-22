@@ -32,6 +32,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/common/buffile"
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -308,7 +309,7 @@ func (fsys *memFS) IsSame(other fs.FS) bool {
 }
 
 func (fsys *memFS) String() string {
-	return types.Description(map[string]any{"memFS": ufs.URIOrDefault(fsys, fsys.name)})
+	return types.Description(map[string]any{"memFS": uri.OrDefault(fsys, fsys.name)})
 }
 
 func (fsys *memFS) isClosed() bool {

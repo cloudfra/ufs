@@ -94,11 +94,12 @@ package to enable its option.
 ```go
 func NewDecorator[T any](name string, createFunc func(context.Context, WriteFS, T) (WriteFS, error)) Decorator
 func DecodeOptions[T any](raw any) (T, error)
-func AppendURIOption(u *url.URL, name string, options any) (*url.URL, error)
+func uri.AppendOption(u *url.URL, name string, config any) (*url.URL, error)
 ```
 
-`MountSpec.Options` is an ordered list (`[]MountOption`); each entry is a
-single-key mapping of a decorator name to that decorator's configuration:
+`MountSpec.Options` is an ordered list (`[]MountOption`, which is `uri.Option`);
+each entry is a single-key mapping of a decorator name to that decorator's
+configuration:
 
 ```yaml
 options:
@@ -115,10 +116,14 @@ twice, decodes each entry into the decorator's options type `T` via
 accept several shapes), and applies the decorators in list order: the first
 wraps the source, the last is the outermost layer.
 
-A decorator's `URI()` must call `AppendURIOption` on the URI of the FS it
+A decorator's `URI()` must call `uri.AppendOption` on the URI of the FS it
 wraps. That records the decorator in the reserved `options` query parameter
 (the same list in YAML flow form, e.g. `options=[{readOnly: true}]`), which
 `New` reads back to re-apply the decorators in order, so the URI round-trips.
+The parameter name, its records and the add/remove helpers live in
+`drivers/uri` (`uri.OptionsParam`, `uri.Option`, `uri.AppendOption`,
+`uri.RemoveOptions`) rather than in the base package, because a decorator must
+be able to record itself without importing `ufs`.
 `options`, like `ro`, is therefore not usable as a mount point in a URI. The
 same holds for names that start with `ufs.` (e.g. `ufs.checksum`): they are
 parameters for the driver and stay with the base URI.
@@ -187,11 +192,13 @@ enable its scheme. They may use `internal/` packages.
 | drivers/gitfs/             | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1                           |
 | drivers/polyfills/         | Best-effort standins for optional interfaces a file system lacks; used by the base package, so it must not import ufs                                   |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it                                                                 |
+| drivers/uri/               | Byte-preserving URI query-parameter add/remove helpers and the decorator option list, used by the base package and by drivers                           |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
-code with no `ufs` dependency goes in `internal/`. `drivers/polyfills/` is the
-exception: the base package imports it, so it must not import `ufs` itself, and
-it stays under `drivers/` because its entry points are public API.
+code with no `ufs` dependency goes in `internal/`. `drivers/polyfills/` and
+`drivers/uri/` are the exceptions: the base package imports them, so they must
+not import `ufs` itself, and they stay under `drivers/` because their callers
+include driver authors, whom `internal/` cannot reach.
 
 ### Supporting files
 

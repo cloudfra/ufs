@@ -31,6 +31,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -162,7 +163,7 @@ func (fsys *faultFS) URI() (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ufs.AppendURIOption(u, optionName, fsys.cfg)
+	return uri.AppendOption(u, optionName, fsys.cfg)
 }
 
 // InnerFS returns the file system whose operations are faulted, see

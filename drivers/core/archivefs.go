@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -79,7 +80,7 @@ func (fsys *archiveFS) IsSame(other fs.FS) bool {
 }
 
 func (fsys *archiveFS) String() string {
-	return types.Description(map[string]any{"archiveFS": ufs.URIOrDefault(fsys, fsys.name)})
+	return types.Description(map[string]any{"archiveFS": uri.OrDefault(fsys, fsys.name)})
 }
 
 func (fsys *archiveFS) Open(name string) (fs.File, error) {

@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"gopkg.in/yaml.v3"
@@ -43,7 +44,9 @@ const (
 	// optionsQueryParam is the URI query parameter that holds the decorators
 	// of a file system, in the order they are applied; it is not a mount
 	// point. Its value is the options list of a [MountSpec] in YAML flow form.
-	optionsQueryParam = "options"
+	// The parameter and its records are held by drivers/uri, which a decorator
+	// can use without importing this package.
+	optionsQueryParam = uri.OptionsParam
 
 	// ufsQueryParamPrefix starts the name of a URI query parameter that is
 	// addressed to ufs or one of its drivers, such as [URLQueryParamChecksum].
@@ -414,29 +417,10 @@ type MountSpec struct {
 //	  - readOnly: true
 //	  - fault:
 //	      errorRate: 0.1
-type MountOption struct {
-	// Name is the name of a registered [Decorator], see [RegisterDecorator].
-	Name string
-
-	// Config is the decorator's raw configuration, see [DecodeOptions].
-	Config any
-}
-
-// UnmarshalYAML reads the single-key mapping form of a [MountOption].
-func (o *MountOption) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode || len(node.Content) != 2 {
-		return fmt.Errorf("line %d: a mount option must be a mapping with a single decorator name", node.Line)
-	}
-	if err := node.Content[0].Decode(&o.Name); err != nil {
-		return err
-	}
-	return node.Content[1].Decode(&o.Config)
-}
-
-// MarshalYAML writes the single-key mapping form of a [MountOption].
-func (o MountOption) MarshalYAML() (any, error) {
-	return map[string]any{o.Name: o.Config}, nil
-}
+//
+// It is [uri.Option], which lives in drivers/uri because a decorator records one
+// in the URI it reports, and a driver must not import this package to do it.
+type MountOption = uri.Option
 
 func parseMountSpec(input string) []MountSpec {
 	if specs, err := parseYAMLMountSpec(input); err == nil {

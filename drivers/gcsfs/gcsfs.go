@@ -35,6 +35,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"google.golang.org/api/googleapi"
@@ -226,7 +227,7 @@ func (fsys *gcsFS) IsSame(other fs.FS) bool {
 }
 
 func (fsys *gcsFS) String() string {
-	return types.Description(map[string]any{"gcsFS": ufs.URIOrDefault(fsys, fsys.bucket+"/"+fsys.baseDir)})
+	return types.Description(map[string]any{"gcsFS": uri.OrDefault(fsys, fsys.bucket+"/"+fsys.baseDir)})
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {

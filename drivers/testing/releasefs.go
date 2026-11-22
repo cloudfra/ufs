@@ -47,9 +47,11 @@ type releaseSeededTestFS interface {
 // releaseFS runs the conformance suite for [types.ReleaseFS] against the file
 // system returned by createFSFunc.
 //
-// It does not branch on [Args.ReadOnly] or [Args.Bucket]: releasing is about
-// the handles and mount locks a file system holds on its own resources, which a
-// read-only file system holds just the same.
+// It does not branch on [Args.Bucket]: releasing is about the handles and mount
+// locks a file system holds on its own resources, which a read-only file system
+// holds just the same. [Args.ReadOnly] does cut the suite short, because two of
+// the four subtests can only seed their check by writing a file: a read-only
+// file system is still checked for releasing nothing held and releasing twice.
 //
 // Two clauses of the interface are out of reach for these fixtures and go
 // unchecked: that every resource is attempted and the errors joined, and that a
@@ -59,10 +61,13 @@ func releaseFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Si
 		requireType[types.ReleaseFS](t, args)
 		t.Parallel()
 		createReleaseFSFunc := requireFSTypeFunc[types.ReleaseFS](t, createFSFunc)
-		createSeededFSFunc := requireFSTypeFunc[releaseSeededTestFS](t, createFSFunc)
 
 		releaseNothingHeld(t, createReleaseFSFunc)
 		releaseTwice(t, createReleaseFSFunc)
+		if args.ReadOnly {
+			return
+		}
+		createSeededFSFunc := requireFSTypeFunc[releaseSeededTestFS](t, createFSFunc)
 		releaseKeepsUsable(t, createSeededFSFunc)
 		releaseReacquire(t, createSeededFSFunc)
 	})

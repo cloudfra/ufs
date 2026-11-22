@@ -145,7 +145,10 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	deviceInfoGet(t, args, createFSFunc)
 
 	switch {
-	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):
+	// A read-only file system may hold the full [ufs.FS] method set while
+	// refusing every write, as the read-only decorator does, so Args.ReadOnly
+	// and not the method set decides which suite family it is judged by.
+	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()) && !args.ReadOnly:
 		fsInternal(t, args, func(t *testing.T) ufs.FS {
 			return mustFSType[ufs.FS](t, createFSFunc)
 		})

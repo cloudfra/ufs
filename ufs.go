@@ -56,11 +56,5 @@ import (
 // ([types.ReleaseFS]), and will add file copying ([CopyFileFS]). Every concrete
 // value is a *nestFS.
 type FS interface {
-	types.WriteFS
-	types.OpenFileFS
-	types.RenameFileFS
-	types.ReleaseFS
-
-	// Copy copies the file at srcPath to dstPath.
-	// Copy(srcPath, dstPath string) error
+	types.FS
 }

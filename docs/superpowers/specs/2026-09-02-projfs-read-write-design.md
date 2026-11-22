@@ -69,7 +69,9 @@ New fields: `writable` and `mountPath`.
 ### hostMount function
 
 - Type-assert `fsys` to `FS`; store in `s.writable` if it succeeds.
+
 - Store `mountPath` in `s.mountPath`.
+
 - When `writable != nil`, expand the notification bitmask:
 
   ```text

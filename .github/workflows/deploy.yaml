@@ -36,8 +36,8 @@ env:
   MAKEFLAGS: >-
     ${{ github.event_name == 'pull_request'
     && 'GO_TEST_COUNT=3 NICHE_PLATFORMS=
-    LINUX_PLATFORMS=linux/amd64\ linux/arm64
-    WINDOWS_PLATFORMS=windows/amd64\ windows/arm64'
+    LINUX_PLATFORMS=linux/amd64
+    WINDOWS_PLATFORMS=windows/amd64'
     || '' }}
 
 jobs:
@@ -73,10 +73,6 @@ jobs:
           cache: false
       - name: Prepare CI
         run: ./scripts/prepare-ci.sh
-      - name: System Information
-        run: make system-info
-      # - name: Container Fix
-      #   run: git config --system --add safe.directory /__w/
       - name: Install Signing Dependencies
         run: ./scripts/template-go/install-codesign.sh
       - name: Clean
@@ -88,13 +84,15 @@ jobs:
       - name: Install Toolchain
         run: make tools -j"$(nproc)"
       - name: Lint
-        # The only lint step in the workflow: make lint-go analyzes the tree
-        # once per GOOS in LINT_GOOS, so the Windows-only source is checked
-        # here and the Windows job needs no lint pass of its own.
+        # The only lint step in the workflow: make lint-go runs once per GOOS
+        # in LINT_GOOS, so source gated to another platform is checked here
+        # and the Windows job needs no lint pass of its own.
         run: make lint
       - name: Test
+        if: ${{ github.event_name == 'pull_request' }}
         run: make test
       - name: Test (Deflake)
+        if: ${{ github.event_name != 'pull_request' }}
         run: make test-deflake
       - name: Coverage
         # Coverage numbers are only tracked for the default branch, and this
@@ -167,11 +165,12 @@ jobs:
       - name: Install Toolchain
         run: make tools -j"$(nproc)"
       - name: Test
+        if: ${{ github.event_name == 'pull_request' }}
         run: make test
       - name: Test (Deflake)
+        if: ${{ github.event_name != 'pull_request' }}
         run: >-
-          make GO_TEST_COUNT=${{ github.event_name == 'pull_request'
-          && '3' || '5' }} test-deflake
+          make GO_TEST_COUNT=5 test-deflake
       - name: Coverage
         # Same as the Linux job: coverage is tracked on the default branch
         # only, so a pull request skips this second race-instrumented pass.

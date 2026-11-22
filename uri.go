@@ -23,7 +23,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// URIOrDefault returns fsys's canonical URI, or value if fsys reports no URI.
+// URIOrDefault returns fsys's canonical URI, or value if fsys reports none. A
+// file system that owns its data reports a URI even when no URI can name it, as
+// [types.URIGet] requires, so value is used when fsys fails or is a wrapper of
+// a file system that reported none.
 func URIOrDefault(fsys types.URIGet, value string) string {
 	u, err := fsys.URI()
 	if err != nil || u == nil {
@@ -36,8 +39,8 @@ func URIOrDefault(fsys types.URIGet, value string) string {
 // with the given options, so that [New] applies the decorator again when it is
 // given the result. Decorators call it from their URI method with the URI of
 // the file system they wrap; calling it once per layer keeps the decorators in
-// the order they were applied. A nil u, meaning the wrapped file system has no
-// URI, yields nil.
+// the order they were applied. A nil u yields nil, which is the case of a
+// decorator wrapping a file system that reported no URI of its own.
 func AppendURIOption(u *url.URL, name string, options any) (*url.URL, error) {
 	if u == nil {
 		return nil, nil

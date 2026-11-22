@@ -17,8 +17,8 @@ package types
 // URIGetFS is a file system that reports the identifier from which it was
 // built. It combines [SimpleFS] with [URIGet], so the URI a value reports can be
 // passed to ufs.New to reopen an equivalent file system. See [URIGet] and
-// [URIGet.URI] for the meaning of the returned URL, the cases in which it is
-// nil, and how wrappers record their composition.
+// [URIGet.URI] for the meaning of the returned URL and how wrappers record
+// their composition.
 type URIGetFS interface {
 	SimpleFS
 	URIGet

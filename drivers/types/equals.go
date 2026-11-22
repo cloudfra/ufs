@@ -34,7 +34,13 @@ func Equals(a, b fs.FS) bool {
 		if bURIGet, bOk := b.(URIGet); bOk {
 			aURI, aErr := aURIGet.URI()
 			bURI, bErr := bURIGet.URI()
-			if aErr == nil && bErr == nil {
+			// A nil URL with no error is not an answer [URIGet] accepts, but an
+			// older or third-party implementation can still give one. Two file
+			// systems that both answer nil are not thereby the same file system,
+			// so they are not compared by URI. Comparing them by identity instead
+			// can only report the same value, never two unrelated file systems as
+			// equal.
+			if aErr == nil && bErr == nil && aURI != nil && bURI != nil {
 				return aURI.String() == bURI.String()
 			}
 		}

@@ -15,12 +15,15 @@
 package readwrapfs
 
 import (
+	"embed"
 	"errors"
 	"io"
 	"io/fs"
+	"net/url"
 	"testing"
 	"testing/fstest"
 
+	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/ops"
 	ufsTesting "github.com/cloudfra/ufs/testing"
@@ -248,4 +251,150 @@ func TestFromFSIsSame(t *testing.T) {
 	if types.SameFS(wrapped, FromFS(separate)) {
 		t.Error("readWrapFS over different file systems should not report the same data")
 	}
+}
+
+// errFS is a [fs.FS] whose URI reports an error.
+type errFS struct {
+	fstest.MapFS
+	err error
+}
+
+func (fsys errFS) URI() (*url.URL, error) {
+	return nil, fsys.err
+}
+
+// errInnerURI is what the failing file system in TestFromFSURI reports.
+var errInnerURI = errors.New("inner file system cannot report a URI")
+
+// TestFromFSURI checks that the read-only ro parameter reaches the URI of the
+// wrapped file system and only that: a wrapper adds its own parameter to what
+// [polyfills.URI] reports for the file system it wraps, so a wrapped [fs.FS]
+// that cannot report a URI gets one derived from its type, and a wrapped type
+// with no locatable source is an error rather than a nil URL.
+func TestFromFSURI(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		inner   fs.FS
+		wantURI string
+		wantErr error
+	}{
+		{
+			// A wrapped fs.FS that reports no URI of its own is not left without
+			// one: polyfills.URI names the standard library type it can recognize.
+			name:    "embed.FS derives embed:",
+			inner:   embed.FS{},
+			wantURI: "embed:?ro=true",
+		},
+		{
+			// A wrapped types.URIGet that answers nil, nil is not an answer either:
+			// the nil falls through to the type check, which cannot name this
+			// fixture, so the read that used to dereference nil (#373) now ends in
+			// an error naming the type.
+			name:    "inner URI is nil",
+			inner:   &uriFS{},
+			wantErr: polyfills.ErrUnsupportedURI,
+		},
+		{
+			// A fs.Sub result keeps no record of the file system it was cut from,
+			// so no URI can name it.
+			name:    "subordinate file system is unsupported",
+			inner:   mustSub(t, testMapFS, "dir"),
+			wantErr: polyfills.ErrUnsupportedURI,
+		},
+		{
+			name:    "inner scheme is kept",
+			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", Host: "x"}},
+			wantURI: "mem://x?ro=true",
+		},
+		{
+			name:    "existing parameters are kept",
+			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", RawQuery: "b=2&a=1"}},
+			wantURI: "mem:?a=1&b=2&ro=true",
+		},
+		{
+			name:    "ro is set once",
+			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", RawQuery: "ro=false"}},
+			wantURI: "mem:?ro=true",
+		},
+		{
+			name:    "inner URI fails",
+			inner:   errFS{err: errInnerURI},
+			wantErr: errInnerURI,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			fsys := FromFS(tt.inner)
+			defer ufsTesting.ValidateClose(t, fsys)()
+
+			u, err := fsys.URI()
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("URI() error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr != nil {
+				if u != nil {
+					t.Errorf("URI() = %v, want no URL with the error", u)
+				}
+			} else {
+				if u == nil {
+					t.Fatalf("URI() = nil, want %q", tt.wantURI)
+				}
+				if got := u.String(); got != tt.wantURI {
+					t.Errorf("URI() = %q, want %q", got, tt.wantURI)
+				}
+				// The URI must survive being written out and read back, which is
+				// what ufs.New does with it.
+				reparsed, err := url.Parse(tt.wantURI)
+				if err != nil {
+					t.Fatalf("url.Parse(%q) = %v, want the reported URI to parse", tt.wantURI, err)
+				}
+				if got := reparsed.String(); got != tt.wantURI {
+					t.Errorf("url.Parse(%q).String() = %q, want the URI to survive being written and read back", tt.wantURI, got)
+				}
+			}
+		})
+	}
+}
+
+// mustSub cuts name out of fsys, stopping the test if the standard library
+// cannot, and returns the subordinate file system.
+func mustSub(t *testing.T, fsys fs.FS, name string) fs.FS {
+	t.Helper()
+	sub, err := fs.Sub(fsys, name)
+	if err != nil {
+		t.Fatalf("fs.Sub(%q) = %v, want a subordinate file system", name, err)
+	}
+	return sub
+}
+
+// TestFromFSURIDoesNotEditInner checks that the wrapper adds its parameter to a
+// copy: RawQuery is a plain field of the URL the wrapped file system returned,
+// so writing it through would rewrite the URI that file system reports.
+func TestFromFSURIDoesNotEditInner(t *testing.T) {
+	t.Parallel()
+
+	inner := &uriFS{URIValue: &url.URL{Scheme: "mem", Host: "x", RawQuery: "a=1"}}
+	fsys := FromFS(inner)
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	if _, err := fsys.URI(); err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	if got, want := inner.URIValue.String(), "mem://x?a=1"; got != want {
+		t.Errorf("the wrapped file system reports %q after URI(), want %q: the wrapper must edit a copy", got, want)
+	}
+}
+
+// uriFS is a [fs.FS] that reports a fixed URI, the way a ufs driver does.
+type uriFS struct {
+	fstest.MapFS
+	URIValue *url.URL
+}
+
+func (fsys *uriFS) URI() (*url.URL, error) {
+	return fsys.URIValue, nil
 }

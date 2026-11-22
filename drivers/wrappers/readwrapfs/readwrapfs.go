@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"net/url"
 
+	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -47,18 +48,27 @@ func (fsys *readWrapFS) IsMountedArchiveDir(name string) bool {
 	return ok && m.IsMountedArchiveDir(name)
 }
 
+// URI reports the wrapped file system's URI with ro=true added. The wrapper
+// never reports a nil URL: [polyfills.URI] names the wrapped [fs.FS] only when
+// its type reveals a source a URI can name, and returns
+// [polyfills.ErrUnsupportedURI] when it does not.
 func (fsys *readWrapFS) URI() (*url.URL, error) {
-	if ug, ok := fsys.fsys.(types.URIGet); ok {
-		u, err := ug.URI()
-		if err != nil {
-			return nil, err
-		}
-		v := u.Query()
-		v.Set("ro", "true")
-		u.RawQuery = v.Encode()
-		return u, nil
+	u, err := polyfills.URI(fsys.fsys)
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+	// TODO: use the URI query parameter helpers to record this parameter, so the
+	// wrapped file system's own parameters keep the order and escaping they were
+	// written with.
+	//
+	// The copy comes before the edit: RawQuery is a plain field, so writing it
+	// through would change the URL the wrapped file system handed back, which the
+	// URI suite tells a file system it must keep for itself.
+	out := *u
+	v := out.Query()
+	v.Set("ro", "true")
+	out.RawQuery = v.Encode()
+	return &out, nil
 }
 
 // InnerFS returns the file system whose data is read through this wrapper, see

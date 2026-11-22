@@ -35,7 +35,9 @@ func uriGetFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Sim
 }
 
 // uriGetStable asserts the identifier is a stable, absolute URL that survives
-// being rendered and re-parsed, and that the file system keeps its own copy.
+// being rendered and re-parsed, and that the file system keeps its own copy. A
+// driver that claims [types.URIGetFS] and answers with a nil URL fails here,
+// because [types.URIGet] requires a file system that owns its data to name it.
 func uriGetStable(t *testing.T, createFSFunc func(t *testing.T) types.URIGetFS) {
 	t.Run("uriGetStable", func(t *testing.T) {
 		t.Parallel()

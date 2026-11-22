@@ -24,11 +24,28 @@ import (
 // calling ufs.New with u.String() should recreate an equivalent file system
 // when the backend supports a stable URI representation.
 //
-// Implementations may return nil if the file system is synthetic or has no
-// meaningful external identity (for example, readwrapfs.FromFS). Callers
-// should treat a nil URL or a non-nil error as "no URI" and fall back to a
-// default value when needed. Wrappers such as nestFS embed mount information
-// in the query string so the full composition is preserved.
+// Every file system reports a URI: URI returns a non-nil URL unless it returns
+// an error. A file system that holds its own data but has no locatable source —
+// a synthetic adapter, or embed.FS — reports a URL whose scheme names its type
+// and nothing else, which is the "type://" form written as [*url.URL] fields:
+// the empty authority renders as nothing, so a scheme of "embed" prints as
+// "embed:". That URI names the value without promising that ufs.New can reopen
+// it, which is what a caller storing a durable configuration value needs to
+// know. A wrapper has no type of its own to name, so it reports the layers it
+// adds on top of the wrapped URI and returns an error when the wrapped file
+// system has no URI to build on.
+//
+// A nil URL is not an accepted answer. A wrapper builds its own URI out of the
+// URI of the file system it wraps, so a nil result would force every wrapper to
+// invent one. [github.com/cloudfra/ufs/drivers/polyfills.URI] is the shared
+// answer to that question: it reports the URI a file system reports, or one
+// derived from a standard library file system whose source is known, or an error
+// naming the type. The drivers/testing URI suite reports a nil URL as a failure
+// of the driver under test.
+//
+// A non-nil error means the file system could not construct a URI at this
+// time. It is a failure to answer, not an answer that there is no locatable
+// source.
 //
 // Read-only backends commonly include the query parameter ro=true to indicate
 // the underlying scheme is read-only.
@@ -44,17 +61,12 @@ type URIGet interface {
 	// composition. This allows a file system to be serialized, logged, cached, or
 	// re-opened without losing configuration details.
 	//
-	// A nil value indicates the backend has no meaningful URI. This is common for
-	// synthetic adapters or wrappers that exist only in memory and cannot be
-	// reconstructed from a single URL (for example, readwrapfs.FromFS). In that
-	// case,
-	// callers should treat the result as absent and fall back to a default value or
-	// another source of configuration.
+	// The URL is non-nil. A backend with no locatable source reports a URL with
+	// only its type as the scheme rather than nil, so a wrapper of it can still
+	// report the layers it adds.
 	//
 	// A non-nil error means the backend could not construct a URI at this time.
-	// Errors are distinct from a nil URL: a nil URL is an intentional "no
-	// identifier" state, while an error indicates that the implementation failed to
-	// determine or format the identifier.
+	// It is a failure to answer, not an answer that there is no locatable source.
 	//
 	// Wrappers such as nestFS include mount information in the query string so the
 	// full virtual composition is preserved. Read-only backends commonly include a

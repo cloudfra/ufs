@@ -32,6 +32,22 @@ func (u uriFS) URI() (*url.URL, error) {
 	return url.Parse(u.path)
 }
 
+// nilURIFS answers a nil URL with no error, which [URIGet] no longer accepts but
+// an older or third-party implementation can still give. The id field keeps two
+// of them distinguishable by ==, so the case below can tell "cannot compare by
+// URI" apart from "equal".
+type nilURIFS struct {
+	id int
+}
+
+func (nilURIFS) Open(string) (fs.File, error) {
+	return nil, fs.ErrNotExist
+}
+
+func (u nilURIFS) URI() (*url.URL, error) {
+	return nil, nil
+}
+
 // comparableFS holds only comparable fields, so == on two file systems holding
 // it compares the values.
 type comparableFS struct {
@@ -83,6 +99,29 @@ func TestEquals(t *testing.T) {
 			name: "different uri",
 			a:    uriFS{path: "file:///one"},
 			b:    uriFS{path: "file:///two"},
+			want: false,
+		},
+		{
+			// Neither answers with a URL, so neither can be compared by URI. This
+			// is the pair that used to dereference a nil *url.URL; falling through
+			// to identity keeps two unrelated file systems different.
+			name: "both report no URI",
+			a:    nilURIFS{id: 1},
+			b:    nilURIFS{id: 2},
+			want: false,
+		},
+		{
+			// Identity still settles the case it can: the same value is the same
+			// file system even without a URI to compare.
+			name: "the same value reporting no URI",
+			a:    nilURIFS{id: 1},
+			b:    nilURIFS{id: 1},
+			want: true,
+		},
+		{
+			name: "only one reports a URI",
+			a:    nilURIFS{id: 1},
+			b:    uriFS{path: "file:///one"},
 			want: false,
 		},
 		{

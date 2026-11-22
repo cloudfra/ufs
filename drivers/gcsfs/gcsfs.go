@@ -46,6 +46,12 @@ import (
 const (
 	minChunkSize = 512 * 1024
 	gcsFSPrefix  = "gs:"
+
+	// subscriptionParam is the URI query parameter that names the Pub/Sub
+	// subscription Watch pulls notifications from. It carries the "ufs." prefix
+	// because a query parameter written without one names a mount point inside
+	// the file system rather than a setting of it.
+	subscriptionParam = "ufs.subscription"
 )
 
 var (
@@ -209,7 +215,7 @@ func (fsys *gcsFS) DeviceInfo() types.DeviceMap {
 func (fsys *gcsFS) URI() (*url.URL, error) {
 	vals := url.Values{}
 	if fsys.subscription != "" {
-		vals.Set("subscription", fsys.subscription)
+		vals.Set(subscriptionParam, fsys.subscription)
 	}
 	return &url.URL{
 		Scheme:   "gs",
@@ -556,7 +562,7 @@ func makeGCSFSWithClient(ctx context.Context, gcsClient *storage.Client, name st
 	}
 	var subscription string
 	if u, err := url.Parse(name); err == nil {
-		subscription = u.Query().Get("subscription")
+		subscription = u.Query().Get(subscriptionParam)
 	}
 	return &gcsFS{
 		ctx:          ctx,

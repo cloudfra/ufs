@@ -116,22 +116,22 @@ func TestSplitURIOptions(t *testing.T) {
 		},
 		{
 			name:     "options",
-			input:    "memory://test?options=%5B%7BreadOnly%3A+true%7D%5D",
+			input:    "memory://test?ufs.options=%5B%7BreadOnly%3A+true%7D%5D",
 			wantName: "memory://test",
 			wantOpts: []MountOption{{Name: "readOnly", Config: true}},
 		},
 		{
 			// The pairs that stay keep their order and their escaping byte for byte.
 			name:     "other parameters keep their order",
-			input:    "memory://test?b=two%20one&a=1&options=%5B%7BreadOnly%3A+true%7D%5D",
+			input:    "memory://test?b=two%20one&a=1&ufs.options=%5B%7BreadOnly%3A+true%7D%5D",
 			wantName: "memory://test?b=two%20one&a=1",
 			wantOpts: []MountOption{{Name: "readOnly", Config: true}},
 		},
 		{
 			name:     "invalid options",
-			input:    "memory://test?options=%5Bnot",
-			wantName: "memory://test?options=%5Bnot",
-			wantErr:  "invalid options query parameter",
+			input:    "memory://test?ufs.options=%5Bnot",
+			wantName: "memory://test?ufs.options=%5Bnot",
+			wantErr:  "invalid ufs.options query parameter",
 		},
 	}
 	for _, tc := range tests {
@@ -160,7 +160,7 @@ func TestNewAppliesURIOptions(t *testing.T) {
 	options := url.QueryEscape("[{" + name + ": {label: fromURI}}]")
 
 	t.Run("root", func(t *testing.T) {
-		fsys, err := New(t.Context(), "memory://test?options="+options)
+		fsys, err := New(t.Context(), "memory://test?ufs.options="+options)
 		if err != nil {
 			t.Fatalf("New() = %v, want nil", err)
 		}
@@ -171,7 +171,7 @@ func TestNewAppliesURIOptions(t *testing.T) {
 	})
 
 	t.Run("mount", func(t *testing.T) {
-		fsys, err := New(t.Context(), "memory://test?data="+url.QueryEscape("memory://data?options="+options))
+		fsys, err := New(t.Context(), "memory://test?data="+url.QueryEscape("memory://data?ufs.options="+options))
 		if err != nil {
 			t.Fatalf("New() = %v, want nil", err)
 		}
@@ -190,7 +190,7 @@ func TestNewAppliesURIOptions(t *testing.T) {
 	})
 
 	t.Run("mount spec source", func(t *testing.T) {
-		fsys, err := New(t.Context(), "- source: \"memory://test?options="+options+"\"")
+		fsys, err := New(t.Context(), "- source: \"memory://test?ufs.options="+options+"\"")
 		if err != nil {
 			t.Fatalf("New() = %v, want nil", err)
 		}
@@ -201,8 +201,8 @@ func TestNewAppliesURIOptions(t *testing.T) {
 	})
 
 	t.Run("invalid options", func(t *testing.T) {
-		_, err := New(t.Context(), "memory://test?options=%5Bnot")
-		if err == nil || !strings.Contains(err.Error(), "invalid options query parameter") {
+		_, err := New(t.Context(), "memory://test?ufs.options=%5Bnot")
+		if err == nil || !strings.Contains(err.Error(), "invalid ufs.options query parameter") {
 			t.Errorf("New() = %v, want an invalid options error", err)
 		}
 	})

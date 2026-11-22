@@ -164,10 +164,11 @@ func AddParameter(u *url.URL, param, value string) (*url.URL, error) {
 
 // OptionsParam is the URI query parameter that holds the decorators of a file
 // system, in the order they are applied. Its value is the decorator list in
-// YAML flow form, e.g. options=[{readOnly: true}], see [Option]. It belongs to
-// the file system whose URI carries it, so like a name that starts with "ufs."
-// it is not a mount point.
-const OptionsParam = "options"
+// YAML flow form, e.g. ufs.options=[{readOnly: true}], see [Option]. A query
+// parameter written without the "ufs." prefix names a mount point inside the
+// file system rather than a setting of it, so the parameter carries that
+// prefix, and an un-prefixed "options" pair is left exactly where it is.
+const OptionsParam = "ufs.options"
 
 // Option configures one decorator of a file system. In YAML it is a mapping
 // with a single key, the decorator's name, whose value is the decorator's
@@ -262,9 +263,12 @@ func AppendOption(u *url.URL, name string, config any) (*url.URL, error) {
 // escaping, which is why the name is reduced pair by pair instead of through
 // url.Values.
 //
-// A pair written without a value ("?options") is read as the string "true" by
-// the rule [RemoveParameter] states, which is not a decorator list, so it is
-// reported as an invalid value rather than read as a request for no decorators.
+// A pair written without a value ("?ufs.options") is read as the string "true"
+// by the rule [RemoveParameter] states, which is not a decorator list, so this
+// function reports it as an invalid value rather than reading it as a request
+// for no decorators. Whether that report reaches the caller of the base
+// package's New depends on what New does when its first attempt to open a name
+// fails, which is not this function's choice to make.
 func RemoveOptions(name string) (reduced string, opts []Option, err error) {
 	reduced, values, err := RemoveParameter(name, []string{OptionsParam})
 	if err != nil {

@@ -517,7 +517,7 @@ func TestFaultInjectorURI(t *testing.T) {
 		if err != nil {
 			t.Fatalf("URI() = %v, want nil", err)
 		}
-		if got, want := u.Query().Get("options"), "[{fault: {latency: 100ms, errorRate: 0.25}}]"; got != want {
+		if got, want := u.Query().Get("ufs.options"), "[{fault: {latency: 100ms, errorRate: 0.25}}]"; got != want {
 			t.Errorf("URI() options = %q, want %q", got, want)
 		}
 	})

@@ -25,7 +25,7 @@ func TestNestFSString(t *testing.T) {
 	}
 
 	got := fsys.String()
-	want := `{"nestFS":{"/":{"nullFS":"null:?ro=true"},"/c":{"memFS":"memory://c"},"/d":{"memFS":"memory://d"}}}`
+	want := `{"nestFS":{"/":{"nullFS":"null:?ufs.ro=true"},"/c":{"memFS":"memory://c"},"/d":{"memFS":"memory://d"}}}`
 	if got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}

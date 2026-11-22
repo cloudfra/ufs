@@ -16,6 +16,7 @@ package ufs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -122,37 +123,96 @@ var (
 	ufsParamsDriverNames sync.Map
 )
 
-// TestNewKeepsUFSParameters checks that query parameters addressed to ufs
-// (the "ufs." prefix, e.g. ufs.checksum) reach the driver with the base URI
-// and are not opened as mounts.
-func TestNewKeepsUFSParameters(t *testing.T) {
-	// The driver records the names it is asked to open under a host that is
-	// unique to this run: drivers cannot be unregistered, so with -count the
-	// one registered by the first run serves the later runs too.
-	const scheme = "ufsparams-test://"
+const ufsParamsScheme = "ufsparams-test://"
+
+// registerUFSParamsDriver registers, once, a driver that records every name it
+// is asked to open under [ufsParamsScheme]. Drivers cannot be unregistered, so
+// the one registered by the first test serves the later ones too; tests keep
+// their results apart with a host that is unique to each run.
+func registerUFSParamsDriver() {
 	ufsParamsDriverOnce.Do(func() {
 		Register(NewDriver("ufsparams-test", func(ctx context.Context, name string) (types.WriteFS, error) {
 			ufsParamsDriverNames.Store(name, true)
 			return newBaseFS(ctx, "memory:")
 		}, func(name string) bool {
-			return strings.HasPrefix(name, scheme)
+			return strings.HasPrefix(name, ufsParamsScheme)
 		}, 1, false, true))
 	})
+}
+
+// TestNewKeepsUFSParameters checks that query parameters addressed to ufs
+// (the "ufs." prefix, e.g. ufs.checksum) reach the driver with the base URI
+// and are not opened as mounts.
+func TestNewKeepsUFSParameters(t *testing.T) {
+	registerUFSParamsDriver()
 	host := ufsTesting.RandomString(12)
 
-	fsys, err := New(t.Context(), scheme+host+"/a.zip?ufs.checksum=sha256:abcd&cache=memory:")
+	fsys, err := New(t.Context(), ufsParamsScheme+host+"/a.zip?ufs.checksum=sha256:abcd&cache=memory:")
 	if err != nil {
 		t.Fatalf("New() = %v, want nil", err)
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
-	want := scheme + host + "/a.zip?ufs.checksum=sha256%3Aabcd"
+	want := ufsParamsScheme + host + "/a.zip?ufs.checksum=sha256%3Aabcd"
 	if _, ok := ufsParamsDriverNames.Load(want); !ok {
 		t.Errorf("the driver was not asked to open %q", want)
 	}
 	// The other parameter is still a mount point.
 	if _, err := fsys.Stat("cache"); err != nil {
 		t.Errorf("Stat(cache) = %v, want the mount point", err)
+	}
+}
+
+// TestNewQueryParametersAreMountPoints checks the rule that tells ufs's own
+// parameters apart from the file systems mounted inside one: a query parameter
+// carries the "ufs." prefix when ufs or a driver owns it, and every other query
+// parameter is a mount point. Because ufs's read-only marker and decorator list
+// are spelled ufs.ro and ufs.options, the unprefixed ro and options name mounts.
+func TestNewQueryParametersAreMountPoints(t *testing.T) {
+	registerUFSParamsDriver()
+	host := ufsTesting.RandomString(12)
+
+	// ufs.options holds the decorators of the base and ufs.ro marks the base
+	// read-only. [newDecoratedFS] consumes both before the driver is asked to
+	// open the name, so neither is in the name the driver sees: a driver that
+	// checks its query parameters would otherwise refuse a URI that ufs itself
+	// reported for that driver.
+	name := ufsParamsScheme + host + "/dir?options=null%3A&ro=null%3A&ufs.options=%5B%5D&ufs.ro=true"
+	fsys, err := New(t.Context(), name)
+	if err != nil {
+		t.Fatalf("New(%q) = %v, want nil", name, err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	want := ufsParamsScheme + host + "/dir"
+	if _, ok := ufsParamsDriverNames.Load(want); !ok {
+		t.Errorf("the driver was not asked to open %q, want it to be", want)
+	}
+	for _, mount := range []string{"options", "ro"} {
+		if _, err := fsys.Stat(mount); err != nil {
+			t.Errorf("Stat(%q) = %v, want the mount point the unprefixed parameter names", mount, err)
+		}
+	}
+	if _, err := fsys.Stat("ufs.ro"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(ufs.ro) = %v, want no mount for a parameter ufs owns", err)
+	}
+}
+
+// TestNewMountErrorNamesMountPoint checks that a mount that cannot be opened is
+// reported with the mount point it was meant to fill. The driver's own reason
+// cannot say which pair failed: "no such file system driver for scheme" or
+// "repository not found" names no path a caller holding the URI can fix.
+func TestNewMountErrorNamesMountPoint(t *testing.T) {
+	name := "memory://" + ufsTesting.RandomString(8) + "?sub=unknown%3A%2F%2Fsurely-not-a-path-xyz"
+	_, err := New(t.Context(), name)
+	if err == nil {
+		t.Fatalf("New(%q) succeeded, want an error for the mount that cannot be opened", name)
+	}
+	if !strings.Contains(err.Error(), `mount point "sub"`) {
+		t.Errorf("New(%q) = %v, want the error to name the mount point that failed", name, err)
+	}
+	if !strings.Contains(err.Error(), "unknown") {
+		t.Errorf("New(%q) = %v, want the error to keep the reason the mount could not be opened", name, err)
 	}
 }
 

@@ -39,7 +39,7 @@ func (fsys *embedFS) DeviceInfo() types.DeviceMap {
 }
 
 func (fsys *embedFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "embed", Path: "/" + fsys.name, RawQuery: "ro=true"}, nil
+	return &url.URL{Scheme: "embed", Path: "/" + fsys.name, RawQuery: "ufs.ro=true"}, nil
 }
 
 // IsSame reports whether other is this file system, since two embedFS values

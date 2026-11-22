@@ -467,12 +467,12 @@ func TestNewFromYAMLDecoratorOptionErrors(t *testing.T) {
 		},
 		{
 			name:    "invalid options in a URI",
-			input:   "memory://?options=%5Bnot",
-			wantErr: "invalid options query parameter",
+			input:   "memory://?ufs.options=%5Bnot",
+			wantErr: "invalid ufs.options query parameter",
 		},
 		{
 			name:    "unknown decorator in a URI",
-			input:   "memory://?options=%5B%7BnoSuchDecorator%3A+true%7D%5D",
+			input:   "memory://?ufs.options=%5B%7BnoSuchDecorator%3A+true%7D%5D",
 			wantErr: "cannot find a ufs file system decorator",
 		},
 		{
@@ -512,14 +512,14 @@ func TestNewFromYAMLDecoratorOptionErrors(t *testing.T) {
 	}
 }
 
-// optionsOf returns the decoded options query parameter of fsys's URI.
+// optionsOf returns the decoded ufs.options query parameter of fsys's URI.
 func optionsOf(t *testing.T, fsys types.WriteFS) string {
 	t.Helper()
 	u, err := fsys.URI()
 	if err != nil || u == nil {
 		t.Fatalf("URI() = %v, %v, want a URL", u, err)
 	}
-	return u.Query().Get("options")
+	return u.Query().Get("ufs.options")
 }
 
 func TestDecoratorsApplyInListOrder(t *testing.T) {
@@ -568,7 +568,7 @@ func TestDecoratedURIRoundTrip(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		// wantOptions is the options query parameter of the root.
+		// wantOptions is the ufs.options query parameter of the root.
 		wantOptions string
 		// readOnly and writable list paths whose Create must fail with
 		// fs.ErrPermission or succeed.

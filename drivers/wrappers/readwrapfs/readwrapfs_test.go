@@ -266,9 +266,9 @@ func (fsys errFS) URI() (*url.URL, error) {
 // errInnerURI is what the failing file system in TestFromFSURI reports.
 var errInnerURI = errors.New("inner file system cannot report a URI")
 
-// TestFromFSURI checks that the read-only ro parameter reaches the URI of the
-// wrapped file system and only that: a wrapper adds its own parameter to what
-// [polyfills.URI] reports for the file system it wraps, so a wrapped [fs.FS]
+// TestFromFSURI checks that the read-only ufs.ro parameter reaches the URI of
+// the wrapped file system and only that: a wrapper adds its own parameter to
+// what [polyfills.URI] reports for the file system it wraps, so a wrapped [fs.FS]
 // that cannot report a URI gets one derived from its type, and a wrapped type
 // with no locatable source is an error rather than a nil URL.
 func TestFromFSURI(t *testing.T) {
@@ -285,7 +285,7 @@ func TestFromFSURI(t *testing.T) {
 			// one: polyfills.URI names the standard library type it can recognize.
 			name:    "embed.FS derives embed:",
 			inner:   embed.FS{},
-			wantURI: "embed:?ro=true",
+			wantURI: "embed:?ufs.ro=true",
 		},
 		{
 			// A wrapped types.URIGet that answers nil, nil is not an answer either:
@@ -306,7 +306,7 @@ func TestFromFSURI(t *testing.T) {
 		{
 			name:    "inner scheme is kept",
 			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", Host: "x"}},
-			wantURI: "mem://x?ro=true",
+			wantURI: "mem://x?ufs.ro=true",
 		},
 		{
 			// The wrapped parameters keep the order they were written in, not the
@@ -314,12 +314,12 @@ func TestFromFSURI(t *testing.T) {
 			// signed over its exact query string.
 			name:    "existing parameters are kept",
 			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", RawQuery: "b=2&a=1"}},
-			wantURI: "mem:?b=2&a=1&ro=true",
+			wantURI: "mem:?b=2&a=1&ufs.ro=true",
 		},
 		{
-			name:    "ro is set once",
-			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", RawQuery: "ro=false"}},
-			wantURI: "mem:?ro=true",
+			name:    "ufs.ro is set once",
+			inner:   &uriFS{URIValue: &url.URL{Scheme: "mem", RawQuery: "ufs.ro=false"}},
+			wantURI: "mem:?ufs.ro=true",
 		},
 		{
 			name:    "inner URI fails",

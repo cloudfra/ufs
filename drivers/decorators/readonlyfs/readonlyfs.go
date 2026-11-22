@@ -131,7 +131,7 @@ func (fsys *readOnlyFS) URI() (*url.URL, error) {
 	}
 	// Tacked rather than set through url.Values, so the parameters the wrapped
 	// file system reported keep the order and escaping they were written with.
-	tacked, err := uri.AddParameter(u, "ro", "true")
+	tacked, err := uri.AddParameter(u, "ufs.ro", "true")
 	if err != nil {
 		return nil, err
 	}

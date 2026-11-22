@@ -34,9 +34,10 @@ import (
 var _ types.Watcher = (*gcsFS)(nil)
 
 // Watch implements [types.Watcher] for GCS file systems using Cloud Pub/Sub
-// notifications. The gcsFS must be constructed with a subscription query
-// parameter (e.g. gs://bucket/prefix?subscription=projects/P/subscriptions/S)
-// so that Watch knows which Pub/Sub subscription to pull from.
+// notifications. The gcsFS must be constructed with a ufs.subscription query
+// parameter (e.g.
+// gs://bucket/prefix?ufs.subscription=projects/P/subscriptions/S) so that Watch
+// knows which Pub/Sub subscription to pull from.
 //
 // GCS bucket notifications must be configured separately (via gsutil or the
 // GCS API) to publish object-change events to the Pub/Sub topic that the
@@ -46,7 +47,7 @@ func (fsys *gcsFS) Watch(ctx context.Context, name string, hook types.NotifyHook
 		return nil, err
 	}
 	if fsys.subscription == "" {
-		return nil, ufserrors.NewPathError("watch", name, fmt.Errorf("gcsFS has no pubsub subscription configured; pass subscription=projects/PROJECT/subscriptions/NAME as a query parameter: %w", fs.ErrInvalid))
+		return nil, ufserrors.NewPathError("watch", name, fmt.Errorf("gcsFS has no pubsub subscription configured; pass ufs.subscription=projects/PROJECT/subscriptions/NAME as a query parameter: %w", fs.ErrInvalid))
 	}
 
 	parts := strings.SplitN(strings.TrimPrefix(fsys.subscription, "projects/"), "/subscriptions/", 2)

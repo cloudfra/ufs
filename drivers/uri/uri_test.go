@@ -515,14 +515,14 @@ func TestAppendOption(t *testing.T) {
 		}
 		// The escaped pair stays escaped and in place; url.Values.Encode would have
 		// sorted the pairs and re-escaped the signature.
-		if got, want := first.String(), "memory://test?sig=a%26b&b=2&options=%5B%7BreadOnly%3A+true%7D%5D"; got != want {
+		if got, want := first.String(), "memory://test?sig=a%26b&b=2&ufs.options=%5B%7BreadOnly%3A+true%7D%5D"; got != want {
 			t.Errorf("AppendOption() = %q, want %q", got, want)
 		}
 		second, err := AppendOption(first, "fault", true)
 		if err != nil {
 			t.Fatalf("AppendOption(fault) = %v, want nil", err)
 		}
-		if got, want := second.RawQuery, "sig=a%26b&b=2&options=%5B%7BreadOnly%3A+true%7D%2C+%7Bfault%3A+true%7D%5D"; got != want {
+		if got, want := second.RawQuery, "sig=a%26b&b=2&ufs.options=%5B%7BreadOnly%3A+true%7D%2C+%7Bfault%3A+true%7D%5D"; got != want {
 			t.Errorf("AppendOption() raw query = %q, want %q", got, want)
 		}
 	})
@@ -551,15 +551,15 @@ func TestAppendOption(t *testing.T) {
 
 	t.Run("existing options are invalid", func(t *testing.T) {
 		t.Parallel()
-		_, err := AppendOption(mustParseURL(t, "memory://test?options=%5Bnot"), "readOnly", true)
-		if err == nil || !strings.Contains(err.Error(), "invalid options query parameter") {
+		_, err := AppendOption(mustParseURL(t, "memory://test?ufs.options=%5Bnot"), "readOnly", true)
+		if err == nil || !strings.Contains(err.Error(), "invalid ufs.options query parameter") {
 			t.Errorf("AppendOption() = %v, want an invalid options error", err)
 		}
 	})
 
 	t.Run("existing options cannot be decoded", func(t *testing.T) {
 		t.Parallel()
-		_, err := AppendOption(mustParseURL(t, "memory://test?options=%zz"), "readOnly", true)
+		_, err := AppendOption(mustParseURL(t, "memory://test?ufs.options=%zz"), "readOnly", true)
 		if err == nil || !strings.Contains(err.Error(), "cannot read the options of a file system decorator") {
 			t.Errorf("AppendOption() = %v, want an unreadable options error", err)
 		}
@@ -569,7 +569,7 @@ func TestAppendOption(t *testing.T) {
 		t.Parallel()
 		// The decorators are read from the first pair, so a URI that spells the
 		// parameter twice would advertise a list no reader takes.
-		base := mustParseURL(t, "memory://test?options=%5B%7BreadOnly%3A+true%7D%5D&options=%5B%7Bfault%3A+true%7D%5D&a=1")
+		base := mustParseURL(t, "memory://test?ufs.options=%5B%7BreadOnly%3A+true%7D%5D&ufs.options=%5B%7Bfault%3A+true%7D%5D&a=1")
 		first, err := AppendOption(base, "tag", true)
 		if err != nil {
 			t.Fatalf("AppendOption() = %v, want nil", err)
@@ -614,13 +614,13 @@ func TestRemoveOptions(t *testing.T) {
 		},
 		{
 			name:     "options",
-			input:    "memory://test?options=%5B%7BreadOnly%3A+true%7D%5D",
+			input:    "memory://test?ufs.options=%5B%7BreadOnly%3A+true%7D%5D",
 			wantName: "memory://test",
 			wantOpts: []Option{{Name: "readOnly", Config: true}},
 		},
 		{
 			name:     "empty options",
-			input:    "memory://test?options=",
+			input:    "memory://test?ufs.options=",
 			wantName: "memory://test",
 		},
 		{
@@ -629,9 +629,17 @@ func TestRemoveOptions(t *testing.T) {
 			wantName: "memory://test?cache=options=1",
 		},
 		{
+			// Only the prefixed parameter is the decorator list. Written without
+			// the "ufs." prefix, options names a mount point inside the file
+			// system, so it stays where it is.
+			name:     "options without the prefix is a mount point",
+			input:    "memory://test?options=%5B%7BreadOnly%3A+true%7D%5D",
+			wantName: "memory://test?options=%5B%7BreadOnly%3A+true%7D%5D",
+		},
+		{
 			// The pairs that stay keep their order and their escaping byte for byte.
 			name:     "other parameters keep their order",
-			input:    "memory://test?b=two%20one&a=1&options=%5B%7BreadOnly%3A+true%7D%5D",
+			input:    "memory://test?b=two%20one&a=1&ufs.options=%5B%7BreadOnly%3A+true%7D%5D",
 			wantName: "memory://test?b=two%20one&a=1",
 			wantOpts: []Option{{Name: "readOnly", Config: true}},
 		},
@@ -639,13 +647,13 @@ func TestRemoveOptions(t *testing.T) {
 			// A parameter whose value is another URI keeps that URI's own "?", and
 			// the "?" of the name it sits in.
 			name:     "parameter holding a nested URI",
-			input:    "memory://test?data=null%3A%2F%2Fhome%3Fa%3D1&options=%5B%7BreadOnly%3A+true%7D%5D",
+			input:    "memory://test?data=null%3A%2F%2Fhome%3Fa%3D1&ufs.options=%5B%7BreadOnly%3A+true%7D%5D",
 			wantName: "memory://test?data=null%3A%2F%2Fhome%3Fa%3D1",
 			wantOpts: []Option{{Name: "readOnly", Config: true}},
 		},
 		{
 			name:     "fragment after the query",
-			input:    "memory://test?options=%5B%7BreadOnly%3A+true%7D%5D#a=b",
+			input:    "memory://test?ufs.options=%5B%7BreadOnly%3A+true%7D%5D#a=b",
 			wantName: "memory://test#a=b",
 			wantOpts: []Option{{Name: "readOnly", Config: true}},
 		},
@@ -653,56 +661,59 @@ func TestRemoveOptions(t *testing.T) {
 			// A repeated parameter goes entirely, the way [RemoveParameter] takes it.
 			// Leaving a second pair behind would hand it to the mount of the reduced
 			// name, which applies the decorator a second time.
-			name:     "repeated options pairs all go",
-			input:    "memory://test?options=%5B%7BreadOnly%3A+true%7D%5D&options=%5B%7Bfault%3A+true%7D%5D&a=1",
+			name:     "repeated ufs.options pairs all go",
+			input:    "memory://test?ufs.options=%5B%7BreadOnly%3A+true%7D%5D&ufs.options=%5B%7Bfault%3A+true%7D%5D&a=1",
 			wantName: "memory://test?a=1",
 			wantOpts: []Option{{Name: "readOnly", Config: true}},
 		},
 		{
 			// A pair written without "=" carries no list to decode, so it is a bad
 			// value rather than a request for no decorators.
-			name:     "bare options parameter",
-			input:    "memory://test?options&b=2",
-			wantName: "memory://test?options&b=2",
-			wantErr:  "invalid options query parameter",
+			name:     "bare ufs.options parameter",
+			input:    "memory://test?ufs.options&b=2",
+			wantName: "memory://test?ufs.options&b=2",
+			wantErr:  "invalid ufs.options query parameter",
 		},
 		{
-			// The options parameter is read from the raw name rather than from a
+			// The ufs.options parameter is read from the raw name rather than from a
 			// parsed URL, so a name that is not a valid URI is still walked. The
 			// malformed options value is reported instead of being swallowed.
 			name:     "not a URL",
-			input:    "%zz?options=1",
-			wantName: "%zz?options=1",
-			wantErr:  "invalid options query parameter",
+			input:    "%zz?ufs.options=1",
+			wantName: "%zz?ufs.options=1",
+			wantErr:  "invalid ufs.options query parameter",
 		},
 		{
-			name:     "not a URL without options",
+			// No pair carries the "ufs." prefix, so there is no decorator list to
+			// read and the name comes back as it came: an un-prefixed "ro" is left
+			// for the reader that opens a query parameter as a mount point.
+			name:     "no ufs.options to read",
 			input:    "%zz?ro=true",
 			wantName: "%zz?ro=true",
 		},
 		{
 			name:     "invalid options",
-			input:    "memory://test?options=%5Bnot",
-			wantName: "memory://test?options=%5Bnot",
-			wantErr:  "invalid options query parameter",
+			input:    "memory://test?ufs.options=%5Bnot",
+			wantName: "memory://test?ufs.options=%5Bnot",
+			wantErr:  "invalid ufs.options query parameter",
 		},
 		{
 			name:     "option with two names",
-			input:    "memory://test?options=" + url.QueryEscape("[{readOnly: true, fault: {}}]"),
-			wantName: "memory://test?options=" + url.QueryEscape("[{readOnly: true, fault: {}}]"),
+			input:    "memory://test?ufs.options=" + url.QueryEscape("[{readOnly: true, fault: {}}]"),
+			wantName: "memory://test?ufs.options=" + url.QueryEscape("[{readOnly: true, fault: {}}]"),
 			wantErr:  "a mount option must be a mapping with a single decorator name",
 		},
 		{
 			name:     "option that is not a mapping",
-			input:    "memory://test?options=" + url.QueryEscape("[readOnly]"),
-			wantName: "memory://test?options=" + url.QueryEscape("[readOnly]"),
+			input:    "memory://test?ufs.options=" + url.QueryEscape("[readOnly]"),
+			wantName: "memory://test?ufs.options=" + url.QueryEscape("[readOnly]"),
 			wantErr:  "a mount option must be a mapping with a single decorator name",
 		},
 		{
 			name:     "option name is not a string",
-			input:    "memory://test?options=" + url.QueryEscape("[{[a]: true}]"),
-			wantName: "memory://test?options=" + url.QueryEscape("[{[a]: true}]"),
-			wantErr:  "invalid options query parameter",
+			input:    "memory://test?ufs.options=" + url.QueryEscape("[{[a]: true}]"),
+			wantName: "memory://test?ufs.options=" + url.QueryEscape("[{[a]: true}]"),
+			wantErr:  "invalid ufs.options query parameter",
 		},
 	}
 	for _, tc := range tests {

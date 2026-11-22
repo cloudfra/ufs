@@ -521,7 +521,7 @@ func TestTelemetryURI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("URI() = %v, want nil", err)
 			}
-			if got := u.Query().Get("options"); got != tc.want {
+			if got := u.Query().Get("ufs.options"); got != tc.want {
 				t.Errorf("URI() options = %q, want %q", got, tc.want)
 			}
 
@@ -535,7 +535,7 @@ func TestTelemetryURI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("URI() = %v, want nil", err)
 			}
-			if got := ru.Query().Get("options"); got != tc.want {
+			if got := ru.Query().Get("ufs.options"); got != tc.want {
 				t.Errorf("reopened URI() options = %q, want %q", got, tc.want)
 			}
 		})

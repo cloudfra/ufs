@@ -34,7 +34,7 @@ import (
 )
 
 var (
-	_ types.WriteFS   = (*readOnlyFS)(nil)
+	_ types.FS        = (*readOnlyFS)(nil)
 	_ types.WrapperFS = (*readOnlyFS)(nil)
 )
 

@@ -39,7 +39,7 @@ import (
 )
 
 var (
-	_ types.WriteFS   = (*faultFS)(nil)
+	_ types.FS        = (*faultFS)(nil)
 	_ types.WrapperFS = (*faultFS)(nil)
 )
 

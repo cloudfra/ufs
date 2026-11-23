@@ -144,15 +144,24 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	stringerFS(t, args, createFSFunc)
 	deviceInfoGet(t, args, createFSFunc)
 
+	// Which suite family a file system is judged by comes from what it is,
+	// except that Args.ReadOnly settles it first for a read-only file system.
+	// One may answer with the full [ufs.FS] method set while refusing every
+	// write, as the read-only decorator does, and the write suites seed the
+	// tree they then assert on, which is not something a file system refusing
+	// writes can be asked to do. Those fixtures are seeded by their own driver
+	// tests and judged by the read suites instead, alongside the refusal cases
+	// run unconditionally above.
 	switch {
-	// A read-only file system may hold the full [ufs.FS] method set while
-	// refusing every write, as the read-only decorator does, so Args.ReadOnly
-	// and not the method set decides which suite family it is judged by.
-	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()) && !args.ReadOnly:
+	case args.ReadOnly:
+		readFS(t, args, func(t *testing.T) types.ReadFS {
+			return mustFSType[types.ReadFS](t, createFSFunc)
+		})
+	case args.fsType.AssignableTo(reflect.TypeFor[ufs.FS]()):
 		fsInternal(t, args, func(t *testing.T) ufs.FS {
 			return mustFSType[ufs.FS](t, createFSFunc)
 		})
-	case args.fsType.AssignableTo(reflect.TypeFor[types.WriteFS]()) && !args.ReadOnly:
+	case args.fsType.AssignableTo(reflect.TypeFor[types.WriteFS]()):
 		writeFS(t, args, func(t *testing.T) types.WriteFS {
 			return mustFSType[types.WriteFS](t, createFSFunc)
 		})

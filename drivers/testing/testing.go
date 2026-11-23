@@ -113,6 +113,15 @@ func pathLabel(name string) string {
 	return strings.ReplaceAll(name, "/", "_")
 }
 
+// WrapperFS runs the full read-write conformance suite against file systems
+// returned by createFSFunc.
+func WrapperFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.WriteFS, createWrapperFSFunc func(t *testing.T, inner types.SimpleFS) types.WrapperFS) {
+	FS(t, args, func(t *testing.T) types.SimpleFS {
+		inner := createFSFunc(t)
+		return createWrapperFSFunc(t, inner)
+	})
+}
+
 // FS runs the full read-write conformance suite against file systems
 // returned by createFSFunc.
 func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {

@@ -15,49 +15,24 @@
 package readonlyfs_test
 
 import (
-	"io"
-	"io/fs"
-	"maps"
-	"slices"
 	"testing"
 
-	"github.com/cloudfra/ufs/drivers/core"
 	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
+	ufsdecoratorsTesting "github.com/cloudfra/ufs/drivers/decorators/testing"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
 func TestReadOnlyFSDriver(t *testing.T) {
-	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.SimpleFS {
-		return readonlyfs.New(seededMemFS(t))
+	ufsdriversTesting.WrapperFS(t, ufsdriversTesting.Args{ReadOnly: true}, ufsdecoratorsTesting.SeededInnerFS, func(t *testing.T, inner types.SimpleFS) types.WrapperFS {
+		readFsys, ok := inner.(types.ReadFS)
+		if !ok {
+			t.Fatalf("inner file system is not a ReadFS: %T", inner)
+		}
+		wrapFsys, ok := readonlyfs.New(readFsys).(types.WrapperFS)
+		if !ok {
+			t.Fatalf("wrapped file system is not a WrapperFS: %T", wrapFsys)
+		}
+		return wrapFsys
 	})
-}
-
-// seededMemFS holds a small tree, so the read-only wrapper is checked against
-// content instead of an empty file system.
-func seededMemFS(t *testing.T) types.WriteFS {
-	t.Helper()
-	fsys := core.MakeMemFS("memory://test")
-	for _, dir := range []string{"readconf", "readconf/nested"} {
-		if err := fsys.MkdirAll(dir, fs.ModePerm); err != nil {
-			t.Fatalf("MkdirAll(%q) = %v", dir, err)
-		}
-	}
-	files := map[string]string{
-		"readconf/alpha.txt":       "alpha",
-		"readconf/nested/beta.txt": "beta content",
-	}
-	for _, name := range slices.Sorted(maps.Keys(files)) {
-		file, err := fsys.Create(name)
-		if err != nil {
-			t.Fatalf("Create(%q) = %v", name, err)
-		}
-		if _, err := io.WriteString(file, files[name]); err != nil {
-			t.Fatalf("writing %q = %v", name, err)
-		}
-		if err := file.Close(); err != nil {
-			t.Fatalf("Close() on %q = %v", name, err)
-		}
-	}
-	return fsys
 }

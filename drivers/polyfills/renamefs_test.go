@@ -53,7 +53,7 @@ var (
 	_ types.RemoveAllFS  = (*noWriteRenameFS)(nil)
 	_ types.CreateFileFS = (*noMkdirRenameFS)(nil)
 
-	_ types.RenameFileFS = (*nativeRenameFS)(nil)
+	_ types.RenameFS = (*nativeRenameFS)(nil)
 
 	_ fs.ReadDirFile = (*renameableDir)(nil)
 )
@@ -984,7 +984,7 @@ func (f *noMkdirRenameFS) RemoveAll(name string) error {
 	return removeSubtree(f.store, name)
 }
 
-// nativeRenameFS implements [types.RenameFileFS], moving a name in one step the
+// nativeRenameFS implements [types.RenameFS], moving a name in one step the
 // way a file system that keeps its own index would. The log of what it was asked
 // is what separates it from the emulation.
 type nativeRenameFS struct {

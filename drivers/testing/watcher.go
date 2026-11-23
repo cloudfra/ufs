@@ -126,7 +126,7 @@ type watcherMutateFS interface {
 // watcherRenameFS adds the rename the rename case performs.
 type watcherRenameFS interface {
 	watcherMutateFS
-	types.RenameFileFS
+	types.RenameFS
 }
 
 // watcherRemoveAllFS adds the subtree remove the RemoveAll case performs.

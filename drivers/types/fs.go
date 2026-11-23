@@ -16,13 +16,13 @@ package types
 
 // FS is the file system a driver implements in full: a read-write file system
 // ([WriteFS]) that opens files with the generalized flags and mode
-// ([OpenFileFS]), moves a file or directory ([RenameFileFS]), and lets go of
+// ([OpenFileFS]), moves a file or directory ([RenameFS]), and lets go of
 // the resources it holds without closing the mount ([ReleaseFS]). It is
 // embedded in the file-system type returned by the ufs constructors.
 type FS interface {
 	WriteFS
 	OpenFileFS
-	RenameFileFS
+	RenameFS
 	ReleaseFS
 
 	// TODO: Add all optional types.

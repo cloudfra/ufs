@@ -25,7 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// renameTree is the content each RenameFileFS case starts from. It is kept below
+// renameTree is the content each RenameFS case starts from. It is kept below
 // one directory, apart from anything a test backend is seeded with, and every
 // directory holds a file, so that it also exists on bucket-backed file
 // systems. r/ax shares a name prefix with the r/a the PrefixName case moves, so
@@ -54,7 +54,7 @@ const renameEmptyDir = "r/emptydir"
 // the result back through Stat and ReadFile.
 type renameMovesTestFS interface {
 	types.SimpleFS
-	types.RenameFileFS
+	types.RenameFS
 	types.MkdirAllFS
 	types.CreateFileFS
 	fs.ReadFileFS
@@ -66,7 +66,7 @@ type renameMovesTestFS interface {
 // that renameTree is left as it was.
 type renameRefusedTestFS interface {
 	types.SimpleFS
-	types.RenameFileFS
+	types.RenameFS
 	types.MkdirAllFS
 	types.CreateFileFS
 	fs.ReadFileFS
@@ -78,7 +78,7 @@ type renameRefusedTestFS interface {
 // nothing has to be seeded or read back.
 type renameInvalidPathsTestFS interface {
 	types.SimpleFS
-	types.RenameFileFS
+	types.RenameFS
 }
 
 // renameReadOnlyTestFS is the minimum set of interfaces renameReadOnly needs:
@@ -86,7 +86,7 @@ type renameInvalidPathsTestFS interface {
 // no read interface beyond fs.FS.
 type renameReadOnlyTestFS interface {
 	types.SimpleFS
-	types.RenameFileFS
+	types.RenameFS
 }
 
 // renameSeededFS is the set of interfaces newRenameFS uses to seed renameTree.
@@ -103,10 +103,10 @@ type renameTreeFS interface {
 	fs.ReadFileFS
 }
 
-// renameFileFS runs the types.RenameFileFS conformance suite.
-func renameFileFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
-	t.Run("RenameFileFS", func(t *testing.T) {
-		requireType[types.RenameFileFS](t, args)
+// RenameFS runs the types.RenameFS conformance suite.
+func RenameFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+	t.Run("RenameFS", func(t *testing.T) {
+		requireType[types.RenameFS](t, args)
 		t.Parallel()
 		if args.ReadOnly {
 			renameReadOnly(t, requireFSTypeFunc[renameReadOnlyTestFS](t, createFSFunc))
@@ -181,7 +181,7 @@ var renameMoveCases = []struct {
 // content, and that oldPath no longer resolves afterwards.
 //
 // Missing parent directories of newPath are not checked: *core.memFS and
-// *boltfs.boltFS create them as [types.RenameFileFS] documents, while
+// *boltfs.boltFS create them as [types.RenameFS] documents, while
 // *core.localFS refuses the move with an error wrapping [fs.ErrNotExist], so
 // the contract is still open.
 func renameMoves(t *testing.T, createFSFunc func(t *testing.T) renameMovesTestFS) {

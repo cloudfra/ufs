@@ -28,9 +28,9 @@ import (
 const renameOp = "rename"
 
 // Rename moves the file or directory at oldPath to newPath within one file
-// system, keeping the contract of [types.RenameFileFS].
+// system, keeping the contract of [types.RenameFS].
 //
-// fsys's own [types.RenameFileFS] implementation is used when it has one.
+// fsys's own [types.RenameFS] implementation is used when it has one.
 // Otherwise the node is copied and the original removed, which is the only way a
 // file system that has never heard of renaming can move one of its own names.
 // The copy and the deletion are the package's own standins rather than a second
@@ -69,7 +69,7 @@ const renameOp = "rename"
 // buffer-at-a-time copy make this the slow path that a file system with its own
 // Rename avoids.
 func Rename(fsys fs.FS, oldPath, newPath string) error {
-	if rFS, ok := fsys.(types.RenameFileFS); ok {
+	if rFS, ok := fsys.(types.RenameFS); ok {
 		return rFS.Rename(oldPath, newPath)
 	}
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {

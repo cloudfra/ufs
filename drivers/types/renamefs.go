@@ -14,12 +14,12 @@
 
 package types
 
-// RenameFileFS is an optional interface that a file system may implement to
+// RenameFS is an optional interface that a file system may implement to
 // support file and directory renaming. It is embedded in the file-system type
 // returned by the ufs constructors, so such a file system can rename directly;
 // the Rename function in the ops package falls back to a copy-and-remove when
 // the backend does not implement it.
-type RenameFileFS interface {
+type RenameFS interface {
 	SimpleFS
 
 	// Rename moves a file or directory from oldPath to newPath. It returns an

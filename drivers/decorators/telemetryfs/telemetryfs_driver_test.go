@@ -17,7 +17,8 @@ package telemetryfs
 import (
 	"testing"
 
-	"github.com/cloudfra/ufs/drivers/core"
+	"github.com/cloudfra/ufs/drivers/decorators/readonlyfs"
+	ufsdecoratorsTesting "github.com/cloudfra/ufs/drivers/decorators/testing"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/drivers/types"
 )
@@ -25,7 +26,28 @@ import (
 // TestTelemetryFSDriver runs the shared file system tests through the
 // decorator, which must not change how the file system behaves.
 func TestTelemetryFSDriver(t *testing.T) {
-	ufsdriversTesting.FS(t, ufsdriversTesting.Args{}, func(t *testing.T) types.SimpleFS {
-		return newRecorder().wrap(t.Context(), t, core.MakeMemFS(memFSName), both)
+	ufsdriversTesting.WrapperFS(t, ufsdriversTesting.Args{ReadOnly: true}, ufsdecoratorsTesting.SeededInnerFS, func(t *testing.T, inner types.SimpleFS) types.WrapperFS {
+		rfsys, ok := inner.(types.ReadFS)
+		if !ok {
+			t.Fatalf("inner file system is not a ReadFS: %T", inner)
+		}
+		wfsys, ok := readonlyfs.New(rfsys).(types.WrapperFS)
+		if !ok {
+			t.Fatalf("wrapped file system is not a WrapperFS: %T", wfsys)
+		}
+		return wfsys
+	})
+
+	ufsdriversTesting.WrapperFS(t, ufsdriversTesting.Args{}, ufsdecoratorsTesting.InnerFS, func(t *testing.T, inner types.SimpleFS) types.WrapperFS {
+		writeFsys, ok := inner.(types.WriteFS)
+		if !ok {
+			t.Fatalf("inner file system is not a WriteFS: %T", inner)
+		}
+		fsys := newRecorder().wrap(t.Context(), t, writeFsys, both)
+		wrapFsys, ok := fsys.(types.WrapperFS)
+		if !ok {
+			t.Fatalf("wrapped file system is not a WrapperFS: %T", wrapFsys)
+		}
+		return wrapFsys
 	})
 }

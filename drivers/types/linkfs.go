@@ -24,7 +24,7 @@ type LinkFS interface {
 	// names describe the same content and metadata. It returns an error
 	// wrapping [fs.ErrNotExist] if oldname does not exist and one wrapping
 	// [fs.ErrExist] if newname already does. Most platforms refuse to hard link
-	// a directory. Errors are *os.LinkError values, as with [RenameFileFS].
+	// a directory. Errors are *os.LinkError values, as with [RenameFS].
 	//
 	// A backend that cannot give two names the same file reports an error
 	// rather than storing a copy: a copy does not stay in step with the file it

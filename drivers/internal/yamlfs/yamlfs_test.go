@@ -769,9 +769,9 @@ func TestRenameRefused(t *testing.T) {
 	t.Parallel()
 	fsys := newTestFS(t, "document.yaml", []byte(document))
 
-	renamer, ok := fsys.(types.RenameFileFS)
+	renamer, ok := fsys.(types.RenameFS)
 	if !ok {
-		t.Fatalf("%T does not implement types.RenameFileFS", fsys)
+		t.Fatalf("%T does not implement types.RenameFS", fsys)
 	}
 	err := renamer.Rename("name", "other")
 	if !errors.Is(err, fs.ErrPermission) {

@@ -49,7 +49,7 @@ is github.com/cloudfra/ufs.
 | File          | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter                                     |
 | ReadFS        | Read-only FS; adds Close, ListFilenames, ForEachIterators                                          |
 | WriteFS       | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll                                |
-| FS            | ufs.FS — extends types.WriteFS with Rename (RenameFileFS); what nestFS and most backends implement |
+| FS            | ufs.FS — extends types.WriteFS with Rename (RenameFS); what nestFS and most backends implement |
 | Watcher       | Optional; recursive directory change notifications via Watch                                       |
 | BatchCreateFS | Optional; writes several whole files atomically via BatchCreate                                    |
 
@@ -225,7 +225,7 @@ include driver authors, whom `internal/` cannot reach.
 func Rename(fsys WriteFS, oldPath, newPath string) error
 ```
 
-`RenameFileFS` is optional for drivers; `ops.Rename` calls it when present and
+`RenameFS` is optional for drivers; `ops.Rename` calls it when present and
 otherwise copies and removes (not atomic, loses modes). `pathutil.ValidateRename`
 holds the shared argument checks, and errors other than an invalid path are
 `*os.LinkError`. localFS (and tempMountFS) use `os.Root.Rename`, memFS moves

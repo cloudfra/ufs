@@ -71,9 +71,9 @@ import (
 )
 
 var (
-	_ types.WriteFS      = (*telemetryFS)(nil)
-	_ types.RenameFileFS = (*telemetryFS)(nil)
-	_ types.Watcher      = (*watchTelemetryFS)(nil)
+	_ types.WriteFS  = (*telemetryFS)(nil)
+	_ types.RenameFS = (*telemetryFS)(nil)
+	_ types.Watcher  = (*watchTelemetryFS)(nil)
 )
 
 const (

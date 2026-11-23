@@ -42,7 +42,7 @@ type fullFS interface {
 	ReleaseFS
 	RemoveAllFS
 	RemoveFS
-	RenameFileFS
+	RenameFS
 	StringerFS
 	SymlinkFS
 	URIGetFS

@@ -16,8 +16,10 @@ package faultfs
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"syscall"
 	"testing"
 	"testing/synctest"
@@ -156,6 +158,54 @@ func TestFaultInjectorRenameMoves(t *testing.T) {
 	}
 }
 
+// TestFaultInjectorOpenFileWritesAndReads checks that OpenFile is a real open
+// through the decorator: the write it makes lands in the wrapped file system and
+// can be opened for reading again, when no fault is configured.
+func TestFaultInjectorOpenFileWritesAndReads(t *testing.T) {
+	t.Parallel()
+
+	inner, err := ufs.New(t.Context(), "memory://")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys, err := newFaultFS(inner, Options{Latency: time.Nanosecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+	openFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.OpenFileFS, want the faulted file system to", fsys)
+	}
+
+	f, err := openFS.OpenFile("a.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		t.Fatalf("OpenFile(a.txt, os.O_WRONLY|os.O_CREATE|os.O_TRUNC) = %v, want nil", err)
+	}
+	if _, err := f.WriteString("a"); err != nil {
+		t.Fatal(err)
+	}
+	ufsTesting.Must(t, f.Close())
+
+	rf, err := openFS.OpenFile("a.txt", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(a.txt, os.O_RDONLY) = %v, want nil", err)
+	}
+	data, err := io.ReadAll(rf)
+	if err != nil {
+		t.Errorf("ReadAll() on the opened file = %v, want nil", err)
+	}
+	if err := rf.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil", err)
+	}
+	if string(data) != "a" {
+		t.Errorf("ReadAll() on the opened file = %q, want %q", data, "a")
+	}
+	if innerData, err := inner.ReadFile("a.txt"); err != nil || string(innerData) != "a" {
+		t.Errorf("ReadFile(a.txt) on the wrapped file system = %q, %v, want %q, nil", innerData, err, "a")
+	}
+}
+
 func TestFaultInjectorAlwaysErrors(t *testing.T) {
 	t.Parallel()
 
@@ -168,11 +218,17 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
 
+	openFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.OpenFileFS, want the faulted file system to", fsys)
+	}
+
 	tests := []struct {
 		name string
 		op   func() error
 	}{
 		{"Open", func() error { _, err := fsys.Open("."); return err }},
+		{"OpenFile", func() error { _, err := openFS.OpenFile("a.txt", os.O_WRONLY|os.O_CREATE, 0o600); return err }},
 		{"Stat", func() error { _, err := fsys.Stat("."); return err }},
 		{"Lstat", func() error { _, err := fsys.Lstat("."); return err }},
 		{"ReadDir", func() error { _, err := fsys.ReadDir("."); return err }},
@@ -364,6 +420,57 @@ func TestFaultInjectorCloseAlwaysDelegates(t *testing.T) {
 	}
 }
 
+// TestFaultInjectorReleaseReachesInner checks that releasing the faulted view
+// lets go of what the wrapped file system acquired for itself, that no fault is
+// injected into the release, and that the wrapped file system's own failure is
+// what the caller is told.
+func TestFaultInjectorReleaseReachesInner(t *testing.T) {
+	t.Parallel()
+
+	inner := &releaseInner{WriteFS: newInner(t)}
+	fsys, err := newFaultFS(inner, Options{
+		ErrorRate: 1.0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	injector, ok := fsys.(types.ReleaseFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.ReleaseFS, want the faulted view to", fsys)
+	}
+
+	if err := injector.Release(); err != nil {
+		t.Errorf("Release() = %v, want nil (should not inject faults)", err)
+	}
+	if inner.calls != 1 {
+		t.Errorf("Release() reached the wrapped file system %d times, want 1", inner.calls)
+	}
+
+	wantErr := errors.New("cannot reach the store")
+	inner.releaseErr = wantErr
+	if err := injector.Release(); !errors.Is(err, wantErr) {
+		t.Errorf("Release() = %v, want %v from the wrapped file system", err, wantErr)
+	}
+	if inner.calls != 2 {
+		t.Errorf("Release() reached the wrapped file system %d times, want 2", inner.calls)
+	}
+}
+
+// releaseInner is a file system with something of its own to let go of, for the
+// tests that check a release is passed down rather than answered on the way.
+type releaseInner struct {
+	types.WriteFS
+	calls      int
+	releaseErr error
+}
+
+var _ types.ReleaseFS = (*releaseInner)(nil)
+
+func (fsys *releaseInner) Release() error {
+	fsys.calls++
+	return fsys.releaseErr
+}
+
 func TestFaultInjectorInvalidPaths(t *testing.T) {
 	t.Parallel()
 
@@ -373,12 +480,19 @@ func TestFaultInjectorInvalidPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ufsTesting.ValidateClose(t, fsys)()
+	openFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.OpenFileFS, want the faulted file system to", fsys)
+	}
 
 	for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
 		t.Run(badPath, func(t *testing.T) {
 			t.Parallel()
 			if _, err := fsys.Open(badPath); err == nil {
 				t.Errorf("Open(%q) returned nil error, want error", badPath)
+			}
+			if _, err := openFS.OpenFile(badPath, os.O_RDONLY, 0); err == nil {
+				t.Errorf("OpenFile(%q, os.O_RDONLY) returned nil error, want error", badPath)
 			}
 			if _, err := fsys.Stat(badPath); err == nil {
 				t.Errorf("Stat(%q) returned nil error, want error", badPath)

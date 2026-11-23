@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/fsutil"
@@ -39,7 +40,7 @@ import (
 )
 
 var (
-	_ types.WriteFS   = (*faultFS)(nil)
+	_ types.FS        = (*faultFS)(nil)
 	_ types.WrapperFS = (*faultFS)(nil)
 )
 
@@ -221,8 +222,25 @@ func (fsys *faultFS) Open(name string) (fs.File, error) {
 	return fsys.inner.Open(name)
 }
 
+// OpenFile injects a fault for name, reported as the same "open" operation as
+// [Open] uses, and then opens with [polyfills.OpenFile], which uses the wrapped
+// file system's own OpenFile when it has one.
+func (fsys *faultFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
+	if err := fsys.maybeInjectFault("open", name); err != nil {
+		return nil, err
+	}
+	return polyfills.OpenFile(fsys.inner, name, flag, perm)
+}
+
 func (fsys *faultFS) Close() error {
 	return fsys.inner.Close()
+}
+
+// Release lets go of what the file system it wraps acquired for itself, using
+// [polyfills.Release], which calls that Release only when it is a
+// [types.ReleaseFS]. The decorator holds no resource of its own.
+func (fsys *faultFS) Release() error {
+	return polyfills.Release(fsys.inner)
 }
 
 func (fsys *faultFS) Stat(name string) (fs.FileInfo, error) {

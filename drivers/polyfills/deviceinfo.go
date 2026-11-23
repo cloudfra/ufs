@@ -20,6 +20,13 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
+// DeviceInfo returns the map of paths to the devices that back them, keeping
+// the contract of [types.DeviceInfoGetFS].
+//
+// fsys's own [types.DeviceInfoGetFS] implementation is used when it has one.
+// The fallback is not implemented yet and returns [types.DefaultDeviceMap], the
+// map used when no device mapping is configured, so a caller reads the backing
+// device as unknown rather than getting nothing.
 func DeviceInfo(fsys fs.FS) types.DeviceMap {
 	if cFS, ok := fsys.(types.DeviceInfoGetFS); ok {
 		return cFS.DeviceInfo()

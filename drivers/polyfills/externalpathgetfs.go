@@ -22,6 +22,13 @@ import (
 
 const externalpathOp = "chtimes"
 
+// ExternalPath returns the canonical external path of the file at path, keeping
+// the contract of [types.ExternalPathGetFS].
+//
+// fsys's own [types.ExternalPathGetFS] implementation is used when it has one.
+// The fallback is not implemented yet and returns the empty string, which is
+// what [types.ExternalPathGetFS] asks of an implementation that cannot answer,
+// so no name is validated and nothing is reported when the answer is unknown.
 func ExternalPath(fsys fs.FS, path string) string {
 	if cFS, ok := fsys.(types.ExternalPathGetFS); ok {
 		return cFS.ExternalPath(path)

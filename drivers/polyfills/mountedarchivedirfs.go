@@ -20,6 +20,17 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
+// IsMountedArchiveDir reports whether name is the virtual directory through
+// which a file system exposes the content of an archive, keeping the contract
+// of [types.MountedArchiveDirFS].
+//
+// fsys's own [types.MountedArchiveDirFS] implementation is used when it has
+// one. The fallback is not implemented yet and reports false, which is the
+// answer for a file system that has no such directories, since
+// [types.MountedArchiveDirFS] is what says a file system has them. A wrapper
+// that does not forward the method of the file system it wraps is answered
+// false here as well, which is the failure that
+// [types.MountedArchiveDirFS] warns wrappers about.
 func IsMountedArchiveDir(fsys fs.FS, name string) bool {
 	if cFS, ok := fsys.(types.MountedArchiveDirFS); ok {
 		return cFS.IsMountedArchiveDir(name)

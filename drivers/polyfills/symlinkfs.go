@@ -24,6 +24,13 @@ import (
 
 const symlinkOp = "symlink"
 
+// Symlink creates newname as a symbolic link storing oldname as its target,
+// keeping the contract of [types.SymlinkFS].
+//
+// fsys's own [types.SymlinkFS] implementation is used when it has one. The
+// fallback is not implemented yet: either name that is not a valid file name is
+// refused with an error wrapping [fs.ErrInvalid], and any other file system
+// gets an unimplemented error.
 func Symlink(fsys fs.FS, oldname string, newname string) error {
 	if cFS, ok := fsys.(types.SymlinkFS); ok {
 		return cFS.Symlink(oldname, newname)

@@ -24,6 +24,13 @@ import (
 
 const chmodOp = "chmod"
 
+// Chmod sets the mode of the node at name to mode, keeping the contract of
+// [types.ChmodFS].
+//
+// fsys's own [types.ChmodFS] implementation is used when it has one. The
+// fallback is not implemented yet: a name that is not a valid file name is
+// refused with an error wrapping [fs.ErrInvalid], and any other file system
+// gets an unimplemented error.
 func Chmod(fsys fs.FS, name string, mode fs.FileMode) error {
 	if cFS, ok := fsys.(types.ChmodFS); ok {
 		return cFS.Chmod(name, mode)

@@ -24,6 +24,14 @@ import (
 
 const closestparentOp = "closestparent"
 
+// ClosestParent returns the closest node that exists at or above name, name
+// itself included, and reports whether that node is a directory, keeping the
+// contract of [types.ClosestParentFS].
+//
+// fsys's own [types.ClosestParentFS] implementation is used when it has one.
+// The fallback is not implemented yet: a name that is not a valid file name,
+// the root included, is refused with an error wrapping [fs.ErrInvalid], and any
+// other file system gets an unimplemented error.
 func ClosestParent(fsys fs.FS, name string) (parent string, isDir bool, err error) {
 	if cFS, ok := fsys.(types.ClosestParentFS); ok {
 		return cFS.ClosestParent(name)

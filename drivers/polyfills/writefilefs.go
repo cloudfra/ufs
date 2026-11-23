@@ -24,6 +24,14 @@ import (
 
 const writefileOp = "writefile"
 
+// WriteFile writes data to the file at name, creating it when it is missing and
+// truncating what was there before, and gives a newly created file the
+// permission bits in mode, keeping the contract of [types.WriteFileFS].
+//
+// fsys's own [types.WriteFileFS] implementation is used when it has one. The
+// fallback is not implemented yet: a name that is not a valid file name is
+// refused with an error wrapping [fs.ErrInvalid], and any other file system
+// gets an unimplemented error.
 func WriteFile(fsys fs.FS, name string, data []byte, mode fs.FileMode) error {
 	if cFS, ok := fsys.(types.WriteFileFS); ok {
 		return cFS.WriteFile(name, data, mode)

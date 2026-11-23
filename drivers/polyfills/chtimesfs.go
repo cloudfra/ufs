@@ -25,6 +25,14 @@ import (
 
 const chtimesOp = "chtimes"
 
+// Chtimes sets the access and modification times of the node at name to atime
+// and mtime, following a symbolic link at name to the node it points at,
+// keeping the contract of [types.ChtimesFS]. A zero time leaves that time alone.
+//
+// fsys's own [types.ChtimesFS] implementation is used when it has one. The
+// fallback is not implemented yet: a name that is not a valid file name is
+// refused with an error wrapping [fs.ErrInvalid], and any other file system
+// gets an unimplemented error.
 func Chtimes(fsys fs.FS, name string, atime time.Time, mtime time.Time) error {
 	if cFS, ok := fsys.(types.ChtimesFS); ok {
 		return cFS.Chtimes(name, atime, mtime)

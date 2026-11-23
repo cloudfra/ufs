@@ -19,6 +19,13 @@ import (
 	"io/fs"
 )
 
+// String returns a description of fsys for logs and error messages.
+//
+// fsys describes itself when it is a [fmt.Stringer], which is wider than
+// [types.StringerFS]: a file system with a String method but no [types.SimpleFS]
+// methods is described by its own String here too. The fallback is not
+// implemented yet and renders fsys with the default formatting of
+// [fmt.Sprintf], which is not the JSON description [types.StringerFS] requires.
 func String(fsys fs.FS) string {
 	if cFS, ok := fsys.(fmt.Stringer); ok {
 		return cFS.String()

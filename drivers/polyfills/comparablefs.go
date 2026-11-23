@@ -20,6 +20,15 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
+// IsSame reports whether fsys and other hold one set of data, keeping the
+// contract of [types.ComparableFS].
+//
+// fsys's own [types.ComparableFS] implementation is used when it has one. The
+// fallback is not implemented yet and reports false, which is the answer
+// [types.ComparableFS] asks of a file system that cannot prove its data is
+// other's data. Unlike [types.SameFS], which falls back to comparing the two
+// values, this reports false for a file system that is not a
+// [types.ComparableFS] even when it is compared with itself.
 func IsSame(fsys fs.FS, other fs.FS) bool {
 	if cFS, ok := fsys.(types.ComparableFS); ok {
 		return cFS.IsSame(other)

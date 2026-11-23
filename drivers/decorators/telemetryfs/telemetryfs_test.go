@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"syscall"
 	"testing"
 
@@ -152,6 +153,17 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 	if err := rf.Close(); err != nil {
 		t.Fatalf("Close() = %v, want nil", err)
 	}
+	openFileFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.OpenFileFS, want the reported file system to", fsys)
+	}
+	of, err := openFileFS.OpenFile("dir/a.txt", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(dir/a.txt) = %v, want nil", err)
+	}
+	if err := of.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
 	if _, err := fsys.Stat("dir/a.txt"); err != nil {
 		t.Errorf("Stat(dir/a.txt) = %v, want nil", err)
 	}
@@ -177,8 +189,8 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 		t.Errorf("RemoveAll(dir) = %v, want nil", err)
 	}
 
-	wantOps := []string{"mkdir", "create", "open", "stat", "lstat", "readdir", "readfile", "readlink", "rename", "remove", "removeall"}
-	wantPaths := []string{"dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/b.txt", "dir"}
+	wantOps := []string{"mkdir", "create", "open", "openfile", "stat", "lstat", "readdir", "readfile", "readlink", "rename", "remove", "removeall"}
+	wantPaths := []string{"dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/b.txt", "dir"}
 
 	spans := r.spans.Ended()
 	if len(spans) != len(wantOps) {
@@ -324,6 +336,52 @@ func TestTelemetryReportsErrors(t *testing.T) {
 	}
 }
 
+// TestTelemetryReportsOpenFileError checks that a failed open reports one span
+// and one measurement carrying the openfile operation, its path and its error
+// class.
+func TestTelemetryReportsOpenFileError(t *testing.T) {
+	t.Parallel()
+	r := newRecorder()
+	fsys := r.wrap(t.Context(), t, core.MakeMemFS(memFSName), both)
+	defer ufsTesting.ValidateClose(t, fsys)()
+	openFileFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.OpenFileFS, want the reported file system to", fsys)
+	}
+
+	// memFS has its own OpenFile, so this is its answer for a missing name.
+	_, err := openFileFS.OpenFile("missing.txt", os.O_RDONLY, 0)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("OpenFile(missing.txt) = %v, want %v", err, fs.ErrNotExist)
+	}
+
+	spans := r.spans.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+	span := spans[0]
+	if got, want := span.Name(), "ufs.openfile"; got != want {
+		t.Errorf("span name = %q, want %q", got, want)
+	}
+	attrs := attribute.NewSet(span.Attributes()...)
+	if got, _ := attrs.Value(operationKey); got.AsString() != "openfile" {
+		t.Errorf("%s = %q, want openfile", operationKey, got.AsString())
+	}
+	if got, _ := attrs.Value(pathKey); got.AsString() != "missing.txt" {
+		t.Errorf("%s = %q, want missing.txt", pathKey, got.AsString())
+	}
+	if got := span.Status().Code; got != codes.Error {
+		t.Errorf("span status = %v, want %v", got, codes.Error)
+	}
+	if got := len(span.Events()); got != 1 {
+		t.Errorf("span has %d events, want the recorded error", got)
+	}
+
+	if got := r.durations(t); len(got) != 1 || got["openfile/memory/not_exist"] != 1 {
+		t.Errorf("durations = %v, want only openfile/memory/not_exist = 1", got)
+	}
+}
+
 func TestTelemetryOnlyTracesOrMetrics(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -414,6 +472,82 @@ func TestTelemetryCloseIsNotReported(t *testing.T) {
 	if got := r.durations(t); len(got) != 0 {
 		t.Errorf("durations = %v, want none", got)
 	}
+}
+
+// TestTelemetryReleaseIsNotReported checks that Release, which lets go of
+// nothing the decorator holds, is not an operation it reports, like Close.
+func TestTelemetryReleaseIsNotReported(t *testing.T) {
+	t.Parallel()
+	r := newRecorder()
+	fsys := r.wrap(t.Context(), t, core.MakeMemFS(memFSName), both)
+	releaseFS, ok := fsys.(types.ReleaseFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.ReleaseFS, want the reported file system to", fsys)
+	}
+	if err := releaseFS.Release(); err != nil {
+		t.Fatalf("Release() = %v, want nil", err)
+	}
+	if err := fsys.Close(); err != nil {
+		t.Fatalf("Close() = %v, want nil", err)
+	}
+	if got := len(r.spans.Ended()); got != 0 {
+		t.Errorf("got %d spans, want 0", got)
+	}
+	if got := r.durations(t); len(got) != 0 {
+		t.Errorf("durations = %v, want none", got)
+	}
+}
+
+// TestTelemetryReleaseReachesInner checks that releasing the reported view lets
+// go of what the wrapped file system acquired for itself, that the wrapped
+// file system's own failure is answered unchanged, and that none of it is
+// reported.
+func TestTelemetryReleaseReachesInner(t *testing.T) {
+	t.Parallel()
+	inner := &releaseInner{WriteFS: core.MakeMemFS(memFSName)}
+	r := newRecorder()
+	fsys := r.wrap(t.Context(), t, inner, both)
+	releaseFS, ok := fsys.(types.ReleaseFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.ReleaseFS, want the reported file system to", fsys)
+	}
+
+	if err := releaseFS.Release(); err != nil {
+		t.Fatalf("Release() = %v, want nil", err)
+	}
+	if inner.calls != 1 {
+		t.Errorf("Release() reached the wrapped file system %d times, want 1", inner.calls)
+	}
+
+	wantErr := errors.New("cannot close the archive")
+	inner.releaseErr = wantErr
+	if err := releaseFS.Release(); !errors.Is(err, wantErr) {
+		t.Errorf("Release() = %v, want %v from the wrapped file system", err, wantErr)
+	}
+	if inner.calls != 2 {
+		t.Errorf("Release() reached the wrapped file system %d times, want 2", inner.calls)
+	}
+	if got := len(r.spans.Ended()); got != 0 {
+		t.Errorf("got %d spans, want 0", got)
+	}
+	if got := r.durations(t); len(got) != 0 {
+		t.Errorf("durations = %v, want none", got)
+	}
+}
+
+// releaseInner is a file system with something of its own to let go of, for the
+// tests that check a release is passed down rather than answered on the way.
+type releaseInner struct {
+	types.WriteFS
+	calls      int
+	releaseErr error
+}
+
+var _ types.ReleaseFS = (*releaseInner)(nil)
+
+func (fsys *releaseInner) Release() error {
+	fsys.calls++
+	return fsys.releaseErr
 }
 
 func TestTelemetryString(t *testing.T) {

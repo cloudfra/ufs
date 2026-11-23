@@ -42,6 +42,11 @@ const (
 var (
 	_ types.File       = (*os.File)(nil)
 	_ localFSInterface = (*localFS)(nil)
+
+	// TODO: Fold these into localFSInterface
+	_ types.ChmodFS     = (*localFS)(nil)
+	_ types.LinkFS      = (*localFS)(nil)
+	_ types.WriteFileFS = (*localFS)(nil)
 )
 
 func init() {
@@ -191,6 +196,30 @@ func (fsys *localFS) RemoveAll(name string) error {
 		return err
 	}
 	return fsys.osFS.RemoveAll(name)
+}
+
+func (fsys *localFS) Chmod(name string, mode fs.FileMode) error {
+	if err := validLocalPath("chmod", name); err != nil {
+		return err
+	}
+	return fsys.osFS.Chmod(name, mode)
+}
+
+func (fsys *localFS) Link(oldname string, newname string) error {
+	if err := validLocalPath("link", oldname); err != nil {
+		return err
+	}
+	if err := validLocalPath("link", newname); err != nil {
+		return err
+	}
+	return fsys.osFS.Link(oldname, newname)
+}
+
+func (fsys *localFS) WriteFile(name string, data []byte, mode fs.FileMode) error {
+	if err := validLocalPath("writefile", name); err != nil {
+		return err
+	}
+	return fsys.osFS.WriteFile(name, data, mode)
 }
 
 // Rename moves oldPath to newPath with os.Root.Rename, which would replace an

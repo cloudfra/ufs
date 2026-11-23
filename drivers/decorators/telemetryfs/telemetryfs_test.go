@@ -498,6 +498,58 @@ func TestTelemetryReleaseIsNotReported(t *testing.T) {
 	}
 }
 
+// TestTelemetryReleaseReachesInner checks that releasing the reported view lets
+// go of what the wrapped file system acquired for itself, that the wrapped
+// file system's own failure is answered unchanged, and that none of it is
+// reported.
+func TestTelemetryReleaseReachesInner(t *testing.T) {
+	t.Parallel()
+	inner := &releaseInner{WriteFS: core.MakeMemFS(memFSName)}
+	r := newRecorder()
+	fsys := r.wrap(t.Context(), t, inner, both)
+	releaseFS, ok := fsys.(types.ReleaseFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.ReleaseFS, want the reported file system to", fsys)
+	}
+
+	if err := releaseFS.Release(); err != nil {
+		t.Fatalf("Release() = %v, want nil", err)
+	}
+	if inner.calls != 1 {
+		t.Errorf("Release() reached the wrapped file system %d times, want 1", inner.calls)
+	}
+
+	wantErr := errors.New("cannot close the archive")
+	inner.releaseErr = wantErr
+	if err := releaseFS.Release(); !errors.Is(err, wantErr) {
+		t.Errorf("Release() = %v, want %v from the wrapped file system", err, wantErr)
+	}
+	if inner.calls != 2 {
+		t.Errorf("Release() reached the wrapped file system %d times, want 2", inner.calls)
+	}
+	if got := len(r.spans.Ended()); got != 0 {
+		t.Errorf("got %d spans, want 0", got)
+	}
+	if got := r.durations(t); len(got) != 0 {
+		t.Errorf("durations = %v, want none", got)
+	}
+}
+
+// releaseInner is a file system with something of its own to let go of, for the
+// tests that check a release is passed down rather than answered on the way.
+type releaseInner struct {
+	types.WriteFS
+	calls      int
+	releaseErr error
+}
+
+var _ types.ReleaseFS = (*releaseInner)(nil)
+
+func (fsys *releaseInner) Release() error {
+	fsys.calls++
+	return fsys.releaseErr
+}
+
 func TestTelemetryString(t *testing.T) {
 	t.Parallel()
 	inner := core.MakeMemFS(memFSName)

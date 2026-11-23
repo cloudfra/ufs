@@ -189,7 +189,8 @@ func TestReadOnlyOpenFileInvalidPath(t *testing.T) {
 
 // TestReadOnlyReleaseNothingHeld checks that the read-only view has nothing of
 // its own to let go of: Release succeeds, may be called repeatedly, and leaves
-// the view usable, see [types.ReleaseFS].
+// the view usable, see [types.ReleaseFS]. The file system behind the view is a
+// null file system, which has nothing to let go of either.
 func TestReadOnlyReleaseNothingHeld(t *testing.T) {
 	t.Parallel()
 
@@ -209,6 +210,50 @@ func TestReadOnlyReleaseNothingHeld(t *testing.T) {
 	if err := releaseFS.Close(); err != nil {
 		t.Errorf("Close() after Release() = %v, want nil", err)
 	}
+}
+
+// TestReadOnlyReleaseReachesInner checks that releasing the view lets go of what
+// the file system behind it acquired for itself, and that that file system's own
+// failure is what the caller is told.
+func TestReadOnlyReleaseReachesInner(t *testing.T) {
+	t.Parallel()
+
+	inner := &releaseInner{WriteFS: newInner(t)}
+	releaseFS, ok := New(inner).(types.ReleaseFS)
+	if !ok {
+		t.Fatal("the read-only view does not satisfy types.ReleaseFS")
+	}
+
+	if err := releaseFS.Release(); err != nil {
+		t.Fatalf("Release() = %v, want nil", err)
+	}
+	if inner.calls != 1 {
+		t.Errorf("Release() reached the file system behind the view %d times, want 1", inner.calls)
+	}
+
+	wantErr := errors.New("cannot reach the archive")
+	inner.releaseErr = wantErr
+	if err := releaseFS.Release(); !errors.Is(err, wantErr) {
+		t.Errorf("Release() = %v, want %v from the file system behind the view", err, wantErr)
+	}
+	if inner.calls != 2 {
+		t.Errorf("Release() reached the file system behind the view %d times, want 2", inner.calls)
+	}
+}
+
+// releaseInner is a file system with something of its own to let go of, for the
+// tests that check a release is passed down rather than answered on the way.
+type releaseInner struct {
+	types.WriteFS
+	calls      int
+	releaseErr error
+}
+
+var _ types.ReleaseFS = (*releaseInner)(nil)
+
+func (fsys *releaseInner) Release() error {
+	fsys.calls++
+	return fsys.releaseErr
 }
 
 func TestReadOnlyDelegatesReadsToInner(t *testing.T) {

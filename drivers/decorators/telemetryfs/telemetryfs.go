@@ -432,11 +432,12 @@ func (fsys *telemetryFS) Close() error {
 	return fsys.inner.Close()
 }
 
-// Release lets go of nothing: the decorator holds no resource of its own, and
-// the file system it wraps was handed to it by the caller, which is the
-// caller's to release, see [types.ReleaseFS]. It is not reported.
+// Release lets go of what the file system it wraps acquired for itself, using
+// [polyfills.Release], which calls that Release only when it is a
+// [types.ReleaseFS]. The decorator holds no resource of its own, and releasing
+// is not reported.
 func (fsys *telemetryFS) Release() error {
-	return nil
+	return polyfills.Release(fsys.inner)
 }
 
 func (fsys *telemetryFS) Stat(name string) (fs.FileInfo, error) {

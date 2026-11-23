@@ -227,11 +227,11 @@ func (fsys *readOnlyFS) RemoveAll(name string) error {
 	return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
 }
 
-// Release lets go of nothing: the view holds no resource of its own, and the
-// file system it wraps was handed to it by the caller, which is the caller's to
-// release, see [types.ReleaseFS].
+// Release lets go of what the file system behind the view acquired for itself,
+// using [polyfills.Release], which calls that Release only when it is a
+// [types.ReleaseFS]. The view holds no resource of its own.
 func (fsys *readOnlyFS) Release() error {
-	return nil
+	return polyfills.Release(fsys.ReadFS)
 }
 
 func maskFileInfo(info fs.FileInfo, err error) (fs.FileInfo, error) {

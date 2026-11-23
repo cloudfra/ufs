@@ -15,31 +15,45 @@
 package testing
 
 import (
-	"fmt"
 	"io/fs"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/types"
 	ufsTesting "github.com/cloudfra/ufs/testing"
-	"github.com/google/go-cmp/cmp"
 )
 
-// releaseContentFS is the set of interfaces the cases that need content use:
-// they take the tree a file system already holds and read it back through
-// Release, so a read-only file system is judged by them exactly like a writable
-// one. Nothing here writes, which is what keeps the whole suite runnable for a
-// file system that refuses every write.
-type releaseContentFS interface {
+// releaseFSName is the file the cases that need content read either side of
+// Release so that they can tell a released file system from a closed one: it has
+// to still read back afterwards.
+const releaseFSName = "r/release.txt"
+
+// releaseFSContent is what releaseFSName holds across Release.
+const releaseFSContent = "before release"
+
+// releaseAgainName is written after Release, which is what checks that a file
+// system that let go of a resource can acquire it again.
+const releaseAgainName = "r/after.txt"
+
+// releaseSeededTestFS is the set of interfaces the cases that need content use:
+// they put a file in the file system, release, and read it back through Open.
+// ReadFS rather than [fs.ReadFileFS] is what lets a read-only file system that
+// only answers reads be judged by them too.
+type releaseSeededTestFS interface {
 	types.ReleaseFS
+	types.CreateFileFS
+	types.MkdirAllFS
 	types.ReadFS
 }
 
 // releaseFS runs the conformance suite for [types.ReleaseFS] against the file
 // system returned by createFSFunc.
 //
-// It does not branch on [Args.ReadOnly] or [Args.Bucket]: releasing is about the
-// handles and mount locks a file system holds on its own resources, which a
-// read-only file system holds just the same and answers for just the same.
+// The four cases run whatever [Args.Bucket] and [Args.ReadOnly] say: releasing
+// is about the handles and mount locks a file system holds on its own
+// resources, which a read-only file system holds just the same and answers for
+// just the same. What [Args.ReadOnly] settles is only how the file the two last
+// cases read gets where it has to be, since a file system refusing writes cannot
+// be seeded through itself — see [SeedReleaseFS].
 //
 // Two clauses of the interface are out of reach for these fixtures and go
 // unchecked: that every resource is attempted and the errors joined, and that a
@@ -49,13 +63,26 @@ func releaseFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.Si
 		requireType[types.ReleaseFS](t, args)
 		t.Parallel()
 		createReleaseFSFunc := requireFSTypeFunc[types.ReleaseFS](t, createFSFunc)
-		createContentFSFunc := requireFSTypeFunc[releaseContentFS](t, createFSFunc)
+		createSeededFSFunc := requireFSTypeFunc[releaseSeededTestFS](t, createFSFunc)
 
 		releaseNothingHeld(t, createReleaseFSFunc)
 		releaseTwice(t, createReleaseFSFunc)
-		releaseKeepsUsable(t, createContentFSFunc)
-		releaseReacquire(t, createContentFSFunc)
+		releaseKeepsUsable(t, args, createSeededFSFunc)
+		releaseReacquire(t, args, createSeededFSFunc)
 	})
+}
+
+// SeedReleaseFS puts the file the [types.ReleaseFS] suite reads either side of
+// Release into fsys.
+//
+// A file system that accepts writes is seeded by the suite through itself, which
+// puts the file wherever that file system keeps its content. One that refuses
+// writes cannot be, so the driver test for one calls this on the file system it
+// is about to wrap: the content a release has to survive sits in the store
+// underneath a read-only view of it, which is where the view is asked for it.
+func SeedReleaseFS(tb testing.TB, fsys types.CreateFileFS) {
+	tb.Helper()
+	WriteFile(tb, fsys, releaseFSName, releaseFSContent)
 }
 
 // releaseNothingHeld requires Release on a file system that has done nothing
@@ -89,94 +116,101 @@ func releaseTwice(t *testing.T, createFSFunc func(t *testing.T) types.ReleaseFS)
 	})
 }
 
-// releaseKeepsUsable requires the tree a file system holds to still be readable
-// after Release, which is the difference between Release and Close. A handle
-// left open across the call is not checked: the interface lets a file system
-// drop a resource it can reacquire, so no fixture can require a live handle to
-// survive.
-func releaseKeepsUsable(t *testing.T, createFSFunc func(t *testing.T) releaseContentFS) {
+// releaseKeepsUsable requires the file system to still answer reads and stats
+// after Release, including for a file written before it. This is the difference
+// between Release and Close. A handle left open across the call is not checked:
+// the interface lets a file system drop a resource it can reacquire, so no
+// fixture can require a live handle to survive.
+func releaseKeepsUsable(t *testing.T, args Args, createFSFunc func(t *testing.T) releaseSeededTestFS) {
 	t.Run("ReleaseKeepsUsable", func(t *testing.T) {
 		t.Parallel()
 		fsys := newReleaseFS(t, createFSFunc)
 
-		before, err := releaseTree(t, fsys)
-		if err != nil {
-			t.Fatalf("reading the tree before Release() = %v", err)
-		}
+		seedRelease(t, args, fsys)
 
 		if err := fsys.Release(); err != nil {
 			t.Fatalf("Release() = %v, want nil", err)
 		}
 
-		after, err := releaseTree(t, fsys)
-		if err != nil {
-			t.Fatalf("reading the tree after Release() = %v, want nil: [types.ReleaseFS] leaves the file system usable, so only Close may take away what it holds", err)
-		}
-		if diff := cmp.Diff(before, after); diff != "" {
-			t.Errorf("the tree readable after Release() changed (-want +got):\n%s", diff)
+		assertReleaseSeed(t, fsys, "")
+
+		if _, err := fs.Stat(fsys, releaseFSName); err != nil {
+			t.Errorf("Stat(%q) after Release() = %v, want nil: a released file system still has to answer for the names it holds", releaseFSName, err)
 		}
 	})
 }
 
-// releaseReacquire requires the first operation after a release to acquire again
-// whatever the release let go of instead of failing it. The release comes before
-// any read here, which is what separates this case from releaseKeepsUsable, and
-// the acquisition is repeated so that a file system that dropped the resource
-// again on the second release has to be able to pick it up a second time.
-func releaseReacquire(t *testing.T, createFSFunc func(t *testing.T) releaseContentFS) {
+// releaseReacquire requires a file system that dropped a resource to acquire it
+// again on the next operation instead of failing it. A file system that cannot
+// reacquire on its own drops the part of its tree that depended on it, which
+// the interface allows, but a name it still lists has to work.
+func releaseReacquire(t *testing.T, args Args, createFSFunc func(t *testing.T) releaseSeededTestFS) {
 	t.Run("ReleaseReacquire", func(t *testing.T) {
 		t.Parallel()
 		fsys := newReleaseFS(t, createFSFunc)
 
+		seedRelease(t, args, fsys)
+
 		if err := fsys.Release(); err != nil {
 			t.Fatalf("Release() = %v, want nil", err)
 		}
 
-		first, err := releaseTree(t, fsys)
-		if err != nil {
-			t.Fatalf("reading the tree after Release() = %v, want nil: [types.ReleaseFS] says a later operation may have to acquire a released resource again, which is not an error for the caller", err)
+		// Creating the file is the operation that has to acquire again whatever
+		// the release let go of. A file system refusing writes cannot be asked
+		// for that, so for one the read is the reacquisition, and the release is
+		// repeated so that a second acquisition is required of it too.
+		if args.ReadOnly {
+			assertReleaseSeed(t, fsys, "after Release()")
+
+			if err := fsys.Release(); err != nil {
+				t.Fatalf("Release() after a read = %v, want nil", err)
+			}
+			assertReleaseSeed(t, fsys, "after a second Release()")
+			return
 		}
 
-		if err := fsys.Release(); err != nil {
-			t.Fatalf("Release() after a read = %v, want nil", err)
-		}
-		second, err := releaseTree(t, fsys)
+		WriteFile(t, fsys, releaseAgainName, "after release")
+
+		got, err := fs.ReadFile(fsys, releaseAgainName)
 		if err != nil {
-			t.Fatalf("reading the tree after a second Release() = %v, want nil", err)
+			t.Fatalf("ReadFile(%q) written after Release() = %v, want its content: [types.ReleaseFS] says a later operation may have to acquire a released resource again, which is not an error for the caller", releaseAgainName, err)
 		}
-		if diff := cmp.Diff(first, second); diff != "" {
-			t.Errorf("the tree read after the second Release() differs from the tree read after the first (-want +got):\n%s", diff)
+		if string(got) != "after release" {
+			t.Errorf("ReadFile(%q) written after Release() = %q, want %q", releaseAgainName, got, "after release")
 		}
 	})
 }
 
-// releaseTree returns every regular file fsys holds, keyed by name and read
-// through ReadFile. Walking is what forces a file system that let go of a
-// resource to acquire it again, which is the operation these cases judge, so a
-// file system whose tree stops answering fails here rather than later.
-func releaseTree(t *testing.T, fsys releaseContentFS) (map[string]string, error) {
+// seedRelease puts releaseFSName where the cases read it back: through the file
+// system under test unless that refuses writes, in which case its driver test
+// was given [SeedReleaseFS] to put it in the file system being wrapped.
+func seedRelease(t *testing.T, args Args, fsys releaseSeededTestFS) {
 	t.Helper()
-	tree := make(map[string]string)
-	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		// A link or a device is answered by ReadLink or another call, not by
-		// ReadFile, so the tree only compares what ReadFile is for.
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		content, err := fsys.ReadFile(name)
-		if err != nil {
-			return fmt.Errorf("ReadFile(%q) = %w", name, err)
-		}
-		tree[name] = string(content)
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	if !args.ReadOnly {
+		SeedReleaseFS(t, fsys)
+		return
 	}
-	return tree, nil
+
+	// Not a check given up on: a read-only file system with nothing to read has
+	// not been seeded, which is a fault in its driver test and is reported as one.
+	if _, err := fs.Stat(fsys, releaseFSName); err != nil {
+		t.Fatalf("Stat(%q) before Release() = %v, want the file [SeedReleaseFS] puts in the file system being wrapped: a file system that refuses writes can only be seeded where its content is", releaseFSName, err)
+	}
+}
+
+// assertReleaseSeed requires fsys to answer releaseFSName with the content it
+// was seeded with. when says where in the case the read happened, and is empty
+// for the read that comes before a release.
+func assertReleaseSeed(t *testing.T, fsys releaseSeededTestFS, when string) {
+	t.Helper()
+
+	got, err := fs.ReadFile(fsys, releaseFSName)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) %s= %v, want %q: [types.ReleaseFS] says Release leaves the file system usable, so only Close may take the content away", releaseFSName, when, err, releaseFSContent)
+	}
+	if string(got) != releaseFSContent {
+		t.Errorf("ReadFile(%q) %s= %q, want %q: releasing lets go of resources, not of the file system's content", releaseFSName, when, got, releaseFSContent)
+	}
 }
 
 // newReleaseFS builds a file system that can release its resources, for one

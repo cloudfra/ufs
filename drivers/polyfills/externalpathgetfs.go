@@ -20,8 +20,6 @@ import (
 	"github.com/cloudfra/ufs/drivers/types"
 )
 
-const externalpathOp = "chtimes"
-
 // ExternalPath returns the canonical external path of the file at path, keeping
 // the contract of [types.ExternalPathGetFS].
 //

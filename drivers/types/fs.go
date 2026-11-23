@@ -25,6 +25,12 @@ type FS interface {
 	RenameFileFS
 	ReleaseFS
 
+	// TODO: Add all optional types.
+	// BatchCreateFS
+	// ChmodFS
+	// fs.GlobFS
+	// etc...
+
 	// Copy copies the file at srcPath to dstPath.
 	// Copy(srcPath, dstPath string) error
 }

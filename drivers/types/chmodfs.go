@@ -24,7 +24,7 @@ import "io/fs"
 type ChmodFS interface {
 	// Chmod sets the mode of the node at name to mode. A name that does not
 	// exist returns an error wrapping [fs.ErrNotExist]. Which bits of mode a
-	// backend honours depends on the platform: Unix keeps the permission bits
+	// backend honors depends on the platform: Unix keeps the permission bits
 	// along with setuid, setgid and sticky, while a Windows path keeps only
 	// enough to say whether the file is writable.
 	Chmod(name string, mode fs.FileMode) error

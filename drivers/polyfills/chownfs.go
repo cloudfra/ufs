@@ -24,6 +24,14 @@ import (
 
 const chownOp = "chown"
 
+// Chown sets the owner and group of the node at name to uid and gid, following
+// a symbolic link at name to the node it points at, keeping the contract of
+// [types.ChownFS].
+//
+// fsys's own [types.ChownFS] implementation is used when it has one. The
+// fallback is not implemented yet: a name that is not a valid file name is
+// refused with an error wrapping [fs.ErrInvalid], and any other file system
+// gets an unimplemented error.
 func Chown(fsys fs.FS, name string, uid int, gid int) error {
 	if cFS, ok := fsys.(types.ChownFS); ok {
 		return cFS.Chown(name, uid, gid)

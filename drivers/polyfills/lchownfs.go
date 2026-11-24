@@ -24,6 +24,14 @@ import (
 
 const lchownOp = "lchown"
 
+// Lchown sets the owner and group of the node at name to uid and gid, and when
+// name is a symbolic link changes the link itself rather than the node it
+// points at, keeping the contract of [types.LchownFS].
+//
+// fsys's own [types.LchownFS] implementation is used when it has one. The
+// fallback is not implemented yet: a name that is not a valid file name is
+// refused with an error wrapping [fs.ErrInvalid], and any other file system
+// gets an unimplemented error.
 func Lchown(fsys fs.FS, name string, uid int, gid int) error {
 	if cFS, ok := fsys.(types.LchownFS); ok {
 		return cFS.Lchown(name, uid, gid)

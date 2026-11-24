@@ -24,6 +24,13 @@ import (
 
 const linkOp = "link"
 
+// Link creates newname as another name for the file at oldname, keeping the
+// contract of [types.LinkFS].
+//
+// fsys's own [types.LinkFS] implementation is used when it has one. The
+// fallback is not implemented yet: either name that is not a valid file name is
+// refused with an error wrapping [fs.ErrInvalid], and any other file system
+// gets an unimplemented error.
 func Link(fsys fs.FS, oldname string, newname string) error {
 	if cFS, ok := fsys.(types.LinkFS); ok {
 		return cFS.Link(oldname, newname)

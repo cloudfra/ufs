@@ -95,141 +95,6 @@ func (SymlinkHandling) EnumDescriptor() ([]byte, []int) {
 	return file_proto_ufs_proto_rawDescGZIP(), []int{0}
 }
 
-// NotifyOp is the kind of change observed on a path. It mirrors
-// [types.NotifyOp].
-type NotifyOp int32
-
-const (
-	// Unset. Never reported.
-	NotifyOp_NOTIFY_OP_UNSPECIFIED NotifyOp = 0
-	// A file or directory was created.
-	NotifyOp_NOTIFY_OP_CREATE NotifyOp = 1
-	// A file was written to.
-	NotifyOp_NOTIFY_OP_WRITE NotifyOp = 2
-	// A file or directory was removed.
-	NotifyOp_NOTIFY_OP_REMOVE NotifyOp = 3
-	// A file or directory was renamed.
-	NotifyOp_NOTIFY_OP_RENAME NotifyOp = 4
-	// Permissions or attributes changed.
-	NotifyOp_NOTIFY_OP_CHMOD NotifyOp = 5
-)
-
-// Enum value maps for NotifyOp.
-var (
-	NotifyOp_name = map[int32]string{
-		0: "NOTIFY_OP_UNSPECIFIED",
-		1: "NOTIFY_OP_CREATE",
-		2: "NOTIFY_OP_WRITE",
-		3: "NOTIFY_OP_REMOVE",
-		4: "NOTIFY_OP_RENAME",
-		5: "NOTIFY_OP_CHMOD",
-	}
-	NotifyOp_value = map[string]int32{
-		"NOTIFY_OP_UNSPECIFIED": 0,
-		"NOTIFY_OP_CREATE":      1,
-		"NOTIFY_OP_WRITE":       2,
-		"NOTIFY_OP_REMOVE":      3,
-		"NOTIFY_OP_RENAME":      4,
-		"NOTIFY_OP_CHMOD":       5,
-	}
-)
-
-func (x NotifyOp) Enum() *NotifyOp {
-	p := new(NotifyOp)
-	*p = x
-	return p
-}
-
-func (x NotifyOp) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (NotifyOp) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ufs_proto_enumTypes[1].Descriptor()
-}
-
-func (NotifyOp) Type() protoreflect.EnumType {
-	return &file_proto_ufs_proto_enumTypes[1]
-}
-
-func (x NotifyOp) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use NotifyOp.Descriptor instead.
-func (NotifyOp) EnumDescriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{1}
-}
-
-// The operation this frame asks for.
-type OpenFileRequest_Op int32
-
-const (
-	// Unset. Never valid.
-	OpenFileRequest_OPEN_FILE_OP_UNSPECIFIED OpenFileRequest_Op = 0
-	// Open name with the given flags and mode. Must be the first frame, and
-	// appears exactly once.
-	OpenFileRequest_OPEN_FILE_OP_OPEN OpenFileRequest_Op = 1
-	// Read up to count bytes from the current position, as [io.Reader] does.
-	OpenFileRequest_OPEN_FILE_OP_READ OpenFileRequest_Op = 2
-	// Write data at the current position, advancing it, as [io.Writer] does.
-	OpenFileRequest_OPEN_FILE_OP_WRITE OpenFileRequest_Op = 3
-	// Move the position by offset interpreted according to whence, as
-	// [io.Seeker] does.
-	OpenFileRequest_OPEN_FILE_OP_SEEK OpenFileRequest_Op = 4
-	// Give up the handle and end the session. Closing twice is not an error,
-	// so [io.Closer.Close] on the handle maps here rather than to a rpc of
-	// its own.
-	OpenFileRequest_OPEN_FILE_OP_CLOSE OpenFileRequest_Op = 5
-)
-
-// Enum value maps for OpenFileRequest_Op.
-var (
-	OpenFileRequest_Op_name = map[int32]string{
-		0: "OPEN_FILE_OP_UNSPECIFIED",
-		1: "OPEN_FILE_OP_OPEN",
-		2: "OPEN_FILE_OP_READ",
-		3: "OPEN_FILE_OP_WRITE",
-		4: "OPEN_FILE_OP_SEEK",
-		5: "OPEN_FILE_OP_CLOSE",
-	}
-	OpenFileRequest_Op_value = map[string]int32{
-		"OPEN_FILE_OP_UNSPECIFIED": 0,
-		"OPEN_FILE_OP_OPEN":        1,
-		"OPEN_FILE_OP_READ":        2,
-		"OPEN_FILE_OP_WRITE":       3,
-		"OPEN_FILE_OP_SEEK":        4,
-		"OPEN_FILE_OP_CLOSE":       5,
-	}
-)
-
-func (x OpenFileRequest_Op) Enum() *OpenFileRequest_Op {
-	p := new(OpenFileRequest_Op)
-	*p = x
-	return p
-}
-
-func (x OpenFileRequest_Op) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (OpenFileRequest_Op) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ufs_proto_enumTypes[2].Descriptor()
-}
-
-func (OpenFileRequest_Op) Type() protoreflect.EnumType {
-	return &file_proto_ufs_proto_enumTypes[2]
-}
-
-func (x OpenFileRequest_Op) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use OpenFileRequest_Op.Descriptor instead.
-func (OpenFileRequest_Op) EnumDescriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{35, 0}
-}
-
 // FilePermissions captures the access and type flags of a single node in a
 // backend-agnostic form, so a client need not know which OS the backend uses.
 // It tracks individual flags rather than any one OS's permission scheme: a
@@ -539,10 +404,9 @@ func (x *File) GetIsDir() bool {
 //
 // It is still the singleton resource of AIP-156 that it was: there is exactly
 // one per file system, it has no name field, and no field below changes from
-// path to path. What a file system answers per path does not belong here:
-// [ClosestParent] and [IsMountedArchiveDir] are rpcs of their own, because a
-// client wants those where it is working on the path rather than once for the
-// file system.
+// path to path. What a file system answers per path does not belong here,
+// because a client wants those where it is working on the path rather than once
+// for the file system.
 type FileSystemInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The URI that identifies this file system, as [types.URIGet.URI] reports it,
@@ -1067,8 +931,7 @@ func (x *ReadLinkResponse) GetTarget() string {
 }
 
 // GetMetadataRequest is empty: [GetMetadata] describes the file system rather
-// than a path in it, so there is nothing to name. The questions that are about
-// one path are [ClosestParent] and [IsMountedArchiveDir].
+// than a path in it, so there is nothing to name.
 type GetMetadataRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1182,210 +1045,6 @@ func (x *DeviceInfo) GetThreadCount() int32 {
 	return 0
 }
 
-// ClosestParentRequest names the path to resolve.
-type ClosestParentRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path to resolve.
-	Name          string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClosestParentRequest) Reset() {
-	*x = ClosestParentRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[14]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClosestParentRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClosestParentRequest) ProtoMessage() {}
-
-func (x *ClosestParentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[14]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClosestParentRequest.ProtoReflect.Descriptor instead.
-func (*ClosestParentRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *ClosestParentRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-// ClosestParentResponse carries the two values that
-// [types.ClosestParentFS.ClosestParent] returns, in one response because the Go
-// method returns them in one call and the path it reports is not usable without
-// knowing whether it is a directory.
-type ClosestParentResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the closest node that exists at or above the requested path,
-	// that path itself included. Empty means the file system cannot answer at
-	// all, which is what an error from that method means; it does not mean that
-	// levels are missing.
-	Parent string `protobuf:"bytes,1,opt,name=parent" json:"parent,omitempty"`
-	// Whether parent is a directory: the second value that
-	// [types.ClosestParentFS.ClosestParent] returns.
-	IsDir         bool `protobuf:"varint,2,opt,name=is_dir,json=isDir" json:"is_dir,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClosestParentResponse) Reset() {
-	*x = ClosestParentResponse{}
-	mi := &file_proto_ufs_proto_msgTypes[15]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClosestParentResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClosestParentResponse) ProtoMessage() {}
-
-func (x *ClosestParentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[15]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClosestParentResponse.ProtoReflect.Descriptor instead.
-func (*ClosestParentResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{15}
-}
-
-func (x *ClosestParentResponse) GetParent() string {
-	if x != nil {
-		return x.Parent
-	}
-	return ""
-}
-
-func (x *ClosestParentResponse) GetIsDir() bool {
-	if x != nil {
-		return x.IsDir
-	}
-	return false
-}
-
-// IsMountedArchiveDirRequest names the directory to classify.
-type IsMountedArchiveDirRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the directory to classify.
-	Name          string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *IsMountedArchiveDirRequest) Reset() {
-	*x = IsMountedArchiveDirRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[16]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *IsMountedArchiveDirRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*IsMountedArchiveDirRequest) ProtoMessage() {}
-
-func (x *IsMountedArchiveDirRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[16]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use IsMountedArchiveDirRequest.ProtoReflect.Descriptor instead.
-func (*IsMountedArchiveDirRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{16}
-}
-
-func (x *IsMountedArchiveDirRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-// IsMountedArchiveDirResponse answers the question for one path.
-type IsMountedArchiveDirResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Whether the requested path is the virtual directory an archive is exposed
-	// through — the archive's name with ".d" appended — rather than a directory
-	// of the underlying file system, as
-	// [types.MountedArchiveDirFS.IsMountedArchiveDir] reports it, so that a
-	// client walking the tree can skip it.
-	IsMountedArchiveDir bool `protobuf:"varint,1,opt,name=is_mounted_archive_dir,json=isMountedArchiveDir" json:"is_mounted_archive_dir,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
-}
-
-func (x *IsMountedArchiveDirResponse) Reset() {
-	*x = IsMountedArchiveDirResponse{}
-	mi := &file_proto_ufs_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *IsMountedArchiveDirResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*IsMountedArchiveDirResponse) ProtoMessage() {}
-
-func (x *IsMountedArchiveDirResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use IsMountedArchiveDirResponse.ProtoReflect.Descriptor instead.
-func (*IsMountedArchiveDirResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{17}
-}
-
-func (x *IsMountedArchiveDirResponse) GetIsMountedArchiveDir() bool {
-	if x != nil {
-		return x.IsMountedArchiveDir
-	}
-	return false
-}
-
 // WriteFileRequest is one frame of a [WriteFile] upload. name and mode are
 // read from the first frame and ignored in the rest, which is what lets
 // grpc-gateway proxy the call from one HTTP request body; data chunks arrive
@@ -1406,7 +1065,7 @@ type WriteFileRequest struct {
 
 func (x *WriteFileRequest) Reset() {
 	*x = WriteFileRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[18]
+	mi := &file_proto_ufs_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1418,7 +1077,7 @@ func (x *WriteFileRequest) String() string {
 func (*WriteFileRequest) ProtoMessage() {}
 
 func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[18]
+	mi := &file_proto_ufs_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1431,7 +1090,7 @@ func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
 func (*WriteFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{18}
+	return file_proto_ufs_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WriteFileRequest) GetName() string {
@@ -1455,173 +1114,6 @@ func (x *WriteFileRequest) GetData() []byte {
 	return nil
 }
 
-// BatchFile is one file written by [BatchCreate], mirroring [types.BatchFile].
-type BatchFile struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the file.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The whole content of the file.
-	Data []byte `protobuf:"bytes,2,opt,name=data" json:"data,omitempty"`
-	// Permission bits, on file systems that store them. Zero means the
-	// permissions the backend gives a created file.
-	Mode          uint32 `protobuf:"varint,3,opt,name=mode" json:"mode,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BatchFile) Reset() {
-	*x = BatchFile{}
-	mi := &file_proto_ufs_proto_msgTypes[19]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BatchFile) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BatchFile) ProtoMessage() {}
-
-func (x *BatchFile) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[19]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BatchFile.ProtoReflect.Descriptor instead.
-func (*BatchFile) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{19}
-}
-
-func (x *BatchFile) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *BatchFile) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-func (x *BatchFile) GetMode() uint32 {
-	if x != nil {
-		return x.Mode
-	}
-	return 0
-}
-
-// BatchCreateRequest is one frame of a [BatchCreate] upload: one complete
-// file. One frame per file keeps a large batch from having to be held in a
-// single message, even though an atomic batch is committed as a whole.
-type BatchCreateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	File          *BatchFile             `protobuf:"bytes,1,opt,name=file" json:"file,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *BatchCreateRequest) Reset() {
-	*x = BatchCreateRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[20]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *BatchCreateRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*BatchCreateRequest) ProtoMessage() {}
-
-func (x *BatchCreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[20]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use BatchCreateRequest.ProtoReflect.Descriptor instead.
-func (*BatchCreateRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{20}
-}
-
-func (x *BatchCreateRequest) GetFile() *BatchFile {
-	if x != nil {
-		return x.File
-	}
-	return nil
-}
-
-type MkdirRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the directory to create. Missing parents are not created;
-	// that is [MkdirAll].
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// Permission bits for the new node, as defined by Go's io/fs.FileMode.
-	Mode          uint32 `protobuf:"varint,2,opt,name=mode" json:"mode,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MkdirRequest) Reset() {
-	*x = MkdirRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MkdirRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MkdirRequest) ProtoMessage() {}
-
-func (x *MkdirRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MkdirRequest.ProtoReflect.Descriptor instead.
-func (*MkdirRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *MkdirRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *MkdirRequest) GetMode() uint32 {
-	if x != nil {
-		return x.Mode
-	}
-	return 0
-}
-
 type MkdirAllRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The path of the directory to create, together with any missing parents.
@@ -1635,7 +1127,7 @@ type MkdirAllRequest struct {
 
 func (x *MkdirAllRequest) Reset() {
 	*x = MkdirAllRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[22]
+	mi := &file_proto_ufs_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1647,7 +1139,7 @@ func (x *MkdirAllRequest) String() string {
 func (*MkdirAllRequest) ProtoMessage() {}
 
 func (x *MkdirAllRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[22]
+	mi := &file_proto_ufs_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1660,7 +1152,7 @@ func (x *MkdirAllRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MkdirAllRequest.ProtoReflect.Descriptor instead.
 func (*MkdirAllRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{22}
+	return file_proto_ufs_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MkdirAllRequest) GetName() string {
@@ -1687,7 +1179,7 @@ type RemoveRequest struct {
 
 func (x *RemoveRequest) Reset() {
 	*x = RemoveRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[23]
+	mi := &file_proto_ufs_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1699,7 +1191,7 @@ func (x *RemoveRequest) String() string {
 func (*RemoveRequest) ProtoMessage() {}
 
 func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[23]
+	mi := &file_proto_ufs_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1712,7 +1204,7 @@ func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveRequest.ProtoReflect.Descriptor instead.
 func (*RemoveRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{23}
+	return file_proto_ufs_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RemoveRequest) GetName() string {
@@ -1732,7 +1224,7 @@ type RemoveAllRequest struct {
 
 func (x *RemoveAllRequest) Reset() {
 	*x = RemoveAllRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[24]
+	mi := &file_proto_ufs_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1744,7 +1236,7 @@ func (x *RemoveAllRequest) String() string {
 func (*RemoveAllRequest) ProtoMessage() {}
 
 func (x *RemoveAllRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[24]
+	mi := &file_proto_ufs_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1757,7 +1249,7 @@ func (x *RemoveAllRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveAllRequest.ProtoReflect.Descriptor instead.
 func (*RemoveAllRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{24}
+	return file_proto_ufs_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RemoveAllRequest) GetName() string {
@@ -1765,776 +1257,6 @@ func (x *RemoveAllRequest) GetName() string {
 		return x.Name
 	}
 	return ""
-}
-
-type RenameRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path the node is moved from.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The path the node is moved to.
-	NewName       string `protobuf:"bytes,2,opt,name=new_name,json=newName" json:"new_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *RenameRequest) Reset() {
-	*x = RenameRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[25]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RenameRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RenameRequest) ProtoMessage() {}
-
-func (x *RenameRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[25]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RenameRequest.ProtoReflect.Descriptor instead.
-func (*RenameRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{25}
-}
-
-func (x *RenameRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *RenameRequest) GetNewName() string {
-	if x != nil {
-		return x.NewName
-	}
-	return ""
-}
-
-type CopyFileRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path the file is copied from.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The path the copy is written to.
-	DstPath       string `protobuf:"bytes,2,opt,name=dst_path,json=dstPath" json:"dst_path,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CopyFileRequest) Reset() {
-	*x = CopyFileRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[26]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CopyFileRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CopyFileRequest) ProtoMessage() {}
-
-func (x *CopyFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[26]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CopyFileRequest.ProtoReflect.Descriptor instead.
-func (*CopyFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{26}
-}
-
-func (x *CopyFileRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *CopyFileRequest) GetDstPath() string {
-	if x != nil {
-		return x.DstPath
-	}
-	return ""
-}
-
-type LinkRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the file to share.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The path of the new name for that file.
-	NewName       string `protobuf:"bytes,2,opt,name=new_name,json=newName" json:"new_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LinkRequest) Reset() {
-	*x = LinkRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[27]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LinkRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LinkRequest) ProtoMessage() {}
-
-func (x *LinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[27]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LinkRequest.ProtoReflect.Descriptor instead.
-func (*LinkRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{27}
-}
-
-func (x *LinkRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *LinkRequest) GetNewName() string {
-	if x != nil {
-		return x.NewName
-	}
-	return ""
-}
-
-type SymlinkRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The target stored in the new link. It is kept as written rather than
-	// resolved, so it may be relative to the directory holding the link and it
-	// need not exist.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The path of the symbolic link to create.
-	NewName       string `protobuf:"bytes,2,opt,name=new_name,json=newName" json:"new_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SymlinkRequest) Reset() {
-	*x = SymlinkRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[28]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SymlinkRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SymlinkRequest) ProtoMessage() {}
-
-func (x *SymlinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[28]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SymlinkRequest.ProtoReflect.Descriptor instead.
-func (*SymlinkRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{28}
-}
-
-func (x *SymlinkRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *SymlinkRequest) GetNewName() string {
-	if x != nil {
-		return x.NewName
-	}
-	return ""
-}
-
-type ChmodRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the node to change.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The mode to set, as defined by Go's io/fs.FileMode. This replaces the
-	// mode rather than merging into it, so a zero here clears the bits.
-	Mode          uint32 `protobuf:"varint,2,opt,name=mode" json:"mode,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ChmodRequest) Reset() {
-	*x = ChmodRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[29]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ChmodRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ChmodRequest) ProtoMessage() {}
-
-func (x *ChmodRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[29]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ChmodRequest.ProtoReflect.Descriptor instead.
-func (*ChmodRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{29}
-}
-
-func (x *ChmodRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ChmodRequest) GetMode() uint32 {
-	if x != nil {
-		return x.Mode
-	}
-	return 0
-}
-
-type ChownRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the node to change. A symbolic link at the path is followed
-	// to the node it points at; [Lchown] changes the link itself.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The owner to set. -1 leaves the owner alone.
-	Uid int32 `protobuf:"varint,2,opt,name=uid" json:"uid,omitempty"`
-	// The group to set. -1 leaves the group alone.
-	Gid           int32 `protobuf:"varint,3,opt,name=gid" json:"gid,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ChownRequest) Reset() {
-	*x = ChownRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[30]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ChownRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ChownRequest) ProtoMessage() {}
-
-func (x *ChownRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[30]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ChownRequest.ProtoReflect.Descriptor instead.
-func (*ChownRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{30}
-}
-
-func (x *ChownRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ChownRequest) GetUid() int32 {
-	if x != nil {
-		return x.Uid
-	}
-	return 0
-}
-
-func (x *ChownRequest) GetGid() int32 {
-	if x != nil {
-		return x.Gid
-	}
-	return 0
-}
-
-type LchownRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the node to change, without following a symbolic link.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The owner to set. -1 leaves the owner alone.
-	Uid int32 `protobuf:"varint,2,opt,name=uid" json:"uid,omitempty"`
-	// The group to set. -1 leaves the group alone.
-	Gid           int32 `protobuf:"varint,3,opt,name=gid" json:"gid,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LchownRequest) Reset() {
-	*x = LchownRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[31]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LchownRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LchownRequest) ProtoMessage() {}
-
-func (x *LchownRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[31]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LchownRequest.ProtoReflect.Descriptor instead.
-func (*LchownRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{31}
-}
-
-func (x *LchownRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *LchownRequest) GetUid() int32 {
-	if x != nil {
-		return x.Uid
-	}
-	return 0
-}
-
-func (x *LchownRequest) GetGid() int32 {
-	if x != nil {
-		return x.Gid
-	}
-	return 0
-}
-
-// ChtimesRequest sets the times of a node that exists. A time left unset
-// keeps the value it has, which is what a zero [time.Time] means to
-// [types.ChtimesFS.Chtimes]. Whether the times read back afterwards match
-// what was set depends on what the backend records.
-type ChtimesRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The path of the node to change.
-	Name string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	// The access time to set (AIP-148 `access_time`).
-	AccessTime *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=access_time,json=accessTime" json:"access_time,omitempty"`
-	// The modification time to set, as reported by [fs.FileInfo.ModTime]
-	// (the standard AIP-148 `update_time` field).
-	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=update_time,json=updateTime" json:"update_time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ChtimesRequest) Reset() {
-	*x = ChtimesRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[32]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ChtimesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ChtimesRequest) ProtoMessage() {}
-
-func (x *ChtimesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[32]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ChtimesRequest.ProtoReflect.Descriptor instead.
-func (*ChtimesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{32}
-}
-
-func (x *ChtimesRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ChtimesRequest) GetAccessTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.AccessTime
-	}
-	return nil
-}
-
-func (x *ChtimesRequest) GetUpdateTime() *timestamppb.Timestamp {
-	if x != nil {
-		return x.UpdateTime
-	}
-	return nil
-}
-
-type WatchRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The directory to watch. Every directory nested below it is watched too.
-	Name          string `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WatchRequest) Reset() {
-	*x = WatchRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[33]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WatchRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WatchRequest) ProtoMessage() {}
-
-func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[33]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
-func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{33}
-}
-
-func (x *WatchRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-// WatchEvent is one change observed by [Watch], and is what [types.NotifyHook]
-// is invoked with. `path` is root-relative, forward-slash separated, and
-// satisfies [fs.ValidPath] — it is never an OS-native or absolute path.
-type WatchEvent struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The kind of change.
-	Op NotifyOp `protobuf:"varint,1,opt,name=op,enum=cloudfra.ufs.NotifyOp" json:"op,omitempty"`
-	// The path the change happened to.
-	Path          string `protobuf:"bytes,2,opt,name=path" json:"path,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *WatchEvent) Reset() {
-	*x = WatchEvent{}
-	mi := &file_proto_ufs_proto_msgTypes[34]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *WatchEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WatchEvent) ProtoMessage() {}
-
-func (x *WatchEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[34]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WatchEvent.ProtoReflect.Descriptor instead.
-func (*WatchEvent) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{34}
-}
-
-func (x *WatchEvent) GetOp() NotifyOp {
-	if x != nil {
-		return x.Op
-	}
-	return NotifyOp_NOTIFY_OP_UNSPECIFIED
-}
-
-func (x *WatchEvent) GetPath() string {
-	if x != nil {
-		return x.Path
-	}
-	return ""
-}
-
-// OpenFileRequest is one frame of an [OpenFile] session. The first frame
-// opens a file, every later frame is one operation on the handle that open
-// returned, and each frame is answered by exactly one [OpenFileResponse], in
-// order. A handle is not a value that can cross the wire, so a session is the
-// only faithful shape of what [types.OpenFileFS.OpenFile] takes: flags such as
-// O_RDWR with O_APPEND, partial writes, and seeks have no whole-file
-// equivalent, unlike [WriteFile].
-type OpenFileRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The operation.
-	Op OpenFileRequest_Op `protobuf:"varint,1,opt,name=op,enum=cloudfra.ufs.OpenFileRequest_Op" json:"op,omitempty"`
-	// OPEN only: the path of the file to open.
-	Name string `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
-	// OPEN only: the open flags, as the integer flags of Go's os.OpenFile take
-	// (O_RDONLY, O_WRONLY, O_RDWR, O_CREATE, O_TRUNC, O_APPEND, O_EXCL). They
-	// are the flags of [types.OpenFileFS.OpenFile], whose platform conventions a
-	// server applies.
-	Flag int32 `protobuf:"varint,3,opt,name=flag" json:"flag,omitempty"`
-	// OPEN only: permission bits for a file that is created, as defined by Go's
-	// io/fs.FileMode.
-	Mode uint32 `protobuf:"varint,4,opt,name=mode" json:"mode,omitempty"`
-	// READ only: the maximum number of bytes to read. 0 reads to the end of the
-	// file.
-	Count int64 `protobuf:"varint,5,opt,name=count" json:"count,omitempty"`
-	// WRITE only: the bytes to write.
-	Data []byte `protobuf:"bytes,6,opt,name=data" json:"data,omitempty"`
-	// SEEK only: the offset to move to.
-	Offset int64 `protobuf:"varint,7,opt,name=offset" json:"offset,omitempty"`
-	// SEEK only: how offset is read — 0 is from the start of the file
-	// ([io.SeekStart]), 1 from the current position ([io.SeekCurrent]), and 2
-	// from the end ([io.SeekEnd]).
-	Whence        int32 `protobuf:"varint,8,opt,name=whence" json:"whence,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OpenFileRequest) Reset() {
-	*x = OpenFileRequest{}
-	mi := &file_proto_ufs_proto_msgTypes[35]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OpenFileRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OpenFileRequest) ProtoMessage() {}
-
-func (x *OpenFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[35]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OpenFileRequest.ProtoReflect.Descriptor instead.
-func (*OpenFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{35}
-}
-
-func (x *OpenFileRequest) GetOp() OpenFileRequest_Op {
-	if x != nil {
-		return x.Op
-	}
-	return OpenFileRequest_OPEN_FILE_OP_UNSPECIFIED
-}
-
-func (x *OpenFileRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *OpenFileRequest) GetFlag() int32 {
-	if x != nil {
-		return x.Flag
-	}
-	return 0
-}
-
-func (x *OpenFileRequest) GetMode() uint32 {
-	if x != nil {
-		return x.Mode
-	}
-	return 0
-}
-
-func (x *OpenFileRequest) GetCount() int64 {
-	if x != nil {
-		return x.Count
-	}
-	return 0
-}
-
-func (x *OpenFileRequest) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-func (x *OpenFileRequest) GetOffset() int64 {
-	if x != nil {
-		return x.Offset
-	}
-	return 0
-}
-
-func (x *OpenFileRequest) GetWhence() int32 {
-	if x != nil {
-		return x.Whence
-	}
-	return 0
-}
-
-// OpenFileResponse answers one frame of an [OpenFile] session.
-type OpenFileResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// READ only: the bytes read. Fewer than were asked for means the position
-	// reached the end of the file: that is the end of the data, not an error,
-	// since an error status cannot carry the bytes read before it.
-	Data []byte `protobuf:"bytes,1,opt,name=data" json:"data,omitempty"`
-	// READ only: whether the read reached the end of the file, which is the
-	// io.EOF that [io.Reader] reports there.
-	Eof bool `protobuf:"varint,2,opt,name=eof" json:"eof,omitempty"`
-	// WRITE only: the number of bytes written, so a short write is visible.
-	Written int64 `protobuf:"varint,3,opt,name=written" json:"written,omitempty"`
-	// SEEK only: the new absolute position, as [io.Seeker.Seek] returns it. A
-	// SEEK is the only frame that can move the position backwards, which
-	// [io.ReaderAt] would allow as well.
-	Position      int64 `protobuf:"varint,4,opt,name=position" json:"position,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OpenFileResponse) Reset() {
-	*x = OpenFileResponse{}
-	mi := &file_proto_ufs_proto_msgTypes[36]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OpenFileResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OpenFileResponse) ProtoMessage() {}
-
-func (x *OpenFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ufs_proto_msgTypes[36]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OpenFileResponse.ProtoReflect.Descriptor instead.
-func (*OpenFileResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ufs_proto_rawDescGZIP(), []int{36}
-}
-
-func (x *OpenFileResponse) GetData() []byte {
-	if x != nil {
-		return x.Data
-	}
-	return nil
-}
-
-func (x *OpenFileResponse) GetEof() bool {
-	if x != nil {
-		return x.Eof
-	}
-	return false
-}
-
-func (x *OpenFileResponse) GetWritten() int64 {
-	if x != nil {
-		return x.Written
-	}
-	return 0
-}
-
-func (x *OpenFileResponse) GetPosition() int64 {
-	if x != nil {
-		return x.Position
-	}
-	return 0
 }
 
 var File_proto_ufs_proto protoreflect.FileDescriptor
@@ -2613,34 +1335,12 @@ const file_proto_ufs_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
 	"\vdevice_type\x18\x02 \x01(\tR\n" +
 	"deviceType\x12!\n" +
-	"\fthread_count\x18\x03 \x01(\x05R\vthreadCount\"I\n" +
-	"\x14ClosestParentRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\"F\n" +
-	"\x15ClosestParentResponse\x12\x16\n" +
-	"\x06parent\x18\x01 \x01(\tR\x06parent\x12\x15\n" +
-	"\x06is_dir\x18\x02 \x01(\bR\x05isDir\"O\n" +
-	"\x1aIsMountedArchiveDirRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\"R\n" +
-	"\x1bIsMountedArchiveDirResponse\x123\n" +
-	"\x16is_mounted_archive_dir\x18\x01 \x01(\bR\x13isMountedArchiveDir\"m\n" +
+	"\fthread_count\x18\x03 \x01(\x05R\vthreadCount\"m\n" +
 	"\x10WriteFileRequest\x121\n" +
 	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
 	"\x14ufs.cloudfra.io/FileR\x04name\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\rR\x04mode\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data\"f\n" +
-	"\tBatchFile\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\x12\x12\n" +
-	"\x04mode\x18\x03 \x01(\rR\x04mode\"G\n" +
-	"\x12BatchCreateRequest\x121\n" +
-	"\x04file\x18\x01 \x01(\v2\x17.cloudfra.ufs.BatchFileB\x04\xe2A\x01\x02R\x04file\"U\n" +
-	"\fMkdirRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12\x12\n" +
-	"\x04mode\x18\x02 \x01(\rR\x04mode\"X\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\"X\n" +
 	"\x0fMkdirAllRequest\x121\n" +
 	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
 	"\x14ufs.cloudfra.io/FileR\x04name\x12\x12\n" +
@@ -2650,112 +1350,21 @@ const file_proto_ufs_proto_rawDesc = "" +
 	"\x14ufs.cloudfra.io/FileR\x04name\"E\n" +
 	"\x10RemoveAllRequest\x121\n" +
 	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\"|\n" +
-	"\rRenameRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x128\n" +
-	"\bnew_name\x18\x02 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\anewName\"~\n" +
-	"\x0fCopyFileRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x128\n" +
-	"\bdst_path\x18\x02 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\adstPath\"z\n" +
-	"\vLinkRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x128\n" +
-	"\bnew_name\x18\x02 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\anewName\"}\n" +
-	"\x0eSymlinkRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x128\n" +
-	"\bnew_name\x18\x02 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\anewName\"U\n" +
-	"\fChmodRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12\x12\n" +
-	"\x04mode\x18\x02 \x01(\rR\x04mode\"e\n" +
-	"\fChownRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12\x10\n" +
-	"\x03uid\x18\x02 \x01(\x05R\x03uid\x12\x10\n" +
-	"\x03gid\x18\x03 \x01(\x05R\x03gid\"f\n" +
-	"\rLchownRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12\x10\n" +
-	"\x03uid\x18\x02 \x01(\x05R\x03uid\x12\x10\n" +
-	"\x03gid\x18\x03 \x01(\x05R\x03gid\"\xbd\x01\n" +
-	"\x0eChtimesRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12;\n" +
-	"\vaccess_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"accessTime\x12;\n" +
-	"\vupdate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTime\"A\n" +
-	"\fWatchRequest\x121\n" +
-	"\x04name\x18\x01 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\"H\n" +
-	"\n" +
-	"WatchEvent\x12&\n" +
-	"\x02op\x18\x01 \x01(\x0e2\x16.cloudfra.ufs.NotifyOpR\x02op\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"\x92\x03\n" +
-	"\x0fOpenFileRequest\x120\n" +
-	"\x02op\x18\x01 \x01(\x0e2 .cloudfra.ufs.OpenFileRequest.OpR\x02op\x121\n" +
-	"\x04name\x18\x02 \x01(\tB\x1d\xe2A\x01\x02\xfaA\x16\n" +
-	"\x14ufs.cloudfra.io/FileR\x04name\x12\x12\n" +
-	"\x04flag\x18\x03 \x01(\x05R\x04flag\x12\x12\n" +
-	"\x04mode\x18\x04 \x01(\rR\x04mode\x12\x14\n" +
-	"\x05count\x18\x05 \x01(\x03R\x05count\x12\x12\n" +
-	"\x04data\x18\x06 \x01(\fR\x04data\x12\x16\n" +
-	"\x06offset\x18\a \x01(\x03R\x06offset\x12\x16\n" +
-	"\x06whence\x18\b \x01(\x05R\x06whence\"\x97\x01\n" +
-	"\x02Op\x12\x1c\n" +
-	"\x18OPEN_FILE_OP_UNSPECIFIED\x10\x00\x12\x15\n" +
-	"\x11OPEN_FILE_OP_OPEN\x10\x01\x12\x15\n" +
-	"\x11OPEN_FILE_OP_READ\x10\x02\x12\x16\n" +
-	"\x12OPEN_FILE_OP_WRITE\x10\x03\x12\x15\n" +
-	"\x11OPEN_FILE_OP_SEEK\x10\x04\x12\x16\n" +
-	"\x12OPEN_FILE_OP_CLOSE\x10\x05\"n\n" +
-	"\x10OpenFileResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\x12\x10\n" +
-	"\x03eof\x18\x02 \x01(\bR\x03eof\x12\x18\n" +
-	"\awritten\x18\x03 \x01(\x03R\awritten\x12\x1a\n" +
-	"\bposition\x18\x04 \x01(\x03R\bposition*p\n" +
+	"\x14ufs.cloudfra.io/FileR\x04name*p\n" +
 	"\x0fSymlinkHandling\x12 \n" +
 	"\x1cSYMLINK_HANDLING_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17SYMLINK_HANDLING_FOLLOW\x10\x01\x12\x1e\n" +
-	"\x1aSYMLINK_HANDLING_NO_FOLLOW\x10\x02*\x91\x01\n" +
-	"\bNotifyOp\x12\x19\n" +
-	"\x15NOTIFY_OP_UNSPECIFIED\x10\x00\x12\x14\n" +
-	"\x10NOTIFY_OP_CREATE\x10\x01\x12\x13\n" +
-	"\x0fNOTIFY_OP_WRITE\x10\x02\x12\x14\n" +
-	"\x10NOTIFY_OP_REMOVE\x10\x03\x12\x14\n" +
-	"\x10NOTIFY_OP_RENAME\x10\x04\x12\x13\n" +
-	"\x0fNOTIFY_OP_CHMOD\x10\x052\xd0\x12\n" +
+	"\x1aSYMLINK_HANDLING_NO_FOLLOW\x10\x022\x9c\a\n" +
 	"\x02FS\x12U\n" +
 	"\aGetFile\x12\x1c.cloudfra.ufs.GetFileRequest\x1a\x12.cloudfra.ufs.File\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/fs/{name=**}\x12b\n" +
 	"\tListFiles\x12\x1e.cloudfra.ufs.ListFilesRequest\x1a\x1f.cloudfra.ufs.ListFilesResponse\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/fs/files\x12j\n" +
 	"\bReadFile\x12\x1d.cloudfra.ufs.ReadFileRequest\x1a\x1e.cloudfra.ufs.ReadFileResponse\"\x1d\x82\xd3\xe4\x93\x02\x17\x12\x15/v1/fs/{name=**}:read0\x01\x12l\n" +
 	"\bReadLink\x12\x1d.cloudfra.ufs.ReadLinkRequest\x1a\x1e.cloudfra.ufs.ReadLinkResponse\"!\x82\xd3\xe4\x93\x02\x1b\x12\x19/v1/fs/{name=**}:readLink\x12l\n" +
-	"\vGetMetadata\x12 .cloudfra.ufs.GetMetadataRequest\x1a\x1c.cloudfra.ufs.FileSystemInfo\"\x1d\x82\xd3\xe4\x93\x02\x17\x12\x15/v1/fs/fileSystemInfo\x12\x80\x01\n" +
-	"\rClosestParent\x12\".cloudfra.ufs.ClosestParentRequest\x1a#.cloudfra.ufs.ClosestParentResponse\"&\x82\xd3\xe4\x93\x02 \x12\x1e/v1/fs/{name=**}:closestParent\x12\x96\x01\n" +
-	"\x13IsMountedArchiveDir\x12(.cloudfra.ufs.IsMountedArchiveDirRequest\x1a).cloudfra.ufs.IsMountedArchiveDirResponse\"*\x82\xd3\xe4\x93\x02$\x12\"/v1/fs/{name=**}:mountedArchiveDir\x12h\n" +
-	"\tWriteFile\x12\x1e.cloudfra.ufs.WriteFileRequest\x1a\x16.google.protobuf.Empty\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/fs/files:writeFile(\x01\x12n\n" +
-	"\vBatchCreate\x12 .cloudfra.ufs.BatchCreateRequest\x1a\x16.google.protobuf.Empty\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/fs/files:batchCreate(\x01\x12M\n" +
-	"\bOpenFile\x12\x1d.cloudfra.ufs.OpenFileRequest\x1a\x1e.cloudfra.ufs.OpenFileResponse(\x010\x01\x12^\n" +
-	"\x05Mkdir\x12\x1a.cloudfra.ufs.MkdirRequest\x1a\x16.google.protobuf.Empty\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/fs/{name=**}:mkdir\x12g\n" +
+	"\vGetMetadata\x12 .cloudfra.ufs.GetMetadataRequest\x1a\x1c.cloudfra.ufs.FileSystemInfo\"\x1d\x82\xd3\xe4\x93\x02\x17\x12\x15/v1/fs/fileSystemInfo\x12h\n" +
+	"\tWriteFile\x12\x1e.cloudfra.ufs.WriteFileRequest\x1a\x16.google.protobuf.Empty\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/fs/files:writeFile(\x01\x12g\n" +
 	"\bMkdirAll\x12\x1d.cloudfra.ufs.MkdirAllRequest\x1a\x16.google.protobuf.Empty\"$\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/fs/{name=**}:mkdirAll\x12W\n" +
 	"\x06Remove\x12\x1b.cloudfra.ufs.RemoveRequest\x1a\x16.google.protobuf.Empty\"\x18\x82\xd3\xe4\x93\x02\x12*\x10/v1/fs/{name=**}\x12g\n" +
-	"\tRemoveAll\x12\x1e.cloudfra.ufs.RemoveAllRequest\x1a\x16.google.protobuf.Empty\"\"\x82\xd3\xe4\x93\x02\x1c*\x1a/v1/fs/{name=**}:removeAll\x12a\n" +
-	"\x06Rename\x12\x1b.cloudfra.ufs.RenameRequest\x1a\x16.google.protobuf.Empty\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/fs/{name=**}:rename\x12g\n" +
-	"\bCopyFile\x12\x1d.cloudfra.ufs.CopyFileRequest\x1a\x16.google.protobuf.Empty\"$\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/fs/{name=**}:copyFile\x12[\n" +
-	"\x04Link\x12\x19.cloudfra.ufs.LinkRequest\x1a\x16.google.protobuf.Empty\" \x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/fs/{name=**}:link\x12d\n" +
-	"\aSymlink\x12\x1c.cloudfra.ufs.SymlinkRequest\x1a\x16.google.protobuf.Empty\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/fs/{name=**}:symlink\x12^\n" +
-	"\x05Chmod\x12\x1a.cloudfra.ufs.ChmodRequest\x1a\x16.google.protobuf.Empty\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/fs/{name=**}:chmod\x12^\n" +
-	"\x05Chown\x12\x1a.cloudfra.ufs.ChownRequest\x1a\x16.google.protobuf.Empty\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/fs/{name=**}:chown\x12a\n" +
-	"\x06Lchown\x12\x1b.cloudfra.ufs.LchownRequest\x1a\x16.google.protobuf.Empty\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/fs/{name=**}:lchown\x12d\n" +
-	"\aChtimes\x12\x1c.cloudfra.ufs.ChtimesRequest\x1a\x16.google.protobuf.Empty\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/fs/{name=**}:chtimes\x12_\n" +
-	"\x05Watch\x12\x1a.cloudfra.ufs.WatchRequest\x1a\x18.cloudfra.ufs.WatchEvent\"\x1e\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/fs/{name=**}:watch0\x01B)Z\x1dgithub.com/cloudfra/ufs/proto\x92\x03\a\xd2>\x02\x10\x01\b\x02b\beditionsp\xe9\a"
+	"\tRemoveAll\x12\x1e.cloudfra.ufs.RemoveAllRequest\x1a\x16.google.protobuf.Empty\"\"\x82\xd3\xe4\x93\x02\x1c*\x1a/v1/fs/{name=**}:removeAllB)Z\x1dgithub.com/cloudfra/ufs/proto\x92\x03\a\xd2>\x02\x10\x01\b\x02b\beditionsp\xe9\a"
 
 var (
 	file_proto_ufs_proto_rawDescOnce sync.Once
@@ -2769,120 +1378,66 @@ func file_proto_ufs_proto_rawDescGZIP() []byte {
 	return file_proto_ufs_proto_rawDescData
 }
 
-var file_proto_ufs_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_ufs_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_proto_ufs_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_ufs_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_proto_ufs_proto_goTypes = []any{
-	(SymlinkHandling)(0),                // 0: cloudfra.ufs.SymlinkHandling
-	(NotifyOp)(0),                       // 1: cloudfra.ufs.NotifyOp
-	(OpenFileRequest_Op)(0),             // 2: cloudfra.ufs.OpenFileRequest.Op
-	(*FilePermissions)(nil),             // 3: cloudfra.ufs.FilePermissions
-	(*FileAttributes)(nil),              // 4: cloudfra.ufs.FileAttributes
-	(*File)(nil),                        // 5: cloudfra.ufs.File
-	(*FileSystemInfo)(nil),              // 6: cloudfra.ufs.FileSystemInfo
-	(*BoltFileRecord)(nil),              // 7: cloudfra.ufs.BoltFileRecord
-	(*GetFileRequest)(nil),              // 8: cloudfra.ufs.GetFileRequest
-	(*ListFilesRequest)(nil),            // 9: cloudfra.ufs.ListFilesRequest
-	(*ListFilesResponse)(nil),           // 10: cloudfra.ufs.ListFilesResponse
-	(*ReadFileRequest)(nil),             // 11: cloudfra.ufs.ReadFileRequest
-	(*ReadFileResponse)(nil),            // 12: cloudfra.ufs.ReadFileResponse
-	(*ReadLinkRequest)(nil),             // 13: cloudfra.ufs.ReadLinkRequest
-	(*ReadLinkResponse)(nil),            // 14: cloudfra.ufs.ReadLinkResponse
-	(*GetMetadataRequest)(nil),          // 15: cloudfra.ufs.GetMetadataRequest
-	(*DeviceInfo)(nil),                  // 16: cloudfra.ufs.DeviceInfo
-	(*ClosestParentRequest)(nil),        // 17: cloudfra.ufs.ClosestParentRequest
-	(*ClosestParentResponse)(nil),       // 18: cloudfra.ufs.ClosestParentResponse
-	(*IsMountedArchiveDirRequest)(nil),  // 19: cloudfra.ufs.IsMountedArchiveDirRequest
-	(*IsMountedArchiveDirResponse)(nil), // 20: cloudfra.ufs.IsMountedArchiveDirResponse
-	(*WriteFileRequest)(nil),            // 21: cloudfra.ufs.WriteFileRequest
-	(*BatchFile)(nil),                   // 22: cloudfra.ufs.BatchFile
-	(*BatchCreateRequest)(nil),          // 23: cloudfra.ufs.BatchCreateRequest
-	(*MkdirRequest)(nil),                // 24: cloudfra.ufs.MkdirRequest
-	(*MkdirAllRequest)(nil),             // 25: cloudfra.ufs.MkdirAllRequest
-	(*RemoveRequest)(nil),               // 26: cloudfra.ufs.RemoveRequest
-	(*RemoveAllRequest)(nil),            // 27: cloudfra.ufs.RemoveAllRequest
-	(*RenameRequest)(nil),               // 28: cloudfra.ufs.RenameRequest
-	(*CopyFileRequest)(nil),             // 29: cloudfra.ufs.CopyFileRequest
-	(*LinkRequest)(nil),                 // 30: cloudfra.ufs.LinkRequest
-	(*SymlinkRequest)(nil),              // 31: cloudfra.ufs.SymlinkRequest
-	(*ChmodRequest)(nil),                // 32: cloudfra.ufs.ChmodRequest
-	(*ChownRequest)(nil),                // 33: cloudfra.ufs.ChownRequest
-	(*LchownRequest)(nil),               // 34: cloudfra.ufs.LchownRequest
-	(*ChtimesRequest)(nil),              // 35: cloudfra.ufs.ChtimesRequest
-	(*WatchRequest)(nil),                // 36: cloudfra.ufs.WatchRequest
-	(*WatchEvent)(nil),                  // 37: cloudfra.ufs.WatchEvent
-	(*OpenFileRequest)(nil),             // 38: cloudfra.ufs.OpenFileRequest
-	(*OpenFileResponse)(nil),            // 39: cloudfra.ufs.OpenFileResponse
-	nil,                                 // 40: cloudfra.ufs.FileSystemInfo.DevicesEntry
-	(*timestamppb.Timestamp)(nil),       // 41: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),               // 42: google.protobuf.Empty
+	(SymlinkHandling)(0),          // 0: cloudfra.ufs.SymlinkHandling
+	(*FilePermissions)(nil),       // 1: cloudfra.ufs.FilePermissions
+	(*FileAttributes)(nil),        // 2: cloudfra.ufs.FileAttributes
+	(*File)(nil),                  // 3: cloudfra.ufs.File
+	(*FileSystemInfo)(nil),        // 4: cloudfra.ufs.FileSystemInfo
+	(*BoltFileRecord)(nil),        // 5: cloudfra.ufs.BoltFileRecord
+	(*GetFileRequest)(nil),        // 6: cloudfra.ufs.GetFileRequest
+	(*ListFilesRequest)(nil),      // 7: cloudfra.ufs.ListFilesRequest
+	(*ListFilesResponse)(nil),     // 8: cloudfra.ufs.ListFilesResponse
+	(*ReadFileRequest)(nil),       // 9: cloudfra.ufs.ReadFileRequest
+	(*ReadFileResponse)(nil),      // 10: cloudfra.ufs.ReadFileResponse
+	(*ReadLinkRequest)(nil),       // 11: cloudfra.ufs.ReadLinkRequest
+	(*ReadLinkResponse)(nil),      // 12: cloudfra.ufs.ReadLinkResponse
+	(*GetMetadataRequest)(nil),    // 13: cloudfra.ufs.GetMetadataRequest
+	(*DeviceInfo)(nil),            // 14: cloudfra.ufs.DeviceInfo
+	(*WriteFileRequest)(nil),      // 15: cloudfra.ufs.WriteFileRequest
+	(*MkdirAllRequest)(nil),       // 16: cloudfra.ufs.MkdirAllRequest
+	(*RemoveRequest)(nil),         // 17: cloudfra.ufs.RemoveRequest
+	(*RemoveAllRequest)(nil),      // 18: cloudfra.ufs.RemoveAllRequest
+	nil,                           // 19: cloudfra.ufs.FileSystemInfo.DevicesEntry
+	(*timestamppb.Timestamp)(nil), // 20: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),         // 21: google.protobuf.Empty
 }
 var file_proto_ufs_proto_depIdxs = []int32{
-	3,  // 0: cloudfra.ufs.FileAttributes.permission:type_name -> cloudfra.ufs.FilePermissions
-	41, // 1: cloudfra.ufs.FileAttributes.create_time:type_name -> google.protobuf.Timestamp
-	41, // 2: cloudfra.ufs.FileAttributes.update_time:type_name -> google.protobuf.Timestamp
-	41, // 3: cloudfra.ufs.FileAttributes.access_time:type_name -> google.protobuf.Timestamp
-	41, // 4: cloudfra.ufs.File.mod_time:type_name -> google.protobuf.Timestamp
-	40, // 5: cloudfra.ufs.FileSystemInfo.devices:type_name -> cloudfra.ufs.FileSystemInfo.DevicesEntry
-	41, // 6: cloudfra.ufs.BoltFileRecord.mod_time:type_name -> google.protobuf.Timestamp
+	1,  // 0: cloudfra.ufs.FileAttributes.permission:type_name -> cloudfra.ufs.FilePermissions
+	20, // 1: cloudfra.ufs.FileAttributes.create_time:type_name -> google.protobuf.Timestamp
+	20, // 2: cloudfra.ufs.FileAttributes.update_time:type_name -> google.protobuf.Timestamp
+	20, // 3: cloudfra.ufs.FileAttributes.access_time:type_name -> google.protobuf.Timestamp
+	20, // 4: cloudfra.ufs.File.mod_time:type_name -> google.protobuf.Timestamp
+	19, // 5: cloudfra.ufs.FileSystemInfo.devices:type_name -> cloudfra.ufs.FileSystemInfo.DevicesEntry
+	20, // 6: cloudfra.ufs.BoltFileRecord.mod_time:type_name -> google.protobuf.Timestamp
 	0,  // 7: cloudfra.ufs.GetFileRequest.symlink_handling:type_name -> cloudfra.ufs.SymlinkHandling
-	5,  // 8: cloudfra.ufs.ListFilesResponse.files:type_name -> cloudfra.ufs.File
-	22, // 9: cloudfra.ufs.BatchCreateRequest.file:type_name -> cloudfra.ufs.BatchFile
-	41, // 10: cloudfra.ufs.ChtimesRequest.access_time:type_name -> google.protobuf.Timestamp
-	41, // 11: cloudfra.ufs.ChtimesRequest.update_time:type_name -> google.protobuf.Timestamp
-	1,  // 12: cloudfra.ufs.WatchEvent.op:type_name -> cloudfra.ufs.NotifyOp
-	2,  // 13: cloudfra.ufs.OpenFileRequest.op:type_name -> cloudfra.ufs.OpenFileRequest.Op
-	16, // 14: cloudfra.ufs.FileSystemInfo.DevicesEntry.value:type_name -> cloudfra.ufs.DeviceInfo
-	8,  // 15: cloudfra.ufs.FS.GetFile:input_type -> cloudfra.ufs.GetFileRequest
-	9,  // 16: cloudfra.ufs.FS.ListFiles:input_type -> cloudfra.ufs.ListFilesRequest
-	11, // 17: cloudfra.ufs.FS.ReadFile:input_type -> cloudfra.ufs.ReadFileRequest
-	13, // 18: cloudfra.ufs.FS.ReadLink:input_type -> cloudfra.ufs.ReadLinkRequest
-	15, // 19: cloudfra.ufs.FS.GetMetadata:input_type -> cloudfra.ufs.GetMetadataRequest
-	17, // 20: cloudfra.ufs.FS.ClosestParent:input_type -> cloudfra.ufs.ClosestParentRequest
-	19, // 21: cloudfra.ufs.FS.IsMountedArchiveDir:input_type -> cloudfra.ufs.IsMountedArchiveDirRequest
-	21, // 22: cloudfra.ufs.FS.WriteFile:input_type -> cloudfra.ufs.WriteFileRequest
-	23, // 23: cloudfra.ufs.FS.BatchCreate:input_type -> cloudfra.ufs.BatchCreateRequest
-	38, // 24: cloudfra.ufs.FS.OpenFile:input_type -> cloudfra.ufs.OpenFileRequest
-	24, // 25: cloudfra.ufs.FS.Mkdir:input_type -> cloudfra.ufs.MkdirRequest
-	25, // 26: cloudfra.ufs.FS.MkdirAll:input_type -> cloudfra.ufs.MkdirAllRequest
-	26, // 27: cloudfra.ufs.FS.Remove:input_type -> cloudfra.ufs.RemoveRequest
-	27, // 28: cloudfra.ufs.FS.RemoveAll:input_type -> cloudfra.ufs.RemoveAllRequest
-	28, // 29: cloudfra.ufs.FS.Rename:input_type -> cloudfra.ufs.RenameRequest
-	29, // 30: cloudfra.ufs.FS.CopyFile:input_type -> cloudfra.ufs.CopyFileRequest
-	30, // 31: cloudfra.ufs.FS.Link:input_type -> cloudfra.ufs.LinkRequest
-	31, // 32: cloudfra.ufs.FS.Symlink:input_type -> cloudfra.ufs.SymlinkRequest
-	32, // 33: cloudfra.ufs.FS.Chmod:input_type -> cloudfra.ufs.ChmodRequest
-	33, // 34: cloudfra.ufs.FS.Chown:input_type -> cloudfra.ufs.ChownRequest
-	34, // 35: cloudfra.ufs.FS.Lchown:input_type -> cloudfra.ufs.LchownRequest
-	35, // 36: cloudfra.ufs.FS.Chtimes:input_type -> cloudfra.ufs.ChtimesRequest
-	36, // 37: cloudfra.ufs.FS.Watch:input_type -> cloudfra.ufs.WatchRequest
-	5,  // 38: cloudfra.ufs.FS.GetFile:output_type -> cloudfra.ufs.File
-	10, // 39: cloudfra.ufs.FS.ListFiles:output_type -> cloudfra.ufs.ListFilesResponse
-	12, // 40: cloudfra.ufs.FS.ReadFile:output_type -> cloudfra.ufs.ReadFileResponse
-	14, // 41: cloudfra.ufs.FS.ReadLink:output_type -> cloudfra.ufs.ReadLinkResponse
-	6,  // 42: cloudfra.ufs.FS.GetMetadata:output_type -> cloudfra.ufs.FileSystemInfo
-	18, // 43: cloudfra.ufs.FS.ClosestParent:output_type -> cloudfra.ufs.ClosestParentResponse
-	20, // 44: cloudfra.ufs.FS.IsMountedArchiveDir:output_type -> cloudfra.ufs.IsMountedArchiveDirResponse
-	42, // 45: cloudfra.ufs.FS.WriteFile:output_type -> google.protobuf.Empty
-	42, // 46: cloudfra.ufs.FS.BatchCreate:output_type -> google.protobuf.Empty
-	39, // 47: cloudfra.ufs.FS.OpenFile:output_type -> cloudfra.ufs.OpenFileResponse
-	42, // 48: cloudfra.ufs.FS.Mkdir:output_type -> google.protobuf.Empty
-	42, // 49: cloudfra.ufs.FS.MkdirAll:output_type -> google.protobuf.Empty
-	42, // 50: cloudfra.ufs.FS.Remove:output_type -> google.protobuf.Empty
-	42, // 51: cloudfra.ufs.FS.RemoveAll:output_type -> google.protobuf.Empty
-	42, // 52: cloudfra.ufs.FS.Rename:output_type -> google.protobuf.Empty
-	42, // 53: cloudfra.ufs.FS.CopyFile:output_type -> google.protobuf.Empty
-	42, // 54: cloudfra.ufs.FS.Link:output_type -> google.protobuf.Empty
-	42, // 55: cloudfra.ufs.FS.Symlink:output_type -> google.protobuf.Empty
-	42, // 56: cloudfra.ufs.FS.Chmod:output_type -> google.protobuf.Empty
-	42, // 57: cloudfra.ufs.FS.Chown:output_type -> google.protobuf.Empty
-	42, // 58: cloudfra.ufs.FS.Lchown:output_type -> google.protobuf.Empty
-	42, // 59: cloudfra.ufs.FS.Chtimes:output_type -> google.protobuf.Empty
-	37, // 60: cloudfra.ufs.FS.Watch:output_type -> cloudfra.ufs.WatchEvent
-	38, // [38:61] is the sub-list for method output_type
-	15, // [15:38] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	3,  // 8: cloudfra.ufs.ListFilesResponse.files:type_name -> cloudfra.ufs.File
+	14, // 9: cloudfra.ufs.FileSystemInfo.DevicesEntry.value:type_name -> cloudfra.ufs.DeviceInfo
+	6,  // 10: cloudfra.ufs.FS.GetFile:input_type -> cloudfra.ufs.GetFileRequest
+	7,  // 11: cloudfra.ufs.FS.ListFiles:input_type -> cloudfra.ufs.ListFilesRequest
+	9,  // 12: cloudfra.ufs.FS.ReadFile:input_type -> cloudfra.ufs.ReadFileRequest
+	11, // 13: cloudfra.ufs.FS.ReadLink:input_type -> cloudfra.ufs.ReadLinkRequest
+	13, // 14: cloudfra.ufs.FS.GetMetadata:input_type -> cloudfra.ufs.GetMetadataRequest
+	15, // 15: cloudfra.ufs.FS.WriteFile:input_type -> cloudfra.ufs.WriteFileRequest
+	16, // 16: cloudfra.ufs.FS.MkdirAll:input_type -> cloudfra.ufs.MkdirAllRequest
+	17, // 17: cloudfra.ufs.FS.Remove:input_type -> cloudfra.ufs.RemoveRequest
+	18, // 18: cloudfra.ufs.FS.RemoveAll:input_type -> cloudfra.ufs.RemoveAllRequest
+	3,  // 19: cloudfra.ufs.FS.GetFile:output_type -> cloudfra.ufs.File
+	8,  // 20: cloudfra.ufs.FS.ListFiles:output_type -> cloudfra.ufs.ListFilesResponse
+	10, // 21: cloudfra.ufs.FS.ReadFile:output_type -> cloudfra.ufs.ReadFileResponse
+	12, // 22: cloudfra.ufs.FS.ReadLink:output_type -> cloudfra.ufs.ReadLinkResponse
+	4,  // 23: cloudfra.ufs.FS.GetMetadata:output_type -> cloudfra.ufs.FileSystemInfo
+	21, // 24: cloudfra.ufs.FS.WriteFile:output_type -> google.protobuf.Empty
+	21, // 25: cloudfra.ufs.FS.MkdirAll:output_type -> google.protobuf.Empty
+	21, // 26: cloudfra.ufs.FS.Remove:output_type -> google.protobuf.Empty
+	21, // 27: cloudfra.ufs.FS.RemoveAll:output_type -> google.protobuf.Empty
+	19, // [19:28] is the sub-list for method output_type
+	10, // [10:19] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_proto_ufs_proto_init() }
@@ -2895,8 +1450,8 @@ func file_proto_ufs_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ufs_proto_rawDesc), len(file_proto_ufs_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   38,
+			NumEnums:      1,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

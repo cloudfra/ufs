@@ -27,7 +27,7 @@ import (
 // with no faults configured, pinning the path validation and delegation that
 // every operation performs before it injects.
 func TestFaultFSDriver(t *testing.T) {
-	ufsdriversTesting.WrapperFS(t, ufsdriversTesting.Args{ReadOnly: true}, ufsdecoratorsTesting.SeededInnerFS, func(t *testing.T, inner types.SimpleFS) types.WrapperFS {
+	ufsdriversTesting.WrapperFS(t, ufsdriversTesting.Args{ReadOnly: true}, seededInnerFS, func(t *testing.T, inner types.SimpleFS) types.WrapperFS {
 		rfsys, ok := inner.(types.ReadFS)
 		if !ok {
 			t.Fatalf("inner file system is not a ReadFS: %T", inner)
@@ -54,4 +54,15 @@ func TestFaultFSDriver(t *testing.T) {
 		}
 		return wrapFsys
 	})
+}
+
+// seededInnerFS is the shared seeded inner file system with one more file, the
+// one the [types.ReleaseFS] suite reads either side of a release. That suite
+// seeds it by writing, which the read-only wrapper it is handed to refuses, so
+// the file goes into the file system before it is wrapped.
+func seededInnerFS(t *testing.T) types.WriteFS {
+	t.Helper()
+	fsys := ufsdecoratorsTesting.SeededInnerFS(t)
+	ufsdriversTesting.SeedReleaseFS(t, fsys)
+	return fsys
 }

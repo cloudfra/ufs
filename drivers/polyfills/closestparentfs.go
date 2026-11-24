@@ -22,7 +22,7 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-const closestparentOp = "closestparent"
+const closestParentOp = "closestparent"
 
 // ClosestParent returns the closest node that exists at or above name, name
 // itself included, and reports whether that node is a directory, keeping the
@@ -36,9 +36,9 @@ func ClosestParent(fsys fs.FS, name string) (parent string, isDir bool, err erro
 	if cFS, ok := fsys.(types.ClosestParentFS); ok {
 		return cFS.ClosestParent(name)
 	}
-	if err := pathutil.ValidateFileName(closestparentOp, name); err != nil {
+	if err := pathutil.ValidateFileName(closestParentOp, name); err != nil {
 		return "", false, err
 	}
 	// TODO: Populate this with the best effort implementation of this method based on any combinations of methods that are available to reconstruct this method. Also include tests.
-	return "", false, ufserrors.NewUnimplemented(fsys, closestparentOp)
+	return "", false, ufserrors.NewUnimplemented(fsys, closestParentOp)
 }

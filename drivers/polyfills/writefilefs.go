@@ -22,7 +22,7 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-const writefileOp = "writefile"
+const writeFileOp = "writefile"
 
 // WriteFile writes data to the file at name, creating it when it is missing and
 // truncating what was there before, and gives a newly created file the
@@ -36,9 +36,9 @@ func WriteFile(fsys fs.FS, name string, data []byte, mode fs.FileMode) error {
 	if cFS, ok := fsys.(types.WriteFileFS); ok {
 		return cFS.WriteFile(name, data, mode)
 	}
-	if err := pathutil.ValidateFileName(writefileOp, name); err != nil {
+	if err := pathutil.ValidateFileName(writeFileOp, name); err != nil {
 		return err
 	}
 	// TODO: Populate this with the best effort implementation of this method based on any combinations of methods that are available to reconstruct this method. Also include tests.
-	return ufserrors.NewUnimplemented(fsys, writefileOp)
+	return ufserrors.NewUnimplemented(fsys, writeFileOp)
 }

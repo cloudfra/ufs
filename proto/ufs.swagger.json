@@ -6,8 +6,8 @@
   },
   "tags": [
     {
-      "name": "ReadFS",
-      "description": "ReadFS exposes the read-only surface of a [types.ReadFS] file system over\nRPC: metadata lookup, directory listing, symbolic link resolution, and\nstreaming file content.\n\ntypes.ReadFS's io.Closer.Close is intentionally not exposed here: it tears\ndown the entire underlying file system (e.g. unmounting or disconnecting\na cloud storage client) rather than acting on a single request, and is a\nserver-lifecycle concern rather than a per-client one.\n\nErrors follow standard gRPC canonical codes: a lookup for a path that does\nnot exist returns NOT_FOUND (wrapping fs.ErrNotExist), and an operation\nforbidden by the backend returns PERMISSION_DENIED (wrapping\nfs.ErrPermission)."
+      "name": "FS",
+      "description": "FS exposes a whole file system over RPC: the read surface of [types.ReadFS]\n— metadata lookup, directory listing, symbolic link resolution and\nstreaming file content — plus whole-file and batched upload, directory\ncreation, deletion, renaming, native copying, hard and symbolic links,\nattribute changes, one metadata read covering the file system itself, two\nqueries about a single path, and change notifications. It is the service a\nserver implements for a file system that answers to the fullFS interface of\ndrivers/types/fullfs.go, so its rpcs cover each distinct method reachable from\nthat interface exactly once.\n\nThe interfaces reachable from fullFS overlap heavily: [types.FS] is\n[types.WriteFS], [types.OpenFileFS], [types.RenameFS] and [types.ReleaseFS];\n[types.WriteFS] is [types.ReadFS] plus [types.RemoveFS], [types.RemoveAllFS],\n[types.CreateFileFS] and [types.MkdirAllFS]; [types.ReadFS] is\n[types.SimpleFS] plus the four extended read interfaces of the standard\nlibrary, [fmt.Stringer], [types.DeviceInfoGet], [types.URIGet] and\n[types.ComparableFS]; and nearly every optional interface embeds\n[types.SimpleFS] of its own. A method several interfaces carry is therefore\nexposed once rather than once per interface, which is why there is one\nGetFile rather than one for [fs.StatFS] and one for [types.ReadFS].\n\nEach rpc maps one-to-one onto a Go method: the rpc name is the method name,\nthe request message carries that method's arguments, the first argument is\nbound into the URL and the rest travel in the request body. The verbs\n(\":chmod\", \":mkdirAll\", \":readLink\") mirror the Go names instead of\nfollowing an AIP-133 resource model, so the rpc-to-method mapping stays\nauditable line by line; designing collection-shaped URLs is a separate\ndecision from this file. A method whose Go signature returns only an error\nreturns [google.protobuf.Empty].\n\nThe rule bends in one place, deliberately: [GetMetadata] answers three Go\nmethods in one rpc. Each of the three is still answered exactly once, but in\none round trip rather than three, which is what separates a method call from a\nnetwork call. [types.URIGet.URI], [fmt.Stringer.String] and\n[types.DeviceInfoGet.DeviceInfo] are three cheap calls in Go that say the same\nthing about a file system whichever path they are asked about, so they are\nanswered by one [FileSystemInfo] that a client reads once and caches. An\nanswer that changes from path to path is not folded in, because caching it\nonce would make it wrong for the next path: [ClosestParent] and\n[IsMountedArchiveDir] are rpcs of their own, asked where the path is.\n[types.CreateFileFS.Create] is the other way round: it takes nothing but a\nname and returns a live [types.File] handle, which is not a value that can\ncross the wire, and what a client wants after it is the content in the file —\nso it has no rpc of its own and is answered by [WriteFile], which creates the\nfile and carries its content in one request rather than two.\n\nErrors follow the standard gRPC canonical codes: a path the file\nsystem does not hold returns NOT_FOUND (wrapping fs.ErrNotExist), a path\nthat already exists where the call needs it not to returns ALREADY_EXISTS\n(wrapping fs.ErrExist), an operation the backend refuses returns\nPERMISSION_DENIED (wrapping fs.ErrPermission), and a path that\n[fs.ValidPath] rejects returns INVALID_ARGUMENT (wrapping fs.ErrInvalid).\n\nFive Go methods reachable from fullFS are deliberately not rpcs.\n\n[io.Closer.Close] is left out because it tears down the entire underlying\nfile system rather than acting on a single request.\n[types.ReleaseFS.Release] is left out for the same reason even though it\nleaves the file system usable, because what it lets go of is what the server\nholds for everyone — an open handle on an archive, a cached copy of a remote\nfile, a mount lock — so it is a server-administration call whose effect is\nvisible to every other client of that server, not a per-request one.\nExposing it means deciding which clients may disturb the rest, which is a\nquestion about servers rather than about this service.\n\n[types.ComparableFS.IsSame] asks whether two file systems hold one set of\ndata. All a client can name on the wire is a location, and ComparableFS\nstates that it answers a different question from the one that compares\nlocations: an \"other uri\" argument would implement location comparison under\nthe name IsSame and report the wrong answer for a cache or a mount point.\nWhat a client can compare instead is the uri field of [GetMetadata].\n\n[types.WrapperFS.InnerFS] returns an [fs.FS] value rather than data. Its\nnearest wire shape is a [FileSystemInfo] for the wrapped file system, but\nthat reports only what [types.URIGet] and [fmt.Stringer] say about it, and\nInnerFS exists to hand back the object itself.\n\n[types.ExternalPathGetFS.ExternalPath] is left out because a client already\nhas that address: it reaches the file system through a grpc:// address that\nnames the server and the path inside it, and constructs that address itself\nrather than asking for it. An rpc returning one would hand back an address the\ncaller wrote, and would choose one external form for a path when the address\nin use already says how to get there."
     }
   ],
   "consumes": [
@@ -17,10 +17,11 @@
     "application/json"
   ],
   "paths": {
-    "/v1/fileSystemInfo": {
+    "/v1/fs/fileSystemInfo": {
       "get": {
-        "summary": "GetFileSystemInfo describes the file system itself. Equivalent to\n[types.ReadFS.URI] and [types.ReadFS.String].",
-        "operationId": "ReadFS_GetFileSystemInfo",
+        "summary": "GetMetadata is the single metadata read about the file system itself: one\nrpc answering what three Go methods report, in one [FileSystemInfo].",
+        "description": "Its uri, description and devices fields answer [types.URIGet.URI],\n[fmt.Stringer.String] — which [types.ReadFS] and [types.StringerFS] both\ncarry — and [types.DeviceInfoGet.DeviceInfo]. None of the three is about a\npath, which is why the request names none: one answer describes the whole\nfile system.\n\nOne rpc rather than three because a method call in Go and a round trip are\nnot the same price: the answer is meant to be read once and cached by the\nclient, which is also why there is no field selector for asking a subset of\nit. A file system that does not implement one of those interfaces leaves the\nfields it would have filled at their zero values, and an error status is the\nfailure of the read as a whole.\n\nWhat a file system answers per path is deliberately not here, since it\ncannot be cached once for the file system: [ClosestParent] and\n[IsMountedArchiveDir] are asked where the path is being used.",
+        "operationId": "FS_GetMetadata",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -36,14 +37,14 @@
           }
         },
         "tags": [
-          "ReadFS"
+          "FS"
         ]
       }
     },
-    "/v1/files": {
+    "/v1/fs/files": {
       "get": {
-        "summary": "ListFiles returns the immediate children of a directory. Equivalent to\n[types.ReadFS.ReadDir].",
-        "operationId": "ReadFS_ListFiles",
+        "summary": "ListFiles returns the immediate children of a directory. Equivalent to\n[types.ReadFS.ReadDir], which is [fs.ReadDirFS.ReadDir].",
+        "operationId": "FS_ListFiles",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -83,14 +84,86 @@
           }
         ],
         "tags": [
-          "ReadFS"
+          "FS"
         ]
       }
     },
-    "/v1/{name}": {
+    "/v1/fs/files:batchCreate": {
+      "post": {
+        "summary": "BatchCreate writes every file it is sent, in order, as\n[types.BatchCreateFS.BatchCreate] does: missing parents are created as\n[MkdirAll] creates them, an existing file is replaced, and a later entry\nfor a name replaces an earlier one. An empty stream does nothing.",
+        "description": "Each frame carries one complete file, which keeps a large batch from\nhaving to be held in memory as one message. It does not change what the\nserver must do: BatchCreate is atomic — a reader sees either none or all\nof the files — so a server has to buffer the whole stream before it can\ncommit. A client that wants each file committed on its own wants\n[WriteFile].\n\nThe URL names no path parameter, as a client-streaming rpc cannot carry\none: every frame carries the path of the file it holds.",
+        "operationId": "FS_BatchCreate",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "BatchCreateRequest is one frame of a [BatchCreate] upload: one complete\nfile. One frame per file keeps a large batch from having to be held in a\nsingle message, even though an atomic batch is committed as a whole. (streaming inputs)",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ufsBatchCreateRequest"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/files:writeFile": {
+      "post": {
+        "summary": "WriteFile writes a whole file in one call, as [types.WriteFileFS.WriteFile]\ndoes: the file is created if necessary and truncated first, and the\nparents are not created. It is also how [types.CreateFileFS.Create] is\nanswered — see the service comment — so creating a file and filling it is\none request, and a reader never sees the empty file that creating it and\nthen writing it would expose.",
+        "description": "A single small upload is the common case. The 10 MB ceiling above which a\nfile is worth streaming rather than sending whole is a server policy, not\npart of the wire format, so it is recorded here rather than as a field a\nclient could set: below it a client puts the content in one frame — one\nHTTP request body — and above it the content arrives in the stream this rpc\nis, or through [OpenFile] when the positional behavior of a handle is what\nis wanted.\n\nThe upload is a client stream so that a file larger than the server will\naccept in one message still fits, and so that grpc-gateway can proxy the\ncall from an ordinary HTTP request body. The whole file is still one\nrequest, which is what WriteFile is: no partial write and no seek.\n\nThe URL names no path parameter, because a client-streaming rpc cannot\ncarry one: the path of the file travels in the first frame, so the HTTP\nform is a POST whose whole body is the file.",
+        "operationId": "FS_WriteFile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": "WriteFileRequest is one frame of a [WriteFile] upload. name and mode are\nread from the first frame and ignored in the rest, which is what lets\ngrpc-gateway proxy the call from one HTTP request body; data chunks arrive\nin order and are concatenated into the file's whole content. An empty stream\nwrites an empty file. (streaming inputs)",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ufsWriteFileRequest"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}": {
       "get": {
-        "summary": "GetFile returns metadata for the file at name. Equivalent to\n[types.ReadFS.Stat], or [types.ReadFS.Lstat] when symlink_handling is\nSYMLINK_HANDLING_NO_FOLLOW.",
-        "operationId": "ReadFS_GetFile",
+        "summary": "GetFile returns metadata for the node at name. Equivalent to\n[types.ReadFS.Stat], or [types.ReadFS.Lstat] when symlink_handling is\nSYMLINK_HANDLING_NO_FOLLOW.",
+        "operationId": "FS_GetFile",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -129,14 +202,448 @@
           }
         ],
         "tags": [
-          "ReadFS"
+          "FS"
+        ]
+      },
+      "delete": {
+        "summary": "Remove deletes the file or empty directory at name, as\n[types.RemoveFS.Remove] does. A non-empty directory is an error; so is\nremoving the root.",
+        "operationId": "FS_Remove",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the file or empty directory to delete.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "FS"
         ]
       }
     },
-    "/v1/{name}:read": {
+    "/v1/fs/{name}:chmod": {
+      "post": {
+        "summary": "Chmod sets the mode of the node at name, as [types.ChmodFS.Chmod] does.\nThe mode replaces what was there; which bits a backend honors depends on\nits platform.",
+        "operationId": "FS_Chmod",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the node to change.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSChmodBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:chown": {
+      "post": {
+        "summary": "Chown sets the owner and group of the node at name, as\n[types.ChownFS.Chown] does, following a symbolic link at name to the node\nit points at. A uid or gid of -1 leaves that half alone.",
+        "operationId": "FS_Chown",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the node to change. A symbolic link at the path is followed\nto the node it points at; [Lchown] changes the link itself.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSChownBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:chtimes": {
+      "post": {
+        "summary": "Chtimes sets the access and modification times of the node at name, as\n[types.ChtimesFS.Chtimes] does. A time left unset keeps the value it has.",
+        "operationId": "FS_Chtimes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the node to change.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSChtimesBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:closestParent": {
       "get": {
-        "summary": "ReadFile streams the content of the file at name. Equivalent to opening\nthe file via [types.ReadFS.Open] and reading its contents, or\n[types.ReadFS.ReadFile] when the client buffers the full stream.",
-        "operationId": "ReadFS_ReadFile",
+        "summary": "ClosestParent returns the closest node that exists at or above name, name\nitself included, and whether that node is a directory. Equivalent to\n[types.ClosestParentFS.ClosestParent], which returns both values, so they\ncome back in one response rather than in two calls. An empty parent means\nthe file system cannot answer at all, which is what an error from that\nmethod means; it does not mean that levels are missing.",
+        "operationId": "FS_ClosestParent",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/ufsClosestParentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path to resolve.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:copyFile": {
+      "post": {
+        "summary": "CopyFile copies a file from name to dst_path, as\n[types.CopyFileFS.CopyFile] does, which lets a backend with a native copy\navoid reading the content across the wire. A dst_path that exists is an\nerror.",
+        "operationId": "FS_CopyFile",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path the file is copied from.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSCopyFileBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:lchown": {
+      "post": {
+        "summary": "Lchown sets the owner and group of the node at name without following a\nsymbolic link, as [types.LchownFS.Lchown] does. This is the form that\nchanges the link itself.",
+        "operationId": "FS_Lchown",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the node to change, without following a symbolic link.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSLchownBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:link": {
+      "post": {
+        "summary": "Link gives the file at name a second name, new_name, sharing its content\nand metadata, as [types.LinkFS.Link] does. A backend that cannot give two\nnames one file reports an error rather than storing a copy.",
+        "operationId": "FS_Link",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the file to share.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSLinkBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:mkdir": {
+      "post": {
+        "summary": "Mkdir creates the directory at name without creating any missing parent:\na missing parent is an error, not a level to create. Equivalent to\n[types.MkdirFS.Mkdir]; a name that is already a directory is a no-op.",
+        "operationId": "FS_Mkdir",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the directory to create. Missing parents are not created;\nthat is [MkdirAll].",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSMkdirBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:mkdirAll": {
+      "post": {
+        "summary": "MkdirAll creates the directory at name and any missing parents, as\n[types.MkdirAllFS.MkdirAll] does. It is a no-op if the directory exists.",
+        "operationId": "FS_MkdirAll",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the directory to create, together with any missing parents.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSMkdirAllBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:mountedArchiveDir": {
+      "get": {
+        "summary": "IsMountedArchiveDir reports whether name is the virtual directory an archive\nis exposed through — the archive's name with \".d\" appended — rather than a\ndirectory of the underlying file system, so that a client walking the tree\ncan skip it. Equivalent to\n[types.MountedArchiveDirFS.IsMountedArchiveDir]. Like [ClosestParent] it is\nan answer about one path, so it is not part of [GetMetadata].",
+        "operationId": "FS_IsMountedArchiveDir",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/ufsIsMountedArchiveDirResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path of the directory to classify.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:read": {
+      "get": {
+        "summary": "ReadFile streams the content of the file at name. Equivalent to\n[types.ReadFS.ReadFile], or to [fs.FS.Open] followed by reading what the\nhandle gives. [fs.FS.Open] returns a handle rather than data, so this rpc\nis how a reader reaches it; [OpenFile] is the rpc that keeps a handle's\npositional behavior.",
+        "operationId": "FS_ReadFile",
         "responses": {
           "200": {
             "description": "A successful response.(streaming responses)",
@@ -187,14 +694,14 @@
           }
         ],
         "tags": [
-          "ReadFS"
+          "FS"
         ]
       }
     },
-    "/v1/{name}:readLink": {
+    "/v1/fs/{name}:readLink": {
       "get": {
-        "summary": "ReadLink returns the destination of the symbolic link at name.\nEquivalent to [types.ReadFS.ReadLink].",
-        "operationId": "ReadFS_ReadLink",
+        "summary": "ReadLink returns the destination of the symbolic link at name. Equivalent\nto [types.ReadFS.ReadLink], which is [fs.ReadLinkFS.ReadLink].",
+        "operationId": "FS_ReadLink",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -220,12 +727,296 @@
           }
         ],
         "tags": [
-          "ReadFS"
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:removeAll": {
+      "delete": {
+        "summary": "RemoveAll deletes name and everything below it, as\n[types.RemoveAllFS.RemoveAll] does. A name that does not exist succeeds.",
+        "operationId": "FS_RemoveAll",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path to delete, together with everything below it.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:rename": {
+      "post": {
+        "summary": "Rename moves a node from name to new_name, as [types.RenameFS.Rename]\ndoes. It is not guaranteed to be atomic, and a failure does not tell the\nclient whether the node still stands at name.",
+        "operationId": "FS_Rename",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The path the node is moved from.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSRenameBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:symlink": {
+      "post": {
+        "summary": "Symlink creates new_name as a symbolic link storing name as its target,\nas [types.SymlinkFS.Symlink] does. The target is kept as written: it may\nbe relative to the directory holding the link, and it need not exist.\nReading a link that exists is [ReadLink].",
+        "operationId": "FS_Symlink",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The target stored in the new link. It is kept as written rather than\nresolved, so it may be relative to the directory holding the link and it\nneed not exist.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FSSymlinkBody"
+            }
+          }
+        ],
+        "tags": [
+          "FS"
+        ]
+      }
+    },
+    "/v1/fs/{name}:watch": {
+      "get": {
+        "summary": "Watch streams the changes observed under name and every directory nested\nbelow it, reporting each one as [types.NotifyHook] reports it to Go\ncallers. The watch ends when the stream is closed or breaks: the\n[io.Closer] that Watch returns in Go is the stream itself, so the client\nstops the watch by stopping the stream, there is no close rpc, and closing a\nstream that has already ended is not an error. A backend that cannot watch\nthe path refuses the stream with an error status instead.",
+        "operationId": "FS_Watch",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/ufsWatchEvent"
+                },
+                "error": {
+                  "$ref": "#/definitions/rpcStatus"
+                }
+              },
+              "title": "Stream result of ufsWatchEvent"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "The directory to watch. Every directory nested below it is watched too.",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "FS"
         ]
       }
     }
   },
   "definitions": {
+    "FSChmodBody": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The mode to set, as defined by Go's io/fs.FileMode. This replaces the\nmode rather than merging into it, so a zero here clears the bits."
+        }
+      }
+    },
+    "FSChownBody": {
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The owner to set. -1 leaves the owner alone."
+        },
+        "gid": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The group to set. -1 leaves the group alone."
+        }
+      }
+    },
+    "FSChtimesBody": {
+      "type": "object",
+      "properties": {
+        "accessTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The access time to set (AIP-148 `access_time`)."
+        },
+        "updateTime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The modification time to set, as reported by [fs.FileInfo.ModTime]\n(the standard AIP-148 `update_time` field)."
+        }
+      },
+      "description": "ChtimesRequest sets the times of a node that exists. A time left unset\nkeeps the value it has, which is what a zero [time.Time] means to\n[types.ChtimesFS.Chtimes]. Whether the times read back afterwards match\nwhat was set depends on what the backend records."
+    },
+    "FSCopyFileBody": {
+      "type": "object",
+      "properties": {
+        "dstPath": {
+          "type": "string",
+          "description": "The path the copy is written to."
+        }
+      },
+      "required": [
+        "dstPath"
+      ]
+    },
+    "FSLchownBody": {
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The owner to set. -1 leaves the owner alone."
+        },
+        "gid": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The group to set. -1 leaves the group alone."
+        }
+      }
+    },
+    "FSLinkBody": {
+      "type": "object",
+      "properties": {
+        "newName": {
+          "type": "string",
+          "description": "The path of the new name for that file."
+        }
+      },
+      "required": [
+        "newName"
+      ]
+    },
+    "FSMkdirAllBody": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Permission bits for newly created nodes, as defined by Go's\nio/fs.FileMode."
+        }
+      }
+    },
+    "FSMkdirBody": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Permission bits for the new node, as defined by Go's io/fs.FileMode."
+        }
+      }
+    },
+    "FSRenameBody": {
+      "type": "object",
+      "properties": {
+        "newName": {
+          "type": "string",
+          "description": "The path the node is moved to."
+        }
+      },
+      "required": [
+        "newName"
+      ]
+    },
+    "FSSymlinkBody": {
+      "type": "object",
+      "properties": {
+        "newName": {
+          "type": "string",
+          "description": "The path of the symbolic link to create."
+        }
+      },
+      "required": [
+        "newName"
+      ]
+    },
     "protobufAny": {
       "type": "object",
       "properties": {
@@ -253,6 +1044,74 @@
           }
         }
       }
+    },
+    "ufsBatchCreateRequest": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/definitions/ufsBatchFile"
+        }
+      },
+      "description": "BatchCreateRequest is one frame of a [BatchCreate] upload: one complete\nfile. One frame per file keeps a large batch from having to be held in a\nsingle message, even though an atomic batch is committed as a whole.",
+      "required": [
+        "file"
+      ]
+    },
+    "ufsBatchFile": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The path of the file."
+        },
+        "data": {
+          "type": "string",
+          "format": "byte",
+          "description": "The whole content of the file."
+        },
+        "mode": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Permission bits, on file systems that store them. Zero means the\npermissions the backend gives a created file."
+        }
+      },
+      "description": "BatchFile is one file written by [BatchCreate], mirroring [types.BatchFile].",
+      "required": [
+        "name"
+      ]
+    },
+    "ufsClosestParentResponse": {
+      "type": "object",
+      "properties": {
+        "parent": {
+          "type": "string",
+          "description": "The path of the closest node that exists at or above the requested path,\nthat path itself included. Empty means the file system cannot answer at\nall, which is what an error from that method means; it does not mean that\nlevels are missing."
+        },
+        "isDir": {
+          "type": "boolean",
+          "description": "Whether parent is a directory: the second value that\n[types.ClosestParentFS.ClosestParent] returns."
+        }
+      },
+      "description": "ClosestParentResponse carries the two values that\n[types.ClosestParentFS.ClosestParent] returns, in one response because the Go\nmethod returns them in one call and the path it reports is not usable without\nknowing whether it is a directory."
+    },
+    "ufsDeviceInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the device, as given by the operating system or by the ufs\nimplementation. \"default\" when the backing device is not known."
+        },
+        "deviceType": {
+          "type": "string",
+          "description": "The kind of device behind a path (e.g. \"disk\", \"tmpfs\", or an\nobject-storage scheme). \"unknown\" when it cannot be reported."
+        },
+        "threadCount": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The recommended number of concurrent accesses for the device; 1 is the\nanswer for a device that should not be walked in parallel."
+        }
+      },
+      "description": "DeviceInfo describes one backing device of a file system, mirroring\n[types.DeviceInfo]. It is platform-agnostic on purpose: a client need not\nknow how the server's operating system names devices in order to decide how\nhard to drive it.\n\nThe remote flag that [types.DeviceInfo] carries is deliberately not on the\nwire. A file system reports remoteness to itself, for the process that holds\nit; to a client of this service everything is already remote, so the field\nwould answer the same question for every device and answer it before the\nclient has made a single call. How much a device is worth driving is what\ndevice_type and thread_count are for."
     },
     "ufsFile": {
       "type": "object",
@@ -292,16 +1151,34 @@
       "properties": {
         "uri": {
           "type": "string",
-          "description": "The URI that identifies this file system, as returned by [types.ReadFS.URI].\nCan be passed to ufs.New to reconstruct an equivalent file system.\nEmpty if the file system has no meaningful URI.",
+          "description": "The URI that identifies this file system, as [types.URIGet.URI] reports it,\nthe method [types.URIGetFS] carries as well. Can be passed to ufs.New to\nreconstruct an equivalent file system. Empty if the file system has no\nmeaningful URI.",
           "readOnly": true
         },
         "description": {
           "type": "string",
-          "description": "A human-readable description of how the file system is composed, as\nreturned by [types.ReadFS.String]. Intended for debugging and logging, not\nprogrammatic use.",
+          "description": "A human-readable description of how the file system is composed, as\n[fmt.Stringer.String] reports it — the method that [types.ReadFS] and\n[types.StringerFS] both carry. Intended for debugging and logging, not\nprogrammatic use.",
+          "readOnly": true
+        },
+        "devices": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/ufsDeviceInfo"
+          },
+          "description": "Which device backs which path, as [types.DeviceInfoGet.DeviceInfo] reports\nit, the method [types.DeviceInfoGetFS] carries as well: the [types.DeviceMap]\nkeyed by path, with \".\" for the root. The map is minimal, naming a path only\nwhere the backing device changes, and a path with no entry of its own is\nbacked by the entry of its nearest ancestor, which is the lookup\n[types.DeviceMap.Backing] performs. The map covers the whole file system in\none answer, which is why it is here rather than being asked per path.",
           "readOnly": true
         }
       },
-      "description": "FileSystemInfo describes the file system as a whole. It is a singleton\nresource (AIP-156): there is exactly one, and it has no name field."
+      "description": "FileSystemInfo is the metadata a file system reports about itself: what the\nfile system is, not what one path inside it is. [GetMetadata] is the only rpc\nthat returns it and returns every field in one answer: these facets are\nseparate Go methods but one network read each, so the rpc answers all of them\nat once and a client reads this message once and caches it instead of paying a\nround trip per facet. A file system that does not implement the Go interface\nbehind a field leaves that field at its zero value.\n\nIt is still the singleton resource of AIP-156 that it was: there is exactly\none per file system, it has no name field, and no field below changes from\npath to path. What a file system answers per path does not belong here:\n[ClosestParent] and [IsMountedArchiveDir] are rpcs of their own, because a\nclient wants those where it is working on the path rather than once for the\nfile system."
+    },
+    "ufsIsMountedArchiveDirResponse": {
+      "type": "object",
+      "properties": {
+        "isMountedArchiveDir": {
+          "type": "boolean",
+          "description": "Whether the requested path is the virtual directory an archive is exposed\nthrough — the archive's name with \".d\" appended — rather than a directory\nof the underlying file system, as\n[types.MountedArchiveDirFS.IsMountedArchiveDir] reports it, so that a\nclient walking the tree can skip it."
+        }
+      },
+      "description": "IsMountedArchiveDirResponse answers the question for one path."
     },
     "ufsListFilesResponse": {
       "type": "object",
@@ -319,6 +1196,19 @@
           "description": "A token that can be sent as page_token to retrieve the next page. Empty\nif there are no more files."
         }
       }
+    },
+    "ufsNotifyOp": {
+      "type": "string",
+      "enum": [
+        "NOTIFY_OP_UNSPECIFIED",
+        "NOTIFY_OP_CREATE",
+        "NOTIFY_OP_WRITE",
+        "NOTIFY_OP_REMOVE",
+        "NOTIFY_OP_RENAME",
+        "NOTIFY_OP_CHMOD"
+      ],
+      "default": "NOTIFY_OP_UNSPECIFIED",
+      "description": "NotifyOp is the kind of change observed on a path. It mirrors\n[types.NotifyOp].\n\n - NOTIFY_OP_UNSPECIFIED: Unset. Never reported.\n - NOTIFY_OP_CREATE: A file or directory was created.\n - NOTIFY_OP_WRITE: A file was written to.\n - NOTIFY_OP_REMOVE: A file or directory was removed.\n - NOTIFY_OP_RENAME: A file or directory was renamed.\n - NOTIFY_OP_CHMOD: Permissions or attributes changed."
     },
     "ufsReadFileResponse": {
       "type": "object",
@@ -348,6 +1238,43 @@
       ],
       "default": "SYMLINK_HANDLING_UNSPECIFIED",
       "description": "SymlinkHandling controls whether a lookup follows a symbolic link to its\ntarget or reports on the link itself.\n\n - SYMLINK_HANDLING_UNSPECIFIED: Equivalent to SYMLINK_HANDLING_FOLLOW.\n - SYMLINK_HANDLING_FOLLOW: Follow the symbolic link and describe its target. Equivalent to\n[types.ReadFS.Stat] / [fs.Stat].\n - SYMLINK_HANDLING_NO_FOLLOW: Do not follow the symbolic link; describe the link itself. Equivalent to\n[fs.ReadLinkFS.Lstat]."
+    },
+    "ufsWatchEvent": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "$ref": "#/definitions/ufsNotifyOp",
+          "description": "The kind of change."
+        },
+        "path": {
+          "type": "string",
+          "description": "The path the change happened to."
+        }
+      },
+      "description": "WatchEvent is one change observed by [Watch], and is what [types.NotifyHook]\nis invoked with. `path` is root-relative, forward-slash separated, and\nsatisfies [fs.ValidPath] — it is never an OS-native or absolute path."
+    },
+    "ufsWriteFileRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The path of the file to write."
+        },
+        "mode": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Permission bits for a file that is created, as defined by Go's\nio/fs.FileMode. A file that already exists keeps the permissions it has."
+        },
+        "data": {
+          "type": "string",
+          "format": "byte",
+          "description": "Part of the file's content, in order."
+        }
+      },
+      "description": "WriteFileRequest is one frame of a [WriteFile] upload. name and mode are\nread from the first frame and ignored in the rest, which is what lets\ngrpc-gateway proxy the call from one HTTP request body; data chunks arrive\nin order and are concatenated into the file's whole content. An empty stream\nwrites an empty file.",
+      "required": [
+        "name"
+      ]
     }
   }
 }

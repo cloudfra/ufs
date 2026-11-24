@@ -19,6 +19,7 @@ package cloudfra.ufs;
 import "google/api/annotations.proto";
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/go_features.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -126,18 +127,41 @@ message File {
   bool is_dir = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
-// FileSystemInfo describes the file system as a whole. It is a singleton
-// resource (AIP-156): there is exactly one, and it has no name field.
+// FileSystemInfo is the metadata a file system reports about itself: what the
+// file system is, not what one path inside it is. [GetMetadata] is the only rpc
+// that returns it and returns every field in one answer: these facets are
+// separate Go methods but one network read each, so the rpc answers all of them
+// at once and a client reads this message once and caches it instead of paying a
+// round trip per facet. A file system that does not implement the Go interface
+// behind a field leaves that field at its zero value.
+//
+// It is still the singleton resource of AIP-156 that it was: there is exactly
+// one per file system, it has no name field, and no field below changes from
+// path to path. What a file system answers per path does not belong here:
+// [ClosestParent] and [IsMountedArchiveDir] are rpcs of their own, because a
+// client wants those where it is working on the path rather than once for the
+// file system.
 message FileSystemInfo {
-  // The URI that identifies this file system, as returned by [types.ReadFS.URI].
-  // Can be passed to ufs.New to reconstruct an equivalent file system.
-  // Empty if the file system has no meaningful URI.
+  // The URI that identifies this file system, as [types.URIGet.URI] reports it,
+  // the method [types.URIGetFS] carries as well. Can be passed to ufs.New to
+  // reconstruct an equivalent file system. Empty if the file system has no
+  // meaningful URI.
   string uri = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   // A human-readable description of how the file system is composed, as
-  // returned by [types.ReadFS.String]. Intended for debugging and logging, not
+  // [fmt.Stringer.String] reports it — the method that [types.ReadFS] and
+  // [types.StringerFS] both carry. Intended for debugging and logging, not
   // programmatic use.
   string description = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Which device backs which path, as [types.DeviceInfoGet.DeviceInfo] reports
+  // it, the method [types.DeviceInfoGetFS] carries as well: the [types.DeviceMap]
+  // keyed by path, with "." for the root. The map is minimal, naming a path only
+  // where the backing device changes, and a path with no entry of its own is
+  // backed by the entry of its nearest ancestor, which is the lookup
+  // [types.DeviceMap.Backing] performs. The map covers the whole file system in
+  // one answer, which is why it is here rather than being asked per path.
+  map<string, DeviceInfo> devices = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // BoltFileRecord is the value the bolt driver (drivers/boltfs) stores under
@@ -247,61 +271,772 @@ message ReadLinkResponse {
   string target = 1;
 }
 
-message GetFileSystemInfoRequest {}
+// GetMetadataRequest is empty: [GetMetadata] describes the file system rather
+// than a path in it, so there is nothing to name. The questions that are about
+// one path are [ClosestParent] and [IsMountedArchiveDir].
+message GetMetadataRequest {}
 
-// ReadFS exposes the read-only surface of a [types.ReadFS] file system over
-// RPC: metadata lookup, directory listing, symbolic link resolution, and
-// streaming file content.
+// DeviceInfo describes one backing device of a file system, mirroring
+// [types.DeviceInfo]. It is platform-agnostic on purpose: a client need not
+// know how the server's operating system names devices in order to decide how
+// hard to drive it.
 //
-// types.ReadFS's io.Closer.Close is intentionally not exposed here: it tears
-// down the entire underlying file system (e.g. unmounting or disconnecting
-// a cloud storage client) rather than acting on a single request, and is a
-// server-lifecycle concern rather than a per-client one.
+// The remote flag that [types.DeviceInfo] carries is deliberately not on the
+// wire. A file system reports remoteness to itself, for the process that holds
+// it; to a client of this service everything is already remote, so the field
+// would answer the same question for every device and answer it before the
+// client has made a single call. How much a device is worth driving is what
+// device_type and thread_count are for.
+message DeviceInfo {
+  // The name of the device, as given by the operating system or by the ufs
+  // implementation. "default" when the backing device is not known.
+  string name = 1;
+
+  // The kind of device behind a path (e.g. "disk", "tmpfs", or an
+  // object-storage scheme). "unknown" when it cannot be reported.
+  string device_type = 2;
+
+  // The recommended number of concurrent accesses for the device; 1 is the
+  // answer for a device that should not be walked in parallel.
+  int32 thread_count = 3;
+}
+
+// ClosestParentRequest names the path to resolve.
+message ClosestParentRequest {
+  // The path to resolve.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+// ClosestParentResponse carries the two values that
+// [types.ClosestParentFS.ClosestParent] returns, in one response because the Go
+// method returns them in one call and the path it reports is not usable without
+// knowing whether it is a directory.
+message ClosestParentResponse {
+  // The path of the closest node that exists at or above the requested path,
+  // that path itself included. Empty means the file system cannot answer at
+  // all, which is what an error from that method means; it does not mean that
+  // levels are missing.
+  string parent = 1;
+
+  // Whether parent is a directory: the second value that
+  // [types.ClosestParentFS.ClosestParent] returns.
+  bool is_dir = 2;
+}
+
+// IsMountedArchiveDirRequest names the directory to classify.
+message IsMountedArchiveDirRequest {
+  // The path of the directory to classify.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+// IsMountedArchiveDirResponse answers the question for one path.
+message IsMountedArchiveDirResponse {
+  // Whether the requested path is the virtual directory an archive is exposed
+  // through — the archive's name with ".d" appended — rather than a directory
+  // of the underlying file system, as
+  // [types.MountedArchiveDirFS.IsMountedArchiveDir] reports it, so that a
+  // client walking the tree can skip it.
+  bool is_mounted_archive_dir = 1;
+}
+
+// WriteFileRequest is one frame of a [WriteFile] upload. name and mode are
+// read from the first frame and ignored in the rest, which is what lets
+// grpc-gateway proxy the call from one HTTP request body; data chunks arrive
+// in order and are concatenated into the file's whole content. An empty stream
+// writes an empty file.
+message WriteFileRequest {
+  // The path of the file to write.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // Permission bits for a file that is created, as defined by Go's
+  // io/fs.FileMode. A file that already exists keeps the permissions it has.
+  uint32 mode = 2;
+
+  // Part of the file's content, in order.
+  bytes data = 3;
+}
+
+// BatchFile is one file written by [BatchCreate], mirroring [types.BatchFile].
+message BatchFile {
+  // The path of the file.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The whole content of the file.
+  bytes data = 2;
+
+  // Permission bits, on file systems that store them. Zero means the
+  // permissions the backend gives a created file.
+  uint32 mode = 3;
+}
+
+// BatchCreateRequest is one frame of a [BatchCreate] upload: one complete
+// file. One frame per file keeps a large batch from having to be held in a
+// single message, even though an atomic batch is committed as a whole.
+message BatchCreateRequest {
+  BatchFile file = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message MkdirRequest {
+  // The path of the directory to create. Missing parents are not created;
+  // that is [MkdirAll].
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // Permission bits for the new node, as defined by Go's io/fs.FileMode.
+  uint32 mode = 2;
+}
+
+message MkdirAllRequest {
+  // The path of the directory to create, together with any missing parents.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // Permission bits for newly created nodes, as defined by Go's
+  // io/fs.FileMode.
+  uint32 mode = 2;
+}
+
+message RemoveRequest {
+  // The path of the file or empty directory to delete.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+message RemoveAllRequest {
+  // The path to delete, together with everything below it.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+message RenameRequest {
+  // The path the node is moved from.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The path the node is moved to.
+  string new_name = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+message CopyFileRequest {
+  // The path the file is copied from.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The path the copy is written to.
+  string dst_path = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+message LinkRequest {
+  // The path of the file to share.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The path of the new name for that file.
+  string new_name = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+message SymlinkRequest {
+  // The target stored in the new link. It is kept as written rather than
+  // resolved, so it may be relative to the directory holding the link and it
+  // need not exist.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The path of the symbolic link to create.
+  string new_name = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+message ChmodRequest {
+  // The path of the node to change.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The mode to set, as defined by Go's io/fs.FileMode. This replaces the
+  // mode rather than merging into it, so a zero here clears the bits.
+  uint32 mode = 2;
+}
+
+message ChownRequest {
+  // The path of the node to change. A symbolic link at the path is followed
+  // to the node it points at; [Lchown] changes the link itself.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The owner to set. -1 leaves the owner alone.
+  int32 uid = 2;
+
+  // The group to set. -1 leaves the group alone.
+  int32 gid = 3;
+}
+
+message LchownRequest {
+  // The path of the node to change, without following a symbolic link.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The owner to set. -1 leaves the owner alone.
+  int32 uid = 2;
+
+  // The group to set. -1 leaves the group alone.
+  int32 gid = 3;
+}
+
+// ChtimesRequest sets the times of a node that exists. A time left unset
+// keeps the value it has, which is what a zero [time.Time] means to
+// [types.ChtimesFS.Chtimes]. Whether the times read back afterwards match
+// what was set depends on what the backend records.
+message ChtimesRequest {
+  // The path of the node to change.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // The access time to set (AIP-148 `access_time`).
+  google.protobuf.Timestamp access_time = 2;
+
+  // The modification time to set, as reported by [fs.FileInfo.ModTime]
+  // (the standard AIP-148 `update_time` field).
+  google.protobuf.Timestamp update_time = 3;
+}
+
+// NotifyOp is the kind of change observed on a path. It mirrors
+// [types.NotifyOp].
+enum NotifyOp {
+  // Unset. Never reported.
+  NOTIFY_OP_UNSPECIFIED = 0;
+
+  // A file or directory was created.
+  NOTIFY_OP_CREATE = 1;
+
+  // A file was written to.
+  NOTIFY_OP_WRITE = 2;
+
+  // A file or directory was removed.
+  NOTIFY_OP_REMOVE = 3;
+
+  // A file or directory was renamed.
+  NOTIFY_OP_RENAME = 4;
+
+  // Permissions or attributes changed.
+  NOTIFY_OP_CHMOD = 5;
+}
+
+message WatchRequest {
+  // The directory to watch. Every directory nested below it is watched too.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+}
+
+// WatchEvent is one change observed by [Watch], and is what [types.NotifyHook]
+// is invoked with. `path` is root-relative, forward-slash separated, and
+// satisfies [fs.ValidPath] — it is never an OS-native or absolute path.
+message WatchEvent {
+  // The kind of change.
+  NotifyOp op = 1;
+
+  // The path the change happened to.
+  string path = 2;
+}
+
+// OpenFileRequest is one frame of an [OpenFile] session. The first frame
+// opens a file, every later frame is one operation on the handle that open
+// returned, and each frame is answered by exactly one [OpenFileResponse], in
+// order. A handle is not a value that can cross the wire, so a session is the
+// only faithful shape of what [types.OpenFileFS.OpenFile] takes: flags such as
+// O_RDWR with O_APPEND, partial writes, and seeks have no whole-file
+// equivalent, unlike [WriteFile].
+message OpenFileRequest {
+  // The operation this frame asks for.
+  enum Op {
+    // Unset. Never valid.
+    OPEN_FILE_OP_UNSPECIFIED = 0;
+
+    // Open name with the given flags and mode. Must be the first frame, and
+    // appears exactly once.
+    OPEN_FILE_OP_OPEN = 1;
+
+    // Read up to count bytes from the current position, as [io.Reader] does.
+    OPEN_FILE_OP_READ = 2;
+
+    // Write data at the current position, advancing it, as [io.Writer] does.
+    OPEN_FILE_OP_WRITE = 3;
+
+    // Move the position by offset interpreted according to whence, as
+    // [io.Seeker] does.
+    OPEN_FILE_OP_SEEK = 4;
+
+    // Give up the handle and end the session. Closing twice is not an error,
+    // so [io.Closer.Close] on the handle maps here rather than to a rpc of
+    // its own.
+    OPEN_FILE_OP_CLOSE = 5;
+  }
+
+  // The operation.
+  Op op = 1;
+
+  // OPEN only: the path of the file to open.
+  string name = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = { type: "ufs.cloudfra.io/File" }
+  ];
+
+  // OPEN only: the open flags, as the integer flags of Go's os.OpenFile take
+  // (O_RDONLY, O_WRONLY, O_RDWR, O_CREATE, O_TRUNC, O_APPEND, O_EXCL). They
+  // are the flags of [types.OpenFileFS.OpenFile], whose platform conventions a
+  // server applies.
+  int32 flag = 3;
+
+  // OPEN only: permission bits for a file that is created, as defined by Go's
+  // io/fs.FileMode.
+  uint32 mode = 4;
+
+  // READ only: the maximum number of bytes to read. 0 reads to the end of the
+  // file.
+  int64 count = 5;
+
+  // WRITE only: the bytes to write.
+  bytes data = 6;
+
+  // SEEK only: the offset to move to.
+  int64 offset = 7;
+
+  // SEEK only: how offset is read — 0 is from the start of the file
+  // ([io.SeekStart]), 1 from the current position ([io.SeekCurrent]), and 2
+  // from the end ([io.SeekEnd]).
+  int32 whence = 8;
+}
+
+// OpenFileResponse answers one frame of an [OpenFile] session.
+message OpenFileResponse {
+  // READ only: the bytes read. Fewer than were asked for means the position
+  // reached the end of the file: that is the end of the data, not an error,
+  // since an error status cannot carry the bytes read before it.
+  bytes data = 1;
+
+  // READ only: whether the read reached the end of the file, which is the
+  // io.EOF that [io.Reader] reports there.
+  bool eof = 2;
+
+  // WRITE only: the number of bytes written, so a short write is visible.
+  int64 written = 3;
+
+  // SEEK only: the new absolute position, as [io.Seeker.Seek] returns it. A
+  // SEEK is the only frame that can move the position backwards, which
+  // [io.ReaderAt] would allow as well.
+  int64 position = 4;
+}
+
+// FS exposes a whole file system over RPC: the read surface of [types.ReadFS]
+// — metadata lookup, directory listing, symbolic link resolution and
+// streaming file content — plus whole-file and batched upload, directory
+// creation, deletion, renaming, native copying, hard and symbolic links,
+// attribute changes, one metadata read covering the file system itself, two
+// queries about a single path, and change notifications. It is the service a
+// server implements for a file system that answers to the fullFS interface of
+// drivers/types/fullfs.go, so its rpcs cover each distinct method reachable from
+// that interface exactly once.
 //
-// Errors follow standard gRPC canonical codes: a lookup for a path that does
-// not exist returns NOT_FOUND (wrapping fs.ErrNotExist), and an operation
-// forbidden by the backend returns PERMISSION_DENIED (wrapping
-// fs.ErrPermission).
-service ReadFS {
-  // GetFile returns metadata for the file at name. Equivalent to
+// The interfaces reachable from fullFS overlap heavily: [types.FS] is
+// [types.WriteFS], [types.OpenFileFS], [types.RenameFS] and [types.ReleaseFS];
+// [types.WriteFS] is [types.ReadFS] plus [types.RemoveFS], [types.RemoveAllFS],
+// [types.CreateFileFS] and [types.MkdirAllFS]; [types.ReadFS] is
+// [types.SimpleFS] plus the four extended read interfaces of the standard
+// library, [fmt.Stringer], [types.DeviceInfoGet], [types.URIGet] and
+// [types.ComparableFS]; and nearly every optional interface embeds
+// [types.SimpleFS] of its own. A method several interfaces carry is therefore
+// exposed once rather than once per interface, which is why there is one
+// GetFile rather than one for [fs.StatFS] and one for [types.ReadFS].
+//
+// Each rpc maps one-to-one onto a Go method: the rpc name is the method name,
+// the request message carries that method's arguments, the first argument is
+// bound into the URL and the rest travel in the request body. The verbs
+// (":chmod", ":mkdirAll", ":readLink") mirror the Go names instead of
+// following an AIP-133 resource model, so the rpc-to-method mapping stays
+// auditable line by line; designing collection-shaped URLs is a separate
+// decision from this file. A method whose Go signature returns only an error
+// returns [google.protobuf.Empty].
+//
+// The rule bends in one place, deliberately: [GetMetadata] answers three Go
+// methods in one rpc. Each of the three is still answered exactly once, but in
+// one round trip rather than three, which is what separates a method call from a
+// network call. [types.URIGet.URI], [fmt.Stringer.String] and
+// [types.DeviceInfoGet.DeviceInfo] are three cheap calls in Go that say the same
+// thing about a file system whichever path they are asked about, so they are
+// answered by one [FileSystemInfo] that a client reads once and caches. An
+// answer that changes from path to path is not folded in, because caching it
+// once would make it wrong for the next path: [ClosestParent] and
+// [IsMountedArchiveDir] are rpcs of their own, asked where the path is.
+// [types.CreateFileFS.Create] is the other way round: it takes nothing but a
+// name and returns a live [types.File] handle, which is not a value that can
+// cross the wire, and what a client wants after it is the content in the file —
+// so it has no rpc of its own and is answered by [WriteFile], which creates the
+// file and carries its content in one request rather than two.
+//
+// Errors follow the standard gRPC canonical codes: a path the file
+// system does not hold returns NOT_FOUND (wrapping fs.ErrNotExist), a path
+// that already exists where the call needs it not to returns ALREADY_EXISTS
+// (wrapping fs.ErrExist), an operation the backend refuses returns
+// PERMISSION_DENIED (wrapping fs.ErrPermission), and a path that
+// [fs.ValidPath] rejects returns INVALID_ARGUMENT (wrapping fs.ErrInvalid).
+//
+// Five Go methods reachable from fullFS are deliberately not rpcs.
+//
+// [io.Closer.Close] is left out because it tears down the entire underlying
+// file system rather than acting on a single request.
+// [types.ReleaseFS.Release] is left out for the same reason even though it
+// leaves the file system usable, because what it lets go of is what the server
+// holds for everyone — an open handle on an archive, a cached copy of a remote
+// file, a mount lock — so it is a server-administration call whose effect is
+// visible to every other client of that server, not a per-request one.
+// Exposing it means deciding which clients may disturb the rest, which is a
+// question about servers rather than about this service.
+//
+// [types.ComparableFS.IsSame] asks whether two file systems hold one set of
+// data. All a client can name on the wire is a location, and ComparableFS
+// states that it answers a different question from the one that compares
+// locations: an "other uri" argument would implement location comparison under
+// the name IsSame and report the wrong answer for a cache or a mount point.
+// What a client can compare instead is the uri field of [GetMetadata].
+//
+// [types.WrapperFS.InnerFS] returns an [fs.FS] value rather than data. Its
+// nearest wire shape is a [FileSystemInfo] for the wrapped file system, but
+// that reports only what [types.URIGet] and [fmt.Stringer] say about it, and
+// InnerFS exists to hand back the object itself.
+//
+// [types.ExternalPathGetFS.ExternalPath] is left out because a client already
+// has that address: it reaches the file system through a grpc:// address that
+// names the server and the path inside it, and constructs that address itself
+// rather than asking for it. An rpc returning one would hand back an address the
+// caller wrote, and would choose one external form for a path when the address
+// in use already says how to get there.
+service FS {
+  // GetFile returns metadata for the node at name. Equivalent to
   // [types.ReadFS.Stat], or [types.ReadFS.Lstat] when symlink_handling is
   // SYMLINK_HANDLING_NO_FOLLOW.
   rpc GetFile(GetFileRequest) returns (File) {
     option (google.api.http) = {
-      get: "/v1/{name=**}"
+      get: "/v1/fs/{name=**}"
     };
   }
 
   // ListFiles returns the immediate children of a directory. Equivalent to
-  // [types.ReadFS.ReadDir].
+  // [types.ReadFS.ReadDir], which is [fs.ReadDirFS.ReadDir].
   rpc ListFiles(ListFilesRequest) returns (ListFilesResponse) {
     option (google.api.http) = {
-      get: "/v1/files"
+      get: "/v1/fs/files"
     };
   }
 
-  // ReadFile streams the content of the file at name. Equivalent to opening
-  // the file via [types.ReadFS.Open] and reading its contents, or
-  // [types.ReadFS.ReadFile] when the client buffers the full stream.
+  // ReadFile streams the content of the file at name. Equivalent to
+  // [types.ReadFS.ReadFile], or to [fs.FS.Open] followed by reading what the
+  // handle gives. [fs.FS.Open] returns a handle rather than data, so this rpc
+  // is how a reader reaches it; [OpenFile] is the rpc that keeps a handle's
+  // positional behavior.
   rpc ReadFile(ReadFileRequest) returns (stream ReadFileResponse) {
     option (google.api.http) = {
-      get: "/v1/{name=**}:read"
+      get: "/v1/fs/{name=**}:read"
     };
   }
 
-  // ReadLink returns the destination of the symbolic link at name.
-  // Equivalent to [types.ReadFS.ReadLink].
+  // ReadLink returns the destination of the symbolic link at name. Equivalent
+  // to [types.ReadFS.ReadLink], which is [fs.ReadLinkFS.ReadLink].
   rpc ReadLink(ReadLinkRequest) returns (ReadLinkResponse) {
     option (google.api.http) = {
-      get: "/v1/{name=**}:readLink"
+      get: "/v1/fs/{name=**}:readLink"
     };
   }
 
-  // GetFileSystemInfo describes the file system itself. Equivalent to
-  // [types.ReadFS.URI] and [types.ReadFS.String].
-  rpc GetFileSystemInfo(GetFileSystemInfoRequest) returns (FileSystemInfo) {
+  // GetMetadata is the single metadata read about the file system itself: one
+  // rpc answering what three Go methods report, in one [FileSystemInfo].
+  //
+  // Its uri, description and devices fields answer [types.URIGet.URI],
+  // [fmt.Stringer.String] — which [types.ReadFS] and [types.StringerFS] both
+  // carry — and [types.DeviceInfoGet.DeviceInfo]. None of the three is about a
+  // path, which is why the request names none: one answer describes the whole
+  // file system.
+  //
+  // One rpc rather than three because a method call in Go and a round trip are
+  // not the same price: the answer is meant to be read once and cached by the
+  // client, which is also why there is no field selector for asking a subset of
+  // it. A file system that does not implement one of those interfaces leaves the
+  // fields it would have filled at their zero values, and an error status is the
+  // failure of the read as a whole.
+  //
+  // What a file system answers per path is deliberately not here, since it
+  // cannot be cached once for the file system: [ClosestParent] and
+  // [IsMountedArchiveDir] are asked where the path is being used.
+  rpc GetMetadata(GetMetadataRequest) returns (FileSystemInfo) {
     option (google.api.http) = {
-      get: "/v1/fileSystemInfo"
+      get: "/v1/fs/fileSystemInfo"
+    };
+  }
+
+  // ClosestParent returns the closest node that exists at or above name, name
+  // itself included, and whether that node is a directory. Equivalent to
+  // [types.ClosestParentFS.ClosestParent], which returns both values, so they
+  // come back in one response rather than in two calls. An empty parent means
+  // the file system cannot answer at all, which is what an error from that
+  // method means; it does not mean that levels are missing.
+  rpc ClosestParent(ClosestParentRequest) returns (ClosestParentResponse) {
+    option (google.api.http) = {
+      get: "/v1/fs/{name=**}:closestParent"
+    };
+  }
+
+  // IsMountedArchiveDir reports whether name is the virtual directory an archive
+  // is exposed through — the archive's name with ".d" appended — rather than a
+  // directory of the underlying file system, so that a client walking the tree
+  // can skip it. Equivalent to
+  // [types.MountedArchiveDirFS.IsMountedArchiveDir]. Like [ClosestParent] it is
+  // an answer about one path, so it is not part of [GetMetadata].
+  rpc IsMountedArchiveDir(IsMountedArchiveDirRequest)
+      returns (IsMountedArchiveDirResponse) {
+    option (google.api.http) = {
+      get: "/v1/fs/{name=**}:mountedArchiveDir"
+    };
+  }
+
+  // WriteFile writes a whole file in one call, as [types.WriteFileFS.WriteFile]
+  // does: the file is created if necessary and truncated first, and the
+  // parents are not created. It is also how [types.CreateFileFS.Create] is
+  // answered — see the service comment — so creating a file and filling it is
+  // one request, and a reader never sees the empty file that creating it and
+  // then writing it would expose.
+  //
+  // A single small upload is the common case. The 10 MB ceiling above which a
+  // file is worth streaming rather than sending whole is a server policy, not
+  // part of the wire format, so it is recorded here rather than as a field a
+  // client could set: below it a client puts the content in one frame — one
+  // HTTP request body — and above it the content arrives in the stream this rpc
+  // is, or through [OpenFile] when the positional behavior of a handle is what
+  // is wanted.
+  //
+  // The upload is a client stream so that a file larger than the server will
+  // accept in one message still fits, and so that grpc-gateway can proxy the
+  // call from an ordinary HTTP request body. The whole file is still one
+  // request, which is what WriteFile is: no partial write and no seek.
+  //
+  // The URL names no path parameter, because a client-streaming rpc cannot
+  // carry one: the path of the file travels in the first frame, so the HTTP
+  // form is a POST whose whole body is the file.
+  rpc WriteFile(stream WriteFileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/files:writeFile"
+      body: "*"
+    };
+  }
+
+  // BatchCreate writes every file it is sent, in order, as
+  // [types.BatchCreateFS.BatchCreate] does: missing parents are created as
+  // [MkdirAll] creates them, an existing file is replaced, and a later entry
+  // for a name replaces an earlier one. An empty stream does nothing.
+  //
+  // Each frame carries one complete file, which keeps a large batch from
+  // having to be held in memory as one message. It does not change what the
+  // server must do: BatchCreate is atomic — a reader sees either none or all
+  // of the files — so a server has to buffer the whole stream before it can
+  // commit. A client that wants each file committed on its own wants
+  // [WriteFile].
+  //
+  // The URL names no path parameter, as a client-streaming rpc cannot carry
+  // one: every frame carries the path of the file it holds.
+  rpc BatchCreate(stream BatchCreateRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/files:batchCreate"
+      body: "*"
+    };
+  }
+
+  // OpenFile opens the file at name with the flags and mode of
+  // [types.OpenFileFS.OpenFile] and keeps the handle open for the length of
+  // the stream: the first frame opens, later frames read, write, seek and
+  // close, and each frame is answered by exactly one response. This is the one
+  // rpc that has no google.api.http rule, because a bidirectional stream is
+  // not something grpc-gateway can proxy. A client that needs file content
+  // over HTTP uses [ReadFile] and [WriteFile]; the flags that make OpenFile
+  // worth having — O_APPEND, O_RDWR, partial writes, seeks — are exactly what
+  // has no whole-file equivalent. Content too large for one upload is streamed
+  // here or in [WriteFile]; this is the one to pick when writing interleaves
+  // with reading or seeking. See [OpenFileRequest] for the frames.
+  rpc OpenFile(stream OpenFileRequest) returns (stream OpenFileResponse);
+
+  // Mkdir creates the directory at name without creating any missing parent:
+  // a missing parent is an error, not a level to create. Equivalent to
+  // [types.MkdirFS.Mkdir]; a name that is already a directory is a no-op.
+  rpc Mkdir(MkdirRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:mkdir"
+      body: "*"
+    };
+  }
+
+  // MkdirAll creates the directory at name and any missing parents, as
+  // [types.MkdirAllFS.MkdirAll] does. It is a no-op if the directory exists.
+  rpc MkdirAll(MkdirAllRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:mkdirAll"
+      body: "*"
+    };
+  }
+
+  // Remove deletes the file or empty directory at name, as
+  // [types.RemoveFS.Remove] does. A non-empty directory is an error; so is
+  // removing the root.
+  rpc Remove(RemoveRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/fs/{name=**}"
+    };
+  }
+
+  // RemoveAll deletes name and everything below it, as
+  // [types.RemoveAllFS.RemoveAll] does. A name that does not exist succeeds.
+  rpc RemoveAll(RemoveAllRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/fs/{name=**}:removeAll"
+    };
+  }
+
+  // Rename moves a node from name to new_name, as [types.RenameFS.Rename]
+  // does. It is not guaranteed to be atomic, and a failure does not tell the
+  // client whether the node still stands at name.
+  rpc Rename(RenameRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:rename"
+      body: "*"
+    };
+  }
+
+  // CopyFile copies a file from name to dst_path, as
+  // [types.CopyFileFS.CopyFile] does, which lets a backend with a native copy
+  // avoid reading the content across the wire. A dst_path that exists is an
+  // error.
+  rpc CopyFile(CopyFileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:copyFile"
+      body: "*"
+    };
+  }
+
+  // Link gives the file at name a second name, new_name, sharing its content
+  // and metadata, as [types.LinkFS.Link] does. A backend that cannot give two
+  // names one file reports an error rather than storing a copy.
+  rpc Link(LinkRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:link"
+      body: "*"
+    };
+  }
+
+  // Symlink creates new_name as a symbolic link storing name as its target,
+  // as [types.SymlinkFS.Symlink] does. The target is kept as written: it may
+  // be relative to the directory holding the link, and it need not exist.
+  // Reading a link that exists is [ReadLink].
+  rpc Symlink(SymlinkRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:symlink"
+      body: "*"
+    };
+  }
+
+  // Chmod sets the mode of the node at name, as [types.ChmodFS.Chmod] does.
+  // The mode replaces what was there; which bits a backend honors depends on
+  // its platform.
+  rpc Chmod(ChmodRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:chmod"
+      body: "*"
+    };
+  }
+
+  // Chown sets the owner and group of the node at name, as
+  // [types.ChownFS.Chown] does, following a symbolic link at name to the node
+  // it points at. A uid or gid of -1 leaves that half alone.
+  rpc Chown(ChownRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:chown"
+      body: "*"
+    };
+  }
+
+  // Lchown sets the owner and group of the node at name without following a
+  // symbolic link, as [types.LchownFS.Lchown] does. This is the form that
+  // changes the link itself.
+  rpc Lchown(LchownRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:lchown"
+      body: "*"
+    };
+  }
+
+  // Chtimes sets the access and modification times of the node at name, as
+  // [types.ChtimesFS.Chtimes] does. A time left unset keeps the value it has.
+  rpc Chtimes(ChtimesRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/fs/{name=**}:chtimes"
+      body: "*"
+    };
+  }
+
+  // Watch streams the changes observed under name and every directory nested
+  // below it, reporting each one as [types.NotifyHook] reports it to Go
+  // callers. The watch ends when the stream is closed or breaks: the
+  // [io.Closer] that Watch returns in Go is the stream itself, so the client
+  // stops the watch by stopping the stream, there is no close rpc, and closing a
+  // stream that has already ended is not an error. A backend that cannot watch
+  // the path refuses the stream with an error status instead.
+  rpc Watch(WatchRequest) returns (stream WatchEvent) {
+    option (google.api.http) = {
+      get: "/v1/fs/{name=**}:watch"
     };
   }
 }
+

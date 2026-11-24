@@ -16,6 +16,7 @@ package uri
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -758,5 +759,45 @@ func TestOptionYAML(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("round trip mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestIsServingAddress(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"http://localhost", true},
+		{"http://localhost:123", true},
+		{"http://127.0.0.1", true},
+		{"http://127.0.0.1:129", true},
+		{"http://0.0.0.0", true},
+		{"http://0.0.0.0:9090", true},
+		{"http://megahost", false},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("IsServingAddressString(%s)", tc.input), func(t *testing.T) {
+			t.Parallel()
+			got, err := IsServingAddressString(tc.input)
+			if err != nil {
+				t.Fatalf("got error, %s", err)
+			}
+			if got != tc.want {
+				t.Errorf("want: %t, got: %t", tc.want, got)
+			}
+		})
+
+		t.Run(fmt.Sprintf("IsServingAddress(%s)", tc.input), func(t *testing.T) {
+			t.Parallel()
+			u, err := url.Parse(tc.input)
+			if err != nil {
+				t.Fatalf("got error, %s", err)
+			}
+			got := IsServingAddress(u)
+			if got != tc.want {
+				t.Errorf("want: %t, got: %t", tc.want, got)
+			}
+		})
 	}
 }

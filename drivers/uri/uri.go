@@ -363,3 +363,22 @@ func joinQueryPart(head, fragment, marker string, pairs []httputil.QueryPair) st
 	}
 	return head + marker + query + fragment
 }
+
+// IsServingAddressString returns true if the address indicates that it's a server address.
+func IsServingAddressString(uri string) (bool, error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return false, err
+	}
+
+	return IsServingAddress(u), nil
+}
+
+// IsServingAddress returns true if the address indicates that it's a server address.
+func IsServingAddress(u *url.URL) bool {
+	switch strings.ToLower(u.Hostname()) {
+	case "localhost", "127.0.0.1", "0.0.0.0":
+		return true
+	}
+	return false
+}

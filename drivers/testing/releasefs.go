@@ -16,6 +16,7 @@ package testing
 
 import (
 	"io/fs"
+	"path"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -187,6 +188,13 @@ func releaseReacquire(t *testing.T, args Args, createFSFunc func(t *testing.T) r
 func seedRelease(t *testing.T, args Args, fsys releaseSeededTestFS) {
 	t.Helper()
 	if !args.ReadOnly {
+		// The directory the two names are written into is made here: Create is
+		// only asked to place a file, and whether it builds the path above it is
+		// the back end's choice (memFS does, localFS does not), which this suite
+		// is not about. MkdirAll is part of what the fixture already requires.
+		if err := fsys.MkdirAll(path.Dir(releaseFSName), fs.ModePerm); err != nil {
+			t.Fatalf("MkdirAll(%q) = %v, want nil: the fixture writes %q and %q into it", path.Dir(releaseFSName), err, releaseFSName, releaseAgainName)
+		}
 		SeedReleaseFS(t, fsys)
 		return
 	}

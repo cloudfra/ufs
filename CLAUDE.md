@@ -191,7 +191,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/embedfs/           | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration)                                                      |
 | drivers/gcsfs/             | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient                                                                     |
 | drivers/gitfs/             | Git repository FS (clone into a tempMountFS); registers URIs ending in .git on import. gitfs.New; stub on GOOS=aix and wasip1                           |
-| drivers/grpcfs/            | Serves the FS service of proto/ufs.proto: grpcfs.NewServer answers it over the wire from a types.WriteFS the process holds                              |
+| drivers/grpcfs/            | FS service of proto/ufs.proto: grpcfs.NewServer serves a types.WriteFS over the wire; grpcfs.New reaches one, registering grpc:// and grpcs://          |
 | drivers/polyfills/         | Best-effort standins for optional interfaces a file system lacks; used by the base package, so it must not import ufs                                   |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it                                                                 |
 | drivers/uri/               | Byte-preserving URI query-parameter add/remove helpers and the decorator option list, used by the base package and by drivers                           |

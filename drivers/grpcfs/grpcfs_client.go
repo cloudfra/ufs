@@ -205,8 +205,7 @@ func (fsys *grpcFS) closedErr(op, name string) error {
 // of its own or not: what Close answers for is the file system, and a file system
 // built by [NewWithClient] leaves its connection to the caller that made it.
 func (fsys *grpcFS) Close() error {
-	fsys.closed.Store(true)
-	if fsys.conn == nil {
+	if !fsys.closed.CompareAndSwap(false, true) || fsys.conn == nil {
 		return nil
 	}
 	return fsys.conn.Close()

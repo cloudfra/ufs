@@ -15,58 +15,28 @@
 package grpcfs_test
 
 import (
-	"io"
+	"bytes"
+	"context"
 	"testing"
+	"time"
 
-	"github.com/cloudfra/ufs/drivers/core"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/proto"
 	"google.golang.org/grpc/codes"
 )
 
-// diskFS returns a server's inner over a directory that goes away with the test.
-func diskFS(tb testing.TB) types.WriteFS {
-	tb.Helper()
-	return diskFSIn(tb, tb.TempDir())
-}
-
-// diskFSIn returns a server's inner over a directory that already exists, for a
-// test that reaches the same files through the operating system as well.
-func diskFSIn(tb testing.TB, dir string) types.WriteFS {
-	tb.Helper()
-	// Not ufs.New: New answers with a nestFS layer over the driver, and what a
-	// file on disk answers for each rpc is what these tests are about, not what a
-	// wrapper of the driver adds to it.
-	inner, err := core.MakeLocalFS(dir) //nolint:staticcheck // SA1019: the bare localFS is the inner under test, not a nestFS wrapper
-	if err != nil {
-		tb.Fatalf("MakeLocalFS: %v", err)
-	}
-	closer, ok := inner.(io.Closer)
-	if !ok {
-		tb.Fatalf("localFS %q does not implement io.Closer", dir)
-	}
-	// The root handle over dir is released by Close, and otherwise only when the
-	// value goes unreachable, which Go arranges from a finalizer. A served inner
-	// stays reachable as long as the server holding it does, and Go opens that
-	// handle on Windows without FILE_SHARE_DELETE, so the directory cannot be
-	// removed under it: leaving the release to the collector is what made
-	// t.TempDir() report "unlinkat …: The process cannot access the file because
-	// it is being used by another process" on the Windows jobs. This cleanup is
-	// registered after the one t.TempDir adds, so it runs before it.
-	tb.Cleanup(func() {
-		if err := closer.Close(); err != nil {
-			tb.Errorf("Close of the served localFS = %v", err)
-		}
-	})
-	return inner
-}
-
 // TestServerWriteFile covers the client-streaming upload, where the name and the
 // mode travel in the first frame and the content in every frame.
+//
+// The whole-file write the rpc answers with is not something every file system
+// offers, so it goes through drivers/polyfills, which builds it out of the
+// writable-handle methods a file system does have. Every inner a Server can be
+// handed implements types.CreateFileFS, because that is part of types.WriteFS,
+// so the upload always has something to be built from: what these cases can say
+// about a refusal is about the name, not about a missing capability.
 func TestServerWriteFile(t *testing.T) {
 	ctx := t.Context()
-	inner := diskFS(t)
+	inner := servedFS(t)
 	client := serve(t, inner)
 
 	t.Run("the_frames_concatenate_into_one_file", func(t *testing.T) {
@@ -94,9 +64,17 @@ func TestServerWriteFile(t *testing.T) {
 		if string(got) != "first second third" {
 			t.Errorf("content = %q, want the frames in the order they were sent", got)
 		}
-		// What the mode of the first frame does is asserted on unix only, in
-		// TestServerWriteFileMode: Windows reports no unix permission bits, so the
-		// file an upload makes there answers 0o777 whatever the frame carried.
+		// The mode of the first frame reaches the file: memFS has no umask and
+		// keeps the permission bits it is asked for, so 0o600 can only have come
+		// from the frame rather than from a default or a mask. A file system with
+		// a umask narrows it, as it narrows any mode.
+		info, err := inner.Stat("upload.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("perm = %b, want the mode the first frame carried", perm)
+		}
 	})
 
 	t.Run("an_empty_stream_names_no_file", func(t *testing.T) {
@@ -108,22 +86,59 @@ func TestServerWriteFile(t *testing.T) {
 		wantCode(t, err, codes.InvalidArgument)
 	})
 
-	t.Run("a_missing_parent_reports_NotFound", func(t *testing.T) {
-		_, err := writeWhole(ctx, client, "missing/child.txt", "child")
-		wantCode(t, err, codes.NotFound)
+	t.Run("a_frame_that_names_no_mode_makes_a_file_no_one_can_read", func(t *testing.T) {
+		// proto3 cannot tell a mode field that is unset from one set to 0, so an
+		// omitted mode reaches the file system as mode 000, which is what memFS
+		// then stores. This is the disagreement between the .proto and the io/fs
+		// permission bits that the handler comment names: substituting a default
+		// for a 0 would break the caller that asked for 000.
+		stream, err := client.WriteFile(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := stream.Send(&proto.WriteFileRequest{Name: "nomode.txt", Data: []byte("content")}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := stream.CloseAndRecv(); err != nil {
+			t.Fatal(err)
+		}
+		info, err := inner.Stat("nomode.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0 {
+			t.Errorf("perm = %b, want the mode 0 the frame left unset", perm)
+		}
 	})
 
-	t.Run("a_file_system_with_no_whole_file_write_of_its_own_is_refused", func(t *testing.T) {
-		// The service asks for a whole-file write through drivers/polyfills, which
-		// uses the served file system's own [types.WriteFileFS] when it has one.
-		// localFS has one, which is what the cases above run against; memFS does
-		// not, and the fallback that would build the write out of Create is not
-		// written yet, so the upload is refused. That refusal carries no io/fs
-		// sentinel for the status mapping to read, so it arrives as Unknown rather
-		// than the Unimplemented the answer deserves — the same gap TestServerSymlink
-		// records for readlink, and one that closes when the fallback lands.
-		_, err := writeWhole(ctx, serve(t, servedFS(t)), "upload.txt", "content")
-		wantCode(t, err, codes.Unknown)
+	t.Run("a_missing_parent_is_refused", func(t *testing.T) {
+		// The rpc says the parents of an upload are not created, which is not what
+		// the served file system would have answered on its own: memFS builds the
+		// levels of a name it is asked to write, while a file system rooted on disk
+		// reports that they are missing. The handler is what makes the two agree.
+		_, err := writeWhole(ctx, client, "missing/child.txt", "child")
+		wantCode(t, err, codes.NotFound)
+		if _, err := inner.Stat("missing"); err == nil {
+			t.Error("the refused upload made the missing directory anyway")
+		}
+	})
+
+	t.Run("a_name_under_a_regular_file_is_refused", func(t *testing.T) {
+		// The same lookup sees a level that is there but is not a directory. This
+		// name is refused by the served file system as well — memFS reports
+		// fs.ErrExist for a path with a regular file among its levels — so the code
+		// here is the one both halves of the service already agree on.
+		upload(ctx, t, client, "regular.txt", "content")
+		_, err := writeWhole(ctx, client, "regular.txt/child.txt", "child")
+		wantCode(t, err, codes.AlreadyExists)
+	})
+
+	t.Run("an_upload_into_a_directory_is_refused", func(t *testing.T) {
+		if _, err := client.MkdirAll(ctx, &proto.MkdirAllRequest{Name: "adir", Mode: uint32(0o755)}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := writeWhole(ctx, client, "adir", "content")
+		wantCode(t, err, codes.InvalidArgument)
 	})
 
 	t.Run("writing_an_existing_file_replaces_its_content", func(t *testing.T) {
@@ -135,6 +150,98 @@ func TestServerWriteFile(t *testing.T) {
 		}
 		if string(got) != "less" {
 			t.Errorf("content = %q, want the second write to have truncated the first", got)
+		}
+	})
+
+	// The ceilings the package sets, written out because a test in this package
+	// cannot see the constants: a change to one of those is a change to these.
+	const (
+		// A frame of this size is above what grpc allows a server to receive by
+		// default and below the ceiling the package raises it to, so the frames
+		// below travel because the server carries the options the package tells a
+		// host to put on it.
+		frameSize = 8 << 20
+		// The most content one WriteFile request may make a server hold.
+		uploadCeiling = 32 << 20
+	)
+
+	t.Run("one_frame_can_be_larger_than_grpc_allows_by_default", func(t *testing.T) {
+		// The rpc documents a whole small file traveling in one frame, and one
+		// frame is one HTTP request body: what a server will accept is not the
+		// library's 4 MiB default but the ceiling the package names.
+		content := bytes.Repeat([]byte("y"), 5<<20)
+		stream, err := client.WriteFile(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := stream.Send(&proto.WriteFileRequest{Name: "onebigframe.bin", Mode: uint32(0o600), Data: content}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := stream.CloseAndRecv(); err != nil {
+			t.Fatal(err)
+		}
+		got, err := inner.ReadFile("onebigframe.bin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, content) {
+			t.Errorf("%d bytes were written, want the %d that were sent", len(got), len(content))
+		}
+	})
+
+	t.Run("an_upload_bigger_than_the_handler_holds_for_it_is_refused", func(t *testing.T) {
+		// A handler that buffers a whole upload before writing it puts a ceiling
+		// on what that can cost. Every frame here is one the transport accepts, so
+		// the handler is what stops the upload — and it stops it with the code grpc
+		// itself uses for a message that is too big, so the two agree.
+		upper, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+
+		stream, err := client.WriteFile(upper)
+		if err != nil {
+			t.Fatal(err)
+		}
+		frame := bytes.Repeat([]byte("x"), frameSize)
+		for range uploadCeiling/len(frame) + 2 {
+			if err := stream.Send(&proto.WriteFileRequest{Name: "toobig.bin", Mode: uint32(0o600), Data: frame}); err != nil {
+				break
+			}
+		}
+		_, err = stream.CloseAndRecv()
+		wantCode(t, err, codes.ResourceExhausted)
+		if _, err := inner.Stat("toobig.bin"); err == nil {
+			t.Error("the refused upload left a file behind")
+		}
+	})
+
+	t.Run("an_upload_one_byte_under_that_ceiling_is_written", func(t *testing.T) {
+		// The ceiling is a ceiling rather than a target: an upload of one less
+		// than it is several frames and arrives whole.
+		upper, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+
+		const wanted = uploadCeiling - 1
+		stream, err := client.WriteFile(upper)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for sent := 0; sent < wanted; {
+			n := min(frameSize, wanted-sent)
+			frame := &proto.WriteFileRequest{Name: "justunder.bin", Mode: uint32(0o600), Data: bytes.Repeat([]byte("z"), n)}
+			if err := stream.Send(frame); err != nil {
+				t.Fatalf("after %d bytes: %v", sent, err)
+			}
+			sent += n
+		}
+		if _, err := stream.CloseAndRecv(); err != nil {
+			t.Fatal(err)
+		}
+		info, err := inner.Stat("justunder.bin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() != wanted {
+			t.Errorf("size = %d, want the %d bytes the frames carried", info.Size(), wanted)
 		}
 	})
 }

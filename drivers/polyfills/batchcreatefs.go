@@ -73,7 +73,7 @@ func batchCreateFromCreateFileFS(fsys types.CreateFileFS, files []types.BatchFil
 		if err != nil {
 			return err
 		}
-		if err := writeBatchFile(f, file); err != nil {
+		if err := writeWhole(f, file.Name, file.Data); err != nil {
 			return err
 		}
 	}
@@ -92,7 +92,7 @@ func batchCreateFromOpenFileFS(fsys types.OpenFileFS, files []types.BatchFile) e
 		if err != nil {
 			return err
 		}
-		if err := writeBatchFile(f, file); err != nil {
+		if err := writeWhole(f, file.Name, file.Data); err != nil {
 			return err
 		}
 	}
@@ -111,20 +111,20 @@ func mkdirParent(fsys fs.FS, name string) error {
 	return mkdirAll(fsys, dir, fs.ModePerm)
 }
 
-// writeBatchFile writes the whole of file.Data to f and closes f whether or not
-// the write succeeded, since a handle left open is a leak in a file system the
-// caller still holds. The write error is returned, joined with the close error
-// if there is one too.
-func writeBatchFile(f types.File, file types.BatchFile) (err error) {
+// writeWhole writes the whole of data to a handle that is already open and
+// closes the handle whether or not the write got through, since a handle left
+// open is a leak in a file system the caller still holds. The write error is
+// returned, joined with the close error if there is one too.
+func writeWhole(f types.File, name string, data []byte) (err error) {
 	defer func() {
 		err = ufserrors.Join(err, f.Close())
 	}()
-	written, err := f.Write(file.Data)
+	written, err := f.Write(data)
 	if err != nil {
 		return err
 	}
-	if written != len(file.Data) {
-		return fmt.Errorf("%q: wrote %d of %d bytes", file.Name, written, len(file.Data))
+	if written != len(data) {
+		return fmt.Errorf("%q: wrote %d of %d bytes", name, written, len(data))
 	}
 	return nil
 }

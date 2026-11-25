@@ -31,104 +31,84 @@
 // offers the same rpc surface for every file system it is handed.
 package grpcfs
 
-import (
-	"context"
-	"errors"
-	"io/fs"
-	"time"
+import "google.golang.org/grpc"
 
-	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/internal/ufserrors"
-	"github.com/cloudfra/ufs/proto"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
+const (
+	// readChunkSize is how much file content one ReadFileResponse carries. How
+	// big a whole file has to be before it is worth streaming rather than
+	// sending whole is server policy rather than part of the wire format, so the
+	// server picks it: small enough that a large file arrives in frames instead
+	// of one buffered message, large enough that a modest file is one frame.
+	//
+	// A frame is not free, and that is the reason the chunk stops here rather than
+	// lower: the same 8 MiB of content costs 29.8 MB and 290 allocations over the
+	// wire in one frame, and 43.8 MB and 2433 allocations in 128 frames of this
+	// size (BenchmarkUploadFrameSize). On the read side this is also the only
+	// buffer a streamed read holds, whatever size the file turns out to be.
+	readChunkSize = 64 << 10
+
+	// defaultListPageSize is how many children ListFiles answers when the
+	// request asks for no maximum of its own.
+	defaultListPageSize = 1000
+
+	// maxMessageSize is the largest single message the service carries in either
+	// direction. The number is the one the rpc comment already chooses: the
+	// WriteFile comment in proto/ufs.proto puts 10 MB at the point above which
+	// content is worth splitting across frames rather than sending in one, so a
+	// message below it is what one frame is for and a message above it does not
+	// occur.
+	//
+	// The transport enforces it, which is what [ServerOptions] is for, and the
+	// read handler uses the same number for the largest file it is willing to hold
+	// in memory in order to answer a request for a whole file.
+	//
+	// The number is worth what it costs, and the cost is linear in the message: a
+	// single-frame 8 MiB upload measures 29.8 MB of allocation and 6.3 ms over the
+	// in-process path, a 1 MiB one 3.5 MB and 0.8 ms (BenchmarkUploadFrameSize,
+	// BenchmarkUploadSize), so a message is a fixed multiple of itself and the
+	// ceiling is the whole of the policy. It sits a little above twice
+	// grpc-go's own 4 MiB default — defaultServerMaxReceiveMessageSize, and
+	// MaxCallRecvMsgSize says the same for the client side — because that default
+	// refuses the single-frame upload the rpc documents, and it stops there
+	// because one message at the ceiling is already worth some tens of megabytes.
+	maxMessageSize = 10 << 20
+
+	// maxUploadSize is the largest whole content a WriteFile request may carry,
+	// counted over all of its frames rather than per frame. It is a handler
+	// ceiling rather than a transport one because the handler holds the content it
+	// is given: the write is handed to the file system whole, so an upload costs
+	// the server its size in memory for as long as the request runs, and without a
+	// ceiling the number of frames a client sends bounds nothing.
+	//
+	// It sits above [maxMessageSize] on purpose: the reason the upload is a stream
+	// at all is that a file larger than one message still has to fit. It stops
+	// there because a file much larger than that should not be buffered in the
+	// first place, and this service has no rpc that writes an upload as it arrives.
+	//
+	// The measurement behind where "much larger" starts is BenchmarkUploadSize:
+	// 1 MiB costs 3.5 MB, 8 MiB costs 42 MB, 30 MiB costs 163 MB, so a buffered
+	// upload is worth about five times itself per request, and 32 MiB is where one
+	// request's peak reaches the hundreds of megabytes a host should be able to
+	// refuse. Refusal is not free — a 33 MiB upload measures 170 MB, because the
+	// frames are received before the handler can answer — so what this ceiling
+	// bounds is what the handler accumulates and writes, not what a client can put
+	// on the wire.
+	maxUploadSize = 32 << 20
 )
 
-// toStatus turns a file-system error into the status the service documents. The
-// sentinel decides the code and the whole error text stays in the message, so a
-// client reading the status back can rebuild an error whose errors.Is answers
-// match the file system at the other end of the connection.
+// ServerOptions returns the grpc.ServerOption values a host needs on the
+// grpc.Server it registers a [Server] on, so that the message ceiling the service
+// documents is also the ceiling the transport enforces.
 //
-// The four codes the service comment names are the common cases. A non-empty
-// directory has no code of its own there, so it travels as FailedPrecondition,
-// the only code that can carry ufserrors.ErrDirNotEmpty across the wire: that is
-// the sentinel memFS, boltFS and gcsFS report, and FailedPrecondition is the only
-// way to keep it apart from the fs.ErrExist a non-empty directory satisfies on the
-// operating systems that report ENOTEMPTY.
+// grpc-go refuses a received message larger than 4 MiB unless told otherwise
+// (defaultServerMaxReceiveMessageSize), while the WriteFile rpc documents an
+// upload that puts its whole content in one frame up to the 10 MB ceiling the rpc
+// comment names: without this option a host cannot accept the single-frame upload
+// the service describes, and the refusal it gets is the transport's, at a number
+// nothing in this package chose.
 //
-// An error that already carries a status keeps it, so a handler that reports a
-// problem of the service rather than of a file system is not recoded here.
-func toStatus(err error) error {
-	if err == nil {
-		return nil
-	}
-	if _, ok := status.FromError(err); ok {
-		return err
-	}
-	code := codes.Unknown
-	switch {
-	case errors.Is(err, ufserrors.ErrDirNotEmpty):
-		// This case has to come before fs.ErrExist, which ENOTEMPTY satisfies.
-		code = codes.FailedPrecondition
-	case errors.Is(err, errors.ErrUnsupported):
-		// A method the file system has no means to perform, which is the answer
-		// a file handle gives for a seek it cannot do.
-		code = codes.Unimplemented
-	case errors.Is(err, fs.ErrNotExist):
-		code = codes.NotFound
-	case errors.Is(err, fs.ErrExist):
-		code = codes.AlreadyExists
-	case errors.Is(err, fs.ErrPermission):
-		code = codes.PermissionDenied
-	case errors.Is(err, fs.ErrInvalid):
-		code = codes.InvalidArgument
-	case errors.Is(err, context.Canceled):
-		code = codes.Canceled
-	case errors.Is(err, context.DeadlineExceeded):
-		code = codes.DeadlineExceeded
-	}
-	return status.Error(code, err.Error())
-}
-
-// toProtoFile writes one node's metadata as a File resource.
-//
-// name is the path the caller asked for rather than info.Name(): a File is named
-// by its whole path relative to the root, while fs.FileInfo reports only the last
-// element, which is why the mapping needs the caller's path to stay faithful.
-func toProtoFile(name string, info fs.FileInfo) *proto.File {
-	return &proto.File{
-		Name:    name,
-		Size:    info.Size(),
-		Mode:    uint32(info.Mode()),
-		ModTime: toProtoTime(info.ModTime()),
-		IsDir:   info.IsDir(),
-	}
-}
-
-// toProtoTime leaves a time a file system does not report unset on the wire,
-// which is what the File and FileSystemInfo comments ask for.
-func toProtoTime(t time.Time) *timestamppb.Timestamp {
-	if t.IsZero() {
-		return nil
-	}
-	return timestamppb.New(t)
-}
-
-// toProtoDeviceMap writes the path-keyed device map a file system reports. The
-// answer stays minimal, as types.DeviceMap is: a path with no entry of its own is
-// backed by the entry of its nearest ancestor.
-func toProtoDeviceMap(devices types.DeviceMap) map[string]*proto.DeviceInfo {
-	if len(devices) == 0 {
-		return nil
-	}
-	out := make(map[string]*proto.DeviceInfo, len(devices))
-	for name, info := range devices {
-		out[name] = &proto.DeviceInfo{
-			Name:        info.Name(),
-			DeviceType:  info.DeviceType(),
-			ThreadCount: int32(info.ThreadCount()), //nolint:gosec // G115: the count is a small number of threads, the proto field is int32
-		}
-	}
-	return out
+// The other direction needs no option: a read response carries at most
+// [readChunkSize] of content, well under any default.
+func ServerOptions() []grpc.ServerOption {
+	return []grpc.ServerOption{grpc.MaxRecvMsgSize(maxMessageSize)}
 }

@@ -42,20 +42,24 @@ func serve(tb testing.TB, inner types.WriteFS) proto.FSClient {
 	tb.Helper()
 
 	lis := bufconn.Listen(1024 * 1024)
-	grpcServer := grpc.NewServer()
+	// The same options a host embedding a Server is told to put on its own
+	// server: the handlers assume the message ceiling they set, and grpc's own
+	// default is smaller than that, so a test without them would be testing a
+	// server the package does not describe.
+	grpcServer := grpc.NewServer(grpcfs.ServerOptions()...)
 	proto.RegisterFSServer(grpcServer, grpcfs.NewServer(inner))
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			tb.Errorf("Serve: %v", err)
 		}
 	}()
-	// GracefulStop rather than Stop: a read handler holds the file it streams
-	// open until it unwinds, and Stop returns without waiting for that. A busy
-	// file is as hard for Windows to remove as a busy directory, so a cleanup
-	// that went ahead while a handler was still sending would fail over the
-	// served tree. The client connection is closed before this cleanup runs —
-	// t.Cleanup is last-in-first-out — so a handler still sending to a caller
-	// that has gone away is canceled rather than awaited.
+	// GracefulStop rather than Stop: a read handler holds the handle it opened on
+	// the served file system until it unwinds, and Stop returns without waiting
+	// for that, so a test that looked at the tree while a handler was still
+	// sending could see a read it never asked for. The client connection is
+	// closed before this cleanup runs — t.Cleanup is last-in-first-out — so a
+	// handler still sending to a caller that has gone away is canceled rather
+	// than awaited.
 	tb.Cleanup(grpcServer.GracefulStop)
 
 	conn, err := grpc.NewClient("passthrough:///bufconn",
@@ -69,11 +73,12 @@ func serve(tb testing.TB, inner types.WriteFS) proto.FSClient {
 	return proto.NewFSClient(conn)
 }
 
-// servedFS returns a memory file system for a server to serve. memFS answers
-// every method of types.WriteFS, which is all a Server asks of the file system
-// it is handed: the service carries no rpc for anything an optional interface
-// would add, so there is nothing for a test fixture to put back the way a wider
-// inner used to need.
+// servedFS returns the file system these tests serve: a memFS, so a test changes
+// and checks the served tree through the same calls a client makes, with nothing
+// of the machine it runs on in between. memFS answers every method of
+// types.WriteFS, which is all a Server asks of the file system it is handed: the
+// service carries no rpc for anything an optional interface would add, so there
+// is nothing for a fixture to put back on top.
 func servedFS(tb testing.TB) types.WriteFS {
 	tb.Helper()
 	return core.MakeMemFS("memory://test")
@@ -180,9 +185,11 @@ func TestServerListFiles(t *testing.T) {
 	}
 
 	t.Run("pages_walk_the_whole_directory", func(t *testing.T) {
-		var names, token []string
+		var names []string
 		next := ""
-		for pages := 0; ; pages++ {
+		pages := 0
+		for {
+			pages++
 			if pages == 10 {
 				t.Fatal("ListFiles kept handing out a page token")
 			}
@@ -193,11 +200,16 @@ func TestServerListFiles(t *testing.T) {
 			for _, f := range resp.GetFiles() {
 				names = append(names, f.GetName())
 			}
-			token = append(token, resp.GetNextPageToken())
 			if resp.GetNextPageToken() == "" {
 				break
 			}
 			next = resp.GetNextPageToken()
+		}
+		// Five children at a page size of two is three pages, and the walk stops
+		// with the last of them: a handler that handed out a token for a directory
+		// it had already finished would take a fourth page listing nothing.
+		if pages != 3 {
+			t.Errorf("walked %d pages, want the three that five children at two a page is", pages)
 		}
 		want := []string{"five", "four", "one", "three", "two"}
 		if len(names) != len(want) {
@@ -207,9 +219,6 @@ func TestServerListFiles(t *testing.T) {
 			if names[i] != want[i] {
 				t.Fatalf("listed %v, want %v in ReadDir's order", names, want)
 			}
-		}
-		if token[len(token)-1] != "" {
-			t.Errorf("the last page's token = %q, want empty to end the walk", token[len(token)-1])
 		}
 	})
 

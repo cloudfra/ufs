@@ -72,17 +72,70 @@ func TestReadOnlyWriteOperationsReturnPermissionDenied(t *testing.T) {
 	}
 }
 
+// TestReadOnlyOpenFileWriteFlags checks that OpenFile refuses every flag that
+// writes, creates or truncates with the same permission error as the other write
+// operations, so that no open of a read-only file system can change it.
+func TestReadOnlyOpenFileWriteFlags(t *testing.T) {
+	t.Parallel()
+
+	inner := newInner(t)
+	openFS, ok := New(inner).(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("the read-only view of %T does not satisfy types.OpenFileFS", inner)
+	}
+
+	tests := []struct {
+		name string
+		flag int
+	}{
+		{"os.O_WRONLY", os.O_WRONLY},
+		{"os.O_RDWR", os.O_RDWR},
+		{"os.O_RDONLY|os.O_CREATE", os.O_RDONLY | os.O_CREATE},
+		{"os.O_WRONLY|os.O_TRUNC", os.O_WRONLY | os.O_TRUNC},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			file, err := openFS.OpenFile("a.txt", tc.flag, 0o600)
+			if file != nil {
+				t.Errorf("OpenFile(a.txt, %s) returned a handle, want nil", tc.name)
+			}
+			var pathErr *fs.PathError
+			if !errors.As(err, &pathErr) {
+				t.Fatalf("OpenFile(a.txt, %s) = %v, want a *fs.PathError", tc.name, err)
+			}
+			if pathErr.Op != "open" {
+				t.Errorf("OpenFile(a.txt, %s) error op = %q, want open", tc.name, pathErr.Op)
+			}
+			if pathErr.Path != "a.txt" {
+				t.Errorf("OpenFile(a.txt, %s) error path = %q, want a.txt", tc.name, pathErr.Path)
+			}
+			if !errors.Is(err, fs.ErrPermission) {
+				t.Errorf("OpenFile(a.txt, %s) = %v, want fs.ErrPermission", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestReadOnlyWriteOperationsInvalidPath(t *testing.T) {
 	t.Parallel()
 
 	inner := newInner(t)
 	fsys := New(inner)
+	openFS, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.OpenFileFS, want the read-only view to", fsys)
+	}
 
 	for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
 		t.Run(badPath, func(t *testing.T) {
 			t.Parallel()
 			if _, err := fsys.Create(badPath); err == nil {
 				t.Errorf("Create(%q) returned nil error, want error", badPath)
+			}
+			if _, err := openFS.OpenFile(badPath, os.O_WRONLY, 0o600); err == nil {
+				t.Errorf("OpenFile(%q, os.O_WRONLY) returned nil error, want error", badPath)
 			}
 			if err := fsys.MkdirAll(badPath, fs.ModePerm); err == nil {
 				t.Errorf("MkdirAll(%q) returned nil error, want error", badPath)
@@ -98,6 +151,109 @@ func TestReadOnlyWriteOperationsInvalidPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestReadOnlyOpenFileInvalidPath checks that OpenFile reports an invalid path
+// as fs.ErrInvalid whether or not the flag it was given writes, because the path
+// is rejected before the write is refused.
+func TestReadOnlyOpenFileInvalidPath(t *testing.T) {
+	t.Parallel()
+
+	inner, _ := newLocalInner(t)
+	openFS, ok := New(inner).(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("the read-only view of %T does not satisfy types.OpenFileFS", inner)
+	}
+
+	for _, tc := range []struct {
+		name string
+		flag int
+	}{
+		{name: "write flag", flag: os.O_WRONLY},
+		{name: "read flag", flag: os.O_RDONLY},
+	} {
+		for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
+			t.Run(tc.name+" "+badPath, func(t *testing.T) {
+				t.Parallel()
+				file, err := openFS.OpenFile(badPath, tc.flag, 0o600)
+				if file != nil {
+					t.Errorf("OpenFile(%q, %s) returned a handle, want nil", badPath, tc.name)
+				}
+				if !errors.Is(err, fs.ErrInvalid) {
+					t.Errorf("OpenFile(%q, %s) = %v, want fs.ErrInvalid", badPath, tc.name, err)
+				}
+			})
+		}
+	}
+}
+
+// TestReadOnlyReleaseNothingHeld checks that the read-only view has nothing of
+// its own to let go of: Release succeeds, may be called repeatedly, and leaves
+// the view usable, see [types.ReleaseFS]. The file system behind the view is a
+// null file system, which has nothing to let go of either.
+func TestReadOnlyReleaseNothingHeld(t *testing.T) {
+	t.Parallel()
+
+	fsys := New(newInner(t))
+	releaseFS, ok := fsys.(types.ReleaseFS)
+	if !ok {
+		t.Fatal("the read-only view does not satisfy types.ReleaseFS")
+	}
+	for i := range 2 {
+		if err := releaseFS.Release(); err != nil {
+			t.Errorf("Release() [%d] = %v, want nil", i, err)
+		}
+	}
+	if _, err := fsys.ReadFile("a.txt"); err != nil {
+		t.Errorf("ReadFile(a.txt) after Release() = %v, want nil", err)
+	}
+	if err := releaseFS.Close(); err != nil {
+		t.Errorf("Close() after Release() = %v, want nil", err)
+	}
+}
+
+// TestReadOnlyReleaseReachesInner checks that releasing the view lets go of what
+// the file system behind it acquired for itself, and that that file system's own
+// failure is what the caller is told.
+func TestReadOnlyReleaseReachesInner(t *testing.T) {
+	t.Parallel()
+
+	inner := &releaseInner{WriteFS: newInner(t)}
+	releaseFS, ok := New(inner).(types.ReleaseFS)
+	if !ok {
+		t.Fatal("the read-only view does not satisfy types.ReleaseFS")
+	}
+
+	if err := releaseFS.Release(); err != nil {
+		t.Fatalf("Release() = %v, want nil", err)
+	}
+	if inner.calls != 1 {
+		t.Errorf("Release() reached the file system behind the view %d times, want 1", inner.calls)
+	}
+
+	wantErr := errors.New("cannot reach the archive")
+	inner.releaseErr = wantErr
+	if err := releaseFS.Release(); !errors.Is(err, wantErr) {
+		t.Errorf("Release() = %v, want %v from the file system behind the view", err, wantErr)
+	}
+	if inner.calls != 2 {
+		t.Errorf("Release() reached the file system behind the view %d times, want 2", inner.calls)
+	}
+}
+
+// releaseInner is a file system with something of its own to let go of, for the
+// tests that check a release is passed down rather than answered on the way.
+type releaseInner struct {
+	types.WriteFS
+	calls      int
+	releaseErr error
+}
+
+var _ types.ReleaseFS = (*releaseInner)(nil)
+
+func (fsys *releaseInner) Release() error {
+	fsys.calls++
+	return fsys.releaseErr
 }
 
 func TestReadOnlyDelegatesReadsToInner(t *testing.T) {
@@ -477,6 +633,56 @@ func TestReadOnlyMasksOpenHandleMode(t *testing.T) {
 	}
 }
 
+// TestReadOnlyOpenFileHandlesMaskMode checks that the handle OpenFile returns
+// for an allowed open reports the wrapped file's mode without its write
+// permission bits, as [Open]'s handle does.
+func TestReadOnlyOpenFileHandlesMaskMode(t *testing.T) {
+	t.Parallel()
+
+	inner, _ := newLocalInner(t)
+	openFS, ok := New(inner).(types.OpenFileFS)
+	if !ok {
+		t.Fatalf("the read-only view of %T does not satisfy types.OpenFileFS", inner)
+	}
+
+	file, err := openFS.OpenFile("a.txt", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile(a.txt, os.O_RDONLY) = %v, want nil", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatalf("Stat on the opened file = %v, want nil", err)
+	}
+	innerInfo, err := inner.Stat("a.txt")
+	if err != nil {
+		t.Fatalf("Stat(a.txt) on the wrapped file system = %v, want nil", err)
+	}
+	if innerInfo.Mode().Perm()&writableModeBits == 0 {
+		t.Fatalf("Stat(a.txt) on the wrapped file system mode = %v, want write permission bits to mask", innerInfo.Mode())
+	}
+	assertMaskedInfo(t, "OpenFile handle", info, innerInfo)
+
+	// The handle must still read, since an allowed open is a real open.
+	if data, err := io.ReadAll(file); err != nil {
+		t.Errorf("ReadAll = %v, want nil", err)
+	} else if string(data) != "contents" {
+		t.Errorf("ReadAll = %q, want %q", data, "contents")
+	}
+
+	// The FUSE and ProjFS hosts serve reads at an offset, so the handle must keep
+	// the capabilities of the file it wraps.
+	if _, ok := file.(io.ReaderAt); !ok {
+		t.Errorf("OpenFile handle does not satisfy io.ReaderAt, want the wrapped capability kept")
+	}
+	if _, ok := file.(io.Seeker); !ok {
+		t.Errorf("OpenFile handle does not satisfy io.Seeker, want the wrapped capability kept")
+	}
+
+	if err := file.Close(); err != nil {
+		t.Errorf("Close = %v, want nil", err)
+	}
+}
+
 func TestReadOnlyMasksDirectoryHandleEntries(t *testing.T) {
 	t.Parallel()
 
@@ -853,25 +1059,21 @@ func TestMaskFileModeKeepsCapabilities(t *testing.T) {
 			t.Parallel()
 
 			masked := maskFileMode(tc.file)
-			typedFile, isTyped := masked.(types.File)
-			if !isTyped {
-				t.Fatal("masked file is not a types.File")
-			}
 			dirFile, isDir := masked.(fs.ReadDirFile)
 			if isDir != tc.dir {
 				t.Errorf("masked file is an fs.ReadDirFile = %t, want %t", isDir, tc.dir)
 			}
 
-			if _, err := typedFile.Seek(0, io.SeekStart); !errors.Is(err, tc.seekErr) {
+			if _, err := masked.Seek(0, io.SeekStart); !errors.Is(err, tc.seekErr) {
 				t.Errorf("Seek error = %v, want %v", err, tc.seekErr)
 			}
-			if _, err := typedFile.ReadAt(make([]byte, 1), 0); !errors.Is(err, tc.readAtErr) {
+			if _, err := masked.ReadAt(make([]byte, 1), 0); !errors.Is(err, tc.readAtErr) {
 				t.Errorf("ReadAt error = %v, want %v", err, tc.readAtErr)
 			}
-			if _, err := typedFile.Write([]byte("x")); !errors.Is(err, tc.writeErr) {
+			if _, err := masked.Write([]byte("x")); !errors.Is(err, tc.writeErr) {
 				t.Errorf("Write error = %v, want %v", err, tc.writeErr)
 			}
-			if _, err := typedFile.WriteString("x"); !errors.Is(err, tc.writeErr) {
+			if _, err := masked.WriteString("x"); !errors.Is(err, tc.writeErr) {
 				t.Errorf("WriteString error = %v, want %v", err, tc.writeErr)
 			}
 

@@ -51,6 +51,7 @@ type store struct {
 	mkdirAllCalls []string
 	batches       [][]string
 	copyCalls     []copyCall
+	writeCalls    []writeCall
 	openCalls     int
 	closeCalls    int
 

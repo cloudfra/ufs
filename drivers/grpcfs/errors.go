@@ -14,6 +14,12 @@
 
 package grpcfs
 
+// errors.go carries the error mapping of the service in both directions: toStatus
+// is what a handler puts on the wire, fromStatus is what a driver reads back off
+// it. They sit in one file because they are one table read each way — the
+// sentinel that decides the code going out is the sentinel the code decides coming
+// back.
+
 import (
 	"context"
 	"errors"
@@ -70,4 +76,54 @@ func toStatus(err error) error {
 		code = codes.DeadlineExceeded
 	}
 	return status.Error(code, err.Error())
+}
+
+// fromStatus turns an error reported by a call of the service back into the error
+// the file system at the other end reported.
+//
+// It is the inverse of toStatus: the sentinel decided the code going out and the
+// code decides the sentinel coming back, so errors.Is answers the same on this
+// side of a connection as it does on that one — which is what lets code written
+// against this file system test for fs.ErrNotExist instead of reading a grpc
+// status. The text that came with the code is kept only where no sentinel covers
+// the failure, because there the text is the whole answer.
+func fromStatus(err error) error {
+	if err == nil {
+		return nil
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return err
+	}
+	switch st.Code() {
+	case codes.NotFound:
+		return fs.ErrNotExist
+	case codes.AlreadyExists:
+		return fs.ErrExist
+	case codes.FailedPrecondition:
+		// The one code toStatus reserves for a non-empty directory, which is the
+		// only way ufserrors.ErrDirNotEmpty survives the trip.
+		return ufserrors.ErrDirNotEmpty
+	case codes.PermissionDenied:
+		return fs.ErrPermission
+	case codes.InvalidArgument:
+		return fs.ErrInvalid
+	case codes.Unimplemented:
+		return errors.ErrUnsupported
+	case codes.Canceled:
+		return context.Canceled
+	case codes.DeadlineExceeded:
+		return context.DeadlineExceeded
+	default:
+		// A failure of the connection rather than of a file system — an address
+		// that is down, a stream that was cut — which has no file-system sentinel.
+		return st.Err()
+	}
+}
+
+// pathError reports a failed call in the shape the io/fs interfaces and the
+// conformance suite of drivers/testing ask for: an *fs.PathError naming the
+// operation and the path, wrapping the error the server answered with.
+func pathError(op, name string, err error) error {
+	return ufserrors.NewPathError(op, name, fromStatus(err))
 }

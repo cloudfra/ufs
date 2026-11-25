@@ -25,6 +25,7 @@
 //   - bolt: from [github.com/cloudfra/ufs/drivers/boltfs]
 //   - gs:// from [github.com/cloudfra/ufs/drivers/gcsfs]
 //   - URIs ending in .git from [github.com/cloudfra/ufs/drivers/gitfs]
+//   - grpc:// and grpcs:// from [github.com/cloudfra/ufs/drivers/grpcfs]
 //
 // and these decorators, which a mount selects by name in its options:
 //
@@ -38,7 +39,7 @@
 // included; call their constructors directly.
 //
 // Importing this package links the dependencies of every driver (the Google
-// Cloud Storage client, go-git and bbolt) into the binary. Import the
+// Cloud Storage client, go-git, bbolt and gRPC) into the binary. Import the
 // individual packages instead to keep a binary small. A driver that is
 // unavailable on the target platform is still registered there but fails to
 // open, see its package documentation.
@@ -52,4 +53,5 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/decorators/telemetryfs" // registers the telemetry mount option
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                  // registers gs://
 	_ "github.com/cloudfra/ufs/drivers/gitfs"                  // registers git repository URIs
+	_ "github.com/cloudfra/ufs/drivers/grpcfs"                 // registers grpc:// and grpcs://
 )

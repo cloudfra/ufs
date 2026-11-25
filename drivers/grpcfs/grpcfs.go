@@ -12,23 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package grpcfs serves a ufs file system over the FS service of
-// proto/ufs.proto: grpcfs.NewServer answers that service from a file system the
-// process already holds, which is how the file system is read and written from
-// another process or another machine.
+// Package grpcfs carries a ufs file system over the FS service of
+// proto/ufs.proto, in both directions: a Server that answers the service from a
+// file system the process already holds, and a driver that turns an address
+// running the service into a file system of its own.
 //
 // The service maps one rpc onto each method reachable from the types.WriteFS
-// interface of drivers/types, so the server is a translation of one interface
-// rather than an invention: it calls methods on a types.WriteFS and answers what
-// it gets back. That decides what is not on the wire. Close and Release are
-// absent because a server cannot decide when every client it serves is done with
-// a file system it was handed; IsSame, InnerFS and ExternalPath are absent
-// because none of them is a question about a location; and every optional
-// interface a file system may or may not carry — Rename, Mkdir, OpenFile,
-// BatchCreate, the link and mode-bit setters, Watcher — is absent
-// because an rpc for each would make the surface a server offers depend on what
-// the file system standing behind it happens to implement. A server therefore
-// offers the same rpc surface for every file system it is handed.
+// interface of drivers/types, so both directions are a translation of one
+// interface rather than an invention: the server calls methods on a
+// types.WriteFS and answers what it gets back, and the driver spends its calls
+// on rpcs whose answer is the value the Go method would have returned. What that
+// keeps off the wire is every method of an optional interface a served file
+// system might not carry, plus Close, Release, IsSame, InnerFS and ExternalPath,
+// which are not questions about locations — neither direction reaches any of
+// them, which is what keeps the two sides symmetric.
+//
+// The two directions share the constants here, because they are the numbers the
+// service documents rather than the numbers one side chose: the ceiling a frame
+// may reach is the ceiling a client may send and the ceiling a server may accept.
 package grpcfs
 
 import "google.golang.org/grpc"

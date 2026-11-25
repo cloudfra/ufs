@@ -14,10 +14,17 @@
 
 package grpcfs
 
+// fileinfo.go carries the File resource of the service in both directions:
+// toProtoFile and toProtoTime are what a handler writes, fromProtoFile and
+// fromProtoTime are what a driver reads back. They sit in one file because a File
+// on the wire is one shape seen from both ends.
+
 import (
 	"io/fs"
+	"path"
 	"time"
 
+	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -44,4 +51,29 @@ func toProtoTime(t time.Time) *timestamppb.Timestamp {
 		return nil
 	}
 	return timestamppb.New(t)
+}
+
+// fromProtoTime reads a time back, giving the zero time.Time for a field that
+// was left unset, which is how a file system that does not report a time reaches
+// this side of the connection.
+func fromProtoTime(t *timestamppb.Timestamp) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.AsTime()
+}
+
+// fromProtoFile reads one File resource back as metadata.
+//
+// A File is named by its whole path relative to the root — GetFile answers with
+// the path it was asked about and ListFiles with the path of each child — while
+// fs.FileInfo reports a single element, so the last element of the path on the
+// wire is what the metadata carries.
+func fromProtoFile(file *proto.File) types.FileInfo {
+	return types.NewFileInfo(
+		path.Base(file.GetName()),
+		file.GetSize(),
+		fs.FileMode(file.GetMode()), //nolint:gosec // G115: the mode is the fs.FileMode value the server wrote, so the round trip is exact
+		fromProtoTime(file.GetModTime()),
+	)
 }

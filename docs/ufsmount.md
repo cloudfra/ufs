@@ -1,8 +1,12 @@
 # ufsmount
 
-`ufsmount` exposes any `ufs`-supported virtual file system as a regular
-directory on the host. Files inside the mount point can be accessed by
-any program — `ls`, `cat`, editors, build tools, and so on.
+`ufsmount` exposes any `ufs`-supported virtual file system through one of two
+outputs: as a regular directory on the host, or as the FS service of
+`proto/ufs.proto` on a socket that another process — or another machine — can
+read and write. `-mount` decides which one it is: a path on the host is a mount,
+and a `grpc://host:port` address is the socket to serve on. Files inside the
+mount point can be accessed by any program — `ls`, `cat`, editors, build tools,
+and so on.
 
 The mount mechanism is platform-specific:
 
@@ -11,6 +15,9 @@ The mount mechanism is platform-specific:
 | Linux    | FUSE    | yes  | yes (if the FS supports it) |
 | Windows  | ProjFS  | yes  | no (read-only)              |
 
+The socket output needs no platform support of its own: it is the same on
+every platform `ufs` builds for.
+
 ## Install
 
 ```bash
@@ -18,6 +25,9 @@ go install github.com/cloudfra/ufs/cmd/ufsmount@latest
 ```
 
 ## Prerequisites
+
+A `-mount` path needs something installed on the host: FUSE on Linux, ProjFS on
+Windows. A `-mount` address and `-debug` need a free port and nothing else.
 
 ### Linux — FUSE
 
@@ -55,17 +65,24 @@ for details.
 ## Usage
 
 ```text
-ufsmount -uri <source> -mount <path> [-verbose]
+ufsmount -uri <source> -mount <path>|grpc://<host:port> [-debug <host:port>] [-verbose]
 ```
 
-| Flag       | Required | Description                                        |
-| ---------- | -------- | -------------------------------------------------- |
-| `-uri`     | yes      | URI (or path) of the virtual file system to mount. |
-| `-mount`   | yes      | Directory on the host where the FS will appear.    |
-| `-verbose` | no       | Log every FUSE/ProjFS callback, for debugging.     |
+| Flag       | Required | Description                                                                                                 |
+| ---------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+| `-uri`     | yes      | URI (or path) of the virtual file system to expose.                                                         |
+| `-mount`   | yes      | Directory on the host where the FS will appear, or a `grpc://host:port` address to serve the FS on instead. |
+| `-debug`   | no       | `host:port` address to run the debug HTTP server on (expvar and the Go profiler).                           |
+| `-verbose` | no       | Log every FUSE/ProjFS callback, for debugging.                                                              |
+
+`-mount` carries a path when it names a directory and a URI when it names a
+socket, so one flag says which output the file system is exposed through. A
+scheme other than `grpc://` in `-mount` is refused rather than guessed at: `-uri`
+is where the file system's own URI goes.
 
 The process runs in the foreground. Press `Ctrl-C` or send `SIGTERM` to
-unmount and exit. You can also unmount externally:
+unmount, let any request already in flight finish, and exit. You can also
+unmount externally:
 
 ```bash
 fusermount -u /mnt/data
@@ -109,6 +126,46 @@ ls /mnt/scratch              # note.txt
 ```
 
 After stopping `ufsmount`, the data is gone.
+
+### Serve a file system over gRPC
+
+Write an address instead of a path in `-mount` and the file system is not
+mounted at all: it answers the FS service of `proto/ufs.proto` on a socket, so
+another process — or another machine — reads and writes it over gRPC.
+
+```bash
+ufsmount -uri memory:// -mount grpc://0.0.0.0:9000
+```
+
+The address is written as a URI because that is how the other end writes it: a
+caller reaches this same file system as `grpc://127.0.0.1:9000`, which is the
+URI the `grpc://` driver of `drivers/grpcfs` takes. An empty host
+(`grpc://:9000`) means every interface. The address carries no path and no
+query — the service answers the whole file system, and a subtree is what a
+mount point is for.
+
+What is served is plaintext. `grpcs://` is refused rather than answered without
+TLS: the scheme is a promise about the transport, and no flag gives this process
+a certificate to keep the promise with. Reach a host you do not control over a
+network you do.
+
+### Debug endpoints
+
+`-debug` runs an HTTP server beside whichever output was chosen, answering
+`/debug/vars` — the `expvar` counters — and `/debug/pprof/*`, the Go profiler.
+It says nothing about the file system and reaches none of it.
+
+```bash
+ufsmount -uri gs://my-bucket -mount /mnt/bucket -debug 127.0.0.1:6060
+```
+
+```bash
+curl -s http://127.0.0.1:6060/debug/vars | head
+go tool pprof http://127.0.0.1:6060/debug/pprof/heap
+```
+
+The profiler exposes the process's memory and goroutines, so bind the address
+to somewhere you control — `127.0.0.1:6060` rather than `:6060`.
 
 ### Mount a GCS bucket
 
@@ -283,8 +340,8 @@ routed through the virtual file system.
 
 ## Signals
 
-| Signal          | Behavior                         |
-| --------------- | -------------------------------- |
-| `SIGINT` (`^C`) | Unmount and exit cleanly.        |
-| `SIGTERM`       | Unmount and exit cleanly.        |
-| Context cancel  | Automatic unmount (library use). |
+| Signal          | Behavior                             |
+| --------------- | ------------------------------------ |
+| `SIGINT` (`^C`) | Unmount, stop serving, exit cleanly. |
+| `SIGTERM`       | Unmount, stop serving, exit cleanly. |
+| Context cancel  | Automatic unmount (library use).     |

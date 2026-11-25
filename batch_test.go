@@ -23,6 +23,12 @@ import (
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
+// noBatchFS hides the BatchCreate of the file system it wraps, so that
+// [BatchCreate] falls back to Create.
+type noBatchFS struct {
+	types.WriteFS
+}
+
 // batchRecorderFS implements types.BatchCreateFS by recording its batches.
 type batchRecorderFS struct {
 	types.WriteFS
@@ -58,7 +64,7 @@ func TestBatchCreateFallbackError(t *testing.T) {
 	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
 	ufsTesting.Must(t, fsys.MkdirAll("dir", fs.ModePerm))
 
-	err := BatchCreate(fsys,
+	err := BatchCreate(noBatchFS{fsys},
 		types.BatchFile{Name: "a.txt", Data: []byte("a")},
 		types.BatchFile{Name: "dir", Data: []byte("dir")},
 	)
@@ -71,4 +77,27 @@ func TestBatchCreateFallbackError(t *testing.T) {
 		t.Errorf("BatchCreate() = %v, wraps a second *fs.PathError", err)
 	}
 	assertFileContent(t, fsys, "a.txt", "a")
+}
+
+// TestBatchCreateFallbackDuplicateName checks that the fallback rejects a
+// repeated name before writing any of the batch.
+func TestBatchCreateFallbackDuplicateName(t *testing.T) {
+	t.Parallel()
+	fsys := mustBaseFS(t, "memory://")
+	t.Cleanup(ufsTesting.ValidateClose(t, fsys))
+
+	err := BatchCreate(noBatchFS{fsys},
+		types.BatchFile{Name: "a.txt", Data: []byte("a")},
+		types.BatchFile{Name: "b.txt", Data: []byte("b")},
+		types.BatchFile{Name: "a.txt", Data: []byte("again")},
+	)
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) || pathErr.Op != batchCreateOp || pathErr.Path != "a.txt" {
+		t.Fatalf("BatchCreate() = %#v, want an *fs.PathError for %s of a.txt", err, batchCreateOp)
+	}
+	if !errors.Is(err, fs.ErrInvalid) {
+		t.Errorf("BatchCreate() = %v, want it to wrap %v", err, fs.ErrInvalid)
+	}
+	assertNotExist(t, fsys, "a.txt")
+	assertNotExist(t, fsys, "b.txt")
 }

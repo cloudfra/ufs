@@ -292,18 +292,20 @@ func (d *boltDirFile) Close() error {
 
 func (d *boltDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)
+		d.mu.Unlock()
 		return batch, nil
 	}
 	if d.offset >= len(d.entries) {
+		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := min(d.offset+n, len(d.entries))
 	batch := d.entries[d.offset:end]
 	d.offset = end
+	d.mu.Unlock()
 	return batch, nil
 }
 

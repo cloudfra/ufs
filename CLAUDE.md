@@ -255,6 +255,12 @@ MkdirAll + Create (not atomic, Perm ignored). Writing one file this way is the
 single-operation WriteFile. New drivers are covered by `BatchCreate` in
 `drivers/testing`.
 
+boltFS writes a batch in one transaction with `bolt.DB.Batch`
+(`drivers/boltfs/boltfs_batchcreatefs.go`), so concurrent calls share it and a
+refused call is retried alone, failing only itself; `batchMaxDelay` bounds how
+long a call waits for company. Names and records are encoded before the
+transaction opens, and watchers are notified once it has committed.
+
 ### Conventions
 
 * Keep structs private; expose construction via the public New() factory.

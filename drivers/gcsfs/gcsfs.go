@@ -139,12 +139,13 @@ func (f *gcsFile) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	if f.offset >= int64(len(f.content)) {
+		f.mu.Unlock()
 		return 0, io.EOF
 	}
 	n := copy(p, f.content[f.offset:])
 	f.offset += int64(n)
+	f.mu.Unlock()
 	return n, nil
 }
 
@@ -183,7 +184,6 @@ func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 		return 0, ufserrors.NewPathError("seek", f.name, fs.ErrInvalid)
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	switch whence {
 	case io.SeekStart:
 		f.offset = offset
@@ -192,14 +192,18 @@ func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		f.offset = int64(len(f.content)) + offset
 	default:
+		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
 	}
 	if f.offset < 0 {
 		computed := f.offset
 		f.offset = 0
+		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, computed, fs.ErrInvalid))
 	}
-	return f.offset, nil
+	position := f.offset
+	f.mu.Unlock()
+	return position, nil
 }
 
 func (f *gcsFile) Close() error {
@@ -223,9 +227,9 @@ func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 		return nil, ufserrors.NewPathError("readdirent", f.name, fs.ErrInvalid)
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	all := f.dirEntries
 	if f.dirOffset >= len(all) {
+		f.mu.Unlock()
 		if n > 0 {
 			return nil, io.EOF
 		}
@@ -234,11 +238,13 @@ func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	if n <= 0 {
 		result := all[f.dirOffset:]
 		f.dirOffset = len(all)
+		f.mu.Unlock()
 		return result, nil
 	}
 	end := min(f.dirOffset+n, len(all))
 	result := all[f.dirOffset:end]
 	f.dirOffset = end
+	f.mu.Unlock()
 	return result, nil
 }
 

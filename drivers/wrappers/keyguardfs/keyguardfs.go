@@ -19,20 +19,20 @@
 // Package keyguardfs wraps a file system so that the files holding security
 // key material cannot be read through it. The guard is in process: a caller
 // that reaches the same bytes another way is not restricted by it.
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds what [types.SimpleFS] asks for and the policy
+// every other half reads, and the siblings named keyguardfs_<interface>.go hold
+// the rest.
 package keyguardfs
 
 import (
 	"fmt"
-	"io"
 	"io/fs"
-	"net/url"
-	"path"
 	"slices"
 
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
-	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/patternutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -167,123 +167,8 @@ func (fsys *keyGuardFS) Open(name string) (fs.File, error) {
 	return &hiddenDirHandle{hiddenDirFile: dir, guard: fsys, dir: name}, nil
 }
 
-// hiddenDirFile is the handle of a directory, with the methods a guard keeps
-// when it filters a listing.
-type hiddenDirFile interface {
-	types.File
-	fs.ReadDirFile
-}
-
-// hiddenDirHandle answers ReadDir from one filtered snapshot of the listing,
-// tracking the position that the guarded handle does not. The snapshot keeps a
-// call with a count limit from losing the entries behind a run of hidden ones.
-type hiddenDirHandle struct {
-	hiddenDirFile
-	guard   *keyGuardFS
-	dir     string
-	entries []fs.DirEntry
-	off     int
-}
-
-func (dir *hiddenDirHandle) ReadDir(count int) ([]fs.DirEntry, error) {
-	if dir.entries == nil {
-		entries, err := dir.hiddenDirFile.ReadDir(-1)
-		if err != nil {
-			return nil, err
-		}
-		dir.entries = dir.guard.visible(dir.dir, entries)
-	}
-	rest := dir.entries[dir.off:]
-	if count <= 0 {
-		dir.off = len(dir.entries)
-		return rest, nil
-	}
-	if len(rest) == 0 {
-		return nil, io.EOF
-	}
-	if count < len(rest) {
-		rest = rest[:count]
-	}
-	dir.off += len(rest)
-
-	return rest, nil
-}
-
-func (fsys *keyGuardFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	if fsys.hiding() && fsys.protected(name) {
-		return nil, fsys.denied("readdir", name)
-	}
-
-	entries, err := fsys.inner.ReadDir(name)
-	if err != nil {
-		return nil, err
-	}
-	if !fsys.hiding() {
-		return entries, nil
-	}
-
-	return fsys.visible(name, entries), nil
-}
-
-func (fsys *keyGuardFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	if fsys.protected(name) {
-		return nil, fsys.denied("readfile", name)
-	}
-
-	return fsys.inner.ReadFile(name)
-}
-
-func (fsys *keyGuardFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	if fsys.protected(name) {
-		return nil, fsys.denied("stat", name)
-	}
-
-	return fsys.inner.Stat(name)
-}
-
-func (fsys *keyGuardFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("lstat", name); err != nil {
-		return nil, err
-	}
-	if fsys.protected(name) {
-		return nil, fsys.denied("lstat", name)
-	}
-
-	return fsys.inner.Lstat(name)
-}
-
-func (fsys *keyGuardFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	if fsys.protected(name) {
-		return "", fsys.denied("readlink", name)
-	}
-
-	return fsys.inner.ReadLink(name)
-}
-
-// visible returns the entries of the listing of dir that this guard leaves
-// visible, in the order the guarded file system reported them. A hidden file
-// keeps its place in the tree, so only the listings naming it change.
-func (fsys *keyGuardFS) visible(dir string, entries []fs.DirEntry) []fs.DirEntry {
-	visible := make([]fs.DirEntry, 0, len(entries))
-	for _, entry := range entries {
-		if !fsys.protected(path.Join(dir, entry.Name())) {
-			visible = append(visible, entry)
-		}
-	}
-
-	return visible
+func (fsys *keyGuardFS) Close() error {
+	return fsys.inner.Close()
 }
 
 // protected reports whether this guard's policy covers name.
@@ -305,62 +190,4 @@ func (fsys *keyGuardFS) denied(op, name string) error {
 	}
 
 	return ufserrors.NewPathError(op, name, ErrProtected)
-}
-
-// InnerFS returns the guarded file system, which a caller holding it can read
-// without the policy, see [types.WrapperFS].
-func (fsys *keyGuardFS) InnerFS() fs.FS {
-	return fsys.inner
-}
-
-// IsSame reports whether other holds the guarded file system's data, since a
-// guard stores no data of its own, see [types.ComparableFS].
-func (fsys *keyGuardFS) IsSame(other fs.FS) bool {
-	return types.SameFS(fsys.inner, other)
-}
-
-// IsMountedArchiveDir forwards to the guarded file system, see
-// [types.MountedArchiveDirFS].
-func (fsys *keyGuardFS) IsMountedArchiveDir(name string) bool {
-	if inner, ok := fsys.inner.(types.MountedArchiveDirFS); ok {
-		return inner.IsMountedArchiveDir(name)
-	}
-
-	return false
-}
-
-// DeviceInfo returns the guarded file system's device map, see
-// [types.DeviceInfoGet].
-func (fsys *keyGuardFS) DeviceInfo() types.DeviceMap {
-	return fsys.inner.DeviceInfo()
-}
-
-// URI returns the guarded file system's URI with ufs.ro=true added, because a
-// guard never writes, see [types.URIGet].
-func (fsys *keyGuardFS) URI() (*url.URL, error) {
-	u, err := fsys.inner.URI()
-	if err != nil {
-		return nil, err
-	}
-
-	// Added with uri.AddParameter rather than the standard library's helper: the
-	// pair walk leaves the guarded file system's own parameters in the order and
-	// escaping they were written in, and returns a copy, so the guarded file
-	// system keeps the URL it handed over. A nil URI stays nil rather than
-	// becoming a URL invented out of nothing.
-	return uri.AddParameter(u, "ufs.ro", "true")
-}
-
-func (fsys *keyGuardFS) String() string {
-	return types.Description(map[string]any{
-		"keyGuardFS": map[string]any{
-			"inner":    types.Nested(fsutil.String(fsys.inner)),
-			"mode":     fsys.mode,
-			"patterns": fmt.Sprintf("%d", len(fsys.patterns)),
-		},
-	})
-}
-
-func (fsys *keyGuardFS) Close() error {
-	return fsys.inner.Close()
 }

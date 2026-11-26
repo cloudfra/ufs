@@ -105,13 +105,18 @@ type gcsFile struct {
 	name    string
 	content []byte
 
-	// mu guards offset, which is where the next Read continues from.
+	// mu guards the sequential cursor of the handle: offset, which is where the
+	// next Read continues from, and dirOffset below, which is where the next
+	// ReadDir continues from. A handle is an object or a directory for its whole
+	// life — isDir is fixed at Open — so one mutex covers both cursors.
 	mu     sync.Mutex
 	offset int64
 
-	isDir      bool
-	size       int64
-	modTime    time.Time
+	isDir   bool
+	size    int64
+	modTime time.Time
+	// dirEntries is fixed when Open hands the handle back and nothing writes it
+	// afterwards; dirOffset is the position into it that ReadDir continues from.
 	dirEntries []fs.DirEntry
 	dirOffset  int
 	fsys       *gcsFS
@@ -206,10 +211,19 @@ func (f *gcsFile) Close() error {
 	return nil
 }
 
+// ReadDir returns the next n children of the directory, or every remaining
+// child when n is not positive, and moves the position the next call continues
+// from. That position is guarded, so one directory handle handed to two walkers
+// gives them one cursor: between them they are handed every child exactly once,
+// rather than one child twice and another skipped. The children themselves were
+// fixed when Open returned the handle, so the slices handed back share one
+// read-only array and one caller's result cannot change another's.
 func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	if !f.isDir {
 		return nil, ufserrors.NewPathError("readdirent", f.name, fs.ErrInvalid)
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	all := f.dirEntries
 	if f.dirOffset >= len(all) {
 		if n > 0 {
@@ -228,6 +242,9 @@ func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	return result, nil
 }
 
+// Readdir is the legacy io/fs form of the same walk. It leaves the cursor guard
+// to ReadDir rather than taking it here, so the two forms cannot hold it at the
+// same time and always continue from one position.
 func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	if !f.isDir {
 		return nil, ufserrors.NewPathError("readdir", f.name, fs.ErrInvalid)

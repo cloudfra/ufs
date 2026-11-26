@@ -139,23 +139,26 @@ func (f *leafFile) Stat() (fs.FileInfo, error) {
 // Read reads the next part of the leaf value from where the last read left off.
 func (f *leafFile) Read(p []byte) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.Reader.Read(p)
+	n, err := f.Reader.Read(p)
+	f.mu.Unlock()
+	return n, err
 }
 
 // ReadAt reads the part of the leaf value at off without moving the position
 // that [leafFile.Read] continues from.
 func (f *leafFile) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.Reader.ReadAt(p, off)
+	n, err := f.Reader.ReadAt(p, off)
+	f.mu.Unlock()
+	return n, err
 }
 
 // Seek moves the position that [leafFile.Read] continues from.
 func (f *leafFile) Seek(offset int64, whence int) (int64, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.Reader.Seek(offset, whence)
+	pos, err := f.Reader.Seek(offset, whence)
+	f.mu.Unlock()
+	return pos, err
 }
 
 func (f *leafFile) Close() error {

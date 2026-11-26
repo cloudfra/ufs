@@ -54,6 +54,13 @@
 // and committed to the database, in a single transaction, when the file is
 // closed. The driver is unavailable on GOARCH=wasm, where bbolt does not
 // build; there, bolt: URIs return an error.
+//
+// The implementation is split by the interface each method belongs to, one
+// file per interface: this one holds the file-system value, the options a
+// bolt: URI sets, the bucket helpers the siblings share and what
+// [types.SimpleFS] asks for, and the siblings named boltfs_<interface>.go hold
+// the rest. Each of them carries the GOARCH=wasm constraint of this file,
+// because on that platform boltfs_wasm.go supplies the driver's stub instead.
 package boltfs
 
 import (
@@ -66,23 +73,20 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
-
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/common/buffile"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/notify"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
+	bolt "go.etcd.io/bbolt"
 )
 
 var (
@@ -430,27 +434,6 @@ func listBucket(bkt *bolt.Bucket) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
-func (fsys *boltFS) DeviceInfo() types.DeviceMap {
-	return types.NewDeviceMap(types.NewDeviceInfo(fsys.absPath, "bolt", 1, false))
-}
-
-// URI returns the bolt:///abs/path form of the database path, which
-// makeBoltFS accepts, so the URI reopens the same database.
-func (fsys *boltFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: boltFSScheme, Path: pathutil.CoerceUnix(fsys.absPath), RawQuery: fsys.opts.query()}, nil
-}
-
-// IsSame reports whether other opens one database file, which is the store that
-// both file systems read and write.
-func (fsys *boltFS) IsSame(other fs.FS) bool {
-	otherBolt, ok := types.InnermostFS(other).(*boltFS)
-	return ok && fsys.absPath == otherBolt.absPath
-}
-
-func (fsys *boltFS) String() string {
-	return types.Description(map[string]any{"boltFS": uri.OrDefault(fsys, fsys.name)})
-}
-
 func (fsys *boltFS) isClosed() bool {
 	fsys.mu.RLock()
 	defer fsys.mu.RUnlock()
@@ -569,448 +552,6 @@ func (fsys *boltFS) Close() error {
 	return ufserrors.Join(busErr, err)
 }
 
-func (fsys *boltFS) Create(name string) (types.File, error) {
-	if fsys.isClosed() {
-		return nil, ufserrors.NewPathError("create", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-	if name == pathutil.CwdPath {
-		return nil, ufserrors.NewPathError("create", name, fmt.Errorf("%w: %w", errIsDirectory, fs.ErrInvalid))
-	}
-
-	now := time.Now()
-	mode := fs.ModePerm
-	record, err := encodeBoltRecord(mode, now, nil)
-	if err != nil {
-		return nil, ufserrors.NewPathError("create", name, err)
-	}
-	var existed bool
-	err = fsys.update(func(tx *bolt.Tx) error {
-		bkt, key, err := parentBucket(tx, name)
-		if err != nil {
-			return err
-		}
-		if bkt.Bucket(key) != nil {
-			return fmt.Errorf("%w: %w", errIsDirectory, fs.ErrInvalid)
-		}
-		existed = bkt.Get(key) != nil
-		return bkt.Put(key, record)
-	})
-	if err != nil {
-		return nil, ufserrors.NewPathError("create", name, err)
-	}
-
-	if existed {
-		fsys.notify(types.NotifyWrite, name)
-	} else {
-		fsys.notify(types.NotifyCreate, name)
-	}
-
-	return &boltFile{
-		fsys: fsys,
-		File: buffile.New(name, nil, mode, now),
-	}, nil
-}
-
-func (fsys *boltFS) MkdirAll(name string, perm fs.FileMode) error {
-	if fsys.isClosed() {
-		return ufserrors.NewPathError("mkdir", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	if name == pathutil.CwdPath {
-		// The root always exists.
-		return nil
-	}
-
-	now := time.Now()
-	var created []string
-	err := fsys.update(func(tx *bolt.Tx) error {
-		bkt, err := rootBucket(tx)
-		if err != nil {
-			return err
-		}
-		end := 0
-		for part := range strings.SplitSeq(name, pathutil.UnixSeparator) {
-			if end > 0 {
-				end++
-			}
-			end += len(part)
-			var isNew bool
-			if bkt, isNew, err = createDirBucket(bkt, []byte(part), fs.ModeDir|perm, now); err != nil {
-				return err
-			}
-			if isNew {
-				created = append(created, name[:end])
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return ufserrors.NewPathError("mkdir", name, err)
-	}
-	for _, p := range created {
-		fsys.notify(types.NotifyCreate, p)
-	}
-	return nil
-}
-
-func (fsys *boltFS) ReadFile(name string) ([]byte, error) {
-	if fsys.isClosed() {
-		return nil, ufserrors.NewPathError("readfile", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	if name == pathutil.CwdPath {
-		return nil, ufserrors.NewPathError("readfile", name, fmt.Errorf("%w: %w", errIsDirectory, fs.ErrInvalid))
-	}
-	var content []byte
-	err := fsys.view(func(tx *bolt.Tx) error {
-		bkt, key, err := lookupParent(tx, name)
-		if err != nil {
-			return err
-		}
-		if bkt.Bucket(key) != nil {
-			return fmt.Errorf("%w: %w", errIsDirectory, fs.ErrInvalid)
-		}
-		data := bkt.Get(key)
-		if data == nil {
-			return fs.ErrNotExist
-		}
-		rec, err := decodeBoltRecord(data)
-		if err != nil {
-			return err
-		}
-		content = bytes.Clone(rec.content)
-		return nil
-	})
-	if err != nil {
-		return nil, ufserrors.NewPathError("readfile", name, err)
-	}
-	return content, nil
-}
-
-func (fsys *boltFS) ReadLink(name string) (string, error) {
-	if fsys.isClosed() {
-		return "", ufserrors.NewPathError("readlink", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	if _, err := fsys.statPath("readlink", name); err != nil {
-		return "", err
-	}
-	// boltFS has no symlinks; every extant path is a regular file or directory.
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
-func (fsys *boltFS) Stat(name string) (fs.FileInfo, error) {
-	if fsys.isClosed() {
-		return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	return fsys.statPath("stat", name)
-}
-
-func (fsys *boltFS) Lstat(name string) (fs.FileInfo, error) {
-	if fsys.isClosed() {
-		return nil, ufserrors.NewPathError("lstat", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("lstat", name); err != nil {
-		return nil, err
-	}
-	return fsys.statPath("lstat", name)
-}
-
-func (fsys *boltFS) statPath(op, name string) (fs.FileInfo, error) {
-	var info fs.FileInfo
-	err := fsys.view(func(tx *bolt.Tx) error {
-		if name == pathutil.CwdPath {
-			bkt, err := rootBucket(tx)
-			if err != nil {
-				return err
-			}
-			mode, modTime, err := dirMeta(bkt)
-			if err != nil {
-				return err
-			}
-			info = types.NewFileInfo(pathutil.CwdPath, osutil.EmptyDirSize, mode, modTime)
-			return nil
-		}
-		bkt, key, err := lookupParent(tx, name)
-		if err != nil {
-			return err
-		}
-		if sub := bkt.Bucket(key); sub != nil {
-			mode, modTime, err := dirMeta(sub)
-			if err != nil {
-				return err
-			}
-			info = types.NewFileInfo(string(key), osutil.EmptyDirSize, mode, modTime)
-			return nil
-		}
-		data := bkt.Get(key)
-		if data == nil {
-			return fs.ErrNotExist
-		}
-		rec, err := decodeBoltRecord(data)
-		if err != nil {
-			return err
-		}
-		info = types.NewFileInfo(string(key), int64(len(rec.content)), rec.mode, rec.modTime)
-		return nil
-	})
-	if err != nil {
-		return nil, ufserrors.NewPathError(op, name, err)
-	}
-	return info, nil
-}
-
-func (fsys *boltFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if fsys.isClosed() {
-		return nil, ufserrors.NewPathError("readdir", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	var entries []fs.DirEntry
-	err := fsys.view(func(tx *bolt.Tx) error {
-		bkt, err := lookupDir(tx, name)
-		if err != nil {
-			return err
-		}
-		entries, err = listBucket(bkt)
-		return err
-	})
-	if err != nil {
-		return nil, ufserrors.NewPathError("readdir", name, err)
-	}
-	return entries, nil
-}
-
-func (fsys *boltFS) Glob(pattern string) ([]string, error) {
-	if _, err := path.Match(pattern, ""); err != nil {
-		return nil, err
-	}
-	var matches []string
-	err := fsys.view(func(tx *bolt.Tx) error {
-		bkt, err := rootBucket(tx)
-		if err != nil {
-			return err
-		}
-		return boltGlobWalk(bkt, pathutil.CwdPath, pattern, &matches)
-	})
-	if err != nil {
-		return nil, err
-	}
-	slices.Sort(matches)
-	return matches, nil
-}
-
-// boltGlobWalk recursively matches pattern against every path under bkt
-// (whose own path is prefix), appending matches to *matches.
-func boltGlobWalk(bkt *bolt.Bucket, prefix, pattern string, matches *[]string) error {
-	return bkt.ForEach(func(k, v []byte) error {
-		if bytes.Equal(k, selfKey) {
-			return nil
-		}
-		full := joinPath(prefix, string(k))
-		matched, err := path.Match(pattern, full)
-		if err != nil {
-			return err
-		}
-		if matched {
-			*matches = append(*matches, full)
-		}
-		if v == nil {
-			return boltGlobWalk(bkt.Bucket(k), full, pattern, matches)
-		}
-		return nil
-	})
-}
-
-func (fsys *boltFS) Remove(name string) error {
-	if fsys.isClosed() {
-		return ufserrors.NewPathError("remove", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	if name == pathutil.CwdPath {
-		return ufserrors.NewPathError("remove", name, fs.ErrPermission)
-	}
-	err := fsys.update(func(tx *bolt.Tx) error {
-		bkt, key, err := lookupParent(tx, name)
-		if err != nil {
-			return err
-		}
-		if sub := bkt.Bucket(key); sub != nil {
-			if !isEmptyDir(sub) {
-				return ufserrors.ErrDirNotEmpty
-			}
-			return bkt.DeleteBucket(key)
-		}
-		if bkt.Get(key) == nil {
-			return fs.ErrNotExist
-		}
-		return bkt.Delete(key)
-	})
-	if err != nil {
-		return ufserrors.NewPathError("remove", name, err)
-	}
-	fsys.notify(types.NotifyRemove, name)
-	return nil
-}
-
-func (fsys *boltFS) RemoveAll(name string) error {
-	if fsys.isClosed() {
-		return ufserrors.NewPathError("removeall", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("removeall", name); err != nil {
-		return err
-	}
-
-	var removed []string
-	err := fsys.update(func(tx *bolt.Tx) error {
-		if name == pathutil.CwdPath {
-			bkt, err := rootBucket(tx)
-			if err != nil {
-				return err
-			}
-			return removeAllChildren(bkt, pathutil.CwdPath, &removed)
-		}
-		bkt, key, err := lookupParent(tx, name)
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if sub := bkt.Bucket(key); sub != nil {
-			if err := collectPaths(sub, name, &removed); err != nil {
-				return err
-			}
-			removed = append(removed, name)
-			return bkt.DeleteBucket(key)
-		}
-		if bkt.Get(key) == nil {
-			return nil
-		}
-		removed = append(removed, name)
-		return bkt.Delete(key)
-	})
-	if err != nil {
-		return ufserrors.NewPathError("removeall", name, err)
-	}
-	for _, p := range removed {
-		fsys.notify(types.NotifyRemove, p)
-	}
-	return nil
-}
-
-// Rename moves oldPath, and everything below it, to newPath in a single
-// transaction, so it is atomic. Missing parent directories of newPath are
-// created as Create does.
-func (fsys *boltFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	var moved []string
-	err := fsys.update(func(tx *bolt.Tx) error {
-		srcParent, srcKey, err := lookupParent(tx, oldPath)
-		if err != nil {
-			return err
-		}
-		srcDir, srcRecord := lookupEntry(srcParent, srcKey)
-		if srcDir == nil && srcRecord == nil {
-			return fs.ErrNotExist
-		}
-		dstParent, dstKey, err := parentBucket(tx, newPath)
-		if err != nil {
-			return err
-		}
-		if dstDir, dstRecord := lookupEntry(dstParent, dstKey); dstDir != nil || dstRecord != nil {
-			return fs.ErrExist
-		}
-
-		if srcDir == nil {
-			// A file: its record moves as it is.
-			moved = append(moved, oldPath)
-			if err := dstParent.Put(dstKey, bytes.Clone(srcRecord)); err != nil {
-				return err
-			}
-			return srcParent.Delete(srcKey)
-		}
-		// A directory: its bucket, with everything below it, is copied and
-		// then deleted, as bbolt cannot move a bucket.
-		if err := collectPaths(srcDir, oldPath, &moved); err != nil {
-			return err
-		}
-		moved = append(moved, oldPath)
-		dstDir, err := dstParent.CreateBucket(dstKey)
-		if err != nil {
-			return err
-		}
-		if err := copyBucket(srcDir, dstDir); err != nil {
-			return err
-		}
-		return srcParent.DeleteBucket(srcKey)
-	})
-	if err != nil {
-		return ufserrors.NewLinkError("rename", oldPath, newPath, err)
-	}
-	for _, oldKey := range moved {
-		fsys.notify(types.NotifyRename, oldKey)
-		fsys.notify(types.NotifyCreate, newPath+oldKey[len(oldPath):])
-	}
-	return nil
-}
-
-// lookupEntry returns the bucket of the directory or the record of the file
-// named key in parent. At most one is non-nil: bbolt's Get returns nil for a
-// key that holds a bucket, and a record is never empty, as it always holds a
-// modification time. Both are nil when key does not exist.
-func lookupEntry(parent *bolt.Bucket, key []byte) (dir *bolt.Bucket, record []byte) {
-	if dir = parent.Bucket(key); dir != nil {
-		return dir, nil
-	}
-	return nil, parent.Get(key)
-}
-
-// copyBucket copies every key of src, and every bucket below it, into dst.
-// Keys and values are cloned, as bbolt requires them to stay valid until the
-// transaction ends.
-func copyBucket(src, dst *bolt.Bucket) error {
-	return src.ForEach(func(k, v []byte) error {
-		if v != nil {
-			return dst.Put(bytes.Clone(k), bytes.Clone(v))
-		}
-		child, err := dst.CreateBucket(k)
-		if err != nil {
-			return err
-		}
-		return copyBucket(src.Bucket(k), child)
-	})
-}
-
-// isEmptyDir reports whether the directory bucket bkt has no children. Every
-// directory bucket holds its own selfKey record, so it is empty when that is
-// the only key; at most two keys are inspected.
-func isEmptyDir(bkt *bolt.Bucket) bool {
-	c := bkt.Cursor()
-	k, _ := c.First()
-	if bytes.Equal(k, selfKey) {
-		k, _ = c.Next()
-	}
-	return k == nil
-}
-
 // joinPath returns name joined under prefix, treating the root as empty.
 func joinPath(prefix, name string) string {
 	if prefix == pathutil.CwdPath {
@@ -1036,41 +577,6 @@ func collectPaths(bkt *bolt.Bucket, prefix string, removed *[]string) error {
 		*removed = append(*removed, full)
 		return nil
 	})
-}
-
-// removeAllChildren deletes every child of bkt (whose own path is prefix),
-// leaving bkt itself (and its selfKey) intact, appending the full path of
-// everything removed to *removed.
-func removeAllChildren(bkt *bolt.Bucket, prefix string, removed *[]string) error {
-	// Keys are collected first because bbolt does not allow mutating a bucket
-	// while iterating it with ForEach.
-	var keys [][]byte
-	if err := bkt.ForEach(func(k, _ []byte) error {
-		if !bytes.Equal(k, selfKey) {
-			keys = append(keys, bytes.Clone(k))
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	for _, k := range keys {
-		full := joinPath(prefix, string(k))
-		if sub := bkt.Bucket(k); sub != nil {
-			if err := collectPaths(sub, full, removed); err != nil {
-				return err
-			}
-			*removed = append(*removed, full)
-			if err := bkt.DeleteBucket(k); err != nil {
-				return err
-			}
-			continue
-		}
-		*removed = append(*removed, full)
-		if err := bkt.Delete(k); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func newBoltFS(_ context.Context, name string) (types.WriteFS, error) {
@@ -1139,35 +645,4 @@ func makeBoltFS(name string) (*boltFS, error) {
 		db:        db,
 		notifyBus: notify.New(),
 	}, nil
-}
-
-// Watch implements [types.Watcher] for bolt-backed file systems. It watches name
-// (a directory) and all nested paths, invoking hook for each mutation
-// performed through the boltFS API (Create, file Close after a write,
-// Remove, RemoveAll, MkdirAll).
-func (fsys *boltFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
-	if fsys.isClosed() {
-		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
-	}
-	if err := pathutil.Validate("watch", name); err != nil {
-		return nil, err
-	}
-
-	if name != pathutil.CwdPath {
-		if err := fsys.view(func(tx *bolt.Tx) error {
-			_, err := lookupDir(tx, name)
-			return err
-		}); err != nil {
-			return nil, ufserrors.NewPathError("watch", name, err)
-		}
-	}
-
-	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
-		hook(types.NotifyOp(op), path)
-	}), nil
-}
-
-// notify sends an event to all active watchers.
-func (fsys *boltFS) notify(op types.NotifyOp, path string) {
-	fsys.notifyBus.Publish(notify.Op(op), path)
 }

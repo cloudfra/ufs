@@ -16,23 +16,15 @@ package core
 
 import (
 	"context"
-	"errors"
 	"io/fs"
-	"log/slog"
-	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/archive"
-	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 const (
@@ -63,28 +55,6 @@ type localFS struct {
 	osFS *os.Root
 }
 
-func (fsys *localFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "file", Path: pathutil.CoerceUnix(fsys.osFS.Name())}, nil
-}
-
-// IsSame reports whether other is a localFS over one directory, whose files are
-// shared by every handle opened on it.
-func (fsys *localFS) IsSame(other fs.FS) bool {
-	otherLocal, ok := types.InnermostFS(other).(*localFS)
-	return ok && fsys.osFS.Name() == otherLocal.osFS.Name()
-}
-
-func (fsys *localFS) String() string {
-	return types.Description(map[string]any{"localFS": uri.OrDefault(fsys, fsys.osFS.Name())})
-}
-
-func (fsys *localFS) GetAbsPath(name string) (string, error) {
-	if err := validLocalPath("absPath", name); err != nil {
-		return "", err
-	}
-	return filepath.Abs(filepath.Join(fsys.osFS.Name(), name))
-}
-
 func (fsys *localFS) Open(name string) (fs.File, error) {
 	if err := validLocalPath("open", name); err != nil {
 		return nil, err
@@ -96,161 +66,8 @@ func (fsys *localFS) Open(name string) (fs.File, error) {
 	return localFSWrapFile(f), nil
 }
 
-func (fsys *localFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
-	if err := validLocalPath("open", name); err != nil {
-		return nil, err
-	}
-	f, err := fsys.osFS.OpenFile(name, flag, perm)
-	if err != nil {
-		return nil, err
-	}
-	return localFSTypesFile(f), nil
-}
-
 func (fsys *localFS) Close() error {
 	return fsys.osFS.Close()
-}
-
-func (fsys *localFS) Create(name string) (types.File, error) {
-	if err := validLocalPath("create", name); err != nil {
-		return nil, err
-	}
-	return fsys.osFS.Create(name)
-}
-
-func (fsys *localFS) MkdirAll(name string, perm fs.FileMode) error {
-	if err := validLocalPath("mkdir", name); err != nil {
-		return err
-	}
-	return fsys.osFS.MkdirAll(name, perm)
-}
-
-func (fsys *localFS) ReadFile(name string) ([]byte, error) {
-	if err := validLocalPath("readfile", name); err != nil {
-		return nil, err
-	}
-	return fsys.osFS.ReadFile(name)
-}
-
-func (fsys *localFS) ReadLink(name string) (string, error) {
-	if err := validLocalPath("readlink", name); err != nil {
-		return "", err
-	}
-	return fsys.osFS.Readlink(name)
-}
-
-func (fsys *localFS) Stat(name string) (fs.FileInfo, error) {
-	if err := validLocalPath("stat", name); err != nil {
-		return nil, err
-	}
-	fi, err := fsys.osFS.Stat(name)
-	if err != nil {
-		return nil, err
-	}
-	return localFSNormalizeDirInfo(fi), nil
-}
-
-func (fsys *localFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := validLocalPath("lstat", name); err != nil {
-		return nil, err
-	}
-	fi, err := fsys.osFS.Lstat(name)
-	if err != nil {
-		return nil, err
-	}
-	return localFSNormalizeDirInfo(fi), nil
-}
-
-func (fsys *localFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := validLocalPath("readdir", name); err != nil {
-		return nil, err
-	}
-	f, err := fsys.osFS.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			slog.Warn("failed to close directory during ReadDir", "path", name, "error", err)
-		}
-	}()
-	entries, err := f.ReadDir(-1)
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
-	})
-	return entries, nil
-}
-
-func (fsys *localFS) Remove(name string) error {
-	if err := validLocalPath("remove", name); err != nil {
-		return err
-	}
-	return fsys.osFS.Remove(name)
-}
-
-func (fsys *localFS) RemoveAll(name string) error {
-	if err := validLocalPath("removeall", name); err != nil {
-		return err
-	}
-	return fsys.osFS.RemoveAll(name)
-}
-
-func (fsys *localFS) Chmod(name string, mode fs.FileMode) error {
-	if err := validLocalPath("chmod", name); err != nil {
-		return err
-	}
-	return fsys.osFS.Chmod(name, mode)
-}
-
-func (fsys *localFS) Link(oldname string, newname string) error {
-	if err := validLocalPath("link", oldname); err != nil {
-		return err
-	}
-	if err := validLocalPath("link", newname); err != nil {
-		return err
-	}
-	return fsys.osFS.Link(oldname, newname)
-}
-
-func (fsys *localFS) WriteFile(name string, data []byte, mode fs.FileMode) error {
-	if err := validLocalPath("writefile", name); err != nil {
-		return err
-	}
-	return fsys.osFS.WriteFile(name, data, mode)
-}
-
-// Rename moves oldPath to newPath with os.Root.Rename, which would replace an
-// existing newPath, so newPath is checked first. A newPath that is oldPath
-// under another spelling, as on a case-insensitive disk, is allowed.
-func (fsys *localFS) Rename(oldPath, newPath string) error {
-	if err := validLocalPath("rename", oldPath); err != nil {
-		return err
-	}
-	if err := validLocalPath("rename", newPath); err != nil {
-		return err
-	}
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	if newInfo, err := fsys.osFS.Lstat(newPath); err == nil {
-		oldInfo, err := fsys.osFS.Lstat(oldPath)
-		if err != nil {
-			return ufserrors.NewLinkError("rename", oldPath, newPath, err)
-		}
-		if oldPath == newPath || !os.SameFile(oldInfo, newInfo) {
-			return ufserrors.NewLinkError("rename", oldPath, newPath, fs.ErrExist)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return ufserrors.NewLinkError("rename", oldPath, newPath, err)
-	}
-	return fsys.osFS.Rename(oldPath, newPath)
-}
-
-func (fsys *localFS) Glob(pattern string) ([]string, error) {
-	return globutil.GlobFS(fsys, pattern)
 }
 
 // MakeLocalFS returns a local disk file system rooted at the file:// URI name.

@@ -223,11 +223,11 @@ type snapshotDirFileHandle struct {
 // released.
 func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
 	dir.mu.Lock()
-	defer dir.mu.Unlock()
 
 	if !dir.listed {
 		entries, err := dir.ReadDirFile.ReadDir(-1)
 		if err != nil {
+			dir.mu.Unlock()
 			return nil, err
 		}
 		dir.entries = entries
@@ -236,15 +236,18 @@ func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
 	rest := dir.entries[dir.off:]
 	if n <= 0 {
 		dir.off = len(dir.entries)
+		dir.mu.Unlock()
 		return rest, nil
 	}
 	if len(rest) == 0 {
+		dir.mu.Unlock()
 		return nil, io.EOF
 	}
 	if n < len(rest) {
 		rest = rest[:n]
 	}
 	dir.off += len(rest)
+	dir.mu.Unlock()
 	return rest, nil
 }
 

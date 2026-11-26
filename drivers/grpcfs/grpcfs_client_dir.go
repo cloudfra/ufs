@@ -90,7 +90,6 @@ func (d *grpcDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	}
 
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	// The first listing back is the one the handle walks. Replacing it later would
 	// move the listing that offset counts through, so a second answer is left
 	// behind instead.
@@ -100,14 +99,17 @@ func (d *grpcDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	if n <= 0 {
 		rest := d.entries[d.offset:]
 		d.offset = len(d.entries)
+		d.mu.Unlock()
 		return rest, nil
 	}
 	if d.offset >= len(d.entries) {
+		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := min(d.offset+n, len(d.entries))
 	rest := d.entries[d.offset:end]
 	d.offset = end
+	d.mu.Unlock()
 	return rest, nil
 }
 

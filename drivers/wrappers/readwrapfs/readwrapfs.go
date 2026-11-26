@@ -13,20 +13,18 @@
 // limitations under the License.
 
 // Package readwrapfs provides a read-only wrapper for standard library [fs.FS] file systems.
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds the file-system value and what [types.SimpleFS]
+// asks for, and the siblings named readwrapfs_<interface>.go hold the rest.
 package readwrapfs
 
 import (
-	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 
-	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
-	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var (
@@ -36,54 +34,6 @@ var (
 
 type readWrapFS struct {
 	fsys fs.FS
-}
-
-func (fsys *readWrapFS) DeviceInfo() types.DeviceMap {
-	return getDeviceInfoOrDefault(fsys.fsys)
-}
-
-// IsMountedArchiveDir forwards to the wrapped file system, see
-// [types.MountedArchiveDirFS].
-func (fsys *readWrapFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.fsys.(types.MountedArchiveDirFS)
-	return ok && m.IsMountedArchiveDir(name)
-}
-
-// URI reports the wrapped file system's URI with ufs.ro=true added. The wrapper
-// never reports a nil URL: [polyfills.URI] names the wrapped [fs.FS] only when
-// its type reveals a source a URI can name, and returns
-// [polyfills.ErrUnsupportedURI] when it does not.
-func (fsys *readWrapFS) URI() (*url.URL, error) {
-	u, err := polyfills.URI(fsys.fsys)
-	if err != nil {
-		return nil, err
-	}
-	// Added with uri.AddParameter rather than the base package's helper: the base
-	// package's tests import this driver, so importing the base package back
-	// would close an import cycle in their build. The pair walk leaves the
-	// wrapped file system's own parameters in the order and escaping they were
-	// written in, and returns a copy, so the wrapped file system keeps the URL it
-	// handed over.
-	return uri.AddParameter(u, "ufs.ro", "true")
-}
-
-// InnerFS returns the file system whose data is read through this wrapper, see
-// [types.WrapperFS].
-func (fsys *readWrapFS) InnerFS() fs.FS {
-	return fsys.fsys
-}
-
-// IsSame reports whether other holds the wrapped file system's data, since
-// readWrapFS stores nothing of its own.
-func (fsys *readWrapFS) IsSame(other fs.FS) bool {
-	return types.SameFS(fsys.fsys, other)
-}
-
-func (fsys *readWrapFS) String() string {
-	if _, ok := fsys.fsys.(fmt.Stringer); ok {
-		return types.Description(map[string]any{"readWrapFS": types.Nested(fsutil.String(fsys.fsys))})
-	}
-	return types.Description(map[string]any{"readWrapFS": fmt.Sprintf("%T", fsys.fsys)})
 }
 
 func (fsys *readWrapFS) Open(name string) (fs.File, error) {
@@ -100,64 +50,7 @@ func (fsys *readWrapFS) Close() error {
 	return nil
 }
 
-func (fsys *readWrapFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	if rdfs, ok := fsys.fsys.(fs.ReadDirFS); ok {
-		return rdfs.ReadDir(name)
-	}
-	return fs.ReadDir(fsys.fsys, name)
-}
-
-func (fsys *readWrapFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	if rffs, ok := fsys.fsys.(fs.ReadFileFS); ok {
-		return rffs.ReadFile(name)
-	}
-	return fs.ReadFile(fsys.fsys, name)
-}
-
-func (fsys *readWrapFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	if sfs, ok := fsys.fsys.(fs.StatFS); ok {
-		return sfs.Stat(name)
-	}
-	return fs.Stat(fsys.fsys, name)
-}
-
-func (fsys *readWrapFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("lstat", name); err != nil {
-		return nil, err
-	}
-	if rlfs, ok := fsys.fsys.(fs.ReadLinkFS); ok {
-		return rlfs.Lstat(name)
-	}
-	return fsys.Stat(name)
-}
-
-func (fsys *readWrapFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	if rlfs, ok := fsys.fsys.(fs.ReadLinkFS); ok {
-		return rlfs.ReadLink(name)
-	}
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
 // FromFS wraps a standard library [fs.FS] as a read-only [ReadFS].
 func FromFS(fsys fs.FS) types.ReadFS {
 	return &readWrapFS{fsys: fsys}
-}
-
-func getDeviceInfoOrDefault(fsys fs.FS) types.DeviceMap {
-	if diFsys, ok := fsys.(types.DeviceInfoGet); ok {
-		return diFsys.DeviceInfo()
-	}
-	return types.DefaultDeviceMap
 }

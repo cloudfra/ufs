@@ -13,18 +13,18 @@
 // limitations under the License.
 
 // Package embedfs wraps a Go embed.FS as a read-only ufs.FS.
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds the file-system value and what [types.SimpleFS]
+// asks for, and the siblings named embedfs_<interface>.go hold the rest.
 package embedfs
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
-	"net/url"
 
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 var _ types.WriteFS = (*embedFS)(nil)
@@ -32,27 +32,6 @@ var _ types.WriteFS = (*embedFS)(nil)
 type embedFS struct {
 	name string
 	fsys embed.FS
-}
-
-func (fsys *embedFS) DeviceInfo() types.DeviceMap {
-	return types.NewDeviceMap(types.NewDeviceInfo("/dev/embed/"+fsys.name, "memory", 1, false))
-}
-
-func (fsys *embedFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "embed", Path: "/" + fsys.name, RawQuery: "ufs.ro=true"}, nil
-}
-
-// IsSame reports whether other is this file system, since two embedFS values
-// over one embedded file system cannot be recognized as holding the same bytes.
-// The embedded file system is a value that each embedFS copies, so it holds no
-// identity that the two could compare.
-func (fsys *embedFS) IsSame(other fs.FS) bool {
-	otherEmbed, ok := types.InnermostFS(other).(*embedFS)
-	return ok && fsys == otherEmbed
-}
-
-func (fsys *embedFS) String() string {
-	return types.Description(map[string]any{"embedFS": uri.OrDefault(fsys, fsys.name)})
 }
 
 func (fsys *embedFS) Open(name string) (fs.File, error) {
@@ -64,76 +43,6 @@ func (fsys *embedFS) Open(name string) (fs.File, error) {
 
 func (fsys *embedFS) Close() error {
 	return nil
-}
-
-func (fsys *embedFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	return fs.Stat(fsys.fsys, name)
-}
-
-func (fsys *embedFS) Lstat(name string) (fs.FileInfo, error) {
-	// embed.FS contains no symlinks, so Lstat is identical to Stat.
-	val, err := fsys.Stat(name)
-	return ufserrors.ChangePathErrorOp(val, err, "lstat")
-}
-
-func (fsys *embedFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	return fsys.fsys.ReadDir(name)
-}
-
-func (fsys *embedFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	return fsys.fsys.ReadFile(name)
-}
-
-func (fsys *embedFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	// embed.FS contains no symlinks.
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
-func (fsys *embedFS) Create(name string) (types.File, error) {
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("create", name, fmt.Errorf("embedFS is read-only, cannot create file %q: %w", name, fs.ErrPermission))
-}
-
-func (fsys *embedFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("mkdir", name, fmt.Errorf("embedFS is read-only, cannot create directory %q: %w", name, fs.ErrPermission))
-}
-
-func (fsys *embedFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	return ufserrors.NewLinkError("rename", oldPath, newPath, fmt.Errorf("embedFS is read-only, cannot rename %q: %w", oldPath, fs.ErrPermission))
-}
-
-func (fsys *embedFS) Remove(name string) error {
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("remove", name, fmt.Errorf("embedFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
-}
-
-func (fsys *embedFS) RemoveAll(name string) error {
-	if err := pathutil.Validate("removeall", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("removeall", name, fmt.Errorf("embedFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
 }
 
 // New wraps a Go [embed.FS] as a read-only [ufs.FS]. name is used as the

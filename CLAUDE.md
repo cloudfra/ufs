@@ -255,6 +255,9 @@ MkdirAll + Create (not atomic, Perm ignored). Writing one file this way is the
 single-operation WriteFile. New drivers are covered by `BatchCreate` in
 `drivers/testing`.
 
+memFS implements `BatchCreateFS`: readers never see part of a batch, and a
+failed batch writes nothing.
+
 ### Conventions
 
 * Keep structs private; expose construction via the public New() factory.

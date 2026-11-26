@@ -250,7 +250,16 @@ func (f *memOpenFile) Close() error {
 // memDirFile is an open directory handle. It snapshots the directory entries at
 // Open time so that paginated ReadDir calls are stable even if the filesystem is
 // modified concurrently.
+//
+// A caller is free to keep one handle and serve more than one reader from it, so
+// where a reader has reached in the snapshot is per-handle state that mu guards.
+// Two walkers over one handle then divide the snapshot between them: each entry
+// is handed to exactly one of them, in order, and neither sees it twice. The
+// other fields are written once at Open and only read after that, so they need
+// no guard, and ReadDir holds mu over no work the handle did not already own —
+// the snapshot is built by openDir before the handle exists.
 type memDirFile struct {
+	mu      sync.Mutex
 	path    string
 	entries []fs.DirEntry
 	offset  int
@@ -271,6 +280,8 @@ func (d *memDirFile) Close() error {
 }
 
 func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)

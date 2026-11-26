@@ -35,28 +35,27 @@ import (
 	"github.com/cloudfra/ufs/ops"
 )
 
-const (
-	// mountSlotPoll is how long a test waits before asking for the volume slot
-	// again.
-	mountSlotPoll = 10 * time.Millisecond
-	// mountSlotTimeout bounds that wait. A slot changes hands in milliseconds, so
-	// one still held after this long was never released.
-	mountSlotTimeout = 10 * time.Second
-)
+// mountSlotQueue hands the process's one volume slot to one mount test at a
+// time: a test takes a token before it mounts and gives it back when it ends.
+// The tests have to do this themselves because volumeLimit is one, so one
+// mounted volume per process is all there is to share: without a turn-taking
+// rule every mount test but the first fails asking for a slot another test
+// still holds, with the name of a mount that was never its own in the error.
+//
+// A test that is never given the token is stuck behind a volume that was never
+// unmounted, which is worth a stack dump rather than a message: it waits until
+// the test binary's own timeout panics, and that dump names both the test
+// holding the volume and the tests queued behind it.
+var mountSlotQueue = make(chan struct{}, 1)
 
-// mountWaitForSlot mounts fsys at mountPath, retrying while another test holds
-// the process's only volume slot.
-func mountWaitForSlot(ctx context.Context, fsys types.ReadFS, mountPath string) (MountServer, error) {
-	for start := time.Now(); ; {
-		server, err := Mount(ctx, fsys, mountPath)
-		if !errors.Is(err, ErrMountLimit) {
-			return server, err
-		}
-		if time.Since(start) > mountSlotTimeout {
-			return nil, fmt.Errorf("%w: no volume slot was freed within %s", err, mountSlotTimeout)
-		}
-		time.Sleep(mountSlotPoll)
-	}
+// holdVolumeSlot waits for the token that lets the caller mount and gives it
+// back when the test ends. A test takes it before it registers anything else it
+// cleans up, so that giving the token back is the last of its cleanups: the
+// volume is unmounted before another test is allowed to claim its slot.
+func holdVolumeSlot(tb testing.TB) {
+	tb.Helper()
+	mountSlotQueue <- struct{}{}
+	tb.Cleanup(func() { <-mountSlotQueue })
 }
 
 // mountFailed reports a mount that did not happen. A volume slot that never
@@ -86,10 +85,11 @@ type fuseReadOnlyFS struct {
 func testMount(t *testing.T, fsys types.ReadFS) string {
 	t.Helper()
 	requireFUSE(t)
+	holdVolumeSlot(t)
 	mountDir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	server, err := mountWaitForSlot(ctx, fsys, mountDir)
+	server, err := Mount(ctx, fsys, mountDir)
 	if err != nil {
 		mountFailed(t, err)
 		return ""
@@ -575,6 +575,7 @@ func TestMountReadOnly(t *testing.T) {
 func TestMountClose(t *testing.T) {
 	t.Parallel()
 	requireFUSE(t)
+	holdVolumeSlot(t)
 
 	srcDir := t.TempDir()
 	if err := osutil.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
@@ -588,7 +589,7 @@ func TestMountClose(t *testing.T) {
 	t.Cleanup(validateClose(t, fsys))
 
 	mountDir := t.TempDir()
-	server, err := mountWaitForSlot(t.Context(), fsys, mountDir)
+	server, err := Mount(t.Context(), fsys, mountDir)
 	if err != nil {
 		mountFailed(t, err)
 		return
@@ -614,6 +615,7 @@ func TestMountClose(t *testing.T) {
 func TestMountContextCancel(t *testing.T) {
 	t.Parallel()
 	requireFUSE(t)
+	holdVolumeSlot(t)
 
 	srcDir := t.TempDir()
 	if err := osutil.WriteFile(filepath.Join(srcDir, "f.txt"), []byte("x")); err != nil {
@@ -628,7 +630,7 @@ func TestMountContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	mountDir := t.TempDir()
-	server, err := mountWaitForSlot(ctx, fsys, mountDir)
+	server, err := Mount(ctx, fsys, mountDir)
 	if err != nil {
 		mountFailed(t, err)
 		return

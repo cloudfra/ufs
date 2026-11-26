@@ -15,9 +15,10 @@
 package telemetryfs
 
 import (
+	"testing"
+
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
-	"testing"
 
 	"github.com/cloudfra/ufs/drivers/core"
 	ufsTesting "github.com/cloudfra/ufs/testing"

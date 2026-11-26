@@ -1,0 +1,63 @@
+// Copyright 2026 Cloudfra
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package core
+
+// Watch is [types.Watcher]: the node map reports its own changes to the hooks registered here.
+
+import (
+	"context"
+	"io"
+	"io/fs"
+
+	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/notify"
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
+)
+
+// Watch implements [Watcher] for in-memory file systems. It watches name (a
+// directory) and all nested paths, invoking hook for each mutation performed
+// through the memFS API (Create, Write, Remove, RemoveAll, MkdirAll).
+func (fsys *memFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
+	if fsys.isClosed() {
+		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
+	}
+	if err := pathutil.Validate("watch", name); err != nil {
+		return nil, err
+	}
+
+	fsys.mu.RLock()
+	if name != pathutil.CwdPath {
+		node, ok := fsys.nodes[name]
+		if !ok {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrNotExist)
+		}
+		if !node.isDir {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("watch", name, fs.ErrInvalid)
+		}
+	}
+	fsys.mu.RUnlock()
+
+	return fsys.notifyBus.Subscribe(ctx, name, func(op notify.Op, path string) {
+		hook(types.NotifyOp(op), path)
+	}), nil
+}
+
+// notify sends an event to all active watchers.
+func (fsys *memFS) notify(op types.NotifyOp, path string) {
+	fsys.notifyBus.Publish(notify.Op(op), path)
+}

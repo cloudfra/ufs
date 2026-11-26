@@ -16,14 +16,11 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
-	"net/url"
 	"strings"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -50,31 +47,6 @@ type angryFS struct {
 	name string
 }
 
-func (fsys *angryFS) DeviceInfo() types.DeviceMap {
-	return angryDeviceInfoMap
-}
-
-func (fsys *angryFS) URI() (*url.URL, error) {
-	u, err := url.Parse(fsys.name)
-	if err != nil {
-		return nil, fmt.Errorf("URI %q is not valid, %w", fsys.name, err)
-	}
-	// Tacked rather than set through url.Values, so a name that already carries
-	// parameters keeps them in the order and escaping it was written with.
-	return uri.AddParameter(u, "ufs.ro", "true")
-}
-
-// IsSame reports whether other is an angryFS with the same name, which holds
-// the same data because angryFS stores nothing.
-func (fsys *angryFS) IsSame(other fs.FS) bool {
-	otherAngry, ok := types.InnermostFS(other).(*angryFS)
-	return ok && fsys.name == otherAngry.name
-}
-
-func (fsys *angryFS) String() string {
-	return types.Description(map[string]any{"angryFS": uri.OrDefault(fsys, fsys.name)})
-}
-
 func (fsys *angryFS) Open(name string) (fs.File, error) {
 	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
@@ -84,80 +56,6 @@ func (fsys *angryFS) Open(name string) (fs.File, error) {
 
 func (fsys *angryFS) Close() error {
 	return errAngry
-}
-
-func (fsys *angryFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("stat", name, errAngry)
-}
-
-func (fsys *angryFS) Create(name string) (types.File, error) {
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("create", name, errAngry)
-}
-
-func (fsys *angryFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("mkdir", name, errAngry)
-}
-
-func (fsys *angryFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("readfile", name, errAngry)
-}
-
-func (fsys *angryFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	return "", ufserrors.NewPathError("readlink", name, errAngry)
-}
-
-func (fsys *angryFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("lstat", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("lstat", name, errAngry)
-}
-
-func (fsys *angryFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("readdir", name, errAngry)
-}
-
-func (fsys *angryFS) Glob(_ string) ([]string, error) {
-	return nil, errAngry
-}
-
-func (fsys *angryFS) Remove(name string) error {
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("remove", name, errAngry)
-}
-
-func (fsys *angryFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	return ufserrors.NewLinkError("rename", oldPath, newPath, errAngry)
-}
-
-func (fsys *angryFS) RemoveAll(name string) error {
-	if err := pathutil.Validate("removeall", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("removeall", name, errAngry)
 }
 
 func newAngryFS(_ context.Context, name string) (types.WriteFS, error) {

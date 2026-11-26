@@ -207,9 +207,9 @@ must. Whether it is the right default at all is open decision 3.
 
 The name half of the policy is `patternutil.Match(patterns, name)`, which matches a `path.Match`
 pattern against the whole path or against any single component of it
-(`internal/patternutil/patternutil.go:27`, `matchOne` at `:51`), so directory scoping comes for free
+(`internal/patternutil/patternutil.go:28`, `matchOne` at `:52`), so directory scoping comes for free
 without a `**` extension: `.ssh` matches `.ssh/id_ed25519`, and `*.key` matches
-`deploy/prod/api.key`. `patternutil.Validate` (`internal/patternutil/patternutil.go:39`) is called
+`deploy/prod/api.key`. `patternutil.Validate` (`internal/patternutil/patternutil.go:40`) is called
 when the policy is built, so a malformed pattern fails in `New` instead of restricting nothing —
 which is what `keyguardfs.New` already does (`drivers/wrappers/keyguardfs/keyguardfs.go:108`).
 `path.Match` is what every `Glob` on this tree already means

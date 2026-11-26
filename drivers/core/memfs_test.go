@@ -16,9 +16,13 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -1439,4 +1443,98 @@ func TestMemFSOpenFileClosed(t *testing.T) {
 	if _, err := fsys.(types.OpenFileFS).OpenFile("file.txt", os.O_RDONLY, 0); !errors.Is(err, fs.ErrClosed) {
 		t.Errorf("OpenFile on closed memFS = %v, want fs.ErrClosed", err)
 	}
+}
+
+// TestMemFSConcurrentOpenAndTruncate reads and rewrites one name from
+// goroutines at the same time, which is what a server that answers reads and
+// writes for one file system does whenever two callers work on one name.
+//
+// Open used to fetch the node under the lock and copy what it holds only after
+// giving the lock back, so a rewrite that reset that same node in place — the
+// truncate of OpenFile, and the push a write handle makes to the node — raced
+// with the copy. What is checked here is what a reader is allowed to see: one
+// whole version, or the empty file a truncate leaves before the write that
+// follows it lands. Anything else means a read crossed a rewrite.
+func TestMemFSConcurrentOpenAndTruncate(t *testing.T) {
+	t.Parallel()
+	fsys, err := newMemFS(t.Context(), "memory://test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	ofs, ok := fsys.(types.OpenFileFS)
+	if !ok {
+		t.Fatal("memFS does not implement types.OpenFileFS")
+	}
+
+	const name = "shared.txt"
+	versions := make([]string, 4)
+	for i := range versions {
+		versions[i] = strings.Repeat(fmt.Sprintf("writer %d; ", i), 60)
+	}
+	// A read that arrives between the truncate and the write that follows it
+	// finds the name emptied, which is a state the driver is entitled to show.
+	visible := slices.Concat(versions, []string{""})
+
+	f, err := fsys.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(versions[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		writers = 4
+		writes  = 40
+		readers = 4
+		reads   = 200
+	)
+
+	var running sync.WaitGroup
+	for w := range writers {
+		running.Go(func() {
+			for range writes {
+				f, err := ofs.OpenFile(name, os.O_WRONLY|os.O_TRUNC, fs.ModePerm)
+				if err != nil {
+					t.Errorf("OpenFile(%q, truncate): %v", name, err)
+					return
+				}
+				if _, err := f.WriteString(versions[w]); err != nil {
+					t.Errorf("WriteString(%q): %v", name, err)
+				}
+				if err := f.Close(); err != nil {
+					t.Errorf("Close(%q): %v", name, err)
+				}
+			}
+		})
+	}
+	for range readers {
+		running.Go(func() {
+			for range reads {
+				f, err := fsys.Open(name)
+				if err != nil {
+					t.Errorf("Open(%q): %v", name, err)
+					return
+				}
+				content, err := io.ReadAll(f)
+				if err != nil {
+					t.Errorf("reading %q: %v", name, err)
+				}
+				if err := f.Close(); err != nil {
+					t.Errorf("Close of the handle Open gave for %q: %v", name, err)
+				}
+				if err == nil && !slices.Contains(visible, string(content)) {
+					t.Errorf("Open(%q) read %d bytes that are none of the %d versions written to it nor the empty file a truncate leaves: %q",
+						name, len(content), len(versions), string(content))
+					return
+				}
+			}
+		})
+	}
+	running.Wait()
 }

@@ -15,6 +15,11 @@
 // Package faultfs provides the "fault" file system decorator, which injects
 // configurable latency and errors into the file system it wraps. Importing the
 // package registers the decorator.
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds the decorator registration, the file-system
+// value, what [types.SimpleFS] asks of it and the injection every sibling calls,
+// and the siblings named faultfs_<interface>.go hold the rest.
 package faultfs
 
 import (
@@ -24,19 +29,14 @@ import (
 	"io/fs"
 	"log/slog"
 	"math/rand/v2"
-	"net/url"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/cloudfra/ufs"
-	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
-	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
-	"github.com/cloudfra/ufs/ops"
 )
 
 var (
@@ -148,41 +148,6 @@ func newFaultFS(inner types.WriteFS, cfg Options) (types.WriteFS, error) {
 	}, nil
 }
 
-func (fsys *faultFS) DeviceInfo() types.DeviceMap {
-	return fsys.inner.DeviceInfo()
-}
-
-// IsMountedArchiveDir forwards to the wrapped file system, see
-// [types.MountedArchiveDirFS].
-func (fsys *faultFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.inner.(types.MountedArchiveDirFS)
-	return ok && m.IsMountedArchiveDir(name)
-}
-
-func (fsys *faultFS) URI() (*url.URL, error) {
-	u, err := fsys.inner.URI()
-	if err != nil {
-		return nil, err
-	}
-	return uri.AppendOption(u, optionName, fsys.cfg)
-}
-
-// InnerFS returns the file system whose operations are faulted, see
-// [types.WrapperFS].
-func (fsys *faultFS) InnerFS() fs.FS {
-	return fsys.inner
-}
-
-// IsSame reports whether other holds the wrapped file system's data, since the
-// injected faults do not change what is stored.
-func (fsys *faultFS) IsSame(other fs.FS) bool {
-	return types.SameFS(fsys.inner, other)
-}
-
-func (fsys *faultFS) String() string {
-	return types.Description(map[string]any{"faultFS": types.Nested(fsutil.String(fsys.inner))})
-}
-
 func (fsys *faultFS) maybeInjectFault(op, name string) error {
 	if err := pathutil.Validate(op, name); err != nil {
 		return err
@@ -222,98 +187,6 @@ func (fsys *faultFS) Open(name string) (fs.File, error) {
 	return fsys.inner.Open(name)
 }
 
-// OpenFile injects a fault for name, reported as the same "open" operation as
-// [Open] uses, and then opens with [polyfills.OpenFile], which uses the wrapped
-// file system's own OpenFile when it has one.
-func (fsys *faultFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
-	if err := fsys.maybeInjectFault("open", name); err != nil {
-		return nil, err
-	}
-	return polyfills.OpenFile(fsys.inner, name, flag, perm)
-}
-
 func (fsys *faultFS) Close() error {
 	return fsys.inner.Close()
-}
-
-// Release lets go of what the file system it wraps acquired for itself, using
-// [polyfills.Release], which calls that Release only when it is a
-// [types.ReleaseFS]. The decorator holds no resource of its own.
-func (fsys *faultFS) Release() error {
-	return polyfills.Release(fsys.inner)
-}
-
-func (fsys *faultFS) Stat(name string) (fs.FileInfo, error) {
-	if err := fsys.maybeInjectFault("stat", name); err != nil {
-		return nil, err
-	}
-	return fsys.inner.Stat(name)
-}
-
-func (fsys *faultFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := fsys.maybeInjectFault("lstat", name); err != nil {
-		return nil, err
-	}
-	return fsys.inner.Lstat(name)
-}
-
-func (fsys *faultFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := fsys.maybeInjectFault("readdir", name); err != nil {
-		return nil, err
-	}
-	return fsys.inner.ReadDir(name)
-}
-
-func (fsys *faultFS) ReadFile(name string) ([]byte, error) {
-	if err := fsys.maybeInjectFault("readfile", name); err != nil {
-		return nil, err
-	}
-	return fsys.inner.ReadFile(name)
-}
-
-func (fsys *faultFS) ReadLink(name string) (string, error) {
-	if err := fsys.maybeInjectFault("readlink", name); err != nil {
-		return "", err
-	}
-	return fsys.inner.ReadLink(name)
-}
-
-func (fsys *faultFS) Create(name string) (types.File, error) {
-	if err := fsys.maybeInjectFault("create", name); err != nil {
-		return nil, err
-	}
-	return fsys.inner.Create(name)
-}
-
-func (fsys *faultFS) MkdirAll(name string, perm fs.FileMode) error {
-	if err := fsys.maybeInjectFault("mkdir", name); err != nil {
-		return err
-	}
-	return fsys.inner.MkdirAll(name, perm)
-}
-
-func (fsys *faultFS) Remove(name string) error {
-	if err := fsys.maybeInjectFault("remove", name); err != nil {
-		return err
-	}
-	return fsys.inner.Remove(name)
-}
-
-func (fsys *faultFS) RemoveAll(name string) error {
-	if err := fsys.maybeInjectFault("removeall", name); err != nil {
-		return err
-	}
-	return fsys.inner.RemoveAll(name)
-}
-
-// Rename injects a fault for oldPath and then renames with [ops.Rename], which
-// copies and removes when the wrapped file system has no Rename.
-func (fsys *faultFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.Validate("rename", newPath); err != nil {
-		return err
-	}
-	if err := fsys.maybeInjectFault("rename", oldPath); err != nil {
-		return err
-	}
-	return ops.Rename(fsys.inner, oldPath, newPath)
 }

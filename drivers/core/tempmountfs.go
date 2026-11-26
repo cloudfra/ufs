@@ -18,16 +18,10 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"net/url"
 
-	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
-	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/osutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
-	"github.com/cloudfra/ufs/ops"
 )
 
 var (
@@ -42,37 +36,6 @@ type tempMountFS struct {
 	closer func() error
 }
 
-func (fsys *tempMountFS) DeviceInfo() types.DeviceMap {
-	return fsys.lfs.DeviceInfo()
-}
-
-func (fsys *tempMountFS) URI() (*url.URL, error) {
-	return url.Parse(fsys.uri)
-}
-
-// InnerFS returns the file system holding the temporary directory, see
-// [types.WrapperFS].
-func (fsys *tempMountFS) InnerFS() fs.FS {
-	return fsys.lfs
-}
-
-// IsSame reports whether other holds the temporary directory this tempMountFS
-// writes to, which no other tempMountFS shares.
-func (fsys *tempMountFS) IsSame(other fs.FS) bool {
-	return types.SameFS(fsys.lfs, other)
-}
-
-func (fsys *tempMountFS) String() string {
-	return types.Description(map[string]any{"tempMountFS": map[string]any{
-		"tmpDir": pathutil.CoerceUnix(fsys.name),
-		"uri":    uri.OrDefault(fsys, fsys.uri),
-	}})
-}
-
-func (fsys *tempMountFS) GetAbsPath(name string) (string, error) {
-	return ufs.AbsPath(fsys.lfs, name)
-}
-
 func (fsys *tempMountFS) Open(name string) (fs.File, error) {
 	return fsys.lfs.Open(name)
 }
@@ -81,50 +44,6 @@ func (fsys *tempMountFS) Close() error {
 	closeErr := fsys.lfs.Close()
 	cleanupErr := fsys.closer()
 	return ufserrors.Join(closeErr, cleanupErr)
-}
-
-func (fsys *tempMountFS) Create(name string) (types.File, error) {
-	return fsys.lfs.Create(name)
-}
-
-func (fsys *tempMountFS) MkdirAll(name string, perm fs.FileMode) error {
-	return fsys.lfs.MkdirAll(name, perm)
-}
-
-func (fsys *tempMountFS) ReadFile(name string) ([]byte, error) {
-	return fsys.lfs.ReadFile(name)
-}
-
-func (fsys *tempMountFS) ReadLink(name string) (string, error) {
-	return fsys.lfs.ReadLink(name)
-}
-
-func (fsys *tempMountFS) Lstat(name string) (fs.FileInfo, error) {
-	return fsys.lfs.Lstat(name)
-}
-
-func (fsys *tempMountFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	return fsys.lfs.ReadDir(name)
-}
-
-func (fsys *tempMountFS) Stat(name string) (fs.FileInfo, error) {
-	return fsys.lfs.Stat(name)
-}
-
-func (fsys *tempMountFS) Rename(oldPath, newPath string) error {
-	return ops.Rename(fsys.lfs, oldPath, newPath)
-}
-
-func (fsys *tempMountFS) Glob(pattern string) ([]string, error) {
-	return globutil.GlobFS(fsys, pattern)
-}
-
-func (fsys *tempMountFS) Remove(name string) error {
-	return fsys.lfs.Remove(name)
-}
-
-func (fsys *tempMountFS) RemoveAll(name string) error {
-	return fsys.lfs.RemoveAll(name)
 }
 
 // NewTempMountFS returns a file system for uri backed by a temporary local

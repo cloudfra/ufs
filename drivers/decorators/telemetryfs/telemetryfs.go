@@ -26,8 +26,9 @@
 // Each operation is a span named "ufs." followed by the operation, such as
 // "ufs.readfile", with the attributes ufs.operation, ufs.system (the URI
 // scheme of the wrapped file system) and ufs.path, which for a rename is the
-// old path, with the new one in ufs.new_path. A failed operation records
-// its error and sets the span status.
+// old path, with the new one in ufs.new_path, and for a batch create is the
+// first file, with the number of files in ufs.files. A failed operation
+// records its error and sets the span status.
 //
 // File system methods take no [context.Context], so a span cannot join the
 // span that is current in its caller. Spans are children of the span in the
@@ -73,9 +74,10 @@ import (
 )
 
 var (
-	_ types.FS       = (*telemetryFS)(nil)
-	_ types.RenameFS = (*telemetryFS)(nil)
-	_ types.Watcher  = (*watchTelemetryFS)(nil)
+	_ types.FS            = (*telemetryFS)(nil)
+	_ types.RenameFS      = (*telemetryFS)(nil)
+	_ types.BatchCreateFS = (*telemetryFS)(nil)
+	_ types.Watcher       = (*watchTelemetryFS)(nil)
 )
 
 const (
@@ -90,6 +92,7 @@ const (
 	systemKey    = attribute.Key("ufs.system")
 	pathKey      = attribute.Key("ufs.path")
 	newPathKey   = attribute.Key("ufs.new_path")
+	filesKey     = attribute.Key("ufs.files")
 	errorTypeKey = attribute.Key("error.type")
 )
 
@@ -175,6 +178,7 @@ const (
 	opRemove
 	opRemoveAll
 	opRename
+	opBatchCreate
 	numOperations
 )
 
@@ -183,18 +187,19 @@ const (
 // Open's do, but the report names it after the method so that the two stay told
 // apart.
 var operationNames = [numOperations]string{
-	opOpen:      "open",
-	opOpenFile:  "openfile",
-	opStat:      "stat",
-	opLstat:     "lstat",
-	opReadDir:   "readdir",
-	opReadFile:  "readfile",
-	opReadLink:  "readlink",
-	opCreate:    "create",
-	opMkdirAll:  "mkdir",
-	opRemove:    "remove",
-	opRemoveAll: "removeall",
-	opRename:    "rename",
+	opOpen:        "open",
+	opOpenFile:    "openfile",
+	opStat:        "stat",
+	opLstat:       "lstat",
+	opReadDir:     "readdir",
+	opReadFile:    "readfile",
+	opReadLink:    "readlink",
+	opCreate:      "create",
+	opMkdirAll:    "mkdir",
+	opRemove:      "remove",
+	opRemoveAll:   "removeall",
+	opRename:      "rename",
+	opBatchCreate: "batchcreate",
 }
 
 // errorClass groups errors into the few values reported as error.type.
@@ -339,13 +344,14 @@ func (fsys *telemetryFS) begin(op operation) (trace.Span, time.Time) {
 	return span, start
 }
 
-func (fsys *telemetryFS) end(op operation, name string, span trace.Span, start time.Time, err error) {
-	fsys.endRename(op, name, "", span, start, err)
+func (fsys *telemetryFS) end(op operation, name string, span trace.Span, start time.Time, err error, extra ...attribute.KeyValue) {
+	fsys.endRename(op, name, "", span, start, err, extra...)
 }
 
 // endRename is end for an operation with a second path, newName, which is
-// reported as ufs.new_path unless it is empty.
-func (fsys *telemetryFS) endRename(op operation, name, newName string, span trace.Span, start time.Time, err error) {
+// reported as ufs.new_path unless it is empty. extra carries the attributes of
+// one operation only, such as the number of files in a batch.
+func (fsys *telemetryFS) endRename(op operation, name, newName string, span trace.Span, start time.Time, err error, extra ...attribute.KeyValue) {
 	if fsys.duration != nil {
 		fsys.duration.Record(fsys.ctx, time.Since(start).Seconds(), fsys.recordAttrs[op][classify(err)]...)
 	}
@@ -358,6 +364,9 @@ func (fsys *telemetryFS) endRename(op operation, name, newName string, span trac
 		span.SetAttributes(pathKey.String(name))
 		if newName != "" {
 			span.SetAttributes(newPathKey.String(newName))
+		}
+		if len(extra) > 0 {
+			span.SetAttributes(extra...)
 		}
 		if err != nil {
 			span.RecordError(err)

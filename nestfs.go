@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
@@ -290,6 +291,11 @@ func makeMountMap(baseName string) *mountMap {
 // nestFS is a wrapper for a base FS that supports automatic mounting of archives.
 // This means that any archive can opened and read automatically. Archives are revealed via $filename.d name pattern.
 type nestFS struct {
+	// fsys is the base file system this nest wraps. It is set when the nest is
+	// made and never changed afterwards, including by Close: every operation
+	// reads it without a lock, so writing it is a data race against them and
+	// leaves a closed file system that still answers as open for the moment
+	// between the read and the use. Closedness lives in [nestFS.closed] instead.
 	fsys   types.WriteFS
 	ctx    context.Context
 	mounts *mountMap
@@ -298,6 +304,12 @@ type nestFS struct {
 	// inArchive is set on the mount of an archive's content, which cannot be
 	// changed.
 	inArchive bool
+
+	// closed says Close has been called, after which this file system refuses
+	// every operation that would work through fsys. Close claims it once, so
+	// closing twice is not an error and only the first call lets go of the base
+	// file system and the mounts.
+	closed atomic.Bool
 
 	// autoMounted is set on the content directory of an archive that nestFS
 	// mounts automatically, which is a mount ufs opened for itself rather than
@@ -496,6 +508,8 @@ func rewritePathError(err error, name, subName string) error {
 	}
 }
 
+// Open is [fs.FS]: it hands out the file that a mount or the base file system
+// holds for name.
 func (fsys *nestFS) Open(name string) (fs.File, error) {
 	if err := fsys.validPath("open", name); err != nil {
 		return nil, err
@@ -503,7 +517,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 
 	mountFS, subName, err := fsys.getFSAndSubpath(name)
 	if err != nil {
-		return nil, err
+		return nil, fsys.closedErr("open", name, err)
 	}
 
 	f, err := mountFS.fsys.Open(subName)
@@ -511,7 +525,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
 			return makeReadDirFile(mountFS, subName), nil
 		}
-		return nil, rewritePathError(err, name, subName)
+		return nil, mountFS.closedErr("open", name, rewritePathError(err, name, subName))
 	}
 
 	if rdf, ok := f.(fs.ReadDirFile); ok {
@@ -521,18 +535,41 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
-	return polyfills.ToBufferedFile(f, true, mountFS.args.BufMode)
+	file, err := polyfills.ToBufferedFile(f, true, mountFS.args.BufMode)
+	if err != nil {
+		return nil, mountFS.closedErr("open", name, err)
+	}
+	return file, nil
 }
 
+// closedErr answers the error an operation met once Close has let go of the base
+// file system underneath it. A file system that has been closed cannot answer for
+// a path: what it reports depends on what its driver kept, and the memory driver
+// reports a missing file. An operation that was already under way when Close
+// began is allowed to finish, so the only way to answer for the ones it
+// interrupted is to report [fs.ErrClosed], which is what a caller can act on.
+// Operations that arrive after the close are refused by [nestFS.validPath]
+// instead; this answers the ones that were already in the middle.
+func (fsys *nestFS) closedErr(op, name string, err error) error {
+	if err == nil || !fsys.closed.Load() {
+		return err
+	}
+	return ufserrors.NewPathError(op, name, fs.ErrClosed)
+}
+
+// Close closes the base file system and every mount below it. Closing twice is
+// not an error: only the first call lets go of them. Afterwards this file system
+// reports [fs.ErrClosed] for every operation, and a caller that races Close sees
+// either the result of the operation or an error matching [fs.ErrClosed].
 func (fsys *nestFS) Close() error {
+	if !fsys.closed.CompareAndSwap(false, true) {
+		return nil
+	}
 	mountErr := fsys.mounts.Close()
 
 	var baseErr error
-	if fsys.fsys != nil {
-		if err := fsys.fsys.Close(); err != nil {
-			baseErr = fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err)
-		}
-		fsys.fsys = nil
+	if err := fsys.fsys.Close(); err != nil {
+		baseErr = fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err)
 	}
 	return ufserrors.Join(mountErr, baseErr)
 }
@@ -547,7 +584,7 @@ func (fsys *nestFS) Close() error {
 // open, and for a mount that is not backed by a file at all: releasing it would
 // let go of nothing, and closing it would throw its content away.
 func (fsys *nestFS) closeOnRelease() bool {
-	return fsys.autoMounted && fsys.fsys != nil && !holdsNoFile(fsys.fsys)
+	return fsys.autoMounted && !fsys.closed.Load() && !holdsNoFile(fsys.fsys)
 }
 
 // holdsNoFile reports whether fsys is backed by memory or by nothing at all, so
@@ -576,7 +613,7 @@ func (fsys *nestFS) validPath(op string, name string) error {
 	if err := pathutil.Validate(op, name); err != nil {
 		return err
 	}
-	if fsys.fsys == nil {
+	if fsys.closed.Load() {
 		return ufserrors.NewPathError(op, name, fs.ErrClosed)
 	}
 	return nil

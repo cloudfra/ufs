@@ -47,7 +47,7 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
 		return err
 	}
-	if fsys.fsys == nil {
+	if fsys.closed.Load() {
 		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrClosed)
 	}
 	linkErr := func(err error) error {
@@ -63,7 +63,7 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		return linkErr(err)
 	}
 	srcLeaf, dstLeaf := src[len(src)-1], dst[len(dst)-1]
-	if srcLeaf.fsys.fsys == nil || dstLeaf.fsys.fsys == nil {
+	if srcLeaf.fsys.closed.Load() || dstLeaf.fsys.closed.Load() {
 		return linkErr(fs.ErrClosed)
 	}
 	if pathutil.IsCwd(srcLeaf.name) || pathutil.IsCwd(dstLeaf.name) {

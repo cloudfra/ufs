@@ -17,20 +17,16 @@ package core
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/osutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 const (
@@ -128,31 +124,6 @@ type nullFS struct {
 	name string
 }
 
-func (fsys *nullFS) DeviceInfo() types.DeviceMap {
-	return nullDeviceInfoMap
-}
-
-func (fsys *nullFS) URI() (*url.URL, error) {
-	u, err := url.Parse(fsys.name)
-	if err != nil {
-		return nil, fmt.Errorf("URI %q is not valid, %w", fsys.name, err)
-	}
-	// Tacked rather than set through url.Values, so a name that already carries
-	// parameters keeps them in the order and escaping it was written with.
-	return uri.AddParameter(u, "ufs.ro", "true")
-}
-
-// IsSame reports whether other is a nullFS with the same name, which holds the
-// same data because nullFS stores nothing.
-func (fsys *nullFS) IsSame(other fs.FS) bool {
-	otherNull, ok := types.InnermostFS(other).(*nullFS)
-	return ok && fsys.name == otherNull.name
-}
-
-func (fsys *nullFS) String() string {
-	return types.Description(map[string]any{"nullFS": uri.OrDefault(fsys, fsys.name)})
-}
-
 func (fsys *nullFS) Open(name string) (fs.File, error) {
 	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
@@ -164,91 +135,6 @@ func (fsys *nullFS) Open(name string) (fs.File, error) {
 }
 
 func (fsys *nullFS) Close() error {
-	return nil
-}
-
-func (fsys *nullFS) Create(name string) (types.File, error) {
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-
-	return newNullFile(name), nil
-}
-
-func (fsys *nullFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (fsys *nullFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	return []byte{}, nil
-}
-
-func (fsys *nullFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
-func (fsys *nullFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	return nullDirStat, nil
-}
-
-func (fsys *nullFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("lstat", name); err != nil {
-		return nil, err
-	}
-	isDir := pathutil.IsDirName(name)
-	mode := fs.ModePerm
-	size := int64(0)
-	if isDir {
-		mode = fs.ModeDir | fs.ModePerm
-		size = osutil.EmptyDirSize
-	}
-	return types.NewFileInfo(name, size, mode, nullModTime), nil
-}
-
-func (fsys *nullFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	return []fs.DirEntry{}, nil
-}
-
-// Glob matches nothing because a nullFS holds no entries, but a malformed
-// pattern still reports [path.ErrBadPattern].
-func (fsys *nullFS) Glob(pattern string) ([]string, error) {
-	if _, err := path.Match(pattern, ""); err != nil {
-		return nil, err
-	}
-	return []string{}, nil
-}
-
-func (fsys *nullFS) Remove(name string) error {
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Rename discards the rename, as nullFS discards every write.
-func (fsys *nullFS) Rename(oldPath, newPath string) error {
-	return pathutil.ValidateRename(oldPath, newPath)
-}
-
-func (fsys *nullFS) RemoveAll(name string) error {
-	if err := pathutil.Validate("removeall", name); err != nil {
-		return err
-	}
 	return nil
 }
 

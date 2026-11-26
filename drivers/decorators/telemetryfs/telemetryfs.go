@@ -45,24 +45,25 @@
 //
 // Only operations on the file system are reported. Reads and writes on a file
 // that Open or Create returned are not.
+//
+// # Files
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds the decorator registration, the two file-system
+// values, what [types.SimpleFS] asks of them and the reporting the siblings
+// call, and the siblings named telemetryfs_<interface>.go hold the rest.
 package telemetryfs
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"net/url"
 	"slices"
 	"time"
 
 	"github.com/cloudfra/ufs"
-	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
-	"github.com/cloudfra/ufs/internal/fsutil"
-	"github.com/cloudfra/ufs/ops"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -265,17 +266,6 @@ type watchTelemetryFS struct {
 	watcher types.Watcher
 }
 
-// Watch forwards to the wrapped file system. It is not reported.
-func (fsys *watchTelemetryFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
-	return fsys.watcher.Watch(ctx, name, hook)
-}
-
-// IsSame reports whether other holds the wrapped file system's data, since
-// reporting operations does not change what is stored.
-func (fsys *watchTelemetryFS) IsSame(other fs.FS) bool {
-	return types.SameFS(fsys.inner, other)
-}
-
 // newTelemetryFS wraps inner as a [types.WriteFS] that reports its operations to
 // tracerProvider and meterProvider, as selected by cfg. Close always delegates
 // to inner without being reported.
@@ -335,41 +325,6 @@ func systemOf(fsys types.WriteFS) string {
 	return u.Scheme
 }
 
-func (fsys *telemetryFS) DeviceInfo() types.DeviceMap {
-	return fsys.inner.DeviceInfo()
-}
-
-// IsMountedArchiveDir forwards to the wrapped file system, see
-// [types.MountedArchiveDirFS].
-func (fsys *telemetryFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.inner.(types.MountedArchiveDirFS)
-	return ok && m.IsMountedArchiveDir(name)
-}
-
-func (fsys *telemetryFS) URI() (*url.URL, error) {
-	u, err := fsys.inner.URI()
-	if err != nil {
-		return nil, err
-	}
-	return uri.AppendOption(u, optionName, fsys.cfg)
-}
-
-// InnerFS returns the file system whose operations are reported, see
-// [types.WrapperFS].
-func (fsys *telemetryFS) InnerFS() fs.FS {
-	return fsys.inner
-}
-
-// IsSame reports whether other holds the wrapped file system's data, since
-// reporting operations does not change what is stored.
-func (fsys *telemetryFS) IsSame(other fs.FS) bool {
-	return types.SameFS(fsys.inner, other)
-}
-
-func (fsys *telemetryFS) String() string {
-	return types.Description(map[string]any{"telemetryFS": types.Nested(fsutil.String(fsys.inner))})
-}
-
 // begin starts reporting an operation. The results are passed to end once the
 // wrapped file system returns.
 func (fsys *telemetryFS) begin(op operation) (trace.Span, time.Time) {
@@ -419,95 +374,6 @@ func (fsys *telemetryFS) Open(name string) (fs.File, error) {
 	return f, err
 }
 
-// OpenFile opens with [polyfills.OpenFile], which uses the wrapped file system's
-// own OpenFile when it has one, and reports it as the "openfile" operation.
-func (fsys *telemetryFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
-	span, start := fsys.begin(opOpenFile)
-	f, err := polyfills.OpenFile(fsys.inner, name, flag, perm)
-	fsys.end(opOpenFile, name, span, start, err)
-	return f, err
-}
-
 func (fsys *telemetryFS) Close() error {
 	return fsys.inner.Close()
-}
-
-// Release lets go of what the file system it wraps acquired for itself, using
-// [polyfills.Release], which calls that Release only when it is a
-// [types.ReleaseFS]. The decorator holds no resource of its own, and releasing
-// is not reported.
-func (fsys *telemetryFS) Release() error {
-	return polyfills.Release(fsys.inner)
-}
-
-func (fsys *telemetryFS) Stat(name string) (fs.FileInfo, error) {
-	span, start := fsys.begin(opStat)
-	info, err := fsys.inner.Stat(name)
-	fsys.end(opStat, name, span, start, err)
-	return info, err
-}
-
-func (fsys *telemetryFS) Lstat(name string) (fs.FileInfo, error) {
-	span, start := fsys.begin(opLstat)
-	info, err := fsys.inner.Lstat(name)
-	fsys.end(opLstat, name, span, start, err)
-	return info, err
-}
-
-func (fsys *telemetryFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	span, start := fsys.begin(opReadDir)
-	entries, err := fsys.inner.ReadDir(name)
-	fsys.end(opReadDir, name, span, start, err)
-	return entries, err
-}
-
-func (fsys *telemetryFS) ReadFile(name string) ([]byte, error) {
-	span, start := fsys.begin(opReadFile)
-	data, err := fsys.inner.ReadFile(name)
-	fsys.end(opReadFile, name, span, start, err)
-	return data, err
-}
-
-func (fsys *telemetryFS) ReadLink(name string) (string, error) {
-	span, start := fsys.begin(opReadLink)
-	target, err := fsys.inner.ReadLink(name)
-	fsys.end(opReadLink, name, span, start, err)
-	return target, err
-}
-
-func (fsys *telemetryFS) Create(name string) (types.File, error) {
-	span, start := fsys.begin(opCreate)
-	f, err := fsys.inner.Create(name)
-	fsys.end(opCreate, name, span, start, err)
-	return f, err
-}
-
-func (fsys *telemetryFS) MkdirAll(name string, perm fs.FileMode) error {
-	span, start := fsys.begin(opMkdirAll)
-	err := fsys.inner.MkdirAll(name, perm)
-	fsys.end(opMkdirAll, name, span, start, err)
-	return err
-}
-
-func (fsys *telemetryFS) Remove(name string) error {
-	span, start := fsys.begin(opRemove)
-	err := fsys.inner.Remove(name)
-	fsys.end(opRemove, name, span, start, err)
-	return err
-}
-
-func (fsys *telemetryFS) RemoveAll(name string) error {
-	span, start := fsys.begin(opRemoveAll)
-	err := fsys.inner.RemoveAll(name)
-	fsys.end(opRemoveAll, name, span, start, err)
-	return err
-}
-
-// Rename renames with [ops.Rename], which copies and removes when the wrapped
-// file system has no Rename of its own. The copy is reported as one rename.
-func (fsys *telemetryFS) Rename(oldPath, newPath string) error {
-	span, start := fsys.begin(opRename)
-	err := ops.Rename(fsys.inner, oldPath, newPath)
-	fsys.endRename(opRename, oldPath, newPath, span, start, err)
-	return err
 }

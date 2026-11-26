@@ -16,21 +16,20 @@
 // rejects every write to the file system it wraps and reports its files and
 // directories without write permission bits. Importing the package registers the
 // decorator.
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds the decorator registration, the file-system
+// value, what [types.SimpleFS] asks of it and the mode masking the siblings
+// share, and the siblings named readonlyfs_<interface>.go hold the rest.
 package readonlyfs
 
 import (
 	"context"
 	"io/fs"
-	"net/url"
-	"os"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
-	"github.com/cloudfra/ufs/internal/fsutil"
-	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -92,25 +91,6 @@ type readOnlyFS struct {
 	types.ReadFS
 }
 
-// InnerFS returns the file system whose data is presented read-only, see
-// [types.WrapperFS].
-func (fsys *readOnlyFS) InnerFS() fs.FS {
-	return fsys.ReadFS
-}
-
-// IsSame reports whether other holds the wrapped file system's data, since the
-// read-only view stores nothing of its own.
-func (fsys *readOnlyFS) IsSame(other fs.FS) bool {
-	return types.SameFS(fsys.ReadFS, other)
-}
-
-// IsMountedArchiveDir forwards to the wrapped file system, see
-// [types.MountedArchiveDirFS].
-func (fsys *readOnlyFS) IsMountedArchiveDir(name string) bool {
-	m, ok := fsys.ReadFS.(types.MountedArchiveDirFS)
-	return ok && m.IsMountedArchiveDir(name)
-}
-
 // New wraps inner as an [types.WriteFS] whose write operations (Create, MkdirAll,
 // Remove, RemoveAll, Rename) always return [fs.ErrPermission], as does an OpenFile
 // given a flag that writes, creates or truncates, and whose Stat, Lstat, ReadDir,
@@ -123,46 +103,6 @@ func New(inner types.ReadFS) types.WriteFS {
 	}
 }
 
-func (fsys *readOnlyFS) URI() (*url.URL, error) {
-	u, err := fsys.ReadFS.URI()
-	if err != nil {
-		return nil, err
-	}
-	if u == nil {
-		return nil, nil
-	}
-	// Tacked rather than set through url.Values, so the parameters the wrapped
-	// file system reported keep the order and escaping they were written with.
-	tacked, err := uri.AddParameter(u, "ufs.ro", "true")
-	if err != nil {
-		return nil, err
-	}
-	return uri.AppendOption(tacked, optionName, Options{Enabled: true})
-}
-
-func (fsys *readOnlyFS) String() string {
-	return types.Description(map[string]any{"readOnlyFS": types.Nested(fsutil.String(fsys.ReadFS))})
-}
-
-// Stat masks the wrapped file system's mode bits.
-func (fsys *readOnlyFS) Stat(name string) (fs.FileInfo, error) {
-	return maskFileInfo(fsys.ReadFS.Stat(name))
-}
-
-// Lstat masks the wrapped file system's mode bits. It is required because
-// [types.ReadFS] is a [fs.ReadLinkFS], whose Lstat result is reported next to
-// Stat's by emulators such as FUSE.
-func (fsys *readOnlyFS) Lstat(name string) (fs.FileInfo, error) {
-	return maskFileInfo(fsys.ReadFS.Lstat(name))
-}
-
-// ReadDir returns copies of the wrapped entries whose Info mode is masked. The
-// entries are copied because a wrapped file system may cache the slice it
-// returns, and its own view must keep its real mode bits.
-func (fsys *readOnlyFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	return maskDirEntries(fsys.ReadFS.ReadDir(name))
-}
-
 // Open returns a handle whose Stat mode is masked, keeping whatever interfaces
 // the wrapped handle already satisfied.
 func (fsys *readOnlyFS) Open(name string) (fs.File, error) {
@@ -171,67 +111,6 @@ func (fsys *readOnlyFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 	return maskFileMode(f), nil
-}
-
-// OpenFile opens name with the [os.OpenFile] flags in flag, refusing every flag
-// that writes, creates or truncates: those opens are writes, and a write of
-// this file system always returns [fs.ErrPermission]. The handle of an allowed
-// open reports the wrapped file's mode without its write permission bits, as
-// [Open] does.
-func (fsys *readOnlyFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
-	if _, writes := polyfills.OpenFileAccess(flag); writes || flag&(os.O_CREATE|os.O_TRUNC) != 0 {
-		if err := pathutil.Validate("open", name); err != nil {
-			return nil, err
-		}
-		return nil, ufserrors.NewPathError("open", name, fs.ErrPermission)
-	}
-	f, err := polyfills.OpenFile(fsys.ReadFS, name, flag, perm)
-	if err != nil {
-		return nil, err
-	}
-	return maskFileMode(f), nil
-}
-
-func (fsys *readOnlyFS) Create(name string) (types.File, error) {
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("create", name, fs.ErrPermission)
-}
-
-func (fsys *readOnlyFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("mkdir", name, fs.ErrPermission)
-}
-
-func (fsys *readOnlyFS) Remove(name string) error {
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("remove", name, fs.ErrPermission)
-}
-
-func (fsys *readOnlyFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	return ufserrors.NewLinkError("rename", oldPath, newPath, fs.ErrPermission)
-}
-
-func (fsys *readOnlyFS) RemoveAll(name string) error {
-	if err := pathutil.Validate("removeall", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("removeall", name, fs.ErrPermission)
-}
-
-// Release lets go of what the file system behind the view acquired for itself,
-// using [polyfills.Release], which calls that Release only when it is a
-// [types.ReleaseFS]. The view holds no resource of its own.
-func (fsys *readOnlyFS) Release() error {
-	return polyfills.Release(fsys.ReadFS)
 }
 
 func maskFileInfo(info fs.FileInfo, err error) (fs.FileInfo, error) {

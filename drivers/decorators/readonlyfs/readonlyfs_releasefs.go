@@ -1,0 +1,30 @@
+// Copyright 2026 Cloudfra
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package readonlyfs
+
+// Release is the [types.ReleaseFS] half of [types.FS]: it lets go of
+// what the wrapped file system acquired for itself, since the view holds no
+// resource of its own.
+
+import (
+	"github.com/cloudfra/ufs/drivers/polyfills"
+)
+
+// Release lets go of what the file system behind the view acquired for itself,
+// using [polyfills.Release], which calls that Release only when it is a
+// [types.ReleaseFS]. The view holds no resource of its own.
+func (fsys *readOnlyFS) Release() error {
+	return polyfills.Release(fsys.ReadFS)
+}

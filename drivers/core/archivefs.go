@@ -18,12 +18,10 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"strings"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/archive"
 	"github.com/cloudfra/ufs/internal/httputil"
 	"github.com/cloudfra/ufs/internal/osutil"
@@ -60,29 +58,6 @@ type archiveFS struct {
 	name string
 }
 
-func (fsys *archiveFS) DeviceInfo() types.DeviceMap {
-	return archiveDeviceInfoMap
-}
-
-func (fsys *archiveFS) URI() (*url.URL, error) {
-	p := fsys.name
-	if len(p) > 0 && p[0] != '/' {
-		p = "/" + p
-	}
-	return &url.URL{Scheme: "archive", Path: p, RawQuery: "ufs.ro=true"}, nil
-}
-
-// IsSame reports whether other reads one opened archive under one name, which
-// is one set of entries that cannot change.
-func (fsys *archiveFS) IsSame(other fs.FS) bool {
-	otherArchive, ok := types.InnermostFS(other).(*archiveFS)
-	return ok && fsys.name == otherArchive.name && types.SameFS(fsys.fsys, otherArchive.fsys)
-}
-
-func (fsys *archiveFS) String() string {
-	return types.Description(map[string]any{"archiveFS": uri.OrDefault(fsys, fsys.name)})
-}
-
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
@@ -97,77 +72,6 @@ func (fsys *archiveFS) Close() error {
 		return nil
 	}
 	return inner.Close()
-}
-
-func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	return fsys.fsys.Stat(name)
-}
-
-func (fsys *archiveFS) Create(name string) (types.File, error) {
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("create", name, fmt.Errorf("archiveFS mounts are read-only, cannot create file, %q, %w", name, fs.ErrPermission))
-}
-
-func (fsys *archiveFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("mkdir", name, fmt.Errorf("archiveFS mounts are read-only, cannot create directory, %q, %w", name, fs.ErrPermission))
-}
-
-func (fsys *archiveFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	return fs.ReadFile(fsys.fsys, name)
-}
-
-func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	return fsys.fsys.ReadDir(name)
-}
-
-func (fsys *archiveFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	// Archives contain no symlinks; every path is a regular file or directory.
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
-func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
-	// Archives contain no symlinks, so Lstat == Stat. The error is relabeled
-	// so it reports the caller's op, as other Lstat delegations do.
-	val, err := fsys.Stat(name)
-	return ufserrors.ChangePathErrorOp(val, err, "lstat")
-}
-
-func (fsys *archiveFS) Remove(name string) error {
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("remove", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
-}
-
-func (fsys *archiveFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	return ufserrors.NewLinkError("rename", oldPath, newPath, fmt.Errorf("archiveFS mounts are read-only, cannot rename %q, %w", oldPath, fs.ErrPermission))
-}
-
-func (fsys *archiveFS) RemoveAll(name string) error {
-	if err := pathutil.Validate("removeall", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("removeall", name, fmt.Errorf("archiveFS mounts are read-only, cannot remove %q, %w", name, fs.ErrPermission))
 }
 
 // newArchiveFSFromLocalFS mounts the archive at the host path name. The result

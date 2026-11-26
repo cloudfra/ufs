@@ -23,6 +23,12 @@
 // operation is safe for concurrent use. Entries report no modification time
 // and the read-only modes of an embedded file. Every write operation fails
 // with [fs.ErrPermission].
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds the file-system value, the handles and what
+// [types.SimpleFS] asks for, and the siblings named yamlfs_<interface>.go hold
+// the rest. document.go, which is not part of the split, holds the tree those
+// files walk.
 package yamlfs
 
 import (
@@ -31,13 +37,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -81,26 +85,6 @@ func New(name string, data []byte) (types.WriteFS, error) {
 	return &yamlFS{name: name, root: root}, nil
 }
 
-func (fsys *yamlFS) DeviceInfo() types.DeviceMap {
-	return types.NewDeviceMap(types.NewDeviceInfo(fsys.name, "memory", 1, false))
-}
-
-func (fsys *yamlFS) URI() (*url.URL, error) {
-	return &url.URL{Scheme: "yaml", Path: "/" + fsys.name, RawQuery: "ufs.ro=true"}, nil
-}
-
-// IsSame reports whether other is this file system. New builds a tree from the
-// document, so two yamlFS values over one document hold separate trees, and the
-// entries of one cannot be recognized as the entries of the other.
-func (fsys *yamlFS) IsSame(other fs.FS) bool {
-	otherYaml, ok := types.InnermostFS(other).(*yamlFS)
-	return ok && fsys == otherYaml
-}
-
-func (fsys *yamlFS) String() string {
-	return types.Description(map[string]any{"yamlFS": uri.OrDefault(fsys, fsys.name)})
-}
-
 func (fsys *yamlFS) Close() error {
 	return nil
 }
@@ -119,61 +103,6 @@ func (fsys *yamlFS) Open(name string) (fs.File, error) {
 	return &leafFile{info: entry.info, Reader: bytes.NewReader(entry.content)}, nil
 }
 
-func (fsys *yamlFS) Stat(name string) (fs.FileInfo, error) {
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-	entry, err := fsys.lookup(name)
-	if err != nil {
-		return nil, ufserrors.NewPathError("stat", name, err)
-	}
-	return entry.info, nil
-}
-
-func (fsys *yamlFS) Lstat(name string) (fs.FileInfo, error) {
-	// A document holds no symbolic links, so Lstat is identical to Stat.
-	info, err := fsys.Stat(name)
-	return ufserrors.ChangePathErrorOp(info, err, "lstat")
-}
-
-func (fsys *yamlFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := pathutil.Validate("readdir", name); err != nil {
-		return nil, err
-	}
-	entry, err := fsys.lookup(name)
-	if err != nil {
-		return nil, ufserrors.NewPathError("readdir", name, err)
-	}
-	if !entry.info.IsDir() {
-		return nil, ufserrors.NewPathError("readdir", name, errNotDir)
-	}
-	return slices.Clone(entry.entries), nil
-}
-
-func (fsys *yamlFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	entry, err := fsys.lookup(name)
-	if err != nil {
-		return nil, ufserrors.NewPathError("readfile", name, err)
-	}
-	if entry.info.IsDir() {
-		return nil, ufserrors.NewPathError("readfile", name, errIsDir)
-	}
-	return bytes.Clone(entry.content), nil
-}
-
-func (fsys *yamlFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	if _, err := fsys.lookup(name); err != nil {
-		return "", ufserrors.NewPathError("readlink", name, err)
-	}
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
 // lookup walks the components of name down the tree from the root.
 func (fsys *yamlFS) lookup(name string) (*node, error) {
 	entry := fsys.root
@@ -188,41 +117,6 @@ func (fsys *yamlFS) lookup(name string) (*node, error) {
 		entry = child
 	}
 	return entry, nil
-}
-
-func (fsys *yamlFS) Create(name string) (types.File, error) {
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-	return nil, ufserrors.NewPathError("create", name, fmt.Errorf("yamlFS is read-only, cannot create file %q: %w", name, fs.ErrPermission))
-}
-
-func (fsys *yamlFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("mkdir", name, fmt.Errorf("yamlFS is read-only, cannot create directory %q: %w", name, fs.ErrPermission))
-}
-
-func (fsys *yamlFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	return ufserrors.NewLinkError("rename", oldPath, newPath, fmt.Errorf("yamlFS is read-only, cannot rename %q: %w", oldPath, fs.ErrPermission))
-}
-
-func (fsys *yamlFS) Remove(name string) error {
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("remove", name, fmt.Errorf("yamlFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
-}
-
-func (fsys *yamlFS) RemoveAll(name string) error {
-	if err := pathutil.Validate("removeall", name); err != nil {
-		return err
-	}
-	return ufserrors.NewPathError("removeall", name, fmt.Errorf("yamlFS is read-only, cannot remove %q: %w", name, fs.ErrPermission))
 }
 
 // leafFile is an open handle on the content of a leaf value.

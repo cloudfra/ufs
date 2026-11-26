@@ -1,0 +1,40 @@
+// Copyright 2026 Cloudfra
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package yamlfs
+
+// ReadDir is the [fs.ReadDirFS] half of [types.ReadFS]: the children of one
+// node, in document order.
+
+import (
+	"io/fs"
+	"slices"
+
+	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
+)
+
+func (fsys *yamlFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if err := pathutil.Validate("readdir", name); err != nil {
+		return nil, err
+	}
+	entry, err := fsys.lookup(name)
+	if err != nil {
+		return nil, ufserrors.NewPathError("readdir", name, err)
+	}
+	if !entry.info.IsDir() {
+		return nil, ufserrors.NewPathError("readdir", name, errNotDir)
+	}
+	return slices.Clone(entry.entries), nil
+}

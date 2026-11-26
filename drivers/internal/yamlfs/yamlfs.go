@@ -39,6 +39,7 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -120,13 +121,41 @@ func (fsys *yamlFS) lookup(name string) (*node, error) {
 }
 
 // leafFile is an open handle on the content of a leaf value.
+//
+// The embedded reader holds the position that the next read continues from, so
+// mu is held across every method that moves or reads through it. One handle can
+// then serve two callers: each read continues where the last one left off
+// instead of repeating or dropping bytes.
 type leafFile struct {
 	info fs.FileInfo
+	mu   sync.Mutex
 	*bytes.Reader
 }
 
 func (f *leafFile) Stat() (fs.FileInfo, error) {
 	return f.info, nil
+}
+
+// Read reads the next part of the leaf value from where the last read left off.
+func (f *leafFile) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Reader.Read(p)
+}
+
+// ReadAt reads the part of the leaf value at off without moving the position
+// that [leafFile.Read] continues from.
+func (f *leafFile) ReadAt(p []byte, off int64) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Reader.ReadAt(p, off)
+}
+
+// Seek moves the position that [leafFile.Read] continues from.
+func (f *leafFile) Seek(offset int64, whence int) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Reader.Seek(offset, whence)
 }
 
 func (f *leafFile) Close() error {

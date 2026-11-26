@@ -281,13 +281,14 @@ func (d *memDirFile) Close() error {
 
 func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)
+		d.mu.Unlock()
 		return batch, nil
 	}
 	if d.offset >= len(d.entries) {
+		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := d.offset + n
@@ -296,6 +297,7 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	}
 	batch := d.entries[d.offset:end]
 	d.offset = end
+	d.mu.Unlock()
 	return batch, nil
 }
 

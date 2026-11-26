@@ -356,8 +356,9 @@ func (b *FSBuilder) MountFS(path string, fsys types.WriteFS) *FSBuilder {
 // there at all - and is unaffected by appends that happen afterwards.
 func (b *FSBuilder) mounted() []fsBuildMount {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	return slices.Clone(b.mounts)
+	mounts := slices.Clone(b.mounts)
+	b.mu.Unlock()
+	return mounts
 }
 
 // Build constructs the [FS], opening the root URI and applying all configured

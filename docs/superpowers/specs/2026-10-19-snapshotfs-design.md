@@ -1,5 +1,7 @@
 # SnapshotFS — Design Spec
 
+**Status:** Proposed, re-verified against `main` at `d94c72e` (2026-11-26).
+
 ## Goal
 
 Let a file system hand out an **immutable, point-in-time view of itself** that
@@ -44,13 +46,13 @@ rewritten. Two stubs survive only in PR refs: `1e3e036` (a non-building
 
 That design and this one differ in kind, not just in detail:
 
-| | 2026-09-14 draft | this spec |
-|:--|:--|:--|
-| What a snapshot is | a read-write overlay on a **frozen** parent | a read-only, immutable view |
-| Who provides it | the library, once, inside `nestFS` | each backend, through an optional interface |
-| Parent while a snapshot lives | frozen: every write returns `fs.ErrPermission` | untouched: writes keep working |
-| Flushing | `Sync()` into the parent, exclusive access | none — there is nothing staged |
-| First implementation | `nestFS` + a `memFS` overlay | `gitfs` |
+|                               | 2026-09-14 draft                               | this spec                                   |
+| :---------------------------- | :--------------------------------------------- | :------------------------------------------ |
+| What a snapshot is            | a read-write overlay on a **frozen** parent    | a read-only, immutable view                 |
+| Who provides it               | the library, once, inside `nestFS`             | each backend, through an optional interface |
+| Parent while a snapshot lives | frozen: every write returns `fs.ErrPermission` | untouched: writes keep working              |
+| Flushing                      | `Sync()` into the parent, exclusive access     | none — there is nothing staged              |
+| First implementation          | `nestFS` + a `memFS` overlay                   | `gitfs`                                     |
 
 The freeze model cannot serve `gitfs`: a git checkout has no writable parent
 to freeze, and its value is precisely that many historical views can coexist
@@ -59,24 +61,46 @@ is what lets a repository, a bolt database and an in-memory tree each answer
 the same question with their own cheapest mechanism — the same shape
 `BatchCreateFS` uses for atomic batch writes.
 
-The model this spec dropped is still open elsewhere: #628 defines a
-`types.SnapshotFS` whose view is a writable overlay on a frozen parent, and
-#629 implements that contract in a second git driver. Both merge against this
-branch, and the two contracts cannot both land, because one interface cannot
-both forbid and allow writes through a view. This document is the read-only
-model, which leaves those two branches two honest options: re-base on this
-spec, dropping the writable view and taking the conformance helpers under
-"Testing", or close. Picking between them belongs to whoever picks up those
-branches; what this document settles is that one contract wins, and the suite
-under "Testing" is the check its survivor has to pass.
+The model this spec dropped lived on two branches and no longer does. PR #628
+defined a `types.SnapshotFS` whose view is a writable overlay on a frozen
+parent, and PR #629 implemented that contract in a second git driver under
+`drivers/internal/gitfs2`. Both are **closed unmerged** — PR #628 on
+2026-11-23, PR #629 one minute later — and neither left anything behind: at
+`d94c72e` there is no `drivers/types/snapshotfs.go`, no `types.SnapshotFS` in
+any Go file, and no `drivers/internal/gitfs2`. The read-only model in this
+document is the design of record, not one of two live options, and the writable
+model is out of scope in the ordinary way: whoever wants it back opens the
+question here first, as "Out of scope" spells out.
 
-## Core API (`drivers/types/snapshotfs.go`)
+What the two branches still contribute is the shape of the question, which this
+document keeps as a rule rather than a preference. One interface cannot both
+forbid and allow writes through a view, so whichever model wins has to win
+everywhere at once: the non-goals, the interface contract and the conformance
+cases move together or not at all. The suite under "Testing" is the check
+anything claiming to be a `types.SnapshotFS` has to pass, including a future
+attempt at the writable model.
 
-Small optional interfaces, in the style of `drivers/types/batchfile.go`. They
-are **not** embedded in `ReadFS` or `WriteFS`. The file name follows the
+### Core API (`drivers/types/snapshotfs.go`)
+
+Small optional interfaces, in the style of `drivers/types/batchcreatefs.go`.
+They are **not** embedded in `ReadFS` or `WriteFS`. The file name follows the
 `<capability>fs.go` pattern the package already uses for interfaces
-(`comparablefs.go`, `copyfilefs.go`) and is the path PR #628 already adds, so
-the interface either replaces that file or moves its contents out of it.
+(`batchcreatefs.go`, `comparablefs.go`, `copyfilefs.go`); it is the path #628
+had chosen before it closed, so the path is free.
+
+Declaring an interface here is not a private decision, and the package already
+enforces that: `TestFullFSContainsAllInterfaces`
+(`drivers/types/fullfs_test.go:63`) reads every interface declared in
+`drivers/types`, follows their embedded types, and requires each exported one to
+be reachable from `fullFS` (`drivers/types/fullfs.go:17`, whose optional
+interfaces start at `:24`). Anything left out has to be written down with a
+reason in `notFullFS` (`drivers/types/fullfs_test.go:47`), which is where "this
+capability does not belong in a full file system" gets reviewed. So the slice
+that adds `SnapshotFS` places it in one of the two lists, and the honest place
+today is `notFullFS`: freezing needs a backend that can freeze, and `memFS`,
+`boltFS` and `localFS` cannot do that yet. `SnapshotIDGetter` is not a file
+system, so it belongs next to `File` and `FileInfo` in that same map, for the
+same reason.
 
 ```go
 // SnapshotFS is an optional interface for a file system that can hand out an
@@ -141,14 +165,24 @@ type SnapshotIDGetter interface {
 `Snapshot` takes no `context.Context`, and neither do the root helpers below.
 That is deliberate: taking a snapshot is a handle flip, and the rule that it
 returns without reading the tree rules out the I/O a deadline or a
-cancellation would govern. The shape follows `batch.go`, where
-`BatchCreate(types.WriteFS, ...)` is context-free for the same reason
-(`batch.go:37`). `Snapshots` and `OpenSnapshot` are context-free on the same
-grounds: they name revisions the file system already holds locally, which is
-why `gitfs` history is opt-in through `ufs.depth` rather than fetched when
-asked for. An implementation that needs I/O to take a snapshot — fetching, or
-flushing what it buffered — is outside this contract, and would need the
-context back before it could claim to hold it.
+cancellation would govern.
+
+It is also what the rest of `drivers/types` does, so the choice is the package's
+rather than this spec's: of everything declared there, the only method taking a
+context is `Watcher.Watch` (`drivers/types/notify.go:61`), and `Watch` holds a
+subscription open for as long as the caller wants events. `BatchCreateFS` writes
+whole files and is context-free, and so is the root helper that dispatches on it
+(`batch.go:37`). The context-taking `Checkpoint(context.Context)` belonged to
+PR #628, which is closed.
+
+`Snapshots` and `OpenSnapshot` are context-free on the same grounds: they name
+revisions the file system already holds locally. For `gitfs` that is exactly the
+case — the driver's only network is the clone, and the clone happens in `New`
+(`drivers/gitfs/gitfs.go:88`), long before any view is asked for — which is why
+history is opt-in through `ufs.depth` instead of fetched on demand. An
+implementation that needs I/O to take a snapshot — fetching, or flushing what it
+buffered — is outside this contract, and would need the context back before it
+could claim to hold it.
 
 Invariants every implementation must hold, and that the conformance suite
 checks:
@@ -175,7 +209,7 @@ checks:
   on a view never touches its source or a sibling view. A released view is
   still a valid view, so it can be snapshotted again.
 
-## Entry points (`snapshot.go`, new root-package file)
+#### Entry points (`snapshot.go`, new root-package file)
 
 Helpers that dispatch on the optional interfaces, mirroring how `batch.go`
 wraps `BatchCreateFS`:
@@ -212,7 +246,7 @@ if err != nil {
         // temporary directory it created:
         //   NewTempMountFS(ctx context.Context, uri string,
         //           prepare func(string) error) (types.WriteFS, error)
-        // (drivers/core/tempmountfs.go:131). copyInto walks fsys into the
+        // (drivers/core/tempmountfs.go:51). copyInto walks fsys into the
         // directory it is handed.
         scratch, err := core.NewTempMountFS(ctx, "scratch://snapshot", copyInto(fsys))
         if err != nil {
@@ -234,9 +268,13 @@ The copy is a workaround, not a snapshot: the temporary directory stays
 writable underneath, `Snapshot` of the result copies again rather than freezing,
 and `Close` deletes the copy, so the caller must keep the file system open for
 as long as it holds the view — the same lifetime rule as a real view whose
-source it closed.
+source it closed. `readonlyfs.New` returns a `types.WriteFS`
+(`drivers/decorators/readonlyfs/readonlyfs.go:100`), so the result is a file
+system that refuses writes rather than one with no write methods: it fails the
+first case under "Testing", and `nestFS` refuses to snapshot a mount wrapped
+that way, as the nestFS table below explains.
 
-## nestFS composition
+#### nestFS composition
 
 `nestFS` implements `types.SnapshotFS`, and this is where the feature's main
 limitation lives.
@@ -246,32 +284,36 @@ snapshot, `Snapshot` walks the base file system and every entry of the
 `mountMap` — including the virtual `name.zip.d` content directories `nestFS`
 creates over archives — and classifies each one by whether anything in this
 process can still write through it. The test is behavioral: an interface check
-is not enough, because on `main` every driver named in the table asserts
+is not enough, because at `d94c72e` every driver named in the table asserts
 `_ types.WriteFS` whether or not its write methods do anything
-(`drivers/core/nullfs.go:41`, `drivers/core/archivefs.go:38`,
-`drivers/gcsfs/gcsfs.go:51`, `drivers/embedfs/embedfs.go:30`), so a table keyed
+(`drivers/core/nullfs.go:38`, `drivers/core/archivefs.go:37`,
+`drivers/gcsfs/gcsfs.go:61`, `drivers/embedfs/embedfs.go:30`), so a table keyed
 on "implements only `types.ReadFS`" would match nothing and every `file://`
 mount would be refused by construction.
 
-| Mount | Accepted? | Why |
-|:--|:--|:--|
-| Reads come from an immutable image the driver holds open, and its write methods return `fs.ErrPermission` (`archiveFS`, `embedFS`, and the `name.zip.d` content directory over either) | yes, used as it stands | there is no writable path into this mount, so nothing in this process can move it under the view |
-| A view taken earlier by `Snapshot` or `OpenSnapshot` | yes, used as it stands | nothing can change underneath a view, and asking one for a second snapshot buys nothing |
-| Implements `types.SnapshotFS` (`gitFS`, another `nestFS`) | yes, snapshotted recursively | the backend freezes its own state |
-| Writes reach something the backend cannot freeze: the mount itself accepts them (`gcsFS`, `nullFS`, `localFS`, `memFS`, `boltFS`) or it wraps a file system that does | **no — the whole call fails** | writes through that mount would leak into a view meant to be frozen |
+| Mount                                                                                                                                                                                                                                                     | Accepted?                     | Why                                                                                              |
+| :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------- | :----------------------------------------------------------------------------------------------- |
+| Reads come from an immutable image the driver holds open, and its write methods return `fs.ErrPermission` (`archiveFS`, `embedFS`, and the `name.zip.d` content directory over either)                                                                    | yes, used as it stands        | there is no writable path into this mount, so nothing in this process can move it under the view |
+| A view taken earlier by `Snapshot` or `OpenSnapshot`                                                                                                                                                                                                      | yes, used as it stands        | nothing can change underneath a view, and asking one for a second snapshot buys nothing          |
+| Implements `types.SnapshotFS` (`gitFS`, another `nestFS`)                                                                                                                                                                                                 | yes, snapshotted recursively  | the backend freezes its own state                                                                |
+| Writes reach something the backend cannot freeze **and** the mount implements no `types.SnapshotFS`: the mount itself accepts the writes (`gcsFS`, `nullFS`, `localFS`, `memFS`, `boltFS` — all of them at `d94c72e`) or it wraps a file system that does | **no — the whole call fails** | writes through that mount would leak into a view meant to be frozen                              |
 
-The rows are tried in order and the first match wins, which is how they settle
-a mount that is both writable and snapshot-capable: `memFS` and `boltFS` sit
-in the last row today and move up to the third when their section of "Later
-implementations" lands, because implementing `types.SnapshotFS` is what gets a
-writable driver out of the refusing row. `localFS` stays in the last row
-through the first slices: its decision is deferred and its snapshots are out
-of scope. A row is therefore a claim about what a mount can do when `Snapshot`
-runs, not about what its type is called — the `boltFS` mount in the error text
-below is refused only because bolt has no snapshot yet. A view matches the
-second row before the third even though a `gitfs` view is itself a
-`types.SnapshotFS` (see the invariant above): it is used as it stands, so a
-nestFS of snapshots costs one handle per mount and never recurses.
+The rows are tried in order and the first match wins, which is what makes the
+table answer one way for any mount. A driver can be named in the last row only
+while it implements no `types.SnapshotFS`, so a writable driver that gains
+`Snapshot` stops matching that row the moment the method exists and is
+snapshotted recursively instead: `memFS` and `boltFS` are named because at
+`d94c72e` neither has it, and they leave the row when their sections of "Later
+implementations" land. `localFS` stays until that section settles it, which is
+why its snapshots are under "Out of scope". The names state support at the head
+the table is read against, not a type family — the `boltFS` mount in the error
+text below is refused only because bolt has no snapshot yet, and
+`nestFS{"data": localFS}` returns that error naming `data` rather than
+recursing.
+
+A view matches the second row before the third even though a `gitfs` view is
+itself a `types.SnapshotFS` (see the invariant above): it is used as it stands,
+so a nestFS of snapshots costs one handle per mount and never recurses.
 
 A driver cannot report "read-only" by its interface, so `nestFS` keys the first
 row on the mounts whose write path it can prove dead: `archiveFS` and
@@ -301,9 +343,10 @@ The three ways a caller resolves it, in the order they should be tried:
    and is used as it stands rather than snapshotted again — which makes any
    snapshot a legal mount, and is how a nestFS of snapshots is built.
 3. Mount it read-only. Note that this is **not** enough on its own today:
-   `readOnlyFS` asserts `_ types.WriteFS = (*readOnlyFS)(nil)`, so a
-   `readOnly:` mount still type-asserts as writable and is refused unless the
-   file system underneath supports snapshots. `readOnlyFS` forwards
+   `readOnlyFS` asserts `_ types.FS = (*readOnlyFS)(nil)`
+   (`drivers/decorators/readonlyfs/readonlyfs.go:37`), so a `readOnly:` mount
+   still type-asserts as writable and is refused unless the file system
+   underneath supports snapshots. `readOnlyFS` forwards
    `Snapshot` to what it wraps, so `readOnly` over `gitfs` works and
    `readOnly` over `localFS` does not. That is deliberate: `readOnlyFS` stops
    writes made through the mount, not writes made through another handle to
@@ -318,7 +361,7 @@ rather than returning permission errors.
 `Snapshot` of a nestFS whose mounts are all read-only is nearly free: no
 mount is copied, and the view holds references to the same backends.
 
-## gitfs as the first implementation
+#### gitfs as the first implementation
 
 `drivers/gitfs/gitfs.go` today answers a `.git` URI by cloning into a
 temporary directory and returning `core.NewTempMountFS` over it:
@@ -330,11 +373,16 @@ with not deleting it.
 
 ```text
 drivers/gitfs/
-  gitfs.go            clone; keeps .git; parses the new ufs.* options
-  gitfs.go            gitFS: Snapshot, Snapshots, OpenSnapshot, SnapshotID
-  snapshot.go         gitSnapshotFS: a ReadFS over one commit's tree
-  internal/gitobj/    go-git plumbing wrapper: repo open, rev parse, tree walk,
-                      blob read, commit log
+  gitfs.go                     clone; keeps .git; parses the new ufs.* options
+  gitfs_snapshotfs.go          gitFS: Snapshot
+  gitfs_snapshothistoryfs.go   gitFS: Snapshots, OpenSnapshot
+  gitfs_snapshotidgetter.go    gitFS: SnapshotID
+  gitsnapshotfs.go             gitSnapshotFS: one commit's tree, no checkout
+  gitsnapshotfs_openfilefs.go  the view's other interfaces keep the same
+  gitsnapshotfs_statfs.go      shape: ReadDir, ReadFile, ReadLink, Stat, Glob,
+  gitsnapshotfs_urigetfs.go    URI
+  internal/gitobj/             go-git plumbing wrapper: repo open, rev parse,
+                               tree walk, blob read, commit log
 ```
 
 - **Views are read from the object store, not checked out.** `Open`/`Stat`/
@@ -342,13 +390,17 @@ drivers/gitfs/
   stream the blob. No per-snapshot working tree, so a repository with a hundred
   open snapshots costs one clone. This follows "Performance through minimizing
   work" (`CLAUDE.md:16`); a checkout per snapshot is the fallback, not the
-  default.
+  default. The layout above follows the one-file-per-interface rule the #724
+  splits settled: the view gets one file per interface it answers, as
+  `drivers/core/localfs_abspathgetter.go` and `nestfs_openfilefs.go` do.
 - **`GetAbsPath` on a gitfs view returns the not-supported error, which is a
   change from the current gitFS.** A view has no host path because nothing is
   checked out. Today's gitFS does answer `ufs.AbsPath` (`path.go:43`) because
-  `New` returns `core.NewTempMountFS` over a `localFS`, and the wrapper forwards
-  the call, so a name resolves inside the temporary clone directory — a path
-  that exists only while that file system is open. A view must stop answering
+  `New` returns `core.NewTempMountFS` over a `localFS`, and that wrapper answers
+  `GetAbsPath` by forwarding to the local file system behind it
+  (`drivers/core/tempmountfs_abspathgetter.go:23`), so a name resolves inside
+  the temporary clone directory — a path that exists only while that file system
+  is open. A view must stop answering
   it, so a caller that needs real paths (host mounts, `ExternalPathGet`) asks
   for checkout mode instead, a separate option because it changes the cost
   model.
@@ -367,7 +419,7 @@ drivers/gitfs/
   stands instead of asking it for another snapshot. It still answers
   `Snapshot`, with an equivalent view as the invariants require.
 
-## Later implementations
+#### Later implementations
 
 Named here because the interface must not be shaped around git alone.
 
@@ -392,15 +444,22 @@ Named here because the interface must not be shaped around git alone.
   forward must not implement the interface, so that `nestFS`'s check sees the
   truth.
 
-## Testing
+#### Testing
 
-`drivers/testing/snapshot.go` (new) lands in the first slice rather than a
+`drivers/testing/snapshotfs.go` (new, named after `types.SnapshotFS` the way `batchcreatefs.go` is named after `BatchCreateFS`) lands in the first slice rather than a
 later one: the slice that adds the interface also adds the helpers and runs
 `gitfs` through them, and no other snapshot implementation merges without
 them. They are the only place where two competing accounts of what a snapshot
 *is* can be checked against the same promises, which is what turns the
 interface question into a test result instead of a matter of taste. They export
 conformance helpers in the shape of `drivers/testing/batchcreatefs.go`:
+
+Who writes that file is an open decision, not this spec's to make: the owner
+closed `drivers/testing/` to changes from agent-authored PRs on #745
+(2026-11-26, "Undo the changes to this file. You are not allowed to make changes
+to drivers/testing/."), and the gate this design depends on lives exactly there.
+It is decision 1 under "Open decisions"; the shape below is unchanged either
+way.
 
 ```go
 // Snapshot verifies that fsys hands out immutable views: a view shows the state
@@ -419,22 +478,42 @@ func SnapshotReadOnly(t *testing.T, args Args, createFS func(*testing.T) types.R
 func SnapshotHistory(t *testing.T, args Args, createFS func(*testing.T) types.WriteFS)
 ```
 
-`Snapshot` takes a `types.WriteFS` fixture for the same reason `BatchCreate`
-does (`drivers/testing/batchcreatefs.go:35`), and so does every other exported
-helper in the package (`drivers/testing/testing.go:32`). `args` is not
-decoration: the shared funnel `FS` (`drivers/testing/testing.go:118`) sets
-`args.fsType` from the driver's example and routes every capability suite
-through it, and a helper that cannot take `args` cannot be routed by it. That
-switch has no `types.SnapshotFS` case, so the first slice adds one alongside the
-helpers — otherwise the helpers exist and nothing runs them for a driver that
-merely implements the interface. `Args.ReadOnly`
-(`drivers/testing/testing.go:35`) is not a substitute for `SnapshotReadOnly`: a
-read-only source has no `types.WriteFS` fixture to hand the funnel at all. Every
-case that proves a view is *frozen* writes to the source after the snapshot is
-taken, and a `func(*testing.T) types.ReadFS` fixture cannot express those cases
-at all — it would leave the suite's central claim untested. Read-only sources
-are not dropped; they run through `SnapshotReadOnly`, which is also how a driver
-checks that a view of a view is equivalent to the first.
+`Snapshot` takes a `types.WriteFS` fixture for the same reason the exported
+`BatchCreate` helper does (`drivers/testing/batchcreatefs.go:35`): every case
+that proves a view is *frozen* writes to the source after the snapshot is taken,
+and a `func(*testing.T) types.ReadFS` fixture cannot express those cases at all
+— it would leave the suite's central claim untested. Read-only sources are not
+dropped: they run through `SnapshotReadOnly`, which is also how a driver checks
+that a view of a view is equivalent to the first. `args` is not decoration
+either: `Args` (`drivers/testing/testing.go:32`) carries the unexported `fsType`
+the helpers gate on, and `Args.ReadOnly` (`drivers/testing/testing.go:35`)
+settles which suite family runs, not which capabilities do. `SnapshotReadOnly`
+is still needed for a read-only source because the frozen-view cases need a
+source they can write to, and a view has none.
+
+Exported helpers are half the shape. `gitfs` calls `SnapshotHistory` from its own
+driver test, the way `OpenFile` is called today
+(`drivers/core/memfs_driver_test.go:29`). That alone is not a gate: a branch that
+implements the interface and never calls the helper passes, which is exactly how
+the driver in PR #629 passed `go vet` and its own tests while violating the
+model.
+
+The funnel is what makes it a gate. Every driver test already calls `FS`
+(`drivers/testing/testing.go:127`, called at
+`drivers/core/memfs_driver_test.go:26`); it sets `args.fsType` from the driver's
+own example and then calls each capability suite by name — `copyFileFS`,
+`uriGetFS`, `comparableFS` and the rest, in the block at
+`drivers/testing/testing.go:132-145`. Each suite gates itself with `requireType`
+(`drivers/testing/testing.go:202`), which skips when the file system does not
+implement the interface but still opens the sub-test, as `copyFileFS` does at
+`drivers/testing/copyfilefs.go:58`. The switch at
+`drivers/testing/testing.go:155` is not where a capability is routed: it only
+chooses between the write and the read suite family. So the first slice adds one
+call — `snapshotFS(t, args, createFSFunc)` — to that block, and from then on
+every driver with a driver test is judged by the snapshot cases without opting
+in. The funnel's fixture is `types.SimpleFS` (`drivers/testing/testing.go:127`,
+declared at `drivers/types/simplefs.go:25`), which is `fs.FS` plus `io.Closer`,
+so handing a read-only view to the funnel needs no change to that signature.
 
 Cases:
 
@@ -475,7 +554,7 @@ Cases:
   content, `OpenSnapshot` on an unknown id reports `fs.ErrNotExist`, and a
   view's `URI()` round-trips through `ufs.New`.
 
-## Known limitations
+#### Known limitations
 
 - **A nestFS with a writable mount that does not support snapshots cannot be
   snapshotted at all.** Refusing is the only honest option: a partial view
@@ -496,7 +575,7 @@ Cases:
 - **`gitfs` history costs a deeper clone.** With today's `Depth: 1` clone,
   `Snapshots()` returns one id.
 
-## Out of scope
+#### Out of scope
 
 - Writable snapshots, staging overlays, and anything equivalent to the old
   draft's `Sync`.
@@ -518,3 +597,36 @@ Whoever wants one changes this document first, in the same slice as the code:
 the non-goals, the interface contract and the conformance cases all move
 together, so the model is decided in the open instead of being changed by
 whatever ships first.
+
+#### Open decisions
+
+Nothing below is settled by this document, because each is the owner's call.
+Each has a recommendation, and the recommendation is not a decision.
+
+1. **Who authors `drivers/testing/snapshotfs.go` and the funnel call?** The gate
+   this design depends on is a conformance helper plus one line in the funnel at
+   `drivers/testing/testing.go:132-145`, and `drivers/testing/` is closed to
+   changes from agent-authored PRs (the owner's rule on #745, 2026-11-26).
+   Options: (a) the owner lands the helper and the funnel line, and a driver
+   slice adds only its own calls in its `*_driver_test.go`, which is driver code
+   and allowed; (b) the helpers live outside `drivers/testing/` and each driver
+   opts in; (c) no helper at all, and the rule stays prose.
+   **Recommendation: (a).** It is the only option that keeps the gate mandatory;
+   (b) reintroduces the opt-in hole that let #629 pass its own tests while
+   violating the model, and (c) is what this section argues against. If (a) is
+   refused, the honest consequence is that `SnapshotFS` ships unenforced and
+   this document says so.
+2. **When does `SnapshotFS` join `fullFS`?** The first slice puts it in `notFullFS`
+   (`drivers/types/fullfs_test.go:47`) with the reason written down, because no
+   writable driver can freeze yet. When `memFS` — the reference in-memory driver
+   — implements `Snapshot`, the entry is the place that gets reconsidered.
+   **Recommendation: leave it in `notFullFS` until `memFS` lands**, since
+   `boltFS` and `localFS` are further behind and `fullFS` claims what a full
+   driver must answer.
+3. **What is a `localFS` snapshot?** Two candidate models, neither free: a
+   hardlink/copy-on-write tree, or a watched and replayed change log. Both are
+   wrong against another process writing the same directory, which is the normal
+   case for `file://`. **Recommendation: stay out of scope** until a consumer
+   needs it; the nestFS error text already tells a caller what to do instead
+   (mount a driver that supports snapshots, snapshot separately and mount the
+   view, or take the copy under "Entry points").

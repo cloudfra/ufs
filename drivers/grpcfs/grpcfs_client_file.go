@@ -40,8 +40,10 @@ var _ types.File = (*grpcFile)(nil)
 // What that keeps is the handle's own position; what it gives up is one open file
 // behind the handle, so the bytes are whatever the path holds each time a stream
 // runs and a write through another client shows up in the next read here. A
-// caller that wants the whole file in one call uses [grpcFS.ReadFile], which is
-// one round trip rather than a handle plus its streams.
+// ranged read of [io.ReaderAt] is held the same way, so the write shows up there
+// in the next range rather than in the next byte. A caller that wants the whole
+// file in one call uses [grpcFS.ReadFile], which is one round trip rather than a
+// handle plus its streams.
 //
 // A directory is not a grpcFile: it has no content to stream, so [grpcFS.Open]
 // answers one with a [grpcDir] over the ListFiles rpc instead.
@@ -63,6 +65,14 @@ type grpcFile struct {
 	stream proto.FS_ReadFileClient
 	cancel context.CancelFunc
 	buf    []byte
+	// atPos and atData are the offset and the content of the part of a range a
+	// ReadAt fetched that has not been handed over yet, so a read aimed inside it
+	// needs no round trip. atFilled says that pair holds an answer rather than
+	// nothing fetched yet, which an empty answer at the end of a file would not
+	// say on its own.
+	atPos    int64
+	atData   []byte
+	atFilled bool
 	// done says the stream ended, so every later read reports the end of the file
 	// instead of opening another stream at the same place.
 	done bool
@@ -185,6 +195,10 @@ func (f *grpcFile) Seek(offset int64, whence int) (int64, error) {
 		f.pos = pos
 		f.done = false
 	}
+	// A seek says the caller is somewhere new, whether or not the position moved,
+	// so it is the point at which a ranged read looks at the file again rather
+	// than at what the handle fetched last.
+	f.dropWindowLocked()
 	return pos, nil
 }
 
@@ -200,10 +214,23 @@ func (f *grpcFile) dropStreamLocked() {
 	f.stream, f.buf = nil, nil
 }
 
+// dropWindowLocked gives up the range a ReadAt last fetched, so that the next one
+// looks at the file again and a handle that is done with holds no content. It is
+// called with the mutex held.
+func (f *grpcFile) dropWindowLocked() {
+	f.atPos, f.atData, f.atFilled = 0, nil, false
+}
+
 // ReadAt reads from an absolute offset without moving the position the handle
 // reads at, which the service makes the cheap case rather than the awkward one:
 // the request carries the offset, so the read gets a stream of its own instead of
 // moving a shared position and putting it back.
+//
+// What it asks for is a range rather than the exact bytes whenever the read
+// continues the range the handle already fetched, in which case it takes a whole
+// [readChunkSize] window: a run of reads walking forward through a file costs one
+// round trip per window instead of one per call, and a read aimed somewhere else
+// still costs only what it asked for.
 func (f *grpcFile) ReadAt(p []byte, off int64) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
@@ -216,11 +243,33 @@ func (f *grpcFile) ReadAt(p []byte, off int64) (int, error) {
 	if f.failure != nil {
 		return 0, f.failure
 	}
-	data, err := f.fsys.readRange("readat", f.name, off, int64(len(p)))
-	if err != nil {
-		return 0, err
+	// end is where the range the handle holds stops, and continuous says whether
+	// this read starts there: the reads that follow a window are served from it,
+	// so only the one that opens the next has to pay for it.
+	end := f.atPos + int64(len(f.atData))
+	continuous := f.atFilled && end == off
+	if off < f.atPos || off > end {
+		f.atPos, f.atData, end = off, nil, off
+		continuous = false
 	}
-	n := copy(p, data)
+	// What is behind the place the caller asked for is not coming back, so it
+	// leaves the range: a walk through a file of any size holds one window rather
+	// than the file.
+	if behind := off - f.atPos; behind > 0 {
+		f.atData, f.atPos = f.atData[behind:], off
+	}
+	if need := off + int64(len(p)); need > end {
+		limit := need - end
+		if continuous {
+			limit = max(limit, int64(readChunkSize))
+		}
+		data, err := f.fsys.readRange("readat", f.name, end, limit)
+		if err != nil {
+			return 0, err
+		}
+		f.atData, f.atFilled = append(f.atData, data...), true
+	}
+	n := copy(p, f.atData[off-f.atPos:])
 	if n < len(p) {
 		// The rpc answered with everything the range held, which is less than the
 		// caller asked for only at the end of the file — and [io.ReaderAt] reports
@@ -258,5 +307,6 @@ func (f *grpcFile) Close() error {
 	}
 	f.closed = true
 	f.dropStreamLocked()
+	f.dropWindowLocked()
 	return nil
 }

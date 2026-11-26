@@ -330,20 +330,26 @@ func (fsys *memFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 
+	// A rewrite of the name resets content and modTime on the node in place, so
+	// the node found here is only readable while the lock is still held: the
+	// handle is built with a copy taken inside the lock rather than with the
+	// node's fields read after it is given back.
 	fsys.mu.RLock()
 	node, ok := fsys.nodes[name]
-	fsys.mu.RUnlock()
-
 	if !ok {
+		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("open", name, fs.ErrNotExist)
 	}
 	if node.isDir {
+		fsys.mu.RUnlock()
 		return fsys.openDir(name)
 	}
-	return &memFile{
+	file := &memFile{
 		fsys: fsys,
 		File: buffile.New(name, bytes.Clone(node.content), node.mode, node.modTime),
-	}, nil
+	}
+	fsys.mu.RUnlock()
+	return file, nil
 }
 
 func (fsys *memFS) openDir(name string) (*memDirFile, error) {

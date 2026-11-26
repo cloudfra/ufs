@@ -31,6 +31,7 @@ import (
 
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/fsutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/patternutil"
@@ -334,22 +335,20 @@ func (fsys *keyGuardFS) DeviceInfo() types.DeviceMap {
 	return fsys.inner.DeviceInfo()
 }
 
-// URI returns the guarded file system's location marked read-only, since a
-// guard can only refuse reads, see [types.URIGet].
+// URI returns the guarded file system's URI with ufs.ro=true added, because a
+// guard never writes, see [types.URIGet].
 func (fsys *keyGuardFS) URI() (*url.URL, error) {
 	u, err := fsys.inner.URI()
 	if err != nil {
 		return nil, err
 	}
-	if u == nil {
-		return nil, nil
-	}
 
-	v := u.Query()
-	v.Set("ro", "true")
-	u.RawQuery = v.Encode()
-
-	return u, nil
+	// Added with uri.AddParameter rather than the standard library's helper: the
+	// pair walk leaves the guarded file system's own parameters in the order and
+	// escaping they were written in, and returns a copy, so the guarded file
+	// system keeps the URL it handed over. A nil URI stays nil rather than
+	// becoming a URL invented out of nothing.
+	return uri.AddParameter(u, "ufs.ro", "true")
 }
 
 func (fsys *keyGuardFS) String() string {

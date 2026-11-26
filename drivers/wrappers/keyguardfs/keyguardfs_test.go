@@ -418,19 +418,21 @@ func TestURIMarksTheGuardReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("URI() = %v, want nil", err)
 	}
-	if got := u.String(); got != "memory://test?ro=true" {
-		t.Errorf("URI() = %q, want %q", got, "memory://test?ro=true")
+	// ufs.ro is ufs's read-only marker, spelled with the "ufs." prefix that
+	// every parameter ufs writes into a URI carries.
+	if got := u.String(); got != "memory://test?ufs.ro=true" {
+		t.Errorf("URI() = %q, want %q", got, "memory://test?ufs.ro=true")
 	}
 
 	// A caller editing the URL it was given cannot change what the guard reports
 	// next time.
-	u.RawQuery = "ro=false"
+	u.RawQuery = "ufs.ro=false"
 	again, err := fsys.URI()
 	if err != nil {
 		t.Fatalf("URI() = %v, want nil", err)
 	}
-	if got := again.String(); got != "memory://test?ro=true" {
-		t.Errorf("URI() after editing the first = %q, want %q", got, "memory://test?ro=true")
+	if got := again.String(); got != "memory://test?ufs.ro=true" {
+		t.Errorf("URI() after editing the first = %q, want %q", got, "memory://test?ufs.ro=true")
 	}
 }
 

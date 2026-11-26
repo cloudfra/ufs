@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -66,6 +67,10 @@ func init() {
 	ufs.Register(ufs.NewDriver("gcs", New, isGCSFSUri, 1, true, true))
 }
 
+// gcsFS reads ctx, bucket and baseDir on every request, so they stay exactly as
+// constructed for the whole life of the value: a caller that reaches a file
+// system while another goroutine closes it keeps a usable context and answers
+// either success or an error matching [fs.ErrClosed], never a panic.
 type gcsFS struct {
 	ctx          context.Context
 	bucket       string
@@ -73,6 +78,21 @@ type gcsFS struct {
 	client       *storage.Client
 	subscription string
 	psClientOpts []option.ClientOption
+
+	// closed says Close has been called, after which this file system refuses
+	// everything it would have put on the wire.
+	closed atomic.Bool
+}
+
+// closedErr answers why a call cannot be made because the file system has been
+// closed, or nil when it can. A file system that gave its client up has no way to
+// answer anything else, so every method that reaches the bucket asks here rather
+// than letting the transport report a client that is gone.
+func (fsys *gcsFS) closedErr(op, name string) error {
+	if fsys.closed.Load() {
+		return ufserrors.NewPathError(op, name, fs.ErrClosed)
+	}
+	return nil
 }
 
 // gcsFile represents an opened GCS object for reading, a virtual directory, or
@@ -211,6 +231,9 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 }
 
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
+	if err := fsys.closedErr("open", name); err != nil {
+		return nil, err
+	}
 	if name == pathutil.CwdPath {
 		entries, err := fsys.listDir("")
 		if err != nil {
@@ -274,7 +297,9 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
-// name is the FS-relative path; pass "" or CwdPath for the root.
+// name is the FS-relative path; pass "" or CwdPath for the root. Every caller of
+// it — Open, Stat and Remove — has already refused a closed file system, so this
+// one never sees a client that Close has given up.
 func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 	var listPrefix string
 	if name == "" || name == pathutil.CwdPath {
@@ -319,10 +344,15 @@ func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
+// Close makes this file system unusable and gives up the storage client it
+// holds. Closing twice is not an error, and only the first call reaches the
+// client. The context, bucket and prefix are left as constructed: blanking them
+// here is what handed a nil context to a caller that had already read the field
+// and was mid-request.
 func (fsys *gcsFS) Close() error {
-	fsys.ctx = nil
-	fsys.bucket = ""
-	fsys.baseDir = ""
+	if !fsys.closed.CompareAndSwap(false, true) {
+		return nil
+	}
 	return fsys.client.Close()
 }
 

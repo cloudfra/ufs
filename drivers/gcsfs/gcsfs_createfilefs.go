@@ -24,6 +24,9 @@ import (
 )
 
 func (fsys *gcsFS) Create(name string) (types.File, error) {
+	if err := fsys.closedErr("create", name); err != nil {
+		return nil, err
+	}
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}

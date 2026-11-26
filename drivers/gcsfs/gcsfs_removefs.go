@@ -27,6 +27,9 @@ import (
 )
 
 func (fsys *gcsFS) Remove(name string) error {
+	if err := fsys.closedErr("remove", name); err != nil {
+		return err
+	}
 	if err := pathutil.Validate("remove", name); err != nil {
 		return err
 	}

@@ -29,6 +29,9 @@ import (
 )
 
 func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
+	if err := fsys.closedErr("stat", name); err != nil {
+		return nil, err
+	}
 	if name == pathutil.CwdPath {
 		return types.NewFileInfo(pathutil.CwdPath, 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
 	}

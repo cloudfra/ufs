@@ -1634,14 +1634,23 @@ func TestBufferedFileReadAtEndOfContent(t *testing.T) {
 		args    BufferArgs
 		wantErr error
 	}{
-		{"memory_copy", func() fs.File { return newTestBareFile("t.txt", content) },
-			BufferArgs{Mode: BufferMemory}, io.EOF},
-		{"temporary_file", func() fs.File { return newTestBareFile("t.txt", content) },
-			BufferArgs{Mode: BufferDisk}, nil},
+		{
+			"memory_copy", func() fs.File { return newTestBareFile("t.txt", content) },
+			BufferArgs{Mode: BufferMemory},
+			io.EOF,
+		},
+		{
+			"temporary_file", func() fs.File { return newTestBareFile("t.txt", content) },
+			BufferArgs{Mode: BufferDisk},
+			nil,
+		},
 		// A ReadAt-only file needs no copy, so its Seek and ReadAt run over a view
 		// of it rather than a store of their own.
-		{"view_of_the_file", func() fs.File { return newTestReaderAtFile("t.txt", content) },
-			BufferArgs{Mode: BufferMemory}, nil},
+		{
+			"view_of_the_file", func() fs.File { return newTestReaderAtFile("t.txt", content) },
+			BufferArgs{Mode: BufferMemory},
+			nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

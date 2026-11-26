@@ -66,11 +66,11 @@ type hiddenDirHandle struct {
 
 func (dir *hiddenDirHandle) ReadDir(count int) ([]fs.DirEntry, error) {
 	dir.mu.Lock()
-	defer dir.mu.Unlock()
 
 	if dir.entries == nil {
 		entries, err := dir.hiddenDirFile.ReadDir(-1)
 		if err != nil {
+			dir.mu.Unlock()
 			return nil, err
 		}
 		dir.entries = dir.guard.visible(dir.dir, entries)
@@ -78,15 +78,18 @@ func (dir *hiddenDirHandle) ReadDir(count int) ([]fs.DirEntry, error) {
 	rest := dir.entries[dir.off:]
 	if count <= 0 {
 		dir.off = len(dir.entries)
+		dir.mu.Unlock()
 		return rest, nil
 	}
 	if len(rest) == 0 {
+		dir.mu.Unlock()
 		return nil, io.EOF
 	}
 	if count < len(rest) {
 		rest = rest[:count]
 	}
 	dir.off += len(rest)
+	dir.mu.Unlock()
 
 	return rest, nil
 }

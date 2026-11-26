@@ -16,6 +16,11 @@
 // bucket. Importing it registers the gs:// scheme with [ufs.New]:
 //
 //	import _ "github.com/cloudfra/ufs/drivers/gcsfs"
+//
+// The implementation is split by the interface each method belongs to, one file
+// per interface: this one holds the file-system value, the handles and what
+// [types.SimpleFS] asks for, the siblings named gcsfs_<interface>.go hold the
+// rest, and gcsfs_notify.go already holds [types.Watcher].
 package gcsfs
 
 import (
@@ -24,7 +29,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -35,7 +39,6 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
-	"github.com/cloudfra/ufs/drivers/uri"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"google.golang.org/api/googleapi"
@@ -207,35 +210,6 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
-func (fsys *gcsFS) DeviceInfo() types.DeviceMap {
-	info := types.NewDeviceInfo("gs://"+fsys.bucket, "network", 1, true)
-	return types.NewDeviceMap(info)
-}
-
-func (fsys *gcsFS) URI() (*url.URL, error) {
-	vals := url.Values{}
-	if fsys.subscription != "" {
-		vals.Set(subscriptionParam, fsys.subscription)
-	}
-	return &url.URL{
-		Scheme:   "gs",
-		Host:     fsys.bucket,
-		Path:     "/" + fsys.baseDir,
-		RawQuery: vals.Encode(),
-	}, nil
-}
-
-// IsSame reports whether other reads one bucket and prefix through one client,
-// which is one set of objects.
-func (fsys *gcsFS) IsSame(other fs.FS) bool {
-	otherGCS, ok := types.InnermostFS(other).(*gcsFS)
-	return ok && fsys.client == otherGCS.client && fsys.bucket == otherGCS.bucket && fsys.baseDir == otherGCS.baseDir
-}
-
-func (fsys *gcsFS) String() string {
-	return types.Description(map[string]any{"gcsFS": uri.OrDefault(fsys, fsys.bucket+"/"+fsys.baseDir)})
-}
-
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
 	if name == pathutil.CwdPath {
 		entries, err := fsys.listDir("")
@@ -299,34 +273,6 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 	}, nil
 }
 
-func (fsys *gcsFS) Stat(name string) (fs.FileInfo, error) {
-	if name == pathutil.CwdPath {
-		return types.NewFileInfo(pathutil.CwdPath, 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
-	}
-	if err := pathutil.Validate("stat", name); err != nil {
-		return nil, err
-	}
-
-	objPath := path.Join(fsys.baseDir, name)
-	attrs, err := fsys.client.Bucket(fsys.bucket).Object(objPath).Attrs(fsys.ctx)
-	if err == nil {
-		return types.NewFileInfo(path.Base(name), attrs.Size, fs.ModePerm, attrs.Updated), nil
-	}
-	if !errors.Is(err, storage.ErrObjectNotExist) {
-		return nil, ufserrors.NewPathError("stat", name, err)
-	}
-
-	// Not a file — check if it's a virtual directory (has objects under it).
-	entries, listErr := fsys.listDir(name)
-	if listErr != nil {
-		return nil, ufserrors.NewPathError("stat", name, listErr)
-	}
-	if len(entries) == 0 {
-		return nil, ufserrors.NewPathError("stat", name, fs.ErrNotExist)
-	}
-	return types.NewFileInfo(path.Base(name), 0, fs.ModeDir|fs.ModePerm, time.Time{}), nil
-}
-
 // listDir lists the immediate children of a virtual GCS directory.
 // name is the FS-relative path; pass "" or CwdPath for the root.
 func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
@@ -378,150 +324,6 @@ func (fsys *gcsFS) Close() error {
 	fsys.bucket = ""
 	fsys.baseDir = ""
 	return fsys.client.Close()
-}
-
-func (fsys *gcsFS) Create(name string) (types.File, error) {
-	if err := pathutil.Validate("create", name); err != nil {
-		return nil, err
-	}
-
-	objPath := path.Join(fsys.baseDir, name)
-	w := fsys.client.Bucket(fsys.bucket).Object(objPath).NewWriter(fsys.ctx)
-	w.ChunkSize = minChunkSize
-
-	return &gcsFile{
-		name:   name,
-		isDir:  false,
-		fsys:   fsys,
-		writer: w,
-	}, nil
-}
-
-func (fsys *gcsFS) MkdirAll(name string, _ fs.FileMode) error {
-	if err := pathutil.Validate("mkdir", name); err != nil {
-		return err
-	}
-	// GCS has no real directories; virtual directories emerge from object prefixes.
-	return nil
-}
-
-func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
-	if err := pathutil.Validate("readfile", name); err != nil {
-		return nil, err
-	}
-	f, err := fsys.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			slog.Error("failed to close file", "path", name, "error", err)
-		}
-	}()
-	gf := f.(*gcsFile)
-	if gf.isDir {
-		return nil, ufserrors.NewPathError("readfile", name, fs.ErrInvalid)
-	}
-	return gf.content, nil
-}
-
-func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if name != pathutil.CwdPath {
-		if err := pathutil.Validate("readdir", name); err != nil {
-			return nil, err
-		}
-	}
-	f, err := fsys.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			slog.Warn("failed to close file during ReadDir", "path", name, "error", err)
-		}
-	}()
-	gf := f.(*gcsFile)
-	if !gf.isDir {
-		return nil, ufserrors.NewPathError("readdir", name, fs.ErrInvalid)
-	}
-	return gf.ReadDir(-1)
-}
-
-func (fsys *gcsFS) ReadLink(name string) (string, error) {
-	if err := pathutil.Validate("readlink", name); err != nil {
-		return "", err
-	}
-	// GCS has no symlinks.
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
-func (fsys *gcsFS) Lstat(name string) (fs.FileInfo, error) {
-	val, err := fsys.Stat(name)
-	return ufserrors.ChangePathErrorOp(val, err, "lstat")
-}
-
-func (fsys *gcsFS) Remove(name string) error {
-	if err := pathutil.Validate("remove", name); err != nil {
-		return err
-	}
-	bkt := fsys.client.Bucket(fsys.bucket)
-	objPath := path.Join(fsys.baseDir, name)
-
-	// If there are virtual-directory children, refuse (non-empty directory).
-	entries, err := fsys.listDir(name)
-	if err != nil {
-		return ufserrors.NewPathError("remove", name, err)
-	}
-	if len(entries) > 0 {
-		return ufserrors.NewPathError("remove", name, ufserrors.ErrDirNotEmpty)
-	}
-
-	if err := bkt.Object(objPath).Delete(fsys.ctx); err != nil {
-		if errors.Is(err, storage.ErrObjectNotExist) {
-			return ufserrors.NewPathError("remove", name, fs.ErrNotExist)
-		}
-		return ufserrors.NewPathError("remove", name, err)
-	}
-	return nil
-}
-
-func (fsys *gcsFS) RemoveAll(name string) error {
-	if name != pathutil.CwdPath {
-		if err := pathutil.Validate("removeall", name); err != nil {
-			return err
-		}
-	}
-	bkt := fsys.client.Bucket(fsys.bucket)
-
-	var listPrefix string
-	if name == pathutil.CwdPath {
-		listPrefix = fsys.baseDir
-		if listPrefix != "" {
-			listPrefix += "/"
-		}
-	} else {
-		objPath := path.Join(fsys.baseDir, name)
-		// Best-effort delete of the exact object; ignore not-found.
-		if delErr := bkt.Object(objPath).Delete(fsys.ctx); delErr != nil && !errors.Is(delErr, storage.ErrObjectNotExist) {
-			return ufserrors.NewPathError("removeall", name, delErr)
-		}
-		listPrefix = objPath + "/"
-	}
-
-	it := bkt.Objects(fsys.ctx, &storage.Query{Prefix: listPrefix})
-	for {
-		attrs, err := it.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return ufserrors.NewPathError("removeall", name, err)
-		}
-		if delErr := bkt.Object(attrs.Name).Delete(fsys.ctx); delErr != nil && !errors.Is(delErr, storage.ErrObjectNotExist) {
-			return ufserrors.NewPathError("removeall", name, delErr)
-		}
-	}
-	return nil
 }
 
 // New returns a file system for the gs://bucket/dir URI name, authenticating

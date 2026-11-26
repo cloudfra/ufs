@@ -26,6 +26,7 @@ import (
 	"math/rand/v2"
 	"path"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -261,7 +262,7 @@ func (n *fuseNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
 	return []byte(target), 0
 }
 
-func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, out *fuse.EntryOut) (*fusefs.Inode, fusefs.FileHandle, uint32, syscall.Errno) {
+func (n *fuseNode) Create(ctx context.Context, name string, mode uint32, _ uint32, out *fuse.EntryOut) (*fusefs.Inode, fusefs.FileHandle, uint32, syscall.Errno) {
 	wfs, ok := n.fsys.(types.WriteFS)
 	if !ok {
 		return nil, nil, 0, syscall.EROFS
@@ -272,7 +273,16 @@ func (n *fuseNode) Create(ctx context.Context, name string, _ uint32, _ uint32, 
 		return nil, nil, 0, fuseErrno(err)
 	}
 	fi, statErr := n.fsys.Stat(childPath)
-	if statErr != nil {
+	if errors.Is(statErr, fs.ErrNotExist) {
+		// The create was accepted but the driver has nothing to report about the
+		// name yet, which is what a Create that delivers at Close means: the
+		// whole-file upload of drivers/grpcfs leaves the served file system
+		// untouched until the handle is released. The kernel asked for this entry
+		// and the driver took the create, so the mode the kernel asked for and an
+		// empty file are all that can honestly be answered here; what the name
+		// really holds arrives at the next lookup, once the write is in.
+		fi = types.NewFileInfo(name, 0, fs.FileMode(mode)&fs.ModePerm, time.Now())
+	} else if statErr != nil {
 		if err := f.Close(); err != nil {
 			slog.WarnContext(ctx, "error closing file", "error", err, "stat.error", statErr, "name", childPath)
 		}
@@ -409,6 +419,10 @@ func renameReplacing(ctx context.Context, fsys types.WriteFS, oldPath, newPath s
 // fuseFileHandle wraps a ufs file for go-fuse.
 type fuseFileHandle struct {
 	file fs.File
+	// taken counts the bytes this handle wrote, which is where a handle with no
+	// position of its own takes the next write. go-fuse can hand two writes of one
+	// handle to two goroutines, so the count is atomic.
+	taken atomic.Int64
 }
 
 func (fh *fuseFileHandle) Read(_ context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
@@ -446,7 +460,15 @@ func (fh *fuseFileHandle) Write(_ context.Context, data []byte, off int64) (uint
 	}
 	if s, ok := fh.file.(io.Seeker); ok {
 		if _, err := s.Seek(off, io.SeekStart); err != nil {
-			return 0, fuseErrno(err)
+			// A handle that refuses to be sought has no position to move to and takes
+			// its bytes in the order they come, which is what a whole-file upload
+			// (github.com/cloudfra/ufs/drivers/grpcfs) hands back. A write the kernel
+			// asks for where such a handle already stands is still placeable, so it
+			// goes in; one out of order has nowhere to go and is refused rather than
+			// quietly landing somewhere else in the file.
+			if !errors.Is(err, fs.ErrInvalid) || off != fh.taken.Load() {
+				return 0, fuseErrno(err)
+			}
 		}
 	}
 	w, ok := fh.file.(io.Writer)
@@ -454,6 +476,7 @@ func (fh *fuseFileHandle) Write(_ context.Context, data []byte, off int64) (uint
 		return 0, syscall.EBADF
 	}
 	n, err := w.Write(data)
+	fh.taken.Add(int64(n))
 	return clampToUint32(n), fuseErrno(err)
 }
 

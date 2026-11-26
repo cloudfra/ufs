@@ -41,7 +41,7 @@ rather than assumed:
   is open decision 1.
 - Its shipped parts are worth reusing rather than re-inventing: `DefaultPatterns`
   (`drivers/wrappers/keyguardfs/keyguardfs.go:59`) is the name catalog §Names describes, `ErrProtected`
-  and its `Is` method (`keyguardfs.go:71`, `:78`) are the error shape §Errors describes, and the
+  and its `Is` method (`keyguardfs.go:71`, `:84`) are the error shape §Errors describes, and the
   package layout — one file per interface, `keyguardfs_<interface>.go` — is the layout §Changes
   follows.
 - Its semantics are not the mode that was asked for. `refuse` lists a protected name and refuses to
@@ -98,8 +98,9 @@ methods a fallback happens to call disappears the day someone writes a fast path
 
 The wrapper is built by hand until the decorator signature widens: registered decorators are typed
 over `types.WriteFS` in `Decorator.CreateFunc` (`register.go:51`) and in `NewDecorator`
-(`register.go:98`), `ufs.New` builds decorations *under* the nest (`construct.go:290` wraps
-`newDecoratedFS`, `construct.go:540`, in `makeNestFS`), and a mount inside a nest is always another
+(`register.go:98`), `ufs.New` builds decorations *under* the nest (`openNestFS` at `construct.go:290` calls
+`newDecoratedFS` at `construct.go:540`, and `makeNestFS` puts the nest on top of that
+result), and a mount inside a nest is always another
 `*nestFS` (`nestfs.go:95`, `addMount` at `nestfs.go:385`). So a registered decorator cannot police a
 whole nest tree today, whatever its signature; the caller wraps the handle `ufs.New` returned, and
 §Changes phase 4 lists what has to change first. `String()` returns JSON built with
@@ -151,7 +152,7 @@ is why `Stat`, `Lstat` and `DirEntry.Info()` must return values that agree with 
 A refusal is a `*fs.PathError` from `ufserrors.NewPathError` (`internal/ufserrors/ufserrors.go:31`)
 whose `Err` wraps `ErrProtected` — a type with an `Is` method, so `errors.Is(err, ErrProtected)` and
 `errors.Is(err, fs.ErrPermission)` both hold, and `Op` names the operation as elsewhere in ufs; that
-is the same shape `keyguardfs` ships (`drivers/wrappers/keyguardfs/keyguardfs.go:71`, `:78`). A
+is the same shape `keyguardfs` ships (`drivers/wrappers/keyguardfs/keyguardfs.go:71`, `:84`). A
 `host` mount maps the refusal to `EACCES` (`host/fuse_linux.go:487`, `:494`); plain
 `fs.ErrPermission` would not tell a restriction apart from a backend that genuinely cannot read.
 
@@ -206,9 +207,9 @@ must. Whether it is the right default at all is open decision 3.
 
 The name half of the policy is `patternutil.Match(patterns, name)`, which matches a `path.Match`
 pattern against the whole path or against any single component of it
-(`internal/patternutil/patternutil.go:22`, `matchOne` at `:47`), so directory scoping comes for free
+(`internal/patternutil/patternutil.go:27`, `matchOne` at `:51`), so directory scoping comes for free
 without a `**` extension: `.ssh` matches `.ssh/id_ed25519`, and `*.key` matches
-`deploy/prod/api.key`. `patternutil.Validate` (`internal/patternutil/patternutil.go:32`) is called
+`deploy/prod/api.key`. `patternutil.Validate` (`internal/patternutil/patternutil.go:39`) is called
 when the policy is built, so a malformed pattern fails in `New` instead of restricting nothing —
 which is what `keyguardfs.New` already does (`drivers/wrappers/keyguardfs/keyguardfs.go:108`).
 `path.Match` is what every `Glob` on this tree already means

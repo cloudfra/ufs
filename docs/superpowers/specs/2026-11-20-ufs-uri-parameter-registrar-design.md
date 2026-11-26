@@ -124,7 +124,7 @@ The third broken trip in the first version of this spec — `memory:?ro=true` op
 writable — is fixed by #700 and is no longer true: a bare `ro` is a mount point
 now, so `memory://x?ro=true` fails with `mount point "ro": failed to mount "true"
 with driver "local"`. The `ufs.ro` marker is dropped before the driver sees the name
-(`construct.go:552`) without applying any layer, which is the gap step 3 closes.
+(`construct.go:552`) without applying any layer, which is the gap step 5 closes.
 
 `drivers/types/uriget.go:23-25` already promises the opposite of all of this: "It
 must be safe to round-trip: calling ufs.New with u.String() should recreate an
@@ -150,7 +150,7 @@ detail.
 
 | Comment    | Ruling                                                                                                                                                                    | Where this spec changed                                                                                                                                            |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 4639947895 | The surface is the full `FS`, and `ufs.New` widens.                                                                                                                       | Naming note rewritten; the widening is step 3, not step 4.                                                                                                         |
+| 4639947895 | The surface is the full `FS`, and `ufs.New` widens.                                                                                                                       | Naming note rewritten; the widening is one of step 4's contracts.                                                                                                  |
 | 4645717461 | Use `types.FS`, not an aliased `ufs.FS`.                                                                                                                                  | The alias claim is deleted. `ufs.go:58` is `type FS interface { types.FS }` and stays that way; every decorator-facing signature in this spec reads `types.FS`.    |
 | 4639990425 | The parameter set may be `map[string]string`, and "we need to ensure that" every parameter is consumed.                                                                   | No new map type is invented: the existing `uri.Params` (`drivers/uri/uri.go:47`) is reused, and the two consumption assertions are stated as contracts with tests. |
 | 4645985365 | Breaking changes are fine.                                                                                                                                                | No alias windows anywhere; the `readOnly` → `ro` rename and `options` → `ufs.options` happen in one step.                                                          |
@@ -266,7 +266,7 @@ What is left of this section is one site: `nestFS.URI()`
 (`nestfs_urigetfs.go:25`) still rebuilds the query with `u.Query()` (`:31`),
 `vals.Set(p, mu.String())` (`:39`) and `vals.Encode()` (`:42`), so a nest sorts
 and re-encodes its mount parameters — including a mount URI that carries
-`ufs.checksum`. It moves to `uri.AddParameter` in step 3.
+`ufs.checksum`. It moves to `uri.AddParameter` in step 5.
 
 `uri.AppendOption` (`drivers/uri/uri.go:235`) stays the way to add an entry to
 the options list, and already works on the pair-preserving walk; `uri.RemoveOptions`
@@ -315,7 +315,7 @@ keep calling `makeNestFS` (`nestfs.go:603`) unchanged.
    an error.
 5. `newBaseFS(ctx, reduced)` (`construct.go:381`) — the driver sees only its own
    parameters. Today this happens after two hand-written removals: `splitURIOptions`
-   at `construct.go:541` and the `ufs.ro` marker drop at `construct.go:552`; step 3
+   at `construct.go:541` and the `ufs.ro` marker drop at `construct.go:552`; step 5
    replaces the second with a real decorator claim.
 6. `makeNestFS` (`nestfs.go:603`).
 7. `decorateNest`, in the existing order: the first option wraps the nest and
@@ -408,7 +408,7 @@ system, not only against the inner one.
 | `ro`            | mount point   | **Not** a parameter any more. #700 made a bare `ro` a mount point (`construct.go:228-235`, `construct_test.go:171`). The nest's read-only flag is `ufs.ro` (`construct.go:52`).                                                            |
 | `ro` in fstab   | mount flag    | Stays bare and outside the URI: `fstabReadOnly` (`construct.go:66`), applied at `construct.go:490`, where it becomes a `MountOption` named `readOnlyOption` (`construct.go:38`), which `defaultRootSpec` also passes (`construct.go:532`). |
 
-The renames happen in one step, step 4, with no alias window: the decorator name
+The renames happen in one step, step 5, with no alias window: the decorator name
 `readOnly` becomes `ro`, and the emitted pair stays `ufs.ro`. Comment 4645985365
 permits the break. The three constants that must move together are
 `readOnlyOption` (`construct.go:38`, the `MountOption` name an fstab `ro` line
@@ -423,7 +423,7 @@ option %q, option names are case sensitive` (`register.go:266`).
   entry and emits `?ufs.ro=true` once. The two spellings it emits today still
   produce one wrapper, because `decorate` rejects a decorator listed more than
   once with `file system decorator %q is listed more than once` (`register.go:304`).
-  After step 4 both spellings are claims, so a leftover is a construction error at
+  After step 5 both spellings are claims, so a leftover is a construction error at
   that same check rather than a silent second wrap. Keeping the pair at one is
   what the consumption rule is for.
 - `readWrapFS.URI()` (`drivers/wrappers/readwrapfs/readwrapfs_urigetfs.go:42`, comment at `:36`) emits
@@ -457,7 +457,7 @@ their own names. A tie is only possible when one decorator lists a second name i
 of the same shape, `ambiguous decorator match for %q, both %q and %q both have a
 priority %d`.
 
-Unknown parameters: the error is raised centrally at step 4, not per driver.
+Unknown parameters: the error is raised centrally at step 5, not per driver.
 
 ```go
 // Params are the ufs.-prefixed parameters this driver parses, written without
@@ -499,7 +499,7 @@ honest.
 - `TestNewKeepsUFSParameters` (`construct_test.go:146`) is rewritten as
   `TestNewConsumesUFSParameters`. It pins copy-not-consume today: it asserts the
   driver is asked to open a URI that still carries `ufs.checksum=sha256%3Aabcd`.
-  After step 4 it asserts the reduced URI the driver is asked to open, which no
+  After step 5 it asserts the reduced URI the driver is asked to open, which no
   longer carries that pair.
 - The two consumption assertions, one test each: no `ufs.`-prefixed pair survives
   in the reduced URI unless the matched driver declares the name in
@@ -515,9 +515,9 @@ honest.
   (`construct.go:228-235`).
 - The mount hole from "What the URI does today" becomes a regression test:
   `memory://x?ufs.options=[{readOnly:true}]&sub=memory:` must refuse
-  `Create("sub/escapes")` after step 3, and `TestNewAppliesURIOptions`
-  (`uri_test.go:157`) is updated to assert the tag on the mount's `outer`, not on
-  `nFS.mounts.m["data"].fsys` (`:186`).
+  `Create("sub/escapes")` once step 4 puts decoration around the nest, and
+  `TestNewAppliesURIOptions` (`uri_test.go:157`) is updated in step 3 to assert the
+  tag on the mount's `outer`, not on `nFS.mounts.m["data"].fsys` (`:186`).
 - Signed-query tests already exist for the helpers —
   `TestAddRemoveParameterRoundTrip` (`drivers/uri/uri_test.go:367`),
   `TestAddParameterKeepsSignedQuery` (`:409`). The new one is for the emitter: a

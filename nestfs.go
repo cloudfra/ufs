@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"net/url"
-	"os"
 	"path"
 	"slices"
 	"sort"
@@ -31,10 +29,8 @@ import (
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/archive"
-	"github.com/cloudfra/ufs/internal/globutil"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
-	"github.com/cloudfra/ufs/ops"
 )
 
 // bufferMode selects how a file opened through a nestFS keeps the content that
@@ -312,82 +308,6 @@ type nestFS struct {
 	autoMounted bool
 }
 
-func (fsys *nestFS) GetAbsPath(name string) (string, error) {
-	if err := fsys.validPath(absPathOp, name); err != nil {
-		return "", err
-	}
-	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
-		return rfs.GetAbsPath(name)
-	}
-	return "", realAbsPathNotSupported(fsys, name)
-}
-
-func (fsys *nestFS) DeviceInfo() types.DeviceMap {
-	base := fsys.fsys.DeviceInfo()
-	return base.Combine("", fsys.mounts.DeviceInfo())
-}
-
-func (fsys *nestFS) URI() (*url.URL, error) {
-	base, err := fsys.fsys.URI()
-	if base == nil || err != nil {
-		return nil, nil
-	}
-	u := *base
-	vals := u.Query()
-	fsys.mounts.mu.RLock()
-	defer fsys.mounts.mu.RUnlock()
-	for p, mfs := range fsys.mounts.m {
-		if strings.HasSuffix(p, archiveDirExt) {
-			continue
-		}
-		if mu, err := mfs.URI(); mu != nil && err == nil {
-			vals.Set(p, mu.String())
-		}
-	}
-	u.RawQuery = vals.Encode()
-	return &u, nil
-}
-
-// IsSame reports whether other nests one file system under one set of mounts,
-// which is a comparison the URI cannot make because two file systems can report
-// the same URI while holding separate data. A read-only view or other wrapper
-// around a nest is compared as the nest underneath it.
-func (fsys *nestFS) IsSame(other fs.FS) bool {
-	otherNest, ok := types.InnermostFS(other).(*nestFS)
-	if !ok || otherNest == nil {
-		return false
-	}
-	if fsys == otherNest {
-		return true
-	}
-	if !types.SameFS(fsys.fsys, otherNest.fsys) {
-		return false
-	}
-	return fsys.sameMounts(otherNest)
-}
-
-// sameMounts reports whether fsys and other mount the same file systems at the
-// same paths, ignoring archive mounts, which ufs opens for itself and are not
-// part of how the nest was built.
-func (fsys *nestFS) sameMounts(other *nestFS) bool {
-	fsys.mounts.mu.RLock()
-	defer fsys.mounts.mu.RUnlock()
-	other.mounts.mu.RLock()
-	defer other.mounts.mu.RUnlock()
-
-	mounts, otherMounts := fsys.mounts.mounted(), other.mounts.mounted()
-	if len(mounts) != len(otherMounts) {
-		return false
-	}
-	for mountPath, mount := range mounts {
-		otherMount, ok := otherMounts[mountPath]
-		if !ok || !types.SameFS(mount, otherMount) {
-			return false
-		}
-	}
-	return true
-}
-
 // mounted returns the mounts that a caller configured, which leaves out the
 // archive content directories nestFS opens on its own.
 func (m *mountMap) mounted() map[string]*nestFS {
@@ -399,31 +319,6 @@ func (m *mountMap) mounted() map[string]*nestFS {
 		mounts[mountPath] = mount
 	}
 	return mounts
-}
-
-func (fsys *nestFS) String() string {
-	fsys.mounts.mu.RLock()
-	defer fsys.mounts.mu.RUnlock()
-	parts := make(map[string]any, len(fsys.mounts.m)+1)
-	parts["/"] = types.Nested(fsys.fsys.String())
-	for p, mfs := range fsys.mounts.m {
-		parts["/"+p] = types.Nested(mountDescription(mfs))
-	}
-	return types.Description(map[string]any{"nestFS": parts})
-}
-
-// mountDescription describes a mounted file system without the nest layer that
-// mounting wraps around it. That layer holds no mounts of its own, so it would
-// repeat itself at every mount of the description.
-func mountDescription(mfs *nestFS) string {
-	mfs.mounts.mu.RLock()
-	base := mfs.fsys
-	mountless := len(mfs.mounts.m) == 0
-	mfs.mounts.mu.RUnlock()
-	if mountless {
-		return base.String()
-	}
-	return mfs.String()
 }
 
 func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error) ([]fs.DirEntry, error) {
@@ -487,13 +382,6 @@ func (fsys *nestFS) isMountParent(name string) bool {
 	return len(fsys.mounts.getDirectoryList(name)) > 0
 }
 
-// isMountPoint reports whether a file system is mounted at name exactly, so
-// that name is a directory of the file system holding the mount even when that
-// file system's own base has no entry for it.
-func (fsys *nestFS) isMountPoint(name string) bool {
-	return fsys.mounts.getMount(name) != nil
-}
-
 func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 	return fsys.mounts.put(name, mountedFS)
 }
@@ -506,30 +394,6 @@ func (fsys *nestFS) addMount(name string, mountedFS *nestFS) error {
 func (fsys *nestFS) addAutoMount(name string, mountedFS *nestFS) error {
 	mountedFS.autoMounted = true
 	return fsys.addMount(name, mountedFS)
-}
-
-// IsMountedArchiveDir reports whether name (a full path within this FS) is a
-// virtual directory backed by a mounted archive. It returns true only when:
-//   - name ends with archiveDirExt
-//   - the trimmed name satisfies archive.IsMountablePath
-//   - the archive file is not confirmed absent; any Stat error other than
-//     ErrNotExist is treated as "file likely exists" so that a permission-denied
-//     error does not cause Walk to descend and trigger a mount failure
-//
-// Note: if a real directory named "foo.zip.d" coexists with "foo.zip" in the
-// same FS, nestFS's path routing always redirects access through the archive
-// (see getFSAndSubpath). The real directory is unreachable via this FS
-// regardless of what this method returns; that is a nestFS limitation.
-func (fsys *nestFS) IsMountedArchiveDir(name string) bool {
-	if !strings.HasSuffix(name, archiveDirExt) || !fs.ValidPath(name) {
-		return false
-	}
-	archiveName := strings.TrimSuffix(name, archiveDirExt)
-	if !archive.IsMountablePath(archiveName) {
-		return false
-	}
-	_, err := fsys.Stat(archiveName)
-	return !errors.Is(err, fs.ErrNotExist)
 }
 
 func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
@@ -673,352 +537,6 @@ func (fsys *nestFS) Close() error {
 	return ufserrors.Join(mountErr, baseErr)
 }
 
-func (fsys *nestFS) Create(name string) (types.File, error) {
-	if err := fsys.validPath("create", name); err != nil {
-		return nil, err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := mountFS.fsys.Create(subName)
-	if err != nil {
-		return nil, rewritePathError(err, name, subName)
-	}
-	return polyfills.ToBufferedFile(f, false, mountFS.args.BufMode)
-}
-
-// OpenFile opens name with the os.OpenFile flags in flag and the permission
-// bits in perm, as the file system owning name carries them out. A file system
-// without types.OpenFileFS gets the flags emulated with what it does offer.
-//
-// An open that lands on a directory this file system puts in the tree itself,
-// either the root of a mounted file system or a directory with a mount somewhere
-// below it, is settled against that directory here instead of below: it is a
-// directory whatever the file system below has at that name, so a write flag
-// reports [fs.ErrInvalid] and [os.O_CREATE] together with [os.O_EXCL] reports
-// [fs.ErrExist], which keeps a mount from being replaced by a file. The
-// exception is a name that resolves to a file system's own root, which is the
-// nest itself or a mount point landing on the root of what it mounts: a root is
-// not a file, so every flag is refused there with [fs.ErrInvalid], and
-// [nestFS.Open] lists it.
-func (fsys *nestFS) OpenFile(name string, flag int, perm fs.FileMode) (types.File, error) {
-	if err := fsys.validPath("open", name); err != nil {
-		return nil, err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return nil, err
-	}
-
-	// Three names describe a directory of this file system rather than a name the
-	// file system below owns: a file system's own root, which is either the one
-	// the nest wraps or a mount point landing on the root of what it mounts; a
-	// directory with a mount somewhere below it, which the base may have no entry
-	// for at all; and a mount point one level deeper, which only the mount map of
-	// the mount holding it knows about. nestDirFS stands in for any of the three,
-	// so the flags settle against a directory instead of against whatever the
-	// file system below happens to hold at that name.
-	ownDir := mountFS.isMountParent(subName) ||
-		subName == pathutil.CwdPath ||
-		mountFS.isMountPoint(subName)
-	var owner fs.FS = mountFS.fsys
-	if ownDir {
-		owner = nestDirFS{fsys: mountFS, name: subName}
-	}
-
-	f, err := polyfills.OpenFile(owner, subName, flag, perm)
-	if err != nil {
-		return nil, rewritePathError(err, name, subName)
-	}
-	if ownDir {
-		// The listing already carries the mounts, and the handle already holds
-		// the access mode the flags asked for, so nothing is left to add.
-		return f, nil
-	}
-
-	// A directory opened by the file system below has to list this file
-	// system's mounts too, which only the mount map here knows about, so its
-	// listing is swapped for this file system's, as [nestFS.Open] does. The
-	// polyfill already settled the access mode of the handle, and
-	// [polyfills.OpenFile] cannot do this part: it has no mounts to look at.
-	if rdf, ok := f.(fs.ReadDirFile); ok {
-		info, statErr := f.Stat()
-		if statErr == nil && info.IsDir() {
-			return polyfills.ToFile(makeNestReadDirFile(mountFS, subName, rdf)), nil
-		}
-	}
-
-	return polyfills.ToBufferedFile(f, flag&(os.O_WRONLY|os.O_RDWR) == 0, mountFS.args.BufMode)
-}
-
-func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
-	if err := fsys.validPath("mkdir", name); err != nil {
-		return err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return err
-	}
-
-	if err := mountFS.fsys.MkdirAll(subName, perm); err != nil {
-		return rewritePathError(err, name, subName)
-	}
-	return nil
-}
-
-func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	if err := fsys.validPath("readdir", name); err != nil {
-		return nil, err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return nil, err
-	}
-
-	if cFsys, ok := mountFS.fsys.(fs.ReadDirFS); ok {
-		dirs, err := cFsys.ReadDir(subName)
-		return mountFS.appendDirEntry(subName, dirs, rewritePathError(err, name, subName))
-	}
-
-	f, err := mountFS.fsys.Open(subName)
-	if err != nil {
-		return nil, rewritePathError(err, name, subName)
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			slog.Warn("failed to close file during ReadDir", "path", name, "error", err)
-		}
-	}()
-
-	readDirFile, ok := f.(fs.ReadDirFile)
-	if !ok {
-		return nil, ufserrors.NewPathError("readdir", name, fmt.Errorf("%s is not a directory", name))
-	}
-
-	dirs, err := readDirFile.ReadDir(-1)
-	return mountFS.appendDirEntry(subName, dirs, rewritePathError(err, name, subName))
-}
-
-func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
-	if err := fsys.validPath("stat", name); err != nil {
-		return nil, err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return nil, err
-	}
-
-	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
-		info, err := cFsys.Stat(subName)
-		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
-			return types.NewDirEntry(path.Base(subName)), nil
-		}
-		return info, rewritePathError(err, name, subName)
-	}
-	f, err := mountFS.Open(subName)
-	if err != nil {
-		return nil, rewritePathError(err, name, subName)
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			slog.Warn("failed to close file during Stat", "path", name, "error", err)
-		}
-	}()
-	info, err := f.Stat()
-	return info, rewritePathError(err, name, subName)
-}
-
-func (fsys *nestFS) ReadFile(name string) ([]byte, error) {
-	if err := fsys.validPath("readfile", name); err != nil {
-		return nil, err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return nil, err
-	}
-
-	if cFsys, ok := mountFS.fsys.(fs.ReadFileFS); ok {
-		data, err := cFsys.ReadFile(subName)
-		return data, rewritePathError(err, name, subName)
-	}
-	data, err := fs.ReadFile(mountFS.fsys, subName)
-	return data, rewritePathError(err, name, subName)
-}
-
-func (fsys *nestFS) ReadLink(name string) (string, error) {
-	if err := fsys.validPath("readlink", name); err != nil {
-		return "", err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return "", err
-	}
-
-	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
-		target, err := cFsys.ReadLink(subName)
-		return target, rewritePathError(err, name, subName)
-	}
-
-	return "", ufserrors.NewPathError("readlink", name, fs.ErrInvalid)
-}
-
-func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
-	if err := fsys.validPath("lstat", name); err != nil {
-		return nil, err
-	}
-
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return nil, err
-	}
-
-	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
-		info, err := cFsys.Lstat(subName)
-		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
-			return types.NewDirEntry(path.Base(subName)), nil
-		}
-		return info, rewritePathError(err, name, subName)
-	}
-	info, err := mountFS.Stat(subName)
-	return info, rewritePathError(err, name, subName)
-}
-
-func (fsys *nestFS) Remove(name string) error {
-	if err := fsys.validPath("remove", name); err != nil {
-		return err
-	}
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return err
-	}
-	if err := mountFS.fsys.Remove(subName); err != nil {
-		return rewritePathError(err, name, subName)
-	}
-	return nil
-}
-
-func (fsys *nestFS) RemoveAll(name string) error {
-	if err := fsys.validPath("removeall", name); err != nil {
-		return err
-	}
-	mountFS, subName, err := fsys.getFSAndSubpath(name)
-	if err != nil {
-		return err
-	}
-	if err := mountFS.fsys.RemoveAll(subName); err != nil {
-		return rewritePathError(err, name, subName)
-	}
-	return nil
-}
-
-// Rename moves oldPath to newPath. Within one mounted file system it uses
-// [ops.Rename] on that file system; between two it copies and then removes
-// oldPath. Paths are resolved through nested mounts, including a nestFS
-// mounted as a file system, down to the file system that holds them, so a
-// copy never includes the mounts or archive content below oldPath.
-//
-// It fails with [fs.ErrPermission] for a mount point, a directory with a
-// mount below it, or a path inside a mounted archive, and with [fs.ErrExist]
-// when newPath is a directory that only exists because a mount is below it,
-// or when newPath is an archive whose content directory (newPath plus ".d")
-// already exists, which the archive would hide. Archives mounted at or below
-// oldPath, or left mounted from a removed newPath, are unmounted and mounted
-// again when next opened.
-func (fsys *nestFS) Rename(oldPath, newPath string) error {
-	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
-		return err
-	}
-	if fsys.fsys == nil {
-		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrClosed)
-	}
-	linkErr := func(err error) error {
-		return ufserrors.NewLinkError(renameOp, oldPath, newPath, err)
-	}
-
-	src, err := fsys.renameLevels(oldPath)
-	if err != nil {
-		return linkErr(err)
-	}
-	dst, err := fsys.renameLevels(newPath)
-	if err != nil {
-		return linkErr(err)
-	}
-	srcLeaf, dstLeaf := src[len(src)-1], dst[len(dst)-1]
-	if srcLeaf.fsys.fsys == nil || dstLeaf.fsys.fsys == nil {
-		return linkErr(fs.ErrClosed)
-	}
-	if pathutil.IsCwd(srcLeaf.name) || pathutil.IsCwd(dstLeaf.name) {
-		// oldPath or newPath is the root of a mount.
-		return linkErr(fs.ErrPermission)
-	}
-	if srcLeaf.fsys.inArchive || dstLeaf.fsys.inArchive {
-		return linkErr(fmt.Errorf("archive content cannot be changed, %w", fs.ErrPermission))
-	}
-
-	var unmount []renameLevel
-	for _, level := range src {
-		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
-			if !isArchiveMountPath(mountPath) {
-				return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrPermission))
-			}
-			unmount = append(unmount, renameLevel{level.fsys, mountPath})
-		}
-		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
-			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
-		}
-	}
-	for _, level := range dst {
-		for _, mountPath := range level.fsys.mounts.mountsUnder(level.name) {
-			if !isArchiveMountPath(mountPath) {
-				return linkErr(fmt.Errorf("%q is mounted, %w", mountPath, fs.ErrExist))
-			}
-			// The rename fails if newPath exists, so on success an archive
-			// mounted below it is left from a removed one.
-			unmount = append(unmount, renameLevel{level.fsys, mountPath})
-		}
-		if level.fsys.mounts.getMount(level.name+archiveDirExt) != nil {
-			unmount = append(unmount, renameLevel{level.fsys, level.name + archiveDirExt})
-		}
-	}
-	if archive.IsMountablePath(dstLeaf.name) {
-		contentDir := dstLeaf.name + archiveDirExt
-		if _, err := dstLeaf.fsys.fsys.Lstat(contentDir); err == nil {
-			return linkErr(fmt.Errorf("%q would be hidden by the archive, %w", contentDir, fs.ErrExist))
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return linkErr(err)
-		}
-	}
-
-	// A rename stays native only when one file system holds both paths.
-	// types.SameFS compares the data behind the two nests, which their URIs
-	// cannot do because two separate mounts of one driver can share a URI.
-	if types.SameFS(srcLeaf.fsys.fsys, dstLeaf.fsys.fsys) {
-		err = ops.Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
-	} else {
-		err = ops.RenameByCopy(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)
-	}
-	if err != nil {
-		return linkErr(err)
-	}
-	for _, mount := range unmount {
-		// The rename itself succeeded, so a mount that cannot be closed here is
-		// left for a later close rather than reported as a failed rename.
-		if removeErr := mount.fsys.mounts.remove(mount.name); removeErr != nil {
-			slog.Warn("cannot unmount after rename", "path", mount.name, "error", removeErr)
-		}
-	}
-	return nil
-}
-
 // closeOnRelease reports whether releasing means closing fsys outright rather
 // than keeping it and releasing only what it holds. It is true for a mount that
 // ufs opened for itself that holds a file another application can use: closing
@@ -1047,69 +565,11 @@ func holdsNoFile(fsys types.WriteFS) bool {
 	return false
 }
 
-// Release lets go of the resources that the mounts of fsys hold on to without
-// closing fsys itself, so that other applications can use them. A mount that ufs
-// opened for itself is closed and unmounted, which releases the handle it keeps
-// on the file it was opened from; in practice such a mount is the content
-// directory of an archive inside the tree. A mount that the caller configured,
-// by handing over a file system or by giving a URI for ufs to open, and a mount
-// that is not backed by a file, keeps its own file system and releases the
-// mounts below it, recursively.
-//
-// fsys stays usable, and the content directory of an archive inside it is
-// mounted again from the file that holds it the next time a path under it is
-// used. The base file system of fsys is not released; only [nestFS.Close] lets
-// go of it.
-//
-// Every mount is attempted. Release joins the errors it meets, and a mount that
-// could not be released stays mounted, so that a later release or close can try
-// again.
-func (fsys *nestFS) Release() error {
-	return fsys.mounts.releaseAll()
-}
-
-// renameLevel is a nestFS that a path passes through and the path within it.
-type renameLevel struct {
-	fsys *nestFS
-	name string
-}
-
-// renameLevels returns each nestFS that name passes through, from fsys to the
-// one whose file system holds name. Unlike getFSAndSubpath it also descends
-// into a nestFS mounted as a file system (as [FSBuilder.MountFS] allows), so
-// the file system of the last level is not a nestFS and has no mounts or
-// archive directories of its own.
-func (fsys *nestFS) renameLevels(name string) ([]renameLevel, error) {
-	levels := []renameLevel{{fsys, name}}
-	for current := fsys; ; {
-		next, subName, err := current.getFSAndSubpath(name)
-		if err != nil {
-			return nil, err
-		}
-		if next != current {
-			levels = append(levels, renameLevel{next, subName})
-		}
-		inner, ok := next.fsys.(*nestFS)
-		if !ok {
-			return levels, nil
-		}
-		levels = append(levels, renameLevel{inner, subName})
-		current, name = inner, subName
-	}
-}
-
 // isArchiveMountPath reports whether the mount path mountPath is where nestFS
 // mounts an archive, rather than a mount from the URI.
 func isArchiveMountPath(mountPath string) bool {
 	archiveName, ok := strings.CutSuffix(mountPath, archiveDirExt)
 	return ok && archive.IsMountablePath(archiveName)
-}
-
-func (fsys *nestFS) Glob(pattern string) ([]string, error) {
-	if cFsys, ok := fsys.fsys.(fs.GlobFS); ok {
-		return cFsys.Glob(pattern)
-	}
-	return globutil.GlobFS(fsys, pattern)
 }
 
 func (fsys *nestFS) validPath(op string, name string) error {
@@ -1183,32 +643,6 @@ func makeReadDirFile(fsys types.ReadFS, name string) *readDirFile {
 		fsys: fsys,
 		name: name,
 	}
-}
-
-var _ fs.StatFS = nestDirFS{}
-
-// nestDirFS reports one of a nest's own directories to [polyfills.OpenFile],
-// which settles the open flags against what it is given. A directory holding a
-// mount, and the root of a mounted file system, is a directory here whatever
-// the file system below has at that name, so it is described as one: a
-// directory nothing may be created over.
-type nestDirFS struct {
-	fsys *nestFS
-	name string
-}
-
-func (view nestDirFS) Stat(name string) (fs.FileInfo, error) {
-	if name != view.name {
-		return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrNotExist}
-	}
-	return types.NewDirEntry(path.Base(view.name)), nil
-}
-
-func (view nestDirFS) Open(name string) (fs.File, error) {
-	if name != view.name {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-	}
-	return makeReadDirFile(view.fsys, view.name), nil
 }
 
 type nestReadDirFile struct {

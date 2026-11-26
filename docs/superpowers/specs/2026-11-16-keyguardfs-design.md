@@ -346,9 +346,9 @@ builds its attributes from the `fs.FileInfo` it is given.
 - The shared conformance funnel, the way the `readwrapfs` and `readonlyfs` tests run it, over a nest:
   `ufs.New` around a seeded `mem://` tree, wrapped in the wrapper; as a `types.FS` the funnel takes
   the `ufs.FS` branch (`drivers/testing/testing.go:160`) and runs the write-side suites. The seed
-  holds a `keys/` directory with a PEM private key and a `server.key`, a `.env` file with a marker
-  inside it, a `notes.txt` whose PEM block sits past the first chunk, a marker-free binary blob and a
-  plain subdirectory, all non-empty.
+  holds a `keys/` directory with a PEM private key and a `server.key`, a `.env` file holding the
+  literal `y"a29."`, a `notes.txt` whose PEM block sits past the first chunk, a marker-free binary
+  blob and a plain subdirectory, all non-empty.
 - Refusal coverage, one case per method: `Open`, `OpenFile`, `ReadFile`, `ReadLink`, `Create`,
   `Mkdir`, `MkdirAll`, `Remove`, `RemoveAll`, `Rename` and `CopyFile` at both endpoints, `Glob`
   and the iterators, each checked with `errors.Is` against `fs.ErrPermission` and

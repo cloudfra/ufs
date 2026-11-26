@@ -14,7 +14,7 @@
 
 package core
 
-// Stat and Lstat are the [fs.StatFS] half of [types.ReadFS]. An archive holds no symbolic links, so Lstat is Stat with another op in its error.
+// Stat and Lstat are the [fs.StatFS] half of [types.ReadFS]. An archive holds no symbolic links, so Lstat is Stat with another op in its error. A closed file system reports [fs.ErrClosed].
 
 import (
 	"io/fs"
@@ -27,7 +27,14 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
 	}
-	return fsys.fsys.Stat(name)
+	if fsys.closed.Load() {
+		return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
+	}
+	info, err := fsys.fsys.Stat(name)
+	if err != nil {
+		return nil, fsys.closedErr("stat", name, err)
+	}
+	return info, nil
 }
 
 func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {

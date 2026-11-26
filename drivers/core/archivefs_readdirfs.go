@@ -14,17 +14,26 @@
 
 package core
 
-// ReadDir is the [fs.ReadDirFS] half of [types.ReadFS].
+// ReadDir is the [fs.ReadDirFS] half of [types.ReadFS]. A closed file system
+// reports [fs.ErrClosed].
 
 import (
 	"io/fs"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err := pathutil.Validate("readdir", name); err != nil {
 		return nil, err
 	}
-	return fsys.fsys.ReadDir(name)
+	if fsys.closed.Load() {
+		return nil, ufserrors.NewPathError("readdir", name, fs.ErrClosed)
+	}
+	entries, err := fsys.fsys.ReadDir(name)
+	if err != nil {
+		return nil, fsys.closedErr("readdir", name, err)
+	}
+	return entries, nil
 }

@@ -14,17 +14,26 @@
 
 package core
 
-// ReadFile is the [fs.ReadFileFS] half of [types.ReadFS].
+// ReadFile is the [fs.ReadFileFS] half of [types.ReadFS]. A closed file system
+// reports [fs.ErrClosed].
 
 import (
 	"io/fs"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func (fsys *archiveFS) ReadFile(name string) ([]byte, error) {
 	if err := pathutil.Validate("readfile", name); err != nil {
 		return nil, err
 	}
-	return fs.ReadFile(fsys.fsys, name)
+	if fsys.closed.Load() {
+		return nil, ufserrors.NewPathError("readfile", name, fs.ErrClosed)
+	}
+	content, err := fs.ReadFile(fsys.fsys, name)
+	if err != nil {
+		return nil, fsys.closedErr("readfile", name, err)
+	}
+	return content, nil
 }

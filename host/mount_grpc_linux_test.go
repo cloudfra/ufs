@@ -366,6 +366,18 @@ func TestMountGrpcConcurrentFileIO(t *testing.T) {
 				t.Errorf("WriteFile(%q) through the mount: %v", name, err)
 				return
 			}
+			// The version written through the mount is not in the served file
+			// system yet: this driver delivers at release, and the kernel only
+			// sends the release once it has dropped the last descriptor, so the
+			// upload that finishes the write lands after close(2) returns. The
+			// driver writes below deliver synchronously, so a round written before
+			// that upload has arrived can be replaced by the round it should have
+			// overwritten — which is what the final check below catches when it
+			// finds the served file holding the first version.
+			if err := waitServed(t, fsys, name, writerContent(w, 0)); err != nil {
+				t.Errorf("%q in the served file system after the write through the mount: %v", name, err)
+				return
+			}
 			for round := 1; round < rounds; round++ {
 				if err := writeFile(remote, name, writerContent(w, round)); err != nil {
 					t.Errorf("writeFile(%q) round %d: %v", name, round, err)

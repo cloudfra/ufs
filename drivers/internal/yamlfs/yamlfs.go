@@ -39,6 +39,7 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -135,7 +136,16 @@ func (f *leafFile) Close() error {
 
 // dirFile is an open handle on a directory. It keeps its own copy of the
 // entries, so a caller reordering them cannot disturb the tree.
+//
+// A caller is free to keep one handle and serve more than one reader from it, so
+// where a reader has reached in that copy is per-handle state that mu guards.
+// Two walkers over one handle then divide the entries between them: each entry
+// goes to exactly one of them, in order, and neither sees it twice. The other
+// fields are written once by [yamlFS.Open] and only read after that, so they
+// need no guard, and ReadDir holds mu over no work the handle did not already
+// own.
 type dirFile struct {
+	mu      sync.Mutex
 	path    string
 	info    fs.FileInfo
 	entries []fs.DirEntry
@@ -155,6 +165,8 @@ func (d *dirFile) Close() error {
 }
 
 func (d *dirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)

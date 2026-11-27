@@ -50,6 +50,10 @@ const (
 	// renameOp is the operation name recorded in the errors that Rename
 	// returns.
 	renameOp = "rename"
+
+	// copyOp is the operation name recorded in the errors that CopyFile
+	// returns.
+	copyOp = "copy"
 )
 
 // FSArgs holds optional parameters for constructing a nestFS.
@@ -61,6 +65,7 @@ var (
 	_ FS                        = (*nestFS)(nil)
 	_ fs.GlobFS                 = (*nestFS)(nil)
 	_ AbsPathGetter             = (*nestFS)(nil)
+	_ types.CopyFileFS          = (*nestFS)(nil)
 	_ types.MountedArchiveDirFS = (*nestFS)(nil)
 	_ types.DeviceInfoGet       = (*mountMap)(nil)
 )
@@ -469,7 +474,36 @@ func (fsys *nestFS) getFSAndSubpath(name string) (*nestFS, string, error) {
 	return targetFS, targetName, nil
 }
 
-// rewritePathError rewrites the path of an error that a file system mounted
+// pathLevel is a nestFS that a path passes through and the path within it.
+type pathLevel struct {
+	fsys *nestFS
+	name string
+}
+
+// pathLevels returns each nestFS that name passes through, from fsys to the one
+// whose file system holds name. Unlike getFSAndSubpath it also descends into a
+// nestFS mounted as a file system (as [FSBuilder.MountFS] allows), so the file
+// system of the last level is not a nestFS and has no mounts or archive
+// directories of its own.
+func (fsys *nestFS) pathLevels(name string) ([]pathLevel, error) {
+	levels := []pathLevel{{fsys, name}}
+	for current := fsys; ; {
+		next, subName, err := current.getFSAndSubpath(name)
+		if err != nil {
+			return nil, err
+		}
+		if next != current {
+			levels = append(levels, pathLevel{next, subName})
+		}
+		inner, ok := next.fsys.(*nestFS)
+		if !ok {
+			return levels, nil
+		}
+		levels = append(levels, pathLevel{inner, subName})
+		current, name = inner, subName
+	}
+}
+
 // below name reported for subName, so that the error names the path the caller
 // used instead of the path relative to that file system's root. It is the
 // error counterpart of [mountPrefix], which does the same for watch events.

@@ -36,6 +36,9 @@ func (fsys *nestFS) IsSame(other fs.FS) bool {
 	if fsys == otherNest {
 		return true
 	}
+	// SameFS settles on identities — it asks each side's IsSame what the
+	// file systems are, not what is in them — so it does no work through
+	// either base and needs no lifetime lock.
 	if !types.SameFS(fsys.fsys, otherNest.fsys) {
 		return false
 	}

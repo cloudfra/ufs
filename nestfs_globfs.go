@@ -21,11 +21,23 @@ import (
 	"io/fs"
 
 	"github.com/cloudfra/ufs/internal/globutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func (fsys *nestFS) Glob(pattern string) ([]string, error) {
 	if cFsys, ok := fsys.fsys.(fs.GlobFS); ok {
-		return cFsys.Glob(pattern)
+		// The closed check and the match against the wrapped file system are
+		// one critical section with respect to this nest's Close.
+		fsys.mu.RLock()
+		if fsys.closed.Load() {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("glob", pattern, fs.ErrClosed)
+		}
+		matches, err := cFsys.Glob(pattern)
+		fsys.mu.RUnlock()
+		return matches, err
 	}
+	// The walk goes through this nest's ReadDir and Stat, which guard the
+	// base at their own use sites; no lock may be held across it.
 	return globutil.GlobFS(fsys, pattern)
 }

@@ -18,6 +18,8 @@ package ufs
 
 import (
 	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func (fsys *nestFS) ReadFile(name string) ([]byte, error) {
@@ -30,10 +32,19 @@ func (fsys *nestFS) ReadFile(name string) ([]byte, error) {
 		return nil, err
 	}
 
+	// The closed check and the read through the file system holding name are
+	// one critical section with respect to that nest's Close.
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return nil, ufserrors.NewPathError("readfile", name, fs.ErrClosed)
+	}
 	if cFsys, ok := mountFS.fsys.(fs.ReadFileFS); ok {
 		data, err := cFsys.ReadFile(subName)
+		mountFS.mu.RUnlock()
 		return data, rewritePathError(err, name, subName)
 	}
 	data, err := fs.ReadFile(mountFS.fsys, subName)
+	mountFS.mu.RUnlock()
 	return data, rewritePathError(err, name, subName)
 }

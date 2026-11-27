@@ -24,6 +24,10 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
+// ReadDir lists through Open, which makes the closed decision and the listing
+// under its own read lock. Like ReadFile it takes no lock of its own, because a
+// read lock held across the delegation deadlocks against a Close waiting in
+// between.
 func (fsys *gcsFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if name != pathutil.CwdPath {
 		if err := pathutil.Validate("readdir", name); err != nil {

@@ -27,19 +27,26 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 	if err := pathutil.Validate("stat", name); err != nil {
 		return nil, err
 	}
+	fsys.mu.RLock()
 	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
 	}
 	info, err := fsys.fsys.Stat(name)
+	fsys.mu.RUnlock()
 	if err != nil {
-		return nil, fsys.closedErr("stat", name, err)
+		return nil, err
 	}
 	return info, nil
 }
 
 func (fsys *archiveFS) Lstat(name string) (fs.FileInfo, error) {
 	// Archives contain no symlinks, so Lstat == Stat. The error is relabeled
-	// so it reports the caller's op, as other Lstat delegations do.
+	// so it reports the caller's op, as other Lstat delegations do. No
+	// lifetime lock is taken here: Stat holds it across its own use of the
+	// archive, and Lstat must not hold it across this delegation, because a
+	// reader that re-enters RLock while Close waits for the write lock
+	// deadlocks against that Close.
 	val, err := fsys.Stat(name)
 	return ufserrors.ChangePathErrorOp(val, err, "lstat")
 }

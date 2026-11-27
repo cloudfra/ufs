@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/cloudfra/ufs"
@@ -59,12 +60,14 @@ func isYamlFSURI(name string) bool {
 // The address names a document by an absolute host path, the way an archive
 // (archive:///path) and a bbolt file (bolt:/path) do: the "//" after the scheme
 // is the authority separator, empty here, so what follows it is the URI path and
-// that path starts at the host root. A path that is not absolute — yaml:config.yaml,
-// whose path the URI parser keeps without a leading separator — is not an address
-// this driver takes, because the address [yamlFS.URI] reports for it would not
-// hold the same document back on a different working directory.
+// that path starts at the host root. On Windows the drive takes the same form a
+// local mount or a file: URI takes, yaml:///C:/srv/config.yaml. A path that is
+// not absolute — yaml:config.yaml, whose path the URI parser keeps without a
+// leading separator — is not an address this driver takes, because the address
+// [yamlFS.URI] reports for it would not hold the same document back on a
+// different working directory.
 //
-// The file system is labeled with that path without its leading separator,
+// The file system is labeled with that URI path without its leading separator,
 // which is what [yamlFS.URI] expects: it puts the separator back when it reports
 // the address, so the URI this file system answers with names the same document
 // and reports that same URI again.
@@ -72,24 +75,25 @@ func isYamlFSURI(name string) bool {
 // The document is read once here, so the file system never sees a later change
 // to the file, and every operation on it stays safe for concurrent use.
 func newYamlFS(_ context.Context, name string) (types.WriteFS, error) {
-	path, err := documentPath(name)
+	uriPath, err := documentPath(name)
 	if err != nil {
 		return nil, err
 	}
-	data, err := osutil.ReadFile(path)
+	data, err := osutil.ReadFile(hostPath(uriPath))
 	if err != nil {
 		return nil, ufserrors.NewPathError("open", name, err)
 	}
-	fsys, err := New(strings.TrimPrefix(path, pathutil.UnixSeparator), data)
+	fsys, err := New(strings.TrimPrefix(uriPath, pathutil.UnixSeparator), data)
 	if err != nil {
 		return nil, err
 	}
 	return fsys, nil
 }
 
-// documentPath returns the host path of the document that the yaml: URI in name
-// names, and reports an error for a name that is not such an address. The scheme
-// is checked again here rather than trusted from [isYamlFSURI], the way
+// documentPath returns the URI path of the document that the yaml: URI in name
+// names, and reports an error for a name that is not such an address. The path
+// is in URI form, so [hostPath] turns it into a path the host understands. The
+// scheme is checked again here rather than trusted from [isYamlFSURI], the way
 // gcsfs's parseGCSPath checks its own prefix, so that documentPath cannot be
 // handed a name that belongs to another driver.
 func documentPath(name string) (string, error) {
@@ -107,4 +111,20 @@ func documentPath(name string) (string, error) {
 		return "", ufserrors.NewPathError("init", name, fmt.Errorf("%q does not name a document path, want %s//<host path>", name, yamlFSPrefix))
 	}
 	return u.Path, nil
+}
+
+// hostPath returns the path of the document named by a yaml: URI path, which is
+// always written with URI separators. A Windows document on a drive is addressed
+// yaml:///C:/srv/config.yaml, the way a local mount and a file: URI address it:
+// the leading separator there belongs to the URI and not to the path, so it is
+// dropped when the host says the rest starts with a volume, which is the same
+// drop localFSNormalizePath makes in drivers/core/localfs_windows.go. On a host
+// with no volumes the path is used as it is.
+func hostPath(uriPath string) string {
+	if strings.HasPrefix(uriPath, pathutil.UnixSeparator) {
+		if rest := uriPath[len(pathutil.UnixSeparator):]; filepath.VolumeName(filepath.FromSlash(rest)) != "" {
+			uriPath = rest
+		}
+	}
+	return filepath.FromSlash(uriPath)
 }

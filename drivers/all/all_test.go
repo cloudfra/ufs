@@ -20,6 +20,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"net/url"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -108,7 +109,10 @@ func TestYamlDriverRegistered(t *testing.T) {
 	if err := osutil.WriteFile(path, []byte("name: ufs\nserver:\n  host: localhost\n")); err != nil {
 		t.Fatalf("WriteFile(%q) = %v, want nil", path, err)
 	}
-	uri := "yaml://" + path
+	// The address is spelled the way a yaml: mount reports it, with the host
+	// separators turned into URI separators, which is also the only form that
+	// names a Windows path on a drive.
+	uri := (&url.URL{Scheme: "yaml", Path: "/" + strings.TrimPrefix(filepath.ToSlash(path), "/")}).String()
 	fsys, err := ufs.New(t.Context(), uri)
 	if err != nil {
 		t.Fatalf("ufs.New(%q) = %v, want nil", uri, err)

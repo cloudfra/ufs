@@ -17,6 +17,7 @@ package yamlfs
 import (
 	"errors"
 	"io/fs"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -49,9 +50,13 @@ func writeDocument(t *testing.T, dir, name string) string {
 }
 
 // documentURI returns the yaml: URI that names the document at the host path
-// path.
+// path. It spells the address the way [yamlFS.URI] reports one, with the host
+// separators turned into URI separators, so the tests take the same address a
+// mount hands back: on Windows that is yaml:///C:/srv/config.yaml, where the
+// separator before the drive belongs to the URI.
 func documentURI(path string) string {
-	return yamlFSPrefix + "//" + path
+	uriPath := pathutil.UnixSeparator + strings.TrimPrefix(filepath.ToSlash(path), pathutil.UnixSeparator)
+	return (&url.URL{Scheme: yamlFSScheme, Path: uriPath}).String()
 }
 
 // tree lists every entry of fsys, a file with the content it holds and a
@@ -197,6 +202,7 @@ func TestDocumentPath(t *testing.T) {
 		wantErr string
 	}{
 		{uri: "yaml:///srv/config.yaml", want: "/srv/config.yaml"},
+		{uri: "yaml:///C:/srv/config.yaml", want: "/C:/srv/config.yaml"},
 		{uri: "yaml:///srv/config.yaml?dir=memory%3A", want: "/srv/config.yaml"},
 		{uri: "yaml:///srv/config.yaml?ufs.ro=true", want: "/srv/config.yaml"},
 		{uri: "yaml:", wantErr: "does not name a document path"},
@@ -245,7 +251,7 @@ func TestNewYamlFSErrors(t *testing.T) {
 		{uri: "yaml:", wantErr: "does not name a document path"},
 		{uri: "yaml:config.yaml", wantErr: "does not name a document path"},
 		{uri: "yaml://host/srv/config.yaml", wantErr: `names the host "host"`},
-		{uri: documentURI(missing), wantErr: missing, not: fs.ErrNotExist},
+		{uri: documentURI(missing), wantErr: "missing.yaml", not: fs.ErrNotExist},
 	} {
 		fsys, err := ufs.New(t.Context(), tc.uri)
 		if err == nil {

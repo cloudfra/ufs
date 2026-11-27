@@ -521,7 +521,7 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		}
 	}
 
-	return polyfills.ToBufferedFile(f, true, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, true, polyfills.BufferArgs{Mode: mountFS.args.BufMode})
 }
 
 func (fsys *nestFS) Close() error {

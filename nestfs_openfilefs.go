@@ -97,7 +97,7 @@ func (fsys *nestFS) OpenFile(name string, flag int, perm fs.FileMode) (types.Fil
 		}
 	}
 
-	return polyfills.ToBufferedFile(f, flag&(os.O_WRONLY|os.O_RDWR) == 0, mountFS.args.BufMode)
+	return polyfills.ToBufferedFile(f, flag&(os.O_WRONLY|os.O_RDWR) == 0, polyfills.BufferArgs{Mode: mountFS.args.BufMode})
 }
 
 var _ fs.StatFS = nestDirFS{}

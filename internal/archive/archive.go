@@ -244,18 +244,31 @@ func snapshotDirFile(file fs.File) fs.File {
 }
 
 // snapshotDirFileHandle answers ReadDir from one snapshot of the directory
-// listing, tracking the position the library's handle does not.
+// listing, tracking the position the library's handle does not. mu guards that
+// snapshot and the position: a host can hand the one handle Open returned to two
+// goroutines, and an unguarded position lets them be handed the same entries
+// twice and skip others. The snapshot is taken once under the same lock, so the
+// walker that gets there second reads what the first stored rather than listing
+// the archive again.
 type snapshotDirFileHandle struct {
 	fs.ReadDirFile
+	mu      sync.Mutex
 	entries []fs.DirEntry
 	off     int
 	listed  bool
 }
 
+// ReadDir returns the next n entries of the listing, all the rest when n is not
+// positive, and io.EOF once the listing is spent. The entries a call returns are
+// a read-only window of the snapshot, so they stay valid after the lock is
+// released.
 func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
+	dir.mu.Lock()
+
 	if !dir.listed {
 		entries, err := dir.ReadDirFile.ReadDir(-1)
 		if err != nil {
+			dir.mu.Unlock()
 			return nil, err
 		}
 		dir.entries = entries
@@ -264,15 +277,18 @@ func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
 	rest := dir.entries[dir.off:]
 	if n <= 0 {
 		dir.off = len(dir.entries)
+		dir.mu.Unlock()
 		return rest, nil
 	}
 	if len(rest) == 0 {
+		dir.mu.Unlock()
 		return nil, io.EOF
 	}
 	if n < len(rest) {
 		rest = rest[:n]
 	}
 	dir.off += len(rest)
+	dir.mu.Unlock()
 	return rest, nil
 }
 

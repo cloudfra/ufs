@@ -24,6 +24,7 @@ import (
 	"path"
 
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
@@ -37,12 +38,22 @@ func (fsys *nestFS) Stat(name string) (fs.FileInfo, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.StatFS); ok {
+		// The closed check and the stat of the file system holding name are
+		// one critical section with respect to that nest's Close.
+		mountFS.mu.RLock()
+		if mountFS.closed.Load() {
+			mountFS.mu.RUnlock()
+			return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
+		}
 		info, err := cFsys.Stat(subName)
+		mountFS.mu.RUnlock()
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
 			return types.NewDirEntry(path.Base(subName)), nil
 		}
 		return info, rewritePathError(err, name, subName)
 	}
+	// The fallback opens through the nest, which guards the base at its own
+	// use site; no lock is held across it.
 	f, err := mountFS.Open(subName)
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
@@ -67,12 +78,20 @@ func (fsys *nestFS) Lstat(name string) (fs.FileInfo, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
+		// One critical section with the nest's Close, as in Stat above.
+		mountFS.mu.RLock()
+		if mountFS.closed.Load() {
+			mountFS.mu.RUnlock()
+			return nil, ufserrors.NewPathError("lstat", name, fs.ErrClosed)
+		}
 		info, err := cFsys.Lstat(subName)
+		mountFS.mu.RUnlock()
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
 			return types.NewDirEntry(path.Base(subName)), nil
 		}
 		return info, rewritePathError(err, name, subName)
 	}
+	// The fallback asks the nest, which guards the base at its own use site.
 	info, err := mountFS.Stat(subName)
 	return info, rewritePathError(err, name, subName)
 }

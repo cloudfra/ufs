@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"sync"
 
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -37,18 +38,39 @@ type hiddenDirFile interface {
 // hiddenDirHandle answers ReadDir from one filtered snapshot of the listing,
 // tracking the position that the guarded handle does not. The snapshot keeps a
 // call with a count limit from losing the entries behind a run of hidden ones.
+//
+// The snapshot and the position belong to the handle, and [keyGuardFS.Open]
+// hands out one handle per directory, so two goroutines can walk the one handle
+// at once. mu is what makes that safe: it guards entries and off together, so
+// walkers sharing a handle are handed each entry of the snapshot exactly once,
+// in the order the snapshot holds them, between them. The same per-handle lock
+// is how the polyfills wrapper guards the position of a file it emulates.
+//
+// mu is held across the listing of the first walk, which is the only call this
+// handle makes to the guarded file system. That is what keeps the snapshot to
+// one: a second walker waits for the snapshot the first is taking rather than
+// taking a second one and advancing the shared position into it. A walk that
+// comes after the first takes no inner listing at all, and no lock here is held
+// across an open, a seek or a read of a file.
 type hiddenDirHandle struct {
 	hiddenDirFile
-	guard   *keyGuardFS
-	dir     string
+	guard *keyGuardFS
+	dir   string
+
+	mu sync.Mutex
+	// entries is the filtered listing of dir, filled on the first walk and
+	// unchanged after that. off is how far the handle has reached in it.
 	entries []fs.DirEntry
 	off     int
 }
 
 func (dir *hiddenDirHandle) ReadDir(count int) ([]fs.DirEntry, error) {
+	dir.mu.Lock()
+
 	if dir.entries == nil {
 		entries, err := dir.hiddenDirFile.ReadDir(-1)
 		if err != nil {
+			dir.mu.Unlock()
 			return nil, err
 		}
 		dir.entries = dir.guard.visible(dir.dir, entries)
@@ -56,15 +78,18 @@ func (dir *hiddenDirHandle) ReadDir(count int) ([]fs.DirEntry, error) {
 	rest := dir.entries[dir.off:]
 	if count <= 0 {
 		dir.off = len(dir.entries)
+		dir.mu.Unlock()
 		return rest, nil
 	}
 	if len(rest) == 0 {
+		dir.mu.Unlock()
 		return nil, io.EOF
 	}
 	if count < len(rest) {
 		rest = rest[:count]
 	}
 	dir.off += len(rest)
+	dir.mu.Unlock()
 
 	return rest, nil
 }

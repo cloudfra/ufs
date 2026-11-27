@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"iter"
 	"path"
 	"sort"
 	"strings"
@@ -40,13 +41,14 @@ const (
 )
 
 var (
-	_ types.File       = (*memFile)(nil)
-	_ types.File       = (*memOpenFile)(nil)
-	_ types.WriteFS    = (*memFS)(nil)
-	_ types.OpenFileFS = (*memFS)(nil)
-	_ fs.GlobFS        = (*memFS)(nil)
-	_ fs.ReadDirFile   = (*memDirFile)(nil)
-	_ types.Watcher    = (*memFS)(nil)
+	_ types.File          = (*memFile)(nil)
+	_ types.File          = (*memOpenFile)(nil)
+	_ types.WriteFS       = (*memFS)(nil)
+	_ types.OpenFileFS    = (*memFS)(nil)
+	_ fs.GlobFS           = (*memFS)(nil)
+	_ fs.ReadDirFile      = (*memDirFile)(nil)
+	_ types.Watcher       = (*memFS)(nil)
+	_ types.BatchCreateFS = (*memFS)(nil)
 )
 
 func init() {
@@ -427,26 +429,26 @@ func (fsys *memFS) checkDirsLocked(name string) error {
 // ensureParentsLocked creates any missing ancestor directories for the given
 // path. Must be called with fsys.mu held for writing.
 func (fsys *memFS) ensureParentsLocked(name string, now time.Time) {
-	dir := path.Dir(name)
-	if dir == pathutil.CwdPath {
-		return
-	}
-	parts := pathutil.Split(dir)
-	accum := ""
-	for i, part := range parts {
-		if part == "" {
+	for dir := range parentDirs(name) {
+		if _, ok := fsys.nodes[dir]; ok {
 			continue
 		}
-		if i > 0 {
-			accum += "/"
+		fsys.nodes[dir] = &memNode{
+			name:    path.Base(dir),
+			mode:    fs.ModeDir | fs.ModePerm,
+			modTime: now,
+			isDir:   true,
 		}
-		accum += part
-		if _, ok := fsys.nodes[accum]; !ok {
-			fsys.nodes[accum] = &memNode{
-				name:    part,
-				mode:    fs.ModeDir | fs.ModePerm,
-				modTime: now,
-				isDir:   true,
+	}
+}
+
+// parentDirs yields the parent directories of name, outermost first, excluding
+// the root.
+func parentDirs(name string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for i := 0; i < len(name); i++ {
+			if name[i] == '/' && !yield(name[:i]) {
+				return
 			}
 		}
 	}

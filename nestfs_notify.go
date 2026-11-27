@@ -56,7 +56,18 @@ func (fsys *nestFS) Watch(ctx context.Context, name string, hook types.NotifyHoo
 		}
 	}
 
-	return w.Watch(ctx, subName, hook)
+	// The closed check and the subscription through the file system holding
+	// name are one critical section with respect to that nest's Close. The
+	// hook fires later without the lock held; a Close that lands then ends
+	// the watch the way the back end reports it.
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return nil, ufserrors.NewPathError("watch", name, fs.ErrClosed)
+	}
+	closer, err := w.Watch(ctx, subName, hook)
+	mountFS.mu.RUnlock()
+	return closer, err
 }
 
 // mountPrefix returns the path at which the file system that resolved name to

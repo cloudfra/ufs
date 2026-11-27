@@ -20,6 +20,8 @@ package ufs
 
 import (
 	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
@@ -32,7 +34,16 @@ func (fsys *nestFS) MkdirAll(name string, perm fs.FileMode) error {
 		return err
 	}
 
-	if err := mountFS.fsys.MkdirAll(subName, perm); err != nil {
+	// The closed check and the mkdir on the file system holding name are one
+	// critical section with respect to that nest's Close.
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return ufserrors.NewPathError("mkdir", name, fs.ErrClosed)
+	}
+	err = mountFS.fsys.MkdirAll(subName, perm)
+	mountFS.mu.RUnlock()
+	if err != nil {
 		return rewritePathError(err, name, subName)
 	}
 	return nil

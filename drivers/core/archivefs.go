@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/types"
@@ -54,24 +56,68 @@ func isArchiveFSUri(name string) bool {
 }
 
 type archiveFS struct {
+	// fsys is the archive this file system mounted. It is set when the archive
+	// is opened and never changed afterwards, including by Close: Open, ReadDir,
+	// ReadFile and Stat all read it without a lock, so writing it is a data race
+	// against them, and an operation that read it just before the write kept an
+	// archive whose file Close had already released. Closedness lives in
+	// [archiveFS.closed] instead.
 	fsys archive.FS
 	name string
+
+	// closed says Close has been called, after which this file system refuses
+	// every operation that would work through fsys. Close claims it once, so
+	// closing twice is not an error and only the first call lets go of the
+	// archive. The flag alone is a check, not a decision: the decision to use
+	// fsys and the use of it are one critical section with respect to Close
+	// through [archiveFS.mu].
+	closed atomic.Bool
+
+	// mu is the lifetime guard. Every operation that works through fsys holds
+	// a read lock across both its closed check and the call into the archive,
+	// and Close takes the write lock to release the archive. After the CAS,
+	// Close cannot reach the teardown until every operation that already
+	// passed its check has finished its use, and an operation that starts
+	// later takes the read lock either before or after the teardown and in
+	// both cases sees closed and is refused. Readers stay concurrent with
+	// each other; only Close waits.
+	mu sync.RWMutex
 }
 
+// Open is [fs.FS]: it hands out the entry the archive holds for name. A closed
+// file system reports [fs.ErrClosed].
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
 	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
 	}
-	return fsys.fsys.Open(name)
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
+	}
+	file, err := fsys.fsys.Open(name)
+	fsys.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
 }
 
+// Close releases the archive. It is idempotent: only the first call closes the
+// archive it mounted and every later call reports nil. Close never changes
+// fsys, so an operation that was already running keeps the archive it is using
+// instead of meeting a nil one. Having claimed closedness, Close takes mu to
+// release the archive, so it waits for every operation that had already
+// passed its closed check to finish its use before the archive is let go, and
+// an operation that arrives afterwards reports [fs.ErrClosed].
 func (fsys *archiveFS) Close() error {
-	inner := fsys.fsys
-	fsys.fsys = nil
-	if inner == nil {
+	if !fsys.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	return inner.Close()
+	fsys.mu.Lock()
+	err := fsys.fsys.Close()
+	fsys.mu.Unlock()
+	return err
 }
 
 // newArchiveFSFromLocalFS mounts the archive at the host path name. The result

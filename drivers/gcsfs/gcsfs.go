@@ -104,10 +104,17 @@ type gcsFS struct {
 
 // gcsFile represents an opened GCS object for reading, a virtual directory, or
 // a GCS writer for an in-progress Create.
+//
+// mu guards the sequential cursor of the handle, so one handle handed to two
+// callers gives them one position rather than two callers racing one counter.
 type gcsFile struct {
-	name       string
-	content    []byte
-	offset     int64
+	name    string
+	content []byte
+
+	// mu guards offset, which is where the next Read continues from.
+	mu     sync.Mutex
+	offset int64
+
 	isDir      bool
 	size       int64
 	modTime    time.Time
@@ -132,14 +139,22 @@ func (f *gcsFile) Read(p []byte) (int, error) {
 	if len(f.content) == 0 {
 		return 0, io.EOF
 	}
+	f.mu.Lock()
 	if f.offset >= int64(len(f.content)) {
+		f.mu.Unlock()
 		return 0, io.EOF
 	}
 	n := copy(p, f.content[f.offset:])
 	f.offset += int64(n)
+	f.mu.Unlock()
 	return n, nil
 }
 
+// ReadAt reads from off without moving offset, so it needs no lock: content is
+// fixed when the handle is opened and this method touches no state of its own.
+// Two ReadAt calls, or a ReadAt and a Read, therefore never cost each other a
+// byte — only the sequential cursor of Read is shared, and only Read and Seek
+// move it.
 func (f *gcsFile) ReadAt(p []byte, off int64) (int, error) {
 	if f.isDir {
 		return 0, ufserrors.NewPathError("readat", f.name, fs.ErrInvalid)
@@ -169,6 +184,7 @@ func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 	if f.isDir {
 		return 0, ufserrors.NewPathError("seek", f.name, fs.ErrInvalid)
 	}
+	f.mu.Lock()
 	switch whence {
 	case io.SeekStart:
 		f.offset = offset
@@ -177,14 +193,18 @@ func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		f.offset = int64(len(f.content)) + offset
 	default:
+		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
 	}
 	if f.offset < 0 {
 		computed := f.offset
 		f.offset = 0
+		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, computed, fs.ErrInvalid))
 	}
-	return f.offset, nil
+	position := f.offset
+	f.mu.Unlock()
+	return position, nil
 }
 
 func (f *gcsFile) Close() error {

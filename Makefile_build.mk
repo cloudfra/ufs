@@ -293,7 +293,15 @@ endif
 coverage.txt: $(ASSETS) testassets
 	$(GO) test -tags testing $(GO_RACE) ${SOURCE_DIRS} -cover -covermode=atomic -count=1 -coverprofile=$@
 
+# Only the modules go.mod already pins: a build - CI above all - has to get the
+# dependency set the code was written against, never a newer one.
 deps:
+	$(GO_WITH_PROXY) mod download
+
+# Moves every module to its newest release. Separate from deps because an
+# upgrade is a deliberate act of its own, not something a build should do on
+# the side.
+upgrade-deps:
 	$(GO_WITH_PROXY) get -u ./...
 	$(GO_WITH_PROXY) mod tidy
 	$(GO_WITH_PROXY) mod download
@@ -421,4 +429,4 @@ system-info:
 sync-upstream:
 	-git fetch origin; git add -A; git commit -m"Save pending changes."; git rebase -i origin/main
 
-.PHONY: tools all assets testassets protos windows-binaries release-binaries wasm-binaries lint lint-terraform lint-go lint-docker lint-yaml lint-shell lint-markdown lint-vuln bench test test-go test-deflake test-tf deps clean clean-cache presubmit ensure-builder docker-images scan-images images linux-images windows-images no-sudo system-info sync-upstream
+.PHONY: tools all assets testassets protos windows-binaries release-binaries wasm-binaries lint lint-terraform lint-go lint-docker lint-yaml lint-shell lint-markdown lint-vuln bench test test-go test-deflake test-tf deps upgrade-deps clean clean-cache presubmit ensure-builder docker-images scan-images images linux-images windows-images no-sudo system-info sync-upstream

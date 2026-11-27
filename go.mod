@@ -14,7 +14,7 @@ exclude (
 
 require (
 	cloud.google.com/go/pubsub/v2 v2.9.0
-	cloud.google.com/go/storage v1.71.0
+	cloud.google.com/go/storage v1.71.1
 	github.com/dustin/go-humanize v1.1.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/fsouza/fake-gcs-server v1.56.1
@@ -31,8 +31,8 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/sys v0.50.0
-	google.golang.org/api v0.316.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20261118221215-c8830f628b3f
+	google.golang.org/api v0.317.0
+	google.golang.org/genproto/googleapis/api v0.0.0-20261123191846-1e707ab9fbc2
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
@@ -41,7 +41,7 @@ require (
 require (
 	cel.dev/expr v0.26.0 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.24.4 // indirect
+	cloud.google.com/go/auth v0.24.5 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.1 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	cloud.google.com/go/iam v1.15.1 // indirect
@@ -82,7 +82,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
 	github.com/klauspost/pgzip v1.3.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/minio/minlz v1.3.0 // indirect
+	github.com/minio/minlz v1.3.1 // indirect
 	github.com/nwaples/rardecode/v2 v2.4.6 // indirect
 	github.com/pierrec/lz4/v4 v4.1.34 // indirect
 	github.com/pjbgf/sha1cd v0.7.0 // indirect
@@ -94,7 +94,7 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.9.0 // indirect
 	github.com/stangelandcl/ppmd v0.1.1 // indirect
 	github.com/ulikunitz/xz v0.5.17 // indirect
-	github.com/zeebo/xxh3 v1.1.1-0.20260908150653-f7225998cebf // indirect
+	github.com/zeebo/xxh3 v1.1.1-0.20261118193009-e05079abbd7d // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.2 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.47.0 // indirect
@@ -108,8 +108,8 @@ require (
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/genproto v0.0.0-20261118221215-c8830f628b3f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261118221215-c8830f628b3f // indirect
+	google.golang.org/genproto v0.0.0-20261123191846-1e707ab9fbc2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 )
 
 ignore (

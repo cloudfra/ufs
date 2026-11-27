@@ -42,16 +42,16 @@ is github.com/cloudfra/ufs.
 
 ### Core interfaces (`drivers/types/types.go`, package `types`)
 
-| Interface     | What it wraps / adds                                                                               |
-| :------------ | :------------------------------------------------------------------------------------------------- |
-| FileInfo      | Name, Size, Mode, ModTime, IsDir, Type, Sys                                                        |
-| ReadFile      | Read-only file; wraps fs.File                                                                      |
-| File          | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter                                     |
-| ReadFS        | Read-only FS; adds Close, ListFilenames, ForEachIterators                                          |
-| WriteFS       | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll                                |
+| Interface     | What it wraps / adds                                                                           |
+| :------------ | :--------------------------------------------------------------------------------------------- |
+| FileInfo      | Name, Size, Mode, ModTime, IsDir, Type, Sys                                                    |
+| ReadFile      | Read-only file; wraps fs.File                                                                  |
+| File          | Read-write; extends ReadFile with ReaderAt, Seek, StringWriter                                 |
+| ReadFS        | Read-only FS; adds Close, ListFilenames, ForEachIterators                                      |
+| WriteFS       | Read-write; extends ReadFS with Create, MkdirAll, Remove, RemoveAll                            |
 | FS            | ufs.FS — extends types.WriteFS with Rename (RenameFS); what nestFS and most backends implement |
-| Watcher       | Optional; recursive directory change notifications via Watch                                       |
-| BatchCreateFS | Optional; writes several whole files atomically via BatchCreate                                    |
+| Watcher       | Optional; recursive directory change notifications via Watch                                   |
+| BatchCreateFS | Optional; writes several whole files atomically via BatchCreate                                |
 
 ### Factory
 

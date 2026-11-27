@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/cloudfra/ufs"
+	"github.com/cloudfra/ufs/internal/osutil"
 	ufsTesting "github.com/cloudfra/ufs/testing"
 )
 
@@ -98,6 +99,41 @@ func TestGitDriverRegistered(t *testing.T) {
 	}
 	if want := `with driver "git"`; !strings.Contains(err.Error(), want) {
 		t.Errorf("ufs.New(%q) = %v, want an error containing %q", uri, err, want)
+	}
+}
+
+func TestYamlDriverRegistered(t *testing.T) {
+	// A yaml: URI names the document by its host path, so this test writes one.
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := osutil.WriteFile(path, []byte("name: ufs\nserver:\n  host: localhost\n")); err != nil {
+		t.Fatalf("WriteFile(%q) = %v, want nil", path, err)
+	}
+	uri := "yaml://" + path
+	fsys, err := ufs.New(t.Context(), uri)
+	if err != nil {
+		t.Fatalf("ufs.New(%q) = %v, want nil", uri, err)
+	}
+	defer ufsTesting.ValidateClose(t, fsys)()
+
+	got, err := fs.ReadFile(fsys, "server/host")
+	if err != nil {
+		t.Fatalf("ReadFile(%q) = %v, want nil", "server/host", err)
+	}
+	if string(got) != "localhost" {
+		t.Errorf("ReadFile(%q) = %q, want %q", "server/host", got, "localhost")
+	}
+
+	// The document cannot be written, which is what the URI of the file system
+	// reports as well.
+	if _, err := fsys.Create("name"); !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("Create(%q) = %v, want %v", "name", err, fs.ErrPermission)
+	}
+	u, err := fsys.URI()
+	if err != nil {
+		t.Fatalf("URI() = %v, want nil", err)
+	}
+	if want := uri + "?ufs.ro=true"; u.String() != want {
+		t.Errorf("URI() = %q, want %q", u.String(), want)
 	}
 }
 

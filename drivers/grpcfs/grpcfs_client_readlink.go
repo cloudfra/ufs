@@ -18,19 +18,27 @@ package grpcfs
 // not on the wire at all, so reading one is the only link method here.
 
 import (
+	"io/fs"
+
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/proto"
 )
 
-// ReadLink reports the target stored in the symbolic link at name.
+// ReadLink reports the target stored in the symbolic link at name. The closed
+// check and the rpc are one read-lock section; the path validation stays outside
+// it.
 func (fsys *grpcFS) ReadLink(name string) (string, error) {
-	if err := fsys.closedErr("readlink", name); err != nil {
-		return "", err
-	}
 	if err := pathutil.Validate("readlink", name); err != nil {
 		return "", err
 	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return "", ufserrors.NewPathError("readlink", name, fs.ErrClosed)
+	}
 	resp, err := fsys.client.ReadLink(fsys.ctx, &proto.ReadLinkRequest{Name: name})
+	fsys.mu.RUnlock()
 	if err != nil {
 		return "", pathError("readlink", name, err)
 	}

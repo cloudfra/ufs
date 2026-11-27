@@ -40,36 +40,55 @@ import (
 // that cannot hold a file — a directory, or a name under a regular file — would
 // wait for Close, by which point the caller has been handed a handle for a file
 // that was never going to be there. A name that is not there yet also looks at
-// the levels in front of it, which is what [grpcFS.checkAbove] does: the lookup
-// of the name itself says nothing about them.
+// the levels in front of it, which is what [grpcFS.checkAboveLocked] does: the
+// lookup of the name itself says nothing about them.
+//
+// The closed check and the whole open — the lookup of the name and the walk up the
+// path in front of it, which together are several lookups — are one read-lock
+// section, so a Close cannot take the connection between two of them and turn a
+// clean answer into a transport error. The path validation stays outside it. The
+// handle is built after the section: what the handle does afterwards — the frames
+// it sends, and the upload it closes when the caller is done — belongs to that
+// handle and not to this call, and holding this section for the length of a write
+// would keep every other operation and every Close waiting behind it. How long a
+// handle may outlive the file system it came from is a question about the handle,
+// which this guard does not settle.
 func (fsys *grpcFS) Create(name string) (types.File, error) {
-	if err := fsys.closedErr("create", name); err != nil {
-		return nil, err
-	}
 	if err := pathutil.ValidateFileName("create", name); err != nil {
 		return nil, err
 	}
-	info, statErr := fsys.stat("create", name, proto.SymlinkHandling_SYMLINK_HANDLING_NO_FOLLOW)
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return nil, ufserrors.NewPathError("create", name, fs.ErrClosed)
+	}
+	info, statErr := fsys.statLocked("create", name, proto.SymlinkHandling_SYMLINK_HANDLING_NO_FOLLOW)
 	switch {
 	case statErr == nil && info.IsDir():
+		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("create", name, fs.ErrInvalid)
 	case errors.Is(statErr, fs.ErrNotExist):
 		// Nothing under that name is there yet, so the only thing that can say
 		// whether the name could hold a file is what stands above it.
-		if err := fsys.checkAbove("create", name); err != nil {
+		err := fsys.checkAboveLocked("create", name)
+		fsys.mu.RUnlock()
+		if err != nil {
 			return nil, err
 		}
 	case statErr != nil:
 		// The name cannot be reached at all, which is the served file system's
 		// answer about the path above it rather than about this name.
+		fsys.mu.RUnlock()
 		return nil, statErr
+	default:
+		fsys.mu.RUnlock()
 	}
 	return newGrpcUpload(name, fsys), nil
 }
 
-// checkAbove walks the levels above name until it reaches one that is there, and
-// refuses the name when that one is not a directory: io/fs file systems refuse a
-// name with a regular file among its levels, and the shared suite every
+// checkAboveLocked walks the levels above name until it reaches one that is there,
+// and refuses the name when that one is not a directory: io/fs file systems refuse
+// a name with a regular file among its levels, and the shared suite every
 // types.WriteFS is held to asks for the refusal as a *fs.PathError.
 //
 // The service cannot answer this in one call. It has no lookup that reports a
@@ -84,9 +103,13 @@ func (fsys *grpcFS) Create(name string) (types.File, error) {
 //
 // The levels are followed through a symbolic link rather than looked at as links,
 // because a linked directory is a parent a file system accepts.
-func (fsys *grpcFS) checkAbove(op, name string) error {
+//
+// It is the walk behind [grpcFS.Create], whose read lock it runs under, and it
+// looks each level up through [grpcFS.statLocked] rather than through the
+// entry point, which would take that lock again under a Close waiting for it.
+func (fsys *grpcFS) checkAboveLocked(op, name string) error {
 	for dir := path.Dir(name); dir != "." && dir != "/" && dir != name; dir = path.Dir(dir) {
-		info, err := fsys.stat(op, dir, proto.SymlinkHandling_SYMLINK_HANDLING_FOLLOW)
+		info, err := fsys.statLocked(op, dir, proto.SymlinkHandling_SYMLINK_HANDLING_FOLLOW)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}

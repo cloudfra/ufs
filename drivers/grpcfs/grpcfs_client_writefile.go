@@ -21,19 +21,36 @@ import (
 	"io/fs"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/proto"
 )
 
 // WriteFile writes content to name whole, as the WriteFile rpc does: the file is
 // created if it does not exist and truncated first, and the parents are not
 // created. A file small enough for one frame is sent in one message.
+//
+// The closed check and the whole upload are one read-lock section. A
+// client-streaming rpc is several sends and the answer that follows them, so a
+// connection given up partway through would take the middle of an upload off the
+// wire rather than refuse it at the start. The path validation stays outside it.
 func (fsys *grpcFS) WriteFile(name string, content []byte, perm fs.FileMode) error {
-	if err := fsys.closedErr("writefile", name); err != nil {
-		return err
-	}
 	if err := pathutil.ValidateFileName("writefile", name); err != nil {
 		return err
 	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return ufserrors.NewPathError("writefile", name, fs.ErrClosed)
+	}
+	err := fsys.writeFileLocked(name, content, perm)
+	fsys.mu.RUnlock()
+	return err
+}
+
+// writeFileLocked is the upload behind WriteFile. Its caller holds the read lock
+// for the whole of it, every frame and the answer, which is what keeps the
+// connection alive underneath them; the helper takes no lock itself.
+func (fsys *grpcFS) writeFileLocked(name string, content []byte, perm fs.FileMode) error {
 	stream, err := fsys.client.WriteFile(fsys.ctx)
 	if err != nil {
 		return pathError("writefile", name, err)

@@ -25,4 +25,9 @@
 // error rather than guessing. The standin costs extra round trips (a stat per
 // level) and is never atomic, so a file system that implements the operation
 // natively is always preferred.
+//
+// Buffering a file copies its content into a private store only when the
+// methods it lacks cannot be derived from the ones it provides. A store kept on
+// disk is a temporary file named ufs-polyfill-*.tmp in the default temporary
+// directory, removed when the buffered file is closed.
 package polyfills

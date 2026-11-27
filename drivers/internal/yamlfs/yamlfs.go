@@ -101,7 +101,7 @@ func (fsys *yamlFS) Open(name string) (fs.File, error) {
 	if entry.info.IsDir() {
 		return &dirFile{path: name, info: entry.info, entries: slices.Clone(entry.entries)}, nil
 	}
-	return &leafFile{info: entry.info, Reader: bytes.NewReader(entry.content)}, nil
+	return &leafFile{info: entry.info, reader: bytes.NewReader(entry.content)}, nil
 }
 
 // lookup walks the components of name down the tree from the root.
@@ -122,14 +122,19 @@ func (fsys *yamlFS) lookup(name string) (*node, error) {
 
 // leafFile is an open handle on the content of a leaf value.
 //
-// The embedded reader holds the position that the next read continues from, so
-// mu is held across every method that moves or reads through it. One handle can
-// then serve two callers: each read continues where the last one left off
-// instead of repeating or dropping bytes.
+// The reader holds the position that the next read continues from, so mu is
+// held across every method that moves or reads through it. One handle can then
+// serve two callers: each read continues where the last one left off instead of
+// repeating or dropping bytes.
+//
+// The reader is a named field, not an embedded one, because embedding adds every
+// method of *bytes.Reader to the handle's method set: eight more ways to move or
+// read through that position, none of them taking mu. Only the methods below are
+// reachable from a handle.
 type leafFile struct {
-	info fs.FileInfo
-	mu   sync.Mutex
-	*bytes.Reader
+	info   fs.FileInfo
+	mu     sync.Mutex
+	reader *bytes.Reader
 }
 
 func (f *leafFile) Stat() (fs.FileInfo, error) {
@@ -139,7 +144,7 @@ func (f *leafFile) Stat() (fs.FileInfo, error) {
 // Read reads the next part of the leaf value from where the last read left off.
 func (f *leafFile) Read(p []byte) (int, error) {
 	f.mu.Lock()
-	n, err := f.Reader.Read(p)
+	n, err := f.reader.Read(p)
 	f.mu.Unlock()
 	return n, err
 }
@@ -148,7 +153,7 @@ func (f *leafFile) Read(p []byte) (int, error) {
 // that [leafFile.Read] continues from.
 func (f *leafFile) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.Lock()
-	n, err := f.Reader.ReadAt(p, off)
+	n, err := f.reader.ReadAt(p, off)
 	f.mu.Unlock()
 	return n, err
 }
@@ -156,7 +161,7 @@ func (f *leafFile) ReadAt(p []byte, off int64) (int, error) {
 // Seek moves the position that [leafFile.Read] continues from.
 func (f *leafFile) Seek(offset int64, whence int) (int64, error) {
 	f.mu.Lock()
-	pos, err := f.Reader.Seek(offset, whence)
+	pos, err := f.reader.Seek(offset, whence)
 	f.mu.Unlock()
 	return pos, err
 }

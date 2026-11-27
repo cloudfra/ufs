@@ -22,6 +22,7 @@ import (
 	"io/fs"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/proto"
 )
 
@@ -35,13 +36,36 @@ func (fsys *grpcFS) Lstat(name string) (fs.FileInfo, error) {
 	return fsys.stat("lstat", name, proto.SymlinkHandling_SYMLINK_HANDLING_NO_FOLLOW)
 }
 
+// stat is the GetFile lookup the verbs share. The closed check and the rpc sit in
+// one read-lock section; the path validation, which needs no connection, stays
+// outside it.
+//
+// Stat and Lstat are thin verbs over it and take no lock of their own: an RLock
+// held across a call into a sibling of the same file system that takes the lock
+// again deadlocks against a Close waiting between them, because RWMutex blocks a
+// new reader while a writer waits.
 func (fsys *grpcFS) stat(op, name string, handling proto.SymlinkHandling) (fs.FileInfo, error) {
-	if err := fsys.closedErr(op, name); err != nil {
-		return nil, err
-	}
 	if err := pathutil.Validate(op, name); err != nil {
 		return nil, err
 	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return nil, ufserrors.NewPathError(op, name, fs.ErrClosed)
+	}
+	info, err := fsys.statLocked(op, name, handling)
+	fsys.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	return info, nil
+}
+
+// statLocked is the rpc behind a lookup. Its caller holds the read lock for the
+// whole of it, which is what keeps the connection alive underneath it; the helper
+// takes no lock itself, so [grpcFS.Open], [grpcFS.Create] and
+// [grpcFS.checkAboveLocked] can make a run of lookups one section.
+func (fsys *grpcFS) statLocked(op, name string, handling proto.SymlinkHandling) (fs.FileInfo, error) {
 	file, err := fsys.client.GetFile(fsys.ctx, &proto.GetFileRequest{Name: name, SymlinkHandling: handling})
 	if err != nil {
 		return nil, pathError(op, name, err)

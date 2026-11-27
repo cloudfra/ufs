@@ -262,7 +262,15 @@ func (fsys *boltFS) writeFileContent(name string, mode fs.FileMode, modTime time
 // boltDirFile is an open directory handle. It snapshots the directory entries
 // at Open time so that paginated ReadDir calls are stable even if the
 // filesystem is modified concurrently.
+//
+// openDirBucket fixes path, entries, mode and modTime, so those are read-only
+// once the handle exists and need no guard. offset is not: Open hands one handle
+// to every caller that opens the directory, so two goroutines walking it would
+// advance one position between them and each would be handed part of what the
+// other was owed. mu keeps that position moving one call at a time, which is what
+// makes the pair collectively see every snapshot entry exactly once, in order.
 type boltDirFile struct {
+	mu      sync.Mutex
 	path    string
 	entries []fs.DirEntry
 	offset  int
@@ -283,17 +291,21 @@ func (d *boltDirFile) Close() error {
 }
 
 func (d *boltDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	d.mu.Lock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)
+		d.mu.Unlock()
 		return batch, nil
 	}
 	if d.offset >= len(d.entries) {
+		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := min(d.offset+n, len(d.entries))
 	batch := d.entries[d.offset:end]
 	d.offset = end
+	d.mu.Unlock()
 	return batch, nil
 }
 

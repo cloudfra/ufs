@@ -83,20 +83,21 @@ type parkedListingFS struct {
 // log records what happened, in the order it happened, for a test to read back.
 func (p *parkedListingFS) log(what string) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.logs = append(p.logs, what)
+	p.mu.Unlock()
 }
 
 // recorded answers where what happened sits in the record, or -1 when it never
 // happened.
 func (p *parkedListingFS) recorded(what string) int {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	for i, logged := range p.logs {
 		if logged == what {
+			p.mu.Unlock()
 			return i
 		}
 	}
+	p.mu.Unlock()
 	return -1
 }
 

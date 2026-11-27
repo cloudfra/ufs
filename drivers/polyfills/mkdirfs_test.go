@@ -77,6 +77,63 @@ func TestMkdir(t *testing.T) {
 			wantMkdirAlls: nil,
 		},
 		{
+			// The parent is a file, so MkdirAll must not be asked to try.
+			name: "a parent that is a file is refused",
+			wrap: func(s *store) fs.FS {
+				return mkdirAllFS{s}
+			},
+			seed: func(s *store) {
+				s.seedFile("a/b", "data")
+			},
+			dir:           "a/b/c",
+			wantErr:       `"a/b" is not a directory`,
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: nil,
+		},
+		{
+			// The refusal names the blocking file, not the missing level below it.
+			name: "a file higher up is named",
+			wrap: func(s *store) fs.FS {
+				return mkdirAllFS{s}
+			},
+			seed: func(s *store) {
+				s.seedFile("a/b", "data")
+			},
+			dir:           "a/b/c/d",
+			wantErr:       `"a/b" is not a directory`,
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: nil,
+		},
+		{
+			// A parent that cannot be inspected is not a missing parent.
+			name:          "a parent that cannot be inspected is passed through",
+			wrap:          func(s *store) fs.FS { return brokenMkdirAllFS{s} },
+			dir:           "a/b",
+			wantErr:       "permission denied",
+			wantDirs:      nil,
+			wantMkdirAlls: nil,
+		},
+		{
+			// The back end holds the name, so it gives the collision, not the emulation.
+			name:          "a name held by a regular file is refused by the back end",
+			wrap:          func(s *store) fs.FS { return mkdirAllFS{s} },
+			seed:          func(s *store) { s.seedFile("a/b", "data") },
+			dir:           "a/b",
+			wantErr:       "file already exists",
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: []string{"a/b"},
+		},
+		{
+			// Pins a boundary rather than choosing it: [types.MkdirAllFS] allows a
+			// file system with no directory concept to accept the call.
+			name:          "a file system without real directories accepts a name held by a file",
+			wrap:          func(s *store) fs.FS { return noopMkdirAllFS{s} },
+			seed:          func(s *store) { s.seedFile("a/b", "data") },
+			dir:           "a/b",
+			wantDirs:      []string{"a"},
+			wantMkdirAlls: []string{"a/b"},
+		},
+		{
 			name:       "no mkdir interface at all",
 			wrap:       func(s *store) fs.FS { return plainFS{s} },
 			dir:        "a",

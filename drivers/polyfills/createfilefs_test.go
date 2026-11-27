@@ -48,6 +48,11 @@ func seedDirD(s *store) {
 	s.seedDir("d")
 }
 
+// seedFileInD puts a regular file in d.
+func seedFileInD(s *store) {
+	s.seedFile("d/f.txt", "alpha")
+}
+
 func TestCreate(t *testing.T) {
 	t.Parallel()
 
@@ -184,6 +189,30 @@ func TestCreate(t *testing.T) {
 			file:      "d",
 			wantErr:   "invalid argument",
 			wantFiles: map[string]string{},
+			wantDirs:  []string{"d"},
+		},
+		{
+			// The emulation refuses it instead of asking for a file that can never open.
+			name: "a file below a file is refused by the emulation",
+			wrap: func(s *store) fs.FS {
+				return openFileFS{s}
+			},
+			seed:      seedFileInD,
+			file:      "d/f.txt/g.txt",
+			wantErr:   `"d/f.txt" is not a directory`,
+			wantFiles: map[string]string{"d/f.txt": "alpha"},
+			wantDirs:  []string{"d"},
+		},
+		{
+			// A native create asks its back end, which reports it in its own words.
+			name: "a file below a file is left to the native method",
+			wrap: func(s *store) fs.FS {
+				return createFS{s}
+			},
+			seed:      seedFileInD,
+			file:      "d/f.txt/g.txt",
+			wantErr:   "file does not exist",
+			wantFiles: map[string]string{"d/f.txt": "alpha"},
 			wantDirs:  []string{"d"},
 		},
 		{

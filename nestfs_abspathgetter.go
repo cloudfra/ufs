@@ -17,12 +17,27 @@ package ufs
 // GetAbsPath is [AbsPathGetter], given to the wrapped file system when it
 // answers it.
 
+import (
+	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/ufserrors"
+)
+
 func (fsys *nestFS) GetAbsPath(name string) (string, error) {
 	if err := fsys.validPath(absPathOp, name); err != nil {
 		return "", err
 	}
 	if rfs, ok := fsys.fsys.(AbsPathGetter); ok {
-		return rfs.GetAbsPath(name)
+		// The closed check and the lookup in the wrapped file system are one
+		// critical section with respect to this nest's Close.
+		fsys.mu.RLock()
+		if fsys.closed.Load() {
+			fsys.mu.RUnlock()
+			return "", ufserrors.NewPathError(absPathOp, name, fs.ErrClosed)
+		}
+		abs, err := rfs.GetAbsPath(name)
+		fsys.mu.RUnlock()
+		return abs, err
 	}
 	return "", realAbsPathNotSupported(fsys, name)
 }

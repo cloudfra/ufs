@@ -18,12 +18,18 @@ package ufs
 // file system's URI with the mounts written into it.
 
 import (
+	"io/fs"
 	"net/url"
 	"strings"
 )
 
 func (fsys *nestFS) URI() (*url.URL, error) {
-	base, err := fsys.fsys.URI()
+	// The base URI goes first, outside the mount section below: taking
+	// fsys.mu inside that section would order the two locks the opposite way
+	// from [nestFS.Close]. Asking the mounts takes this nest's mount lock and
+	// then each mount's lifetime lock, which is the direction Close also
+	// points.
+	base, err := fsys.baseURI()
 	if base == nil || err != nil {
 		return nil, nil
 	}
@@ -41,4 +47,21 @@ func (fsys *nestFS) URI() (*url.URL, error) {
 	}
 	u.RawQuery = vals.Encode()
 	return &u, nil
+}
+
+// baseURI renders the wrapped file system's URI under the lifetime read
+// lock, the barrier that keeps Close from tearing the base down mid-call. A
+// closed nest has no URI, reported the way a base that offers none is.
+func (fsys *nestFS) baseURI() (*url.URL, error) {
+	if fsys.closed.Load() {
+		return nil, fs.ErrClosed
+	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return nil, fs.ErrClosed
+	}
+	uri, err := fsys.fsys.URI()
+	fsys.mu.RUnlock()
+	return uri, err
 }

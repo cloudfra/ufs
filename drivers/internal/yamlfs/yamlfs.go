@@ -39,6 +39,7 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudfra/ufs/drivers/types"
@@ -100,7 +101,7 @@ func (fsys *yamlFS) Open(name string) (fs.File, error) {
 	if entry.info.IsDir() {
 		return &dirFile{path: name, info: entry.info, entries: slices.Clone(entry.entries)}, nil
 	}
-	return &leafFile{info: entry.info, Reader: bytes.NewReader(entry.content)}, nil
+	return &leafFile{info: entry.info, reader: bytes.NewReader(entry.content)}, nil
 }
 
 // lookup walks the components of name down the tree from the root.
@@ -120,13 +121,49 @@ func (fsys *yamlFS) lookup(name string) (*node, error) {
 }
 
 // leafFile is an open handle on the content of a leaf value.
+//
+// The reader holds the position that the next read continues from, so mu is
+// held across every method that moves or reads through it. One handle can then
+// serve two callers: each read continues where the last one left off instead of
+// repeating or dropping bytes.
+//
+// The reader is a named field, not an embedded one, because embedding adds every
+// method of *bytes.Reader to the handle's method set: eight more ways to move or
+// read through that position, none of them taking mu. Only the methods below are
+// reachable from a handle.
 type leafFile struct {
-	info fs.FileInfo
-	*bytes.Reader
+	info   fs.FileInfo
+	mu     sync.Mutex
+	reader *bytes.Reader
 }
 
 func (f *leafFile) Stat() (fs.FileInfo, error) {
 	return f.info, nil
+}
+
+// Read reads the next part of the leaf value from where the last read left off.
+func (f *leafFile) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	n, err := f.reader.Read(p)
+	f.mu.Unlock()
+	return n, err
+}
+
+// ReadAt reads the part of the leaf value at off without moving the position
+// that [leafFile.Read] continues from.
+func (f *leafFile) ReadAt(p []byte, off int64) (int, error) {
+	f.mu.Lock()
+	n, err := f.reader.ReadAt(p, off)
+	f.mu.Unlock()
+	return n, err
+}
+
+// Seek moves the position that [leafFile.Read] continues from.
+func (f *leafFile) Seek(offset int64, whence int) (int64, error) {
+	f.mu.Lock()
+	pos, err := f.reader.Seek(offset, whence)
+	f.mu.Unlock()
+	return pos, err
 }
 
 func (f *leafFile) Close() error {
@@ -135,7 +172,16 @@ func (f *leafFile) Close() error {
 
 // dirFile is an open handle on a directory. It keeps its own copy of the
 // entries, so a caller reordering them cannot disturb the tree.
+//
+// A caller is free to keep one handle and serve more than one reader from it, so
+// where a reader has reached in that copy is per-handle state that mu guards.
+// Two walkers over one handle then divide the entries between them: each entry
+// goes to exactly one of them, in order, and neither sees it twice. The other
+// fields are written once by [yamlFS.Open] and only read after that, so they
+// need no guard, and ReadDir holds mu over no work the handle did not already
+// own.
 type dirFile struct {
+	mu      sync.Mutex
 	path    string
 	info    fs.FileInfo
 	entries []fs.DirEntry
@@ -155,16 +201,20 @@ func (d *dirFile) Close() error {
 }
 
 func (d *dirFile) ReadDir(n int) ([]fs.DirEntry, error) {
+	d.mu.Lock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)
+		d.mu.Unlock()
 		return batch, nil
 	}
 	if d.offset >= len(d.entries) {
+		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := min(d.offset+n, len(d.entries))
 	batch := d.entries[d.offset:end]
 	d.offset = end
+	d.mu.Unlock()
 	return batch, nil
 }

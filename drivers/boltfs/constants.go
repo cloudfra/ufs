@@ -41,6 +41,16 @@ const (
 	// timeoutParam is the URI query parameter for bolt.Options.Timeout.
 	timeoutParam = "ufs.timeout"
 
+	// batchCreateOp is the op of the errors of BatchCreate, as in ufs.
+	batchCreateOp = "batchcreate"
+
+	// batchMaxDelay is the bolt.DB.MaxBatchDelay of the file: how long a
+	// batched call waits for other calls to share its transaction before that
+	// transaction starts. bbolt's 10 ms default suits a server whose writes are
+	// all batched, but BatchCreate is also how this driver writes one file, so
+	// that whole wait would fall on a lone writer.
+	batchMaxDelay = time.Millisecond
+
 	// defaultTimeout is how long opening waits for the file lock when the
 	// URI does not set timeoutParam.
 	defaultTimeout = time.Minute

@@ -22,6 +22,28 @@ import (
 )
 
 func (fsys *nestFS) DeviceInfo() types.DeviceMap {
-	base := fsys.fsys.DeviceInfo()
+	// The base device goes first: the call takes fsys.mu and releases it,
+	// and the mounts below are asked afterwards, so the nest's lifetime lock
+	// is never taken from inside a mount map section. That keeps the order
+	// of the locks the same as [nestFS.Close] takes them.
+	base := fsys.baseDeviceInfo()
 	return base.Combine("", fsys.mounts.DeviceInfo())
+}
+
+// baseDeviceInfo asks the wrapped file system for its device under the
+// lifetime read lock, the barrier that keeps Close from tearing the base down
+// mid-call. A closed nest reports no device of its own; the mounts, if any
+// survive, still report theirs.
+func (fsys *nestFS) baseDeviceInfo() types.DeviceMap {
+	if fsys.closed.Load() {
+		return types.DeviceMap{}
+	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return types.DeviceMap{}
+	}
+	info := fsys.fsys.DeviceInfo()
+	fsys.mu.RUnlock()
+	return info
 }

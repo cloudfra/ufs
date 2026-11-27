@@ -26,6 +26,7 @@ import (
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 // isMountPoint reports whether a file system is mounted at name exactly, so
@@ -70,12 +71,20 @@ func (fsys *nestFS) OpenFile(name string, flag int, perm fs.FileMode) (types.Fil
 	ownDir := mountFS.isMountParent(subName) ||
 		subName == pathutil.CwdPath ||
 		mountFS.isMountPoint(subName)
-	var owner fs.FS = mountFS.fsys
+	var f types.File
 	if ownDir {
-		owner = nestDirFS{fsys: mountFS, name: subName}
+		f, err = polyfills.OpenFile(nestDirFS{fsys: mountFS, name: subName}, subName, flag, perm)
+	} else {
+		// The closed check and the open through the file system holding name
+		// are one critical section with respect to that nest's Close.
+		mountFS.mu.RLock()
+		if mountFS.closed.Load() {
+			mountFS.mu.RUnlock()
+			return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
+		}
+		f, err = polyfills.OpenFile(mountFS.fsys, subName, flag, perm)
+		mountFS.mu.RUnlock()
 	}
-
-	f, err := polyfills.OpenFile(owner, subName, flag, perm)
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
 	}

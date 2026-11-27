@@ -22,14 +22,30 @@ import (
 )
 
 func (fsys *nestFS) String() string {
+	// The base description goes first, outside the mount section below:
+	// taking fsys.mu inside that section would order this nest's two locks
+	// the opposite way from [nestFS.Close], which takes fsys.mu and then the
+	// mount map's.
+	base := fsys.baseDescription()
 	fsys.mounts.mu.RLock()
 	defer fsys.mounts.mu.RUnlock()
 	parts := make(map[string]any, len(fsys.mounts.m)+1)
-	parts["/"] = types.Nested(fsys.fsys.String())
+	parts["/"] = types.Nested(base)
 	for p, mfs := range fsys.mounts.m {
 		parts["/"+p] = types.Nested(mountDescription(mfs))
 	}
 	return types.Description(map[string]any{"nestFS": parts})
+}
+
+// baseDescription renders the wrapped file system under the lifetime read
+// lock, so the text cannot be taken while Close is tearing the base down. It
+// checks no closed flag: a closed file system still describes itself as it
+// did open, and the lock only serializes the call against the teardown.
+func (fsys *nestFS) baseDescription() string {
+	fsys.mu.RLock()
+	desc := fsys.fsys.String()
+	fsys.mu.RUnlock()
+	return desc
 }
 
 // mountDescription describes a mounted file system without the nest layer that
@@ -37,11 +53,10 @@ func (fsys *nestFS) String() string {
 // repeat itself at every mount of the description.
 func mountDescription(mfs *nestFS) string {
 	mfs.mounts.mu.RLock()
-	base := mfs.fsys
 	mountless := len(mfs.mounts.m) == 0
 	mfs.mounts.mu.RUnlock()
 	if mountless {
-		return base.String()
+		return mfs.baseDescription()
 	}
 	return mfs.String()
 }

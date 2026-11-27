@@ -34,6 +34,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -66,6 +68,10 @@ func init() {
 	ufs.Register(ufs.NewDriver("gcs", New, isGCSFSUri, 1, true, true))
 }
 
+// gcsFS reads ctx, bucket and baseDir on every request, so they stay exactly as
+// constructed for the whole life of the value: a caller that reaches a file
+// system while another goroutine closes it keeps a usable context and answers
+// either success or an error matching [fs.ErrClosed], never a panic.
 type gcsFS struct {
 	ctx          context.Context
 	bucket       string
@@ -73,6 +79,27 @@ type gcsFS struct {
 	client       *storage.Client
 	subscription string
 	psClientOpts []option.ClientOption
+
+	// closed says Close has been called, after which this file system refuses
+	// everything it would have put on the wire. It is claimed with
+	// CompareAndSwap so that only the first Close reaches the client.
+	closed atomic.Bool
+
+	// mu is the lifetime guard that makes closed enough. An operation that
+	// reaches the bucket holds mu.RLock across the closed check and the calls
+	// it makes into client, and Close holds mu.Lock while it gives the client
+	// up. After the CAS, Close cannot reach the teardown until every operation
+	// that had already decided to use the client has finished using it, and an
+	// operation that starts later takes the read lock on either side of the
+	// teardown and is refused by the check in both cases, so there is no
+	// schedule on which an operation decides "use the client" and then works
+	// through a client Close has given up. Readers stay concurrent with each
+	// other and only Close waits, and Close stays synchronous. No method may
+	// hold the lock and then reach another method of this file system that
+	// takes it again — a pending Close would deadlock the pair — so a
+	// delegating method (ReadFile, ReadDir, Lstat) stays out of the lock and
+	// lets the delegate check at its own use site.
+	mu sync.RWMutex
 }
 
 // gcsFile represents an opened GCS object for reading, a virtual directory, or
@@ -210,7 +237,32 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	return infos, nil
 }
 
+// Open answers a handle on an object, or on the virtual directory in front of
+// the objects under a prefix. The closed check and every call this makes into
+// the client sit in one read-lock section; the path validation, which needs no
+// client, stays outside it.
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
+	if name != pathutil.CwdPath {
+		if err := pathutil.Validate("open", name); err != nil {
+			return nil, err
+		}
+	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
+	}
+	file, err := fsys.openLocked(name)
+	fsys.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// openLocked is the bucket work Open was asked for. Its caller holds the read
+// lock for the whole of it, which is what keeps the client alive underneath it.
+func (fsys *gcsFS) openLocked(name string) (fs.File, error) {
 	if name == pathutil.CwdPath {
 		entries, err := fsys.listDir("")
 		if err != nil {
@@ -222,9 +274,6 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 			dirEntries: entries,
 			fsys:       fsys,
 		}, nil
-	}
-	if err := pathutil.Validate("open", name); err != nil {
-		return nil, err
 	}
 
 	// Use path.Join (not gcsJoin) so backslash characters are not normalized
@@ -274,7 +323,10 @@ func (fsys *gcsFS) Open(name string) (fs.File, error) {
 }
 
 // listDir lists the immediate children of a virtual GCS directory.
-// name is the FS-relative path; pass "" or CwdPath for the root.
+// name is the FS-relative path; pass "" or CwdPath for the root. Every caller
+// of it — openLocked, statLocked and removeLocked — holds the read lock and has
+// already refused a closed file system, so this one never sees a client that
+// Close has given up, and it must never take the lock itself.
 func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 	var listPrefix string
 	if name == "" || name == pathutil.CwdPath {
@@ -319,11 +371,25 @@ func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
+// Close makes this file system unusable and gives up the storage client it
+// holds. Closing twice is not an error, and only the first call reaches the
+// client. The context, bucket and prefix are left as constructed: blanking them
+// here is what handed a nil context to a caller that had already read the field
+// and was mid-request.
+//
+// The flag is claimed first, so an operation that starts from here on is
+// refused by the check it makes under its own read lock; the teardown then
+// waits on mu.Lock for every operation that had already decided to use the
+// client to finish the calls it is making into it. Close stays synchronous and
+// still returns what the client answered.
 func (fsys *gcsFS) Close() error {
-	fsys.ctx = nil
-	fsys.bucket = ""
-	fsys.baseDir = ""
-	return fsys.client.Close()
+	if !fsys.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	fsys.mu.Lock()
+	err := fsys.client.Close()
+	fsys.mu.Unlock()
+	return err
 }
 
 // New returns a file system for the gs://bucket/dir URI name, authenticating

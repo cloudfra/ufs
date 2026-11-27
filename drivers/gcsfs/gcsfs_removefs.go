@@ -26,10 +26,26 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
+// Remove deletes one object. The closed check and both calls it makes into the
+// client — the listing that proves the name has no children and the delete —
+// are one read-lock section; the path validation stays outside it.
 func (fsys *gcsFS) Remove(name string) error {
 	if err := pathutil.Validate("remove", name); err != nil {
 		return err
 	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return ufserrors.NewPathError("remove", name, fs.ErrClosed)
+	}
+	err := fsys.removeLocked(name)
+	fsys.mu.RUnlock()
+	return err
+}
+
+// removeLocked is the bucket work behind Remove. Its caller holds the read lock
+// for the whole of it.
+func (fsys *gcsFS) removeLocked(name string) error {
 	bkt := fsys.client.Bucket(fsys.bucket)
 	objPath := path.Join(fsys.baseDir, name)
 

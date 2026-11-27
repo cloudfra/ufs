@@ -22,8 +22,10 @@ import (
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/drivers/uri"
@@ -301,8 +303,19 @@ func openNestFS(ctx context.Context, name string) (*nestFS, error) {
 // Call [NewFSBuilder] to create one, chain [FSBuilder.Mount] /
 // [FSBuilder.MountFS] to add mounts, then call [FSBuilder.Build] or
 // [FSBuilder.BuildURI].
+//
+// A builder may be filled from more than one goroutine: every mount added by
+// [FSBuilder.Mount] or [FSBuilder.MountFS] is kept exactly once, and either
+// build method may run while other goroutines are still adding mounts. Such a
+// build sees a snapshot of the mounts added up to the point it started
+// walking them, never a partial mount; mounts added during a build may or may
+// not be included.
 type FSBuilder struct {
-	name   string
+	// name is set by [NewFSBuilder] and never rewritten, so it needs no guard.
+	name string
+	// mu guards mounts: every append to it, and every read of its length and
+	// of its elements, happens under it.
+	mu     sync.Mutex
 	mounts []fsBuildMount
 }
 
@@ -321,15 +334,31 @@ func NewFSBuilder(name string) *FSBuilder {
 
 // Mount adds a URI-based mount at path. It returns the builder for chaining.
 func (b *FSBuilder) Mount(path, uri string) *FSBuilder {
+	b.mu.Lock()
 	b.mounts = append(b.mounts, fsBuildMount{path: path, uri: uri})
+	b.mu.Unlock()
 	return b
 }
 
 // MountFS adds a pre-built [FS] as a mount at path. It returns the builder
 // for chaining. Pre-built mounts cannot be serialized by [FSBuilder.BuildURI].
 func (b *FSBuilder) MountFS(path string, fsys types.WriteFS) *FSBuilder {
+	b.mu.Lock()
 	b.mounts = append(b.mounts, fsBuildMount{path: path, fsys: fsys})
+	b.mu.Unlock()
 	return b
+}
+
+// mounted returns a copy of the mounts added so far, so that a build can walk
+// them without holding the builder's lock: opening a mount is I/O, and the lock
+// must not be held across it. A copy also means the walk sees only complete
+// elements - a mount added by another goroutine is either there in full or not
+// there at all - and is unaffected by appends that happen afterwards.
+func (b *FSBuilder) mounted() []fsBuildMount {
+	b.mu.Lock()
+	mounts := slices.Clone(b.mounts)
+	b.mu.Unlock()
+	return mounts
 }
 
 // Build constructs the [FS], opening the root URI and applying all configured
@@ -343,7 +372,7 @@ func (b *FSBuilder) Build(ctx context.Context) (FS, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, m := range b.mounts {
+	for _, m := range b.mounted() {
 		var mountFS *nestFS
 		if m.fsys != nil {
 			mountFS = makeNestFS(ctx, m.fsys)
@@ -368,8 +397,9 @@ func (b *FSBuilder) BuildURI() (string, error) {
 	if rootName == "" {
 		rootName = defaultRootSource
 	}
-	nested := make(map[string]string, len(b.mounts))
-	for _, m := range b.mounts {
+	mounts := b.mounted()
+	nested := make(map[string]string, len(mounts))
+	for _, m := range mounts {
 		if m.fsys != nil {
 			return "", fmt.Errorf("mount %q uses a pre-built FS and cannot be serialized to a URI", m.path)
 		}

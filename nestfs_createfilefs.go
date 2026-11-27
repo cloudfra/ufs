@@ -18,8 +18,11 @@ package ufs
 // file system holding name.
 
 import (
+	"io/fs"
+
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
 func (fsys *nestFS) Create(name string) (types.File, error) {
@@ -32,7 +35,15 @@ func (fsys *nestFS) Create(name string) (types.File, error) {
 		return nil, err
 	}
 
+	// The closed check and the create on the file system holding name are one
+	// critical section with respect to that nest's Close.
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return nil, ufserrors.NewPathError("create", name, fs.ErrClosed)
+	}
 	f, err := mountFS.fsys.Create(subName)
+	mountFS.mu.RUnlock()
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
 	}

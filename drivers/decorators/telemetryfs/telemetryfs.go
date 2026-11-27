@@ -175,6 +175,7 @@ const (
 	opRemove
 	opRemoveAll
 	opRename
+	opChtimes
 	numOperations
 )
 
@@ -195,6 +196,7 @@ var operationNames = [numOperations]string{
 	opRemove:    "remove",
 	opRemoveAll: "removeall",
 	opRename:    "rename",
+	opChtimes:   "chtimes",
 }
 
 // errorClass groups errors into the few values reported as error.type.

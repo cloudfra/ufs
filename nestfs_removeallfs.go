@@ -17,6 +17,12 @@ package ufs
 // RemoveAll is the [types.RemoveAllFS] half of [types.WriteFS], refusing the
 // same paths and unmounting the archives it takes away.
 
+import (
+	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/ufserrors"
+)
+
 func (fsys *nestFS) RemoveAll(name string) error {
 	if err := fsys.validPath("removeall", name); err != nil {
 		return err
@@ -25,7 +31,16 @@ func (fsys *nestFS) RemoveAll(name string) error {
 	if err != nil {
 		return err
 	}
-	if err := mountFS.fsys.RemoveAll(subName); err != nil {
+	// The closed check and the remove-all on the file system holding name are
+	// one critical section with respect to that nest's Close.
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return ufserrors.NewPathError("removeall", name, fs.ErrClosed)
+	}
+	err = mountFS.fsys.RemoveAll(subName)
+	mountFS.mu.RUnlock()
+	if err != nil {
 		return rewritePathError(err, name, subName)
 	}
 	return nil

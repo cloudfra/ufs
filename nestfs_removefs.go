@@ -17,6 +17,12 @@ package ufs
 // Remove is the [types.RemoveFS] half of [types.WriteFS]: it refuses a path
 // the nest itself needs, such as the directory of a mounted archive.
 
+import (
+	"io/fs"
+
+	"github.com/cloudfra/ufs/internal/ufserrors"
+)
+
 func (fsys *nestFS) Remove(name string) error {
 	if err := fsys.validPath("remove", name); err != nil {
 		return err
@@ -25,7 +31,16 @@ func (fsys *nestFS) Remove(name string) error {
 	if err != nil {
 		return err
 	}
-	if err := mountFS.fsys.Remove(subName); err != nil {
+	// The closed check and the remove on the file system holding name are one
+	// critical section with respect to that nest's Close.
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return ufserrors.NewPathError("remove", name, fs.ErrClosed)
+	}
+	err = mountFS.fsys.Remove(subName)
+	mountFS.mu.RUnlock()
+	if err != nil {
 		return rewritePathError(err, name, subName)
 	}
 	return nil

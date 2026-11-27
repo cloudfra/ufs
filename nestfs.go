@@ -308,8 +308,29 @@ type nestFS struct {
 	// closed says Close has been called, after which this file system refuses
 	// every operation that would work through fsys. Close claims it once, so
 	// closing twice is not an error and only the first call lets go of the base
-	// file system and the mounts.
+	// file system and the mounts. It stays atomic rather than a plain field
+	// guarded by mu because [nestFS.closeOnRelease] and [nestFS.Rename] read
+	// the flag of nests they take no lifetime lock for at that moment:
+	// closeOnRelease answers for a mount from inside its parent's mount map,
+	// and Rename reads both nests' flags before ordering their locks.
 	closed atomic.Bool
+
+	// mu is the lifetime guard that makes the closed check and the use of
+	// fsys.fsys one decision rather than two: an operation holds it for
+	// reading across that check and the call it makes into fsys.fsys, and
+	// Close holds it for writing across the teardown, so Close cannot let go
+	// of the base while an operation that already passed its check is still
+	// using it. A read section holds nothing but direct calls into that one
+	// nest's own base file system: never a nest-level method, which would
+	// take a second lock here, and never a mount map lock. The only lock that
+	// reaches outside a nest is Close's, which takes this mu before the mount
+	// map's and so points down the mount tree; [nestFS.Rename] orders the
+	// pair of read locks it takes by seq.
+	mu sync.RWMutex
+
+	// seq numbers this nest uniquely so that the two lifetime read locks one
+	// Rename takes are always acquired in the same order; see [nestFS.Rename].
+	seq uint64
 
 	// autoMounted is set on the content directory of an archive that nestFS
 	// mounts automatically, which is a mount ufs opened for itself rather than
@@ -333,6 +354,24 @@ func (m *mountMap) mounted() map[string]*nestFS {
 	return mounts
 }
 
+// statBase asks this nest's own base file system about name, holding the
+// lifetime read lock across the closed check and the call. The unlocked check
+// first is only a fast path that keeps an operation from queueing behind a
+// teardown already under way; the check inside the lock is what decides.
+func (fsys *nestFS) statBase(name string) (fs.FileInfo, error) {
+	if fsys.closed.Load() {
+		return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
+	}
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
+	}
+	info, err := fs.Stat(fsys.fsys, name)
+	fsys.mu.RUnlock()
+	return info, err
+}
+
 func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error) ([]fs.DirEntry, error) {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
@@ -344,7 +383,7 @@ func (fsys *nestFS) appendDirEntry(name string, entries []fs.DirEntry, err error
 	for _, dir := range dirs {
 		if strings.HasSuffix(dir, archiveDirExt) && archive.IsMountablePath(strings.TrimSuffix(dir, archiveDirExt)) {
 			archivePath := path.Join(name, strings.TrimSuffix(dir, archiveDirExt))
-			if _, statErr := fs.Stat(fsys.fsys, archivePath); errors.Is(statErr, fs.ErrNotExist) {
+			if _, statErr := fsys.statBase(archivePath); errors.Is(statErr, fs.ErrNotExist) {
 				if removeErr := fsys.mounts.remove(path.Join(name, dir)); removeErr != nil {
 					slog.Warn("cannot unmount the content directory of a missing archive", "path", path.Join(name, dir), "error", removeErr)
 				}
@@ -418,7 +457,18 @@ func (fsys *nestFS) mountArchive(name string) (*nestFS, error) {
 	var absName string
 	var onHost bool
 	if hostFS, ok := fsys.fsys.(AbsPathGetter); ok {
+		// The closed check and the call into the base file system are one
+		// section under fsys.mu. The fsys.Open fallback below stays outside
+		// any section: it is a nest-level operation that guards the base at
+		// its own use site, and holding fsys.mu across it would deadlock
+		// against this same nest's Close.
+		fsys.mu.RLock()
+		if fsys.closed.Load() {
+			fsys.mu.RUnlock()
+			return nil, ufserrors.NewPathError("mount", name, fs.ErrClosed)
+		}
 		hostPath, err := hostFS.GetAbsPath(name)
+		fsys.mu.RUnlock()
 		if err == nil {
 			absName = hostPath
 			onHost = true
@@ -515,12 +565,27 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 		return nil, err
 	}
 
+	// getFSAndSubpath deliberately runs outside any read section: it works
+	// through nest-level methods (Stat, mountArchive) that guard the base at
+	// their own use sites, so holding fsys.mu across it would put one nest's
+	// lock inside itself and deadlock against this nest's Close.
 	mountFS, subName, err := fsys.getFSAndSubpath(name)
 	if err != nil {
 		return nil, fsys.closedErr("open", name, err)
 	}
 
+	// The closed check and the call into the file system that holds name are
+	// one critical section with respect to that nest's Close: the check is
+	// only authoritative because Close cannot tear that file system down
+	// until every read section using it has finished. mountFS may be fsys or
+	// a mount below it; the lock is the one that nest's.
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
+	}
 	f, err := mountFS.fsys.Open(subName)
+	mountFS.mu.RUnlock()
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) && mountFS.isMountParent(subName) {
 			return makeReadDirFile(mountFS, subName), nil
@@ -544,12 +609,25 @@ func (fsys *nestFS) Open(name string) (fs.File, error) {
 
 // closedErr answers the error an operation met once Close has let go of the base
 // file system underneath it. A file system that has been closed cannot answer for
-// a path: what it reports depends on what its driver kept, and the memory driver
-// reports a missing file. An operation that was already under way when Close
-// began is allowed to finish, so the only way to answer for the ones it
-// interrupted is to report [fs.ErrClosed], which is what a caller can act on.
-// Operations that arrive after the close are refused by [nestFS.validPath]
-// instead; this answers the ones that were already in the middle.
+// its contents, so an error the base reports afterwards is a consequence of the
+// close, not an answer about the name: it is reported as [fs.ErrClosed], which
+// stays truthful whichever way the base itself failed.
+//
+// The lifetime lock keeps Close and a guarded use of the base in one critical
+// section, so an operation working against this nest's own base is refused
+// outright rather than reaching this translation. What still reaches here is an
+// operation that no section could cover: one working through a handle that
+// [nestFS.Open] returned before the close (its buffering then meets a closed
+// base), and operations against a base someone else closed — a mount the caller
+// still holds and closes on its own, or a base file system wrapped by a second
+// nest whose Close ran first.
+//
+// A closed flag cannot itself be compared with the error a file system returns,
+// so the flag is read here as a reason to prefer [fs.ErrClosed] over whatever the
+// base reported; the base's own error is kept in the chain with [errors.Is] still
+// matching it. Operations that arrive before a guarded use are refused by
+// [nestFS.validPath] or by the check inside the section instead; this answers the
+// ones that were already in the middle.
 func (fsys *nestFS) closedErr(op, name string, err error) error {
 	if err == nil || !fsys.closed.Load() {
 		return err
@@ -561,16 +639,29 @@ func (fsys *nestFS) closedErr(op, name string, err error) error {
 // not an error: only the first call lets go of them. Afterwards this file system
 // reports [fs.ErrClosed] for every operation, and a caller that races Close sees
 // either the result of the operation or an error matching [fs.ErrClosed].
+//
+// The teardown runs under fsys.mu for writing, and every operation that uses
+// fsys.fsys re-checks closed inside a read section that covers the use, so after
+// the compare-and-swap Close cannot reach the teardown until every operation
+// that already passed its check has finished its use, and an operation that
+// starts later takes the read lock either before or after the teardown and sees
+// closed and is refused in both cases. There is no schedule on which an
+// operation decides the file system is open and then works through a base Close
+// has released. Readers stay concurrent with each other and only Close waits;
+// Close itself stays synchronous and returns what the base and the mounts
+// report.
 func (fsys *nestFS) Close() error {
 	if !fsys.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	fsys.mu.Lock()
 	mountErr := fsys.mounts.Close()
 
 	var baseErr error
 	if err := fsys.fsys.Close(); err != nil {
 		baseErr = fmt.Errorf("cannot close file system %q, %w", fsys.fsys, err)
 	}
+	fsys.mu.Unlock()
 	return ufserrors.Join(mountErr, baseErr)
 }
 
@@ -584,7 +675,25 @@ func (fsys *nestFS) Close() error {
 // open, and for a mount that is not backed by a file at all: releasing it would
 // let go of nothing, and closing it would throw its content away.
 func (fsys *nestFS) closeOnRelease() bool {
-	return fsys.autoMounted && !fsys.closed.Load() && !holdsNoFile(fsys.fsys)
+	// The closed check runs without a lock: closeOnRelease is reached through
+	// releaseAllNoLock and removeNoLock, which hold their own nest's mount-map
+	// lock and never this nest's mu, so the unlocked read stays a fast path
+	// and the section below makes the decision about fsys.fsys.
+	if !fsys.autoMounted || fsys.closed.Load() {
+		return false
+	}
+	// holdsNoFile works through fsys.fsys, so the closed check and the read
+	// of the device information are one section under fsys.mu. The callers
+	// hold a mount-map lock above a different nest, never this nest's mu, so
+	// this section cannot turn against Close's mu-then-mount-map order.
+	fsys.mu.RLock()
+	if fsys.closed.Load() {
+		fsys.mu.RUnlock()
+		return false
+	}
+	noFile := holdsNoFile(fsys.fsys)
+	fsys.mu.RUnlock()
+	return !noFile
 }
 
 // holdsNoFile reports whether fsys is backed by memory or by nothing at all, so
@@ -613,6 +722,11 @@ func (fsys *nestFS) validPath(op string, name string) error {
 	if err := pathutil.Validate(op, name); err != nil {
 		return err
 	}
+	// Fast path only: an operation that gets past this check is not yet
+	// cleared to work through fsys.fsys, because Close may be about to take
+	// the lifetime lock. The authoritative check sits at each use site,
+	// inside the read section that covers the call into that file system;
+	// see [nestFS.Open].
 	if fsys.closed.Load() {
 		return ufserrors.NewPathError(op, name, fs.ErrClosed)
 	}
@@ -637,6 +751,10 @@ func newNestFS(ctx context.Context, name string) (FS, error) {
 	return makeNestFS(ctx, fsys), nil
 }
 
+// nestSeq numbers nestFS instances so that the two lifetime read locks one
+// Rename takes can always be acquired in one fixed order; see [nestFS.Rename].
+var nestSeq atomic.Uint64
+
 func makeNestFS(ctx context.Context, fsys types.WriteFS, args ...FSArgs) *nestFS {
 	var a FSArgs
 	if len(args) > 0 {
@@ -647,6 +765,7 @@ func makeNestFS(ctx context.Context, fsys types.WriteFS, args ...FSArgs) *nestFS
 		ctx:    ctx,
 		mounts: makeMountMap(fsys.String()),
 		args:   a,
+		seq:    nestSeq.Add(1),
 	}
 }
 
@@ -671,6 +790,10 @@ func (rdf *readDirFile) Close() error {
 	return nil
 }
 
+// ReadDir lists through the nest that made this handle: every file system
+// this package puts in fsys is a nestFS, so the listing reaches the base
+// only through that nest's ReadDir, which guards the base at its own use
+// site. The handle holds no direct reference to a base file system.
 func (rdf *readDirFile) ReadDir(_ int) ([]fs.DirEntry, error) {
 	return rdf.fsys.ReadDir(rdf.name)
 }

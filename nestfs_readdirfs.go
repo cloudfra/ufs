@@ -37,11 +37,29 @@ func (fsys *nestFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadDirFS); ok {
+		// The closed check and the listing of the file system holding name
+		// are one critical section with respect to that nest's Close.
+		mountFS.mu.RLock()
+		if mountFS.closed.Load() {
+			mountFS.mu.RUnlock()
+			return nil, ufserrors.NewPathError("readdir", name, fs.ErrClosed)
+		}
 		dirs, err := cFsys.ReadDir(subName)
+		mountFS.mu.RUnlock()
 		return mountFS.appendDirEntry(subName, dirs, rewritePathError(err, name, subName))
 	}
 
+	// Same section as above: it covers handing the listing to the file system
+	// below. The listing taken through the handle afterwards is not covered,
+	// as in [nestFS.Open], where a Close that lands while the caller holds
+	// the file is answered by [nestFS.closedErr].
+	mountFS.mu.RLock()
+	if mountFS.closed.Load() {
+		mountFS.mu.RUnlock()
+		return nil, ufserrors.NewPathError("readdir", name, fs.ErrClosed)
+	}
 	f, err := mountFS.fsys.Open(subName)
+	mountFS.mu.RUnlock()
 	if err != nil {
 		return nil, rewritePathError(err, name, subName)
 	}

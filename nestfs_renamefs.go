@@ -47,7 +47,11 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
 		return err
 	}
-	if fsys.fsys == nil {
+	if fsys.closed.Load() {
+		// Fast path only, reading the flag without a lock: Rename reads the
+		// flags of other nests too, which is why closed is atomic. The
+		// authoritative checks are at the calls into the leaves' file
+		// systems below.
 		return ufserrors.NewLinkError(renameOp, oldPath, newPath, fs.ErrClosed)
 	}
 	linkErr := func(err error) error {
@@ -63,14 +67,17 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 		return linkErr(err)
 	}
 	srcLeaf, dstLeaf := src[len(src)-1], dst[len(dst)-1]
-	if srcLeaf.fsys.fsys == nil || dstLeaf.fsys.fsys == nil {
+	srcNest, dstNest := srcLeaf.fsys, dstLeaf.fsys
+	if srcNest.closed.Load() || dstNest.closed.Load() {
+		// Fast path, as above: the checks that decide sit with the rename
+		// calls at the bottom of this function.
 		return linkErr(fs.ErrClosed)
 	}
 	if pathutil.IsCwd(srcLeaf.name) || pathutil.IsCwd(dstLeaf.name) {
 		// oldPath or newPath is the root of a mount.
 		return linkErr(fs.ErrPermission)
 	}
-	if srcLeaf.fsys.inArchive || dstLeaf.fsys.inArchive {
+	if srcNest.inArchive || dstNest.inArchive {
 		return linkErr(fmt.Errorf("archive content cannot be changed, %w", fs.ErrPermission))
 	}
 
@@ -101,20 +108,63 @@ func (fsys *nestFS) Rename(oldPath, newPath string) error {
 	}
 	if archive.IsMountablePath(dstLeaf.name) {
 		contentDir := dstLeaf.name + archiveDirExt
-		if _, err := dstLeaf.fsys.fsys.Lstat(contentDir); err == nil {
+		// The closed check and the lookup in the destination's file system
+		// are one critical section with respect to that nest's Close.
+		dstNest.mu.RLock()
+		if dstNest.closed.Load() {
+			dstNest.mu.RUnlock()
+			return linkErr(fs.ErrClosed)
+		}
+		_, statErr := dstNest.fsys.Lstat(contentDir)
+		dstNest.mu.RUnlock()
+		if statErr == nil {
 			return linkErr(fmt.Errorf("%q would be hidden by the archive, %w", contentDir, fs.ErrExist))
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return linkErr(err)
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return linkErr(statErr)
 		}
 	}
 
 	// A rename stays native only when one file system holds both paths.
 	// types.SameFS compares the data behind the two nests, which their URIs
 	// cannot do because two separate mounts of one driver can share a URI.
-	if types.SameFS(srcLeaf.fsys.fsys, dstLeaf.fsys.fsys) {
-		err = ops.Rename(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.name)
+	// It only compares identities, so it needs no lifetime lock itself.
+	if types.SameFS(srcNest.fsys, dstNest.fsys) {
+		// The rename works through the file system srcNest wraps, so
+		// srcNest's lifetime lock is the barrier: Close on srcNest cannot
+		// let go of it until the rename is done, and a rename that starts
+		// after srcNest is closed is refused. Two nest instances wrapped
+		// over one shared base remain two independent barriers, the same
+		// per-instance limit as everywhere the flag lives on the nest.
+		srcNest.mu.RLock()
+		if srcNest.closed.Load() {
+			srcNest.mu.RUnlock()
+			return linkErr(fs.ErrClosed)
+		}
+		err = ops.Rename(srcNest.fsys, srcLeaf.name, dstLeaf.name)
+		srcNest.mu.RUnlock()
 	} else {
-		err = ops.RenameByCopy(srcLeaf.fsys.fsys, srcLeaf.name, dstLeaf.fsys.fsys, dstLeaf.name)
+		// The copy works through both nests' file systems, so both lifetime
+		// locks are held at once, and both are taken in one fixed order:
+		// seq. The two leaves of a rename are never one another's ancestor,
+		// because each level chain ends at a nest whose own base is not a
+		// nest, so seq order cannot turn against the tree-down order that
+		// every other pair of nest locks in this package follows; and it
+		// keeps two renames running the other way between the same pair of
+		// mounts from each holding one lock and waiting for the other.
+		first, second := srcNest, dstNest
+		if second.seq < first.seq {
+			first, second = second, first
+		}
+		first.mu.RLock()
+		second.mu.RLock()
+		if first.closed.Load() || second.closed.Load() {
+			second.mu.RUnlock()
+			first.mu.RUnlock()
+			return linkErr(fs.ErrClosed)
+		}
+		err = ops.RenameByCopy(srcNest.fsys, srcLeaf.name, dstNest.fsys, dstLeaf.name)
+		second.mu.RUnlock()
+		first.mu.RUnlock()
 	}
 	if err != nil {
 		return linkErr(err)

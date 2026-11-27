@@ -33,7 +33,15 @@ func (fsys *nestFS) ReadLink(name string) (string, error) {
 	}
 
 	if cFsys, ok := mountFS.fsys.(fs.ReadLinkFS); ok {
+		// The closed check and the readlink on the file system holding name
+		// are one critical section with respect to that nest's Close.
+		mountFS.mu.RLock()
+		if mountFS.closed.Load() {
+			mountFS.mu.RUnlock()
+			return "", ufserrors.NewPathError("readlink", name, fs.ErrClosed)
+		}
 		target, err := cFsys.ReadLink(subName)
+		mountFS.mu.RUnlock()
 		return target, rewritePathError(err, name, subName)
 	}
 

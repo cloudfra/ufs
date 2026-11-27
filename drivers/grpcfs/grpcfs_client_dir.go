@@ -20,6 +20,7 @@ package grpcfs
 import (
 	"io"
 	"io/fs"
+	"sync"
 
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
@@ -30,11 +31,18 @@ var _ fs.ReadDirFile = (*grpcDir)(nil)
 // view over the ListFiles answer, listed the first time it is walked so that
 // opening a directory costs nothing beyond the one metadata read that told the
 // caller it was a directory.
+//
+// The listing and the place in it belong to the handle, so mu guards them the
+// way [grpcFile] guards its position: one handle walked by two callers hands
+// every entry to one of them, in the order the server answered it.
 type grpcDir struct {
 	fsys *grpcFS
 	name string
 	info fs.FileInfo
 
+	mu sync.Mutex
+	// entries is the listing that was asked for, and offset is where the next
+	// ReadDir continues from.
 	entries []fs.DirEntry
 	offset  int
 	// listed says the listing has been asked for, so an empty directory is not
@@ -63,24 +71,45 @@ func (d *grpcDir) Seek(int64, int) (int64, error) {
 // ReadDir left off. A count that is zero or negative is the rest of them, which
 // is what [fs.ReadDirFile] asks for in that case.
 func (d *grpcDir) ReadDir(n int) ([]fs.DirEntry, error) {
-	if !d.listed {
+	d.mu.Lock()
+	unlisted := !d.listed
+	d.mu.Unlock()
+
+	var listing []fs.DirEntry
+	if unlisted {
+		// The listing is asked for outside the mutex, the way [grpcFile] keeps its
+		// ReadFile streams outside of its own: what the handle lock covers is its
+		// position, never a round trip. Two callers that arrive before there is a
+		// listing may both ask for one rather than wait on a lock held over the
+		// server.
 		entries, err := d.fsys.ReadDir(d.name)
 		if err != nil {
 			return nil, err
 		}
-		d.entries, d.listed = entries, true
+		listing = entries
+	}
+
+	d.mu.Lock()
+	// The first listing back is the one the handle walks. Replacing it later would
+	// move the listing that offset counts through, so a second answer is left
+	// behind instead.
+	if unlisted && !d.listed {
+		d.entries, d.listed = listing, true
 	}
 	if n <= 0 {
 		rest := d.entries[d.offset:]
 		d.offset = len(d.entries)
+		d.mu.Unlock()
 		return rest, nil
 	}
 	if d.offset >= len(d.entries) {
+		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := min(d.offset+n, len(d.entries))
 	rest := d.entries[d.offset:end]
 	d.offset = end
+	d.mu.Unlock()
 	return rest, nil
 }
 

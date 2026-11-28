@@ -24,6 +24,7 @@ import (
 	"os"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/cloudfra/ufs"
 	"github.com/cloudfra/ufs/drivers/core"
@@ -182,6 +183,14 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 	if err := ops.Rename(fsys, "dir/a.txt", "dir/b.txt"); err != nil {
 		t.Errorf("Rename(dir/a.txt, dir/b.txt) = %v, want nil", err)
 	}
+	// Whether the wrapped file system keeps the time it is given is not what is
+	// tested here, only that the ask is reported with its outcome.
+	chtimesFS, ok := fsys.(types.ChtimesFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.ChtimesFS, want the reported file system to", fsys)
+	}
+	newTime := time.Date(2001, time.February, 3, 4, 5, 6, 0, time.UTC)
+	chtimesErr := chtimesFS.Chtimes("dir/b.txt", time.Time{}, newTime)
 	if err := fsys.Remove("dir/b.txt"); err != nil {
 		t.Errorf("Remove(dir/b.txt) = %v, want nil", err)
 	}
@@ -189,8 +198,8 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 		t.Errorf("RemoveAll(dir) = %v, want nil", err)
 	}
 
-	wantOps := []string{"mkdir", "create", "open", "openfile", "stat", "lstat", "readdir", "readfile", "readlink", "rename", "remove", "removeall"}
-	wantPaths := []string{"dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/b.txt", "dir"}
+	wantOps := []string{"mkdir", "create", "open", "openfile", "stat", "lstat", "readdir", "readfile", "readlink", "rename", "chtimes", "remove", "removeall"}
+	wantPaths := []string{"dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir", "dir/a.txt", "dir/a.txt", "dir/a.txt", "dir/b.txt", "dir/b.txt", "dir"}
 
 	spans := r.spans.Ended()
 	if len(spans) != len(wantOps) {
@@ -224,6 +233,9 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 		if wantOps[i] == "readlink" && readLinkErr != nil {
 			wantCode = codes.Error
 		}
+		if wantOps[i] == "chtimes" && chtimesErr != nil {
+			wantCode = codes.Error
+		}
 		if got := span.Status().Code; got != wantCode {
 			t.Errorf("span %d (%s) status = %v, want %v", i, span.Name(), got, wantCode)
 		}
@@ -237,6 +249,9 @@ func TestTelemetryReportsEachOperation(t *testing.T) {
 		key := op + "/memory/"
 		if op == "readlink" && readLinkErr != nil {
 			key += errorClassNames[classify(readLinkErr)]
+		}
+		if op == "chtimes" && chtimesErr != nil {
+			key += errorClassNames[classify(chtimesErr)]
 		}
 		if got[key] != 1 {
 			t.Errorf("duration count for %q = %d, want 1 (all: %v)", key, got[key], got)

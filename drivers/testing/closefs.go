@@ -54,7 +54,7 @@ func closeDuringOperations(t *testing.T, args Args, createFSFunc func(t *testing
 
 		// Each worker keeps going until Close has returned and it has then
 		// run a few more rounds, so operations land before, during and after
-		// Close whichever goroutine the scheduler favours.
+		// Close whichever goroutine the scheduler favors.
 		const workers, roundsAfterClose = 4, 3
 		var closed atomic.Bool
 		var mu sync.Mutex

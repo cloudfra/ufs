@@ -149,7 +149,7 @@ type chtimesTreeFS interface {
 //     because [types.ChtimesFS] leaves that to the backend. Every case asks for
 //     whole seconds so that the cases which do compare a time are not asking a
 //     file system to be more precise than it promises.
-func ChtimesFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+func chtimesFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
 	t.Run("ChtimesFS", func(t *testing.T) {
 		requireType[types.ChtimesFS](t, args)
 		t.Parallel()

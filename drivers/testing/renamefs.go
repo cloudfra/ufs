@@ -103,8 +103,8 @@ type renameTreeFS interface {
 	fs.ReadFileFS
 }
 
-// RenameFS runs the types.RenameFS conformance suite.
-func RenameFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
+// renameFS runs the types.RenameFS conformance suite.
+func renameFS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS) {
 	t.Run("RenameFS", func(t *testing.T) {
 		requireType[types.RenameFS](t, args)
 		t.Parallel()

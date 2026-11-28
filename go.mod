@@ -91,7 +91,7 @@ require (
 	github.com/sergi/go-diff v1.4.5 // indirect
 	github.com/sorairolake/lzip-go v0.3.8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
-	github.com/spiffe/go-spiffe/v2 v2.9.0 // indirect
+	github.com/spiffe/go-spiffe/v2 v2.10.0 // indirect
 	github.com/stangelandcl/ppmd v0.1.1 // indirect
 	github.com/ulikunitz/xz v0.5.17 // indirect
 	github.com/zeebo/xxh3 v1.1.1-0.20261118193009-e05079abbd7d // indirect

@@ -135,7 +135,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	wrapperFS(t, args, createFSFunc)
 	mkdirAllFS(t, args, createFSFunc)
 	createFileFS(t, args, createFSFunc)
-	RenameFS(t, args, createFSFunc)
+	renameFS(t, args, createFSFunc)
 	removeFS(t, args, createFSFunc)
 	removeAllFS(t, args, createFSFunc)
 	releaseFS(t, args, createFSFunc)
@@ -143,7 +143,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	mountedArchiveDirFS(t, args, createFSFunc)
 	stringerFS(t, args, createFSFunc)
 	deviceInfoGet(t, args, createFSFunc)
-	ChtimesFS(t, args, createFSFunc)
+	chtimesFS(t, args, createFSFunc)
 
 	// Which suite family a file system is judged by comes from what it is,
 	// except that Args.ReadOnly settles it first for a read-only file system.

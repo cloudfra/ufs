@@ -46,6 +46,7 @@ func (fsys *grpcFS) readRange(op, name string, offset, limit int64) ([]byte, err
 		return nil, pathError(op, name, err)
 	}
 	var data []byte
+	first := true
 	for {
 		frame, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -53,6 +54,22 @@ func (fsys *grpcFS) readRange(op, name string, offset, limit int64) ([]byte, err
 		}
 		if err != nil {
 			return nil, pathError(op, name, err)
+		}
+		if first {
+			first = false
+			// The first frame says how big the whole answer is. An answer of
+			// one frame is that frame's own bytes, which the message does not
+			// share with anything once it is decoded, so it is kept rather
+			// than copied; a longer one is collected into one allocation
+			// rather than grown frame by frame.
+			chunk := frame.GetData()
+			if size := frame.GetSize(); size > int64(len(chunk)) {
+				data = make([]byte, 0, min(size, maxPreallocate))
+				data = append(data, chunk...)
+			} else {
+				data = chunk
+			}
+			continue
 		}
 		data = append(data, frame.GetData()...)
 	}

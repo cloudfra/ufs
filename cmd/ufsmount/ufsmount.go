@@ -202,9 +202,13 @@ func serve(ctx context.Context, fsys types.WriteFS, lis net.Listener) error {
 		return err
 	case <-ctx.Done():
 	}
-	// GracefulStop rather than Stop: a ReadFile or ListFiles handler holds the
-	// handle it opened on fsys until it unwinds, and Stop returns without waiting
-	// for that, while the close of fsys follows this function.
+	// Shutdown first: it ends the Watch streams, which run until their client
+	// cancels them and would keep GracefulStop waiting forever, refuses new
+	// rpcs, and waits for the rest. GracefulStop rather than Stop then: a
+	// ReadFile or ListFiles handler holds the handle it opened on fsys until it
+	// unwinds, and Stop returns without waiting for that, while the close of
+	// fsys follows this function.
+	fsServer.Shutdown()
 	grpcServer.GracefulStop()
 	if err := <-stopped; !errors.Is(err, grpc.ErrServerStopped) {
 		return err

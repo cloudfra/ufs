@@ -15,7 +15,9 @@
 package polyfills
 
 import (
+	"errors"
 	"io/fs"
+	"path"
 
 	"github.com/cloudfra/ufs/drivers/types"
 	"github.com/cloudfra/ufs/internal/pathutil"
@@ -29,9 +31,13 @@ const closestParentOp = "closestparent"
 // contract of [types.ClosestParentFS].
 //
 // fsys's own [types.ClosestParentFS] implementation is used when it has one.
-// The fallback is not implemented yet: a name that is not a valid file name,
-// the root included, is refused with an error wrapping [fs.ErrInvalid], and any
-// other file system gets an unimplemented error.
+// Otherwise the levels are looked up with [fs.Stat] from name upward, stopping
+// at the first that exists, so a name whose parent is there costs two lookups
+// and the root always answers. Only a level reported missing ([fs.ErrNotExist])
+// moves the walk up: any other error is the file system being unable to
+// answer, which the contract reports as an error rather than as a missing
+// level. A name that is not a valid file name, the root included, is refused
+// with an error wrapping [fs.ErrInvalid].
 func ClosestParent(fsys fs.FS, name string) (parent string, isDir bool, err error) {
 	if cFS, ok := fsys.(types.ClosestParentFS); ok {
 		return cFS.ClosestParent(name)
@@ -39,6 +45,17 @@ func ClosestParent(fsys fs.FS, name string) (parent string, isDir bool, err erro
 	if err := pathutil.ValidateFileName(closestParentOp, name); err != nil {
 		return "", false, err
 	}
-	// TODO: Populate this with the best effort implementation of this method based on any combinations of methods that are available to reconstruct this method. Also include tests.
-	return "", false, ufserrors.NewUnimplemented(fsys, closestParentOp)
+	for dir := name; ; dir = path.Dir(dir) {
+		info, err := fs.Stat(fsys, dir)
+		switch {
+		case err == nil:
+			return dir, info.IsDir(), nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return "", false, err
+		case dir == pathutil.CwdPath:
+			// Even the root is missing, which no file system that answers
+			// lookups at all reports; say so rather than inventing a parent.
+			return "", false, ufserrors.NewPathError(closestParentOp, name, err)
+		}
+	}
 }

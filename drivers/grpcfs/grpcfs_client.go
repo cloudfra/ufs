@@ -32,10 +32,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// types.WriteFS is the whole of what this file system answers, because it is the
-// whole of what the service asks a server for: each method is one rpc, and the
-// methods of the optional interfaces that are not part of types.WriteFS are not
-// answered here either, since no rpc carries them.
+// types.FS and the optional interfaces in grpcfs_client_optional.go are what
+// this file system answers, each method one rpc of the service (OpenFile is
+// built from Open and Create).
 var _ types.WriteFS = (*grpcFS)(nil)
 
 const (
@@ -116,7 +115,7 @@ func New(ctx context.Context, name string) (types.WriteFS, error) {
 	} else {
 		creds = insecure.NewCredentials()
 	}
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(creds))
+	conn, err := grpc.NewClient(address, append(DialOptions(), grpc.WithTransportCredentials(creds))...)
 	if err != nil {
 		return nil, ufserrors.NewPathError("init", name, err)
 	}
@@ -163,10 +162,10 @@ func parseGrpcURI(name string) (address, scheme string, err error) {
 
 // grpcFS is a file system whose every method is one rpc of the FS service.
 //
-// Nothing here is emulated: the service asks a server for nothing that the
-// types.WriteFS it was handed cannot answer, so a call that comes back refused
-// carries the served file system's own reason rather than a standin built on this
-// side of the connection.
+// Nothing here is emulated but OpenFile: every other method is one rpc, and an
+// emulation the served file system needs runs on the server, beside the data,
+// so a call that comes back refused carries the server's own reason rather
+// than a standin built on this side of the connection.
 type grpcFS struct {
 	client  proto.FSClient
 	conn    *grpc.ClientConn

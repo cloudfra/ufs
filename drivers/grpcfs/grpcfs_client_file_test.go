@@ -302,3 +302,37 @@ func TestClientFileReadAtEdges(t *testing.T) {
 		}
 	})
 }
+
+// TestClientFileReadAtWindowGrows walks a large file forward in reads the size
+// a mount asks for, and checks that the ranges the handle fetches double from
+// one window up to the read-ahead ceiling, so the walk costs a handful of
+// round trips rather than one per read.
+func TestClientFileReadAtWindowGrows(t *testing.T) {
+	fsys, ranges := recordingClient(t)
+	const size = 12 << 20
+	content := bytes.Repeat([]byte("0123456789abcdef"), size/16)
+	ufsdriversTesting.WriteFile(t, fsys, "large.bin", string(content))
+
+	at := readHandleAt(t, fsys, "large.bin")
+	buf := make([]byte, 128<<10)
+	for off := 0; off < size; off += len(buf) {
+		n, err := at.ReadAt(buf, int64(off))
+		if err != nil && !errors.Is(err, io.EOF) {
+			t.Fatalf("ReadAt at %d = %v", off, err)
+		}
+		if !bytes.Equal(buf[:n], content[off:off+n]) {
+			t.Fatalf("ReadAt at %d returned the wrong bytes", off)
+		}
+	}
+	reads := size / len(buf)
+	if got := len(*ranges); got > 12 {
+		t.Errorf("%d ranged reads for %d sequential reads of %d bytes, want the window to grow so there are at most 12", got, reads, len(buf))
+	}
+	var largest int64
+	for _, r := range *ranges {
+		largest = max(largest, r.Limit)
+	}
+	if largest != maxReadAhead {
+		t.Errorf("the largest range asked for was %d bytes, want the %d byte read-ahead ceiling", largest, maxReadAhead)
+	}
+}

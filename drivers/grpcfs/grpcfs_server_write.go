@@ -64,7 +64,10 @@ func (s *Server) WriteFile(stream proto.FS_WriteFileServer) error {
 		return err
 	}
 	size := len(first.GetData())
-	if size > maxUploadSize {
+	// The size the first frame announces is a hint, but one above the ceiling
+	// is refused here rather than after receiving all of it: a refusal at the
+	// end costs the server the whole upload in transit first.
+	if size > maxUploadSize || first.GetSize() > maxUploadSize {
 		return uploadTooLarge(first.GetName())
 	}
 	// Checked before the rest of the upload is taken, so a client writing into a
@@ -89,7 +92,11 @@ func (s *Server) WriteFile(stream proto.FS_WriteFileServer) error {
 			return err
 		}
 		if joined == nil {
-			joined = bytes.NewBuffer(append([]byte(nil), first.GetData()...))
+			// Sized once from the hint when there is one, so the frames are
+			// joined without the buffer growing and copying itself as they
+			// arrive.
+			joined = bytes.NewBuffer(make([]byte, 0, max(int(first.GetSize()), 2*len(first.GetData()))))
+			joined.Write(first.GetData())
 		}
 		// Only the first frame's name and mode count, which is what lets the
 		// whole upload travel as one HTTP request body.

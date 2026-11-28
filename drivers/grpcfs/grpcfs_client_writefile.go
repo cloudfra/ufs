@@ -49,6 +49,9 @@ func (fsys *grpcFS) WriteFile(name string, content []byte, perm fs.FileMode) err
 			// file to write.
 			req.Name = name
 			req.Mode = uint32(perm)
+			// The size lets the server refuse an upload it would not take
+			// before the rest is sent, and size what it joins the frames into.
+			req.Size = int64(len(content))
 			first = false
 		}
 		if err := stream.Send(req); err != nil {

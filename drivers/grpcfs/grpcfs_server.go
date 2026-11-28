@@ -15,6 +15,8 @@
 package grpcfs
 
 import (
+	"sync"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -35,17 +37,19 @@ var errShutdown = status.Error(codes.Unavailable, "grpcfs: server is shut down")
 // process already holds, which is how that file system is read and written from
 // another process or another machine.
 //
-// The file system is taken as types.WriteFS because the service carries each
-// method reachable from that interface exactly once, and anything narrower would
-// leave rpcs with nothing to answer them. What types.WriteFS does not reach is the
-// optional interfaces; the service asks for none of them, so a server offers the
-// same rpc surface whatever the file system standing behind it carries. The one
-// thing a handler needs that the interface does not promise is a whole-file write,
-// which it asks of drivers/polyfills: polyfills uses the file system's own
-// [types.WriteFileFS] when it has one and writes the file through a handle when it
-// does not. The handler never learns which of those answered, and the difference
-// between them is limited to what the file system's own methods already decide
-// about the mode of a new file and the levels above a name.
+// The file system is taken as types.WriteFS because that is what every rpc
+// can rely on. The rpcs of the optional interfaces in drivers/types — rename,
+// copy, mkdir, chmod, chown, chtimes, symlink, link, closest parent — go
+// through drivers/polyfills, which uses the file system's own method when it
+// has one, emulates it on the server when an emulation keeps the method's
+// contract, and otherwise reports [errors.ErrUnsupported], which a client
+// receives as codes.Unimplemented. So the rpc surface is the same whatever the
+// file system carries, and a client sees what a caller in this process would
+// see from the polyfill. Watch answers only natively, because there is no
+// emulation of a change stream. [types.BatchCreateFS] has no rpc: it promises
+// all or none, which a client cannot know the served file system keeps when it
+// is built, so a client writes a batch one file at a time, as [ufs.BatchCreate]
+// does for any file system without the interface.
 //
 // Close and Release are deliberately not called here. The service has no rpc for
 // either — see the service comment — and a server cannot decide when every client
@@ -63,7 +67,8 @@ var errShutdown = status.Error(codes.Unavailable, "grpcfs: server is shut down")
 // The handlers are in the files beside this one, one file per group of like rpcs —
 // the lookups in grpcfs_server_meta.go, the listing in grpcfs_server_list.go, the
 // reads in grpcfs_server_read.go, the upload in grpcfs_server_write.go, the tree
-// changes in grpcfs_server_mutation.go — with the mappings between the wire types
+// changes in grpcfs_server_mutation.go, the optional interfaces in
+// grpcfs_server_optional.go and the change stream in grpcfs_server_watch.go — with the mappings between the wire types
 // and io/fs in fileinfo.go, deviceinfo.go and errors.go, which the client driver in
 // this package shares with these handlers. So a change to one rpc moves one file,
 // which is the point: two PRs touching two rpcs do not touch the same file.
@@ -72,6 +77,12 @@ type Server struct {
 
 	// life admits each rpc and lets Shutdown wait for the ones in progress.
 	life syncfs.Lifetime
+
+	// quit is closed when Shutdown begins. A Watch stream runs until its
+	// client cancels it, so it is the one rpc that would otherwise keep
+	// Shutdown, and a grpc.Server's GracefulStop, waiting forever.
+	quit     chan struct{}
+	quitOnce sync.Once
 
 	// proto.UnimplementedFSServer is embedded by value so that an rpc added to
 	// the .proto before this file catches up answers codes.Unimplemented instead
@@ -83,7 +94,7 @@ type Server struct {
 // proto.RegisterFSServer, and put [ServerOptions] on that server as well: its
 // message ceiling is the one this package's handlers assume.
 func NewServer(inner types.WriteFS) *Server {
-	return &Server{inner: inner}
+	return &Server{inner: inner, quit: make(chan struct{})}
 }
 
 // Shutdown stops the server answering: every rpc that arrives afterwards is
@@ -91,9 +102,12 @@ func NewServer(inner types.WriteFS) *Server {
 // progress has returned. It does not close the file system the server was given,
 // which stays the caller's to close, and is safe to do once Shutdown returns.
 //
-// A handler streaming to or from a client that stops reading waits on that
-// client, so stop the grpc.Server first (Stop cancels the streams in progress;
-// GracefulStop lets them finish) or Shutdown waits with it.
+// Watch streams, which run until their client cancels them, end as soon as
+// Shutdown begins, so call Shutdown before a grpc.Server's GracefulStop, which
+// waits for every stream and would otherwise wait on those forever. A handler
+// streaming to or from a client that stops reading still waits on that client;
+// Stop on the grpc.Server cancels such streams.
 func (s *Server) Shutdown() {
+	s.quitOnce.Do(func() { close(s.quit) })
 	s.life.Shutdown()
 }

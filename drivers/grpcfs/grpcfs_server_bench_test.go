@@ -214,3 +214,22 @@ func benchSizeName(size int) string {
 	}
 	return fmt.Sprintf("%dMiB", size>>20)
 }
+
+// BenchmarkClientReadFile measures a whole-file read through the client,
+// which collects every frame of the stream into one slice.
+func BenchmarkClientReadFile(b *testing.B) {
+	for _, size := range []int{64 << 10, 1 << 20, 8 << 20} {
+		b.Run(benchSizeName(size), func(b *testing.B) {
+			inner := servedFS(b)
+			ufsdriversTesting.WriteFile(b, inner, "f.bin", string(bytes.Repeat([]byte("x"), size)))
+			client := clientOver(b, inner)
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := client.ReadFile("f.bin"); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

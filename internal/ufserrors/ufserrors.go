@@ -94,7 +94,10 @@ func Join(errs ...error) error {
 	}
 }
 
-// NewUnimplemented returns an unimplemented error.
+// NewUnimplemented returns the error for an operation fsys cannot perform at
+// all. It wraps [errors.ErrUnsupported], so a caller can tell "not possible
+// here" apart from a failure of the operation, and a server can report it as
+// such (grpc's codes.Unimplemented, FUSE's ENOTSUP).
 func NewUnimplemented(fsys fs.FS, op string) error {
-	return fmt.Errorf("%q does not support %q", fsys, op)
+	return fmt.Errorf("%q does not support %q: %w", fsys, op, errors.ErrUnsupported)
 }

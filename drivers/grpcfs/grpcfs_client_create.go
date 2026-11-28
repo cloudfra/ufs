@@ -72,19 +72,37 @@ func (fsys *grpcFS) Create(name string) (types.File, error) {
 // name with a regular file among its levels, and the shared suite every
 // types.WriteFS is held to asks for the refusal as a *fs.PathError.
 //
-// The service cannot answer this in one call. It has no lookup that reports a
-// missing name whose path above it is not a directory, and the file systems it is
-// served from do not agree about the question either: a file system rooted on a
-// directory answers that the level is not a directory, while memFS keeps one flat
-// map of names and answers that the whole name is simply not there, which says
-// nothing about the file that is. Walking up with the one lookup the service has
-// is how the driver finds out, and the walk stops at the first level that exists:
-// a name directly inside a directory — the ordinary case — costs one lookup, and a
-// name with nothing in front of it costs none.
-//
-// The levels are followed through a symbolic link rather than looked at as links,
-// because a linked directory is a parent a file system accepts.
+// A lookup of the name itself cannot answer this, because the file systems the
+// service is served from do not agree about it: one rooted on a directory
+// answers that a level is not a directory, while memFS keeps one flat map of
+// names and answers that the whole name is simply not there, which says nothing
+// about the file that is. What does answer it is the closest level that exists,
+// which the ClosestParent rpc reports in one round trip however many levels are
+// missing. The levels are followed through a symbolic link rather than looked
+// at as links, because a linked directory is a parent a file system accepts.
 func (fsys *grpcFS) checkAbove(op, name string) error {
+	dir := path.Dir(name)
+	if dir == "." || dir == "/" {
+		return nil
+	}
+	// One ClosestParent answers the whole walk in one round trip. A server
+	// from before that rpc answers Unimplemented, and then the walk is done
+	// here one lookup per level.
+	parent, isDir, err := fsys.ClosestParent(dir)
+	switch {
+	case err == nil:
+		if !isDir && parent != "." {
+			return ufserrors.NewPathError(op, name, fs.ErrExist)
+		}
+		return nil
+	case !errors.Is(err, errors.ErrUnsupported):
+		return err
+	}
+	return fsys.walkAbove(op, name)
+}
+
+// walkAbove is checkAbove for a server without the ClosestParent rpc.
+func (fsys *grpcFS) walkAbove(op, name string) error {
 	for dir := path.Dir(name); dir != "." && dir != "/" && dir != name; dir = path.Dir(dir) {
 		info, err := fsys.stat(op, dir, proto.SymlinkHandling_SYMLINK_HANDLING_FOLLOW)
 		if errors.Is(err, fs.ErrNotExist) {

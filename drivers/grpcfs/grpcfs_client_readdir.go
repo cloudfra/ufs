@@ -24,9 +24,9 @@ import (
 	"github.com/cloudfra/ufs/proto"
 )
 
-// ReadDir lists the children of name, asking for one page of the listing at a
-// time and keeping the order the server answered them in, which is the order
-// [fs.ReadDirFS] asks for.
+// ReadDir lists the children of name, asking for the largest page of the
+// listing the server answers at a time and keeping the order the server
+// answered them in, which is the order [fs.ReadDirFS] asks for.
 func (fsys *grpcFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err := fsys.closedErr("readdir", name); err != nil {
 		return nil, err
@@ -37,9 +37,16 @@ func (fsys *grpcFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	var entries []fs.DirEntry
 	token := ""
 	for {
-		resp, err := fsys.client.ListFiles(fsys.ctx, &proto.ListFilesRequest{Parent: name, PageToken: token})
+		// The largest page the server answers, so a directory of any size
+		// costs as few round trips as the message ceiling allows.
+		resp, err := fsys.client.ListFiles(fsys.ctx, &proto.ListFilesRequest{
+			Parent: name, PageSize: maxListPageSize, PageToken: token,
+		})
 		if err != nil {
 			return nil, pathError("readdir", name, err)
+		}
+		if entries == nil {
+			entries = make([]fs.DirEntry, 0, len(resp.GetFiles()))
 		}
 		for _, file := range resp.GetFiles() {
 			entries = append(entries, fs.FileInfoToDirEntry(fromProtoFile(file)))

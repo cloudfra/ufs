@@ -210,6 +210,19 @@ code with no `ufs` dependency goes in `internal/`. `drivers/polyfills/` and
 not import `ufs` itself, and they stay under `drivers/` because their callers
 include driver authors, whom `internal/` cannot reach.
 
+`drivers/grpcfs` carries `types.FS` and the optional interfaces that can
+cross a wire (Rename, CopyFile, Mkdir, Chmod, Chown/Lchown, Chtimes, Symlink,
+Link, ClosestParent, Watch) as one rpc each. The server answers an optional rpc
+through `drivers/polyfills`, so an emulation runs beside the data and a method
+the served FS lacks comes back as `errors.ErrUnsupported`
+(`ufserrors.NewUnimplemented` wraps it, and it travels as
+`codes.Unimplemented`). BatchCreate has no rpc: a client cannot know when it is
+built whether the served FS keeps the all-or-none promise. Hosts put
+`grpcfs.ServerOptions()` on their `grpc.Server` (message ceiling, keepalive
+policy) and call `Server.Shutdown` before `GracefulStop`, since Watch streams
+otherwise keep it waiting; `grpcfs.DialOptions()` is the matching client side
+for `NewWithClient`.
+
 ### Supporting files
 
 | File                  | Purpose                                                                                  |

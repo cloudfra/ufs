@@ -32,6 +32,13 @@ import (
 // see it. A change to that constant is a change to this one.
 const readChunkSize = 64 << 10
 
+// maxReadAhead and maxListPageSize mirror the unexported constants of the
+// same names in package grpcfs.
+const (
+	maxReadAhead    = 4 << 20
+	maxListPageSize = 10000
+)
+
 // TestServerReadFileFrames covers how a streamed read is cut into frames, which
 // is the part of ReadFile that a single-frame test cannot see: the frames come
 // back in order, each of them as full as the ceiling allows, and a range asks for

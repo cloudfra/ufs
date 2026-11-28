@@ -17,6 +17,8 @@ package grpcfs
 import (
 	"errors"
 	"io"
+	"io/fs"
+	"sync"
 
 	"github.com/cloudfra/ufs/drivers/polyfills"
 	"github.com/cloudfra/ufs/internal/ufserrors"
@@ -84,47 +86,81 @@ func (s *Server) sendRange(req *proto.ReadFileRequest, stream proto.FS_ReadFileS
 	// [polyfills.ToFile] so the seek the offset asks for is available even from a
 	// file system whose handle is only an [fs.File].
 	handle := polyfills.ToFile(f)
-	if offset := req.GetOffset(); offset != 0 {
+	offset, limit := req.GetOffset(), req.GetLimit()
+	if offset != 0 {
 		if _, err := handle.Seek(offset, io.SeekStart); err != nil {
 			return ufserrors.Join(toStatus(err), handle.Close())
 		}
 	}
 	var reader io.Reader = handle
-	if limit := req.GetLimit(); limit > 0 {
+	if limit > 0 {
 		reader = io.LimitReader(handle, limit)
 	}
-	return ufserrors.Join(sendReader(stream, reader), handle.Close())
+	return ufserrors.Join(sendReader(stream, reader, rangeSize(handle, offset, limit)), handle.Close())
+}
+
+// rangeSize is how many bytes a read from offset, for at most limit bytes when
+// limit is set, will carry from the handle as it stands now, or 0 when the
+// handle cannot say: it is the size hint of the first frame.
+func rangeSize(handle fs.File, offset, limit int64) int64 {
+	info, err := handle.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return 0
+	}
+	size := max(info.Size()-offset, 0)
+	if limit > 0 {
+		size = min(size, limit)
+	}
+	return size
 }
 
 // sendContent writes data out as frames of at most readChunkSize bytes. The frames
 // are windows onto data rather than copies of it: [Send] marshals the message into
 // storage of its own before it answers (prepareMsg, in google.golang.org/grpc
 // stream.go), so nothing here has to keep a frame readable after it has answered.
+//
+// The first frame carries the size of the whole answer, so a client collecting
+// it allocates once.
 func sendContent(stream proto.FS_ReadFileServer, data []byte) error {
+	size := int64(len(data))
 	for len(data) > 0 {
 		n := min(len(data), readChunkSize)
-		if err := stream.Send(&proto.ReadFileResponse{Data: data[:n]}); err != nil {
+		if err := stream.Send(&proto.ReadFileResponse{Data: data[:n], Size: size}); err != nil {
 			return err
 		}
+		size = 0
 		data = data[n:]
 	}
 	return nil
 }
 
-// sendReader copies what r gives into frames until it runs out, stopping as soon
-// as the stream is gone. One buffer serves every frame: [Send] marshals the message
-// into pooled storage of its own before it answers (prepareMsg, in
-// google.golang.org/grpc stream.go), so the bytes it was handed are not still in
-// use afterwards, and a buffer per frame would be an allocation per
-// [readChunkSize] read for no reason the transport can see.
-func sendReader(stream proto.FS_ReadFileServer, r io.Reader) error {
+// readChunks holds the buffers sendReader reads into, one per stream in
+// progress, so a busy server reuses them rather than allocating
+// [readChunkSize] for every ranged read.
+var readChunks = sync.Pool{New: func() any {
 	chunk := make([]byte, readChunkSize)
+	return &chunk
+}}
+
+// sendReader copies what r gives into frames until it runs out, stopping as soon
+// as the stream is gone. One buffer serves every frame, taken from a pool shared
+// by every stream: [Send] marshals the message into pooled storage of its own
+// before it answers (prepareMsg, in google.golang.org/grpc stream.go), so the
+// bytes it was handed are not still in use afterwards, and a buffer per frame,
+// or per stream, would be an allocation for no reason the transport can see.
+//
+// size is the hint the first frame carries, 0 when it is not known.
+func sendReader(stream proto.FS_ReadFileServer, r io.Reader, size int64) error {
+	chunkp := readChunks.Get().(*[]byte)
+	defer readChunks.Put(chunkp)
+	chunk := *chunkp
 	for {
 		n, err := r.Read(chunk)
 		if n > 0 {
-			if sendErr := stream.Send(&proto.ReadFileResponse{Data: chunk[:n]}); sendErr != nil {
+			if sendErr := stream.Send(&proto.ReadFileResponse{Data: chunk[:n], Size: size}); sendErr != nil {
 				return sendErr
 			}
+			size = 0
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {

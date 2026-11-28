@@ -73,6 +73,12 @@ type grpcFile struct {
 	atPos    int64
 	atData   []byte
 	atFilled bool
+	// window is how much the next fetch that continues the range asks for at
+	// least. It doubles with every such fetch, from [readChunkSize] up to
+	// [maxReadAhead], and starts over when a read lands elsewhere, so a long
+	// sequential walk costs few round trips and a random one pays only for
+	// what it asked.
+	window int64
 	// done says the stream ended, so every later read reports the end of the file
 	// instead of opening another stream at the same place.
 	done bool
@@ -218,7 +224,7 @@ func (f *grpcFile) dropStreamLocked() {
 // looks at the file again and a handle that is done with holds no content. It is
 // called with the mutex held.
 func (f *grpcFile) dropWindowLocked() {
-	f.atPos, f.atData, f.atFilled = 0, nil, false
+	f.atPos, f.atData, f.atFilled, f.window = 0, nil, false, 0
 }
 
 // ReadAt reads from an absolute offset without moving the position the handle
@@ -227,10 +233,13 @@ func (f *grpcFile) dropWindowLocked() {
 // moving a shared position and putting it back.
 //
 // What it asks for is a range rather than the exact bytes whenever the read
-// continues the range the handle already fetched, in which case it takes a whole
-// [readChunkSize] window: a run of reads walking forward through a file costs one
-// round trip per window instead of one per call, and a read aimed somewhere else
-// still costs only what it asked for.
+// continues the range the handle already fetched, in which case it takes a
+// window that starts at [readChunkSize] and doubles with each fetch up to
+// [maxReadAhead]: a run of reads walking forward through a file costs one round
+// trip per window instead of one per call, and fewer the longer it runs, which
+// is what a mount reading a large file over a link with latency needs. A read
+// aimed somewhere else starts the window over and still costs only what it
+// asked for.
 func (f *grpcFile) ReadAt(p []byte, off int64) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
@@ -244,13 +253,15 @@ func (f *grpcFile) ReadAt(p []byte, off int64) (int, error) {
 		return 0, f.failure
 	}
 	// end is where the range the handle holds stops, and continuous says whether
-	// this read starts there: the reads that follow a window are served from it,
-	// so only the one that opens the next has to pay for it.
+	// this read starts inside it or right where it stops: such a read carries on
+	// the walk the range was fetched for, so when it runs past the end the next
+	// fetch is a window rather than its own bytes, and the window keeps growing.
+	// A read anywhere else starts a range, and a window, over.
 	end := f.atPos + int64(len(f.atData))
-	continuous := f.atFilled && end == off
-	if off < f.atPos || off > end {
+	continuous := f.atFilled && off >= f.atPos && off <= end
+	if !continuous {
 		f.atPos, f.atData, end = off, nil, off
-		continuous = false
+		f.window = 0
 	}
 	// What is behind the place the caller asked for is not coming back, so it
 	// leaves the range: a walk through a file of any size holds one window rather
@@ -261,13 +272,21 @@ func (f *grpcFile) ReadAt(p []byte, off int64) (int, error) {
 	if need := off + int64(len(p)); need > end {
 		limit := need - end
 		if continuous {
-			limit = max(limit, int64(readChunkSize))
+			f.window = min(max(2*f.window, readChunkSize), maxReadAhead)
+			limit = max(limit, f.window)
 		}
 		data, err := f.fsys.readRange("readat", f.name, end, limit)
 		if err != nil {
 			return 0, err
 		}
-		f.atData, f.atFilled = append(f.atData, data...), true
+		if len(f.atData) == 0 {
+			// Nothing held is still ahead of the read, so the fetched range
+			// becomes the window as it is rather than being copied into one.
+			f.atData = data
+		} else {
+			f.atData = append(f.atData, data...)
+		}
+		f.atFilled = true
 	}
 	n := copy(p, f.atData[off-f.atPos:])
 	if n < len(p) {

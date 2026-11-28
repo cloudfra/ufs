@@ -34,109 +34,102 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	FS_GetFile_FullMethodName     = "/cloudfra.ufs.FS/GetFile"
-	FS_ListFiles_FullMethodName   = "/cloudfra.ufs.FS/ListFiles"
-	FS_ReadFile_FullMethodName    = "/cloudfra.ufs.FS/ReadFile"
-	FS_ReadLink_FullMethodName    = "/cloudfra.ufs.FS/ReadLink"
-	FS_GetMetadata_FullMethodName = "/cloudfra.ufs.FS/GetMetadata"
-	FS_WriteFile_FullMethodName   = "/cloudfra.ufs.FS/WriteFile"
-	FS_MkdirAll_FullMethodName    = "/cloudfra.ufs.FS/MkdirAll"
-	FS_Remove_FullMethodName      = "/cloudfra.ufs.FS/Remove"
-	FS_RemoveAll_FullMethodName   = "/cloudfra.ufs.FS/RemoveAll"
+	FS_GetFile_FullMethodName       = "/cloudfra.ufs.FS/GetFile"
+	FS_ListFiles_FullMethodName     = "/cloudfra.ufs.FS/ListFiles"
+	FS_ReadFile_FullMethodName      = "/cloudfra.ufs.FS/ReadFile"
+	FS_ReadLink_FullMethodName      = "/cloudfra.ufs.FS/ReadLink"
+	FS_GetMetadata_FullMethodName   = "/cloudfra.ufs.FS/GetMetadata"
+	FS_WriteFile_FullMethodName     = "/cloudfra.ufs.FS/WriteFile"
+	FS_MkdirAll_FullMethodName      = "/cloudfra.ufs.FS/MkdirAll"
+	FS_Remove_FullMethodName        = "/cloudfra.ufs.FS/Remove"
+	FS_RemoveAll_FullMethodName     = "/cloudfra.ufs.FS/RemoveAll"
+	FS_Rename_FullMethodName        = "/cloudfra.ufs.FS/Rename"
+	FS_Mkdir_FullMethodName         = "/cloudfra.ufs.FS/Mkdir"
+	FS_Chmod_FullMethodName         = "/cloudfra.ufs.FS/Chmod"
+	FS_Chown_FullMethodName         = "/cloudfra.ufs.FS/Chown"
+	FS_Chtimes_FullMethodName       = "/cloudfra.ufs.FS/Chtimes"
+	FS_Symlink_FullMethodName       = "/cloudfra.ufs.FS/Symlink"
+	FS_Link_FullMethodName          = "/cloudfra.ufs.FS/Link"
+	FS_CopyFile_FullMethodName      = "/cloudfra.ufs.FS/CopyFile"
+	FS_ClosestParent_FullMethodName = "/cloudfra.ufs.FS/ClosestParent"
+	FS_Watch_FullMethodName         = "/cloudfra.ufs.FS/Watch"
 )
 
 // FSClient is the client API for FS service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// FS exposes a read-write file system over RPC with the rpc surface of
-// [types.WriteFS]: the read surface of [types.ReadFS] — metadata lookup,
-// directory listing, symbolic link resolution and streaming file content — plus
-// whole-file upload, directory creation and deletion, and one metadata read
-// covering the file system itself. It is the service a server implements for a
-// file system that answers to [types.WriteFS], so its rpcs cover each distinct
-// method reachable from that interface exactly once, and none of them asks for a
-// capability that [types.WriteFS] does not promise.
-//
-// The interfaces reachable from WriteFS overlap heavily: [types.WriteFS] is
-// [types.ReadFS] plus [types.RemoveFS], [types.RemoveAllFS], [types.CreateFileFS]
-// and [types.MkdirAllFS]; [types.ReadFS] is [types.SimpleFS] plus the four
-// extended read interfaces of the standard library, [fmt.Stringer],
-// [types.DeviceInfoGet], [types.URIGet] and [types.ComparableFS]; and
-// [types.RemoveFS], [types.RemoveAllFS], [types.CreateFileFS] and
-// [types.MkdirAllFS] each embed [types.SimpleFS] of their own. A method several
-// interfaces carry is therefore exposed once rather than once per interface,
-// which is why there is one GetFile rather than one for [fs.StatFS] and one for
-// [types.ReadFS].
+// FS exposes a ufs file system over RPC with the rpc surface of [types.FS]
+// and of the optional interfaces of drivers/types that can cross a wire: the
+// read surface of [types.ReadFS] — metadata lookup, directory listing, symbolic
+// link resolution and streaming file content — whole-file upload, directory
+// creation and deletion, rename, copy, mode, owner and time changes, symbolic
+// and hard links, the closest existing parent of a path, a stream of changes,
+// and one metadata read covering the file system itself.
 //
 // Each rpc maps one-to-one onto a Go method: the rpc name is the method name,
 // the request message carries that method's arguments, the first argument is
 // bound into the URL and the rest travel in the request body. The verbs
-// (":readLink", ":mkdirAll", ":removeAll") mirror the Go names instead of
+// (":readLink", ":mkdirAll", ":removeAll", ...) mirror the Go names instead of
 // following an AIP-133 resource model, so the rpc-to-method mapping stays
-// auditable line by line; designing collection-shaped URLs is a separate
-// decision from this file. A method whose Go signature returns only an error
-// returns [google.protobuf.Empty].
+// auditable line by line. A method whose Go signature returns only an error
+// returns [google.protobuf.Empty]. A method several interfaces carry is
+// exposed once, which is why there is one GetFile rather than one for
+// [fs.StatFS] and one for [types.ReadFS], and one Chown whose
+// symlink_handling chooses between [types.ChownFS] and [types.LchownFS].
+//
+// The rpc surface is the same whatever file system a server stands on. An rpc
+// of an optional interface is answered the way drivers/polyfills answers the
+// method in the server's own process: by the served file system's own method
+// when it has one, by an emulation on the server when one keeps the method's
+// contract (a rename or a copy moves content inside the server, never over
+// the network), and otherwise with UNIMPLEMENTED, which a Go client reports
+// as errors.ErrUnsupported. Watch has no emulation and is answered only by a
+// file system that watches.
 //
 // The rule bends in one place, deliberately: [GetMetadata] answers three Go
-// methods in one rpc. Each of the three is still answered exactly once, but in
-// one round trip rather than three, which is what separates a method call from a
-// network call. [types.URIGet.URI], [fmt.Stringer.String] and
-// [types.DeviceInfoGet.DeviceInfo] are three cheap calls in Go that say the same
-// thing about a file system whichever path they are asked about, so they are
-// answered by one [FileSystemInfo] that a client reads once and caches. An
-// answer that changes from path to path is not folded in, because caching it
-// once would make it wrong for the next path.
+// methods in one rpc. [types.URIGet.URI], [fmt.Stringer.String] and
+// [types.DeviceInfoGet.DeviceInfo] are three cheap calls in Go that say the
+// same thing about a file system whichever path they are asked about, so they
+// are answered by one [FileSystemInfo] that a client reads once and caches.
 // [types.CreateFileFS.Create] is the other way round: it takes nothing but a
 // name and returns a live [types.File] handle, which is not a value that can
-// cross the wire, and what a client wants after it is the content in the file —
-// so it has no rpc of its own and is answered by [WriteFile], which creates the
-// file and carries its content in one request rather than two.
+// cross the wire, so it has no rpc of its own and is answered by [WriteFile],
+// which creates the file and carries its content in one request rather than
+// two. [types.OpenFileFS.OpenFile] is answered the same way, by a client
+// building the handle from [ReadFile] and [WriteFile].
 //
 // Errors follow the standard gRPC canonical codes: a path the file
 // system does not hold returns NOT_FOUND (wrapping fs.ErrNotExist), a path
 // that already exists where the call needs it not to returns ALREADY_EXISTS
 // (wrapping fs.ErrExist), an operation the backend refuses returns
-// PERMISSION_DENIED (wrapping fs.ErrPermission), and a path that
-// [fs.ValidPath] rejects returns INVALID_ARGUMENT (wrapping fs.ErrInvalid).
+// PERMISSION_DENIED (wrapping fs.ErrPermission), a path that [fs.ValidPath]
+// rejects returns INVALID_ARGUMENT (wrapping fs.ErrInvalid), and an operation
+// the served file system cannot perform at all returns UNIMPLEMENTED
+// (wrapping errors.ErrUnsupported).
 //
-// Two Go methods reachable from [types.WriteFS] are deliberately not rpcs.
+// Some Go methods are deliberately not rpcs.
 //
-// [io.Closer.Close] is left out because it tears down the entire underlying
-// file system rather than acting on a single request, and a server cannot decide
-// when every client it serves is done with a file system it was handed.
+// [io.Closer.Close] and [types.ReleaseFS.Release] act on the entire underlying
+// file system rather than on a single request, and a server cannot decide when
+// every client it serves is done with the file system it was handed.
 //
 // [types.ComparableFS.IsSame] asks whether two file systems hold one set of
 // data. All a client can name on the wire is a location, and ComparableFS
 // states that it answers a different question from the one that compares
-// locations: an "other uri" argument would implement location comparison under
-// the name IsSame and report the wrong answer for a cache or a mount point.
-// What a client can compare instead is the uri field of [GetMetadata].
+// locations. What a client can compare instead is the uri field of
+// [GetMetadata].
 //
-// What [types.WriteFS] does not reach has no rpc either. [types.OpenFileFS],
-// [types.RenameFS], [types.MkdirFS], [types.CopyFileFS], [types.LinkFS],
-// [types.ChmodFS], [types.ChownFS], [types.LchownFS], [types.ChtimesFS],
-// [types.BatchCreateFS], [types.Watcher], [types.ClosestParentFS],
-// [types.MountedArchiveDirFS], [types.ReleaseFS], [types.WrapperFS] and
-// [types.ExternalPathGetFS] are interfaces a file system may or may not carry,
-// so an rpc for each of them would make the surface a server offers depend on
-// the file system standing behind it, and a request for something that file
-// system cannot do would have to be refused or answered with an emulation the
-// file system never promised. The same reasoning keeps [types.WrapperFS.InnerFS]
-// out: it hands back an [fs.FS] value rather than data.
-// [types.ExternalPathGetFS.ExternalPath] is kept out for a further reason: a
-// client already has that address, since it reaches the file system through a
-// grpc:// address that names the server and the path inside it, and constructs
-// that address itself rather than asking for it.
+// [types.BatchCreateFS.BatchCreate] promises all or none. Whether the served
+// file system keeps that promise is not something a client can know when it
+// is built, so a client writes a batch one file at a time, as ufs.BatchCreate
+// does for any file system without the interface.
 //
-// Three of the cuts need a word, because a read and a write of the same thing
-// fall on different sides of the line. Reading a symbolic link is
-// [fs.ReadLinkFS.ReadLink], which [types.ReadFS] carries, so [ReadLink] stays
-// while creating one does not. A node's mode and timestamps are answers
-// [fs.StatFS.Stat] gives, so [File] still reports them even though changing
-// them has no rpc. [types.MkdirAllFS.MkdirAll] is part of [types.WriteFS]
-// whereas [types.MkdirFS.Mkdir] is not, so a client that wants a directory
-// creates the chain.
+// [types.WrapperFS.InnerFS] hands back an [fs.FS] value rather than data,
+// [types.MountedArchiveDirFS] describes how a file system lays out its own
+// mounts, and [types.ExternalPathGetFS.ExternalPath] names a location a client
+// already holds: it reaches the file system through a grpc:// address that
+// names the server.
 type FSClient interface {
 	// GetFile returns metadata for the node at name. Equivalent to
 	// [types.ReadFS.Stat], or [types.ReadFS.Lstat] when symlink_handling is
@@ -203,6 +196,44 @@ type FSClient interface {
 	// RemoveAll deletes name and everything below it, as
 	// [types.RemoveAllFS.RemoveAll] does. A name that does not exist succeeds.
 	RemoveAll(ctx context.Context, in *RemoveAllRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Rename moves the file or directory at old_name to new_name, as
+	// [types.RenameFS.Rename] does: through the served file system's own rename
+	// when it has one, and otherwise by copying and removing on the server,
+	// which never moves the content over the network.
+	Rename(ctx context.Context, in *RenameRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Mkdir creates one directory whose parent exists, as [types.MkdirFS.Mkdir]
+	// does.
+	Mkdir(ctx context.Context, in *MkdirRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Chmod changes the mode of name, as [types.ChmodFS.Chmod] does.
+	Chmod(ctx context.Context, in *ChmodRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Chown changes the owner of name, as [types.ChownFS.Chown] does, or of a
+	// symbolic link itself, as [types.LchownFS.Lchown] does.
+	Chown(ctx context.Context, in *ChownRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Chtimes changes the access and modification times of name, as
+	// [types.ChtimesFS.Chtimes] does.
+	Chtimes(ctx context.Context, in *ChtimesRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Symlink creates name as a symbolic link to target, as
+	// [types.SymlinkFS.Symlink] does.
+	Symlink(ctx context.Context, in *SymlinkRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Link creates new_name as a hard link to old_name, as [types.LinkFS.Link]
+	// does.
+	Link(ctx context.Context, in *LinkRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// CopyFile copies source_name to destination_name on the server, as
+	// [types.CopyFileFS.CopyFile] does, so the content never crosses the
+	// network.
+	CopyFile(ctx context.Context, in *CopyFileRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ClosestParent returns the closest node at or above name that exists, as
+	// [types.ClosestParentFS.ClosestParent] does, which is one round trip where
+	// walking up with [GetFile] would be one per missing level.
+	ClosestParent(ctx context.Context, in *ClosestParentRequest, opts ...grpc.CallOption) (*ClosestParentResponse, error)
+	// Watch streams the changes below the directory name, as
+	// [types.Watcher.Watch] does, until the client cancels the call. The first
+	// response is empty and says the watch is in place. Changes that arrive
+	// while a response is being sent are batched into the next one, so a burst
+	// of changes costs a few messages rather than one per change. A client that
+	// falls so far behind that the server would have to hold an unbounded
+	// backlog has the stream ended with RESOURCE_EXHAUSTED.
+	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error)
 }
 
 type fSClient struct {
@@ -315,98 +346,190 @@ func (c *fSClient) RemoveAll(ctx context.Context, in *RemoveAllRequest, opts ...
 	return out, nil
 }
 
+func (c *fSClient) Rename(ctx context.Context, in *RenameRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_Rename_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) Mkdir(ctx context.Context, in *MkdirRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_Mkdir_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) Chmod(ctx context.Context, in *ChmodRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_Chmod_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) Chown(ctx context.Context, in *ChownRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_Chown_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) Chtimes(ctx context.Context, in *ChtimesRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_Chtimes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) Symlink(ctx context.Context, in *SymlinkRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_Symlink_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) Link(ctx context.Context, in *LinkRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_Link_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) CopyFile(ctx context.Context, in *CopyFileRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, FS_CopyFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) ClosestParent(ctx context.Context, in *ClosestParentRequest, opts ...grpc.CallOption) (*ClosestParentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClosestParentResponse)
+	err := c.cc.Invoke(ctx, FS_ClosestParent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fSClient) Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &FS_ServiceDesc.Streams[2], FS_Watch_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchRequest, WatchResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type FS_WatchClient = grpc.ServerStreamingClient[WatchResponse]
+
 // FSServer is the server API for FS service.
 // All implementations must embed UnimplementedFSServer
 // for forward compatibility.
 //
-// FS exposes a read-write file system over RPC with the rpc surface of
-// [types.WriteFS]: the read surface of [types.ReadFS] — metadata lookup,
-// directory listing, symbolic link resolution and streaming file content — plus
-// whole-file upload, directory creation and deletion, and one metadata read
-// covering the file system itself. It is the service a server implements for a
-// file system that answers to [types.WriteFS], so its rpcs cover each distinct
-// method reachable from that interface exactly once, and none of them asks for a
-// capability that [types.WriteFS] does not promise.
-//
-// The interfaces reachable from WriteFS overlap heavily: [types.WriteFS] is
-// [types.ReadFS] plus [types.RemoveFS], [types.RemoveAllFS], [types.CreateFileFS]
-// and [types.MkdirAllFS]; [types.ReadFS] is [types.SimpleFS] plus the four
-// extended read interfaces of the standard library, [fmt.Stringer],
-// [types.DeviceInfoGet], [types.URIGet] and [types.ComparableFS]; and
-// [types.RemoveFS], [types.RemoveAllFS], [types.CreateFileFS] and
-// [types.MkdirAllFS] each embed [types.SimpleFS] of their own. A method several
-// interfaces carry is therefore exposed once rather than once per interface,
-// which is why there is one GetFile rather than one for [fs.StatFS] and one for
-// [types.ReadFS].
+// FS exposes a ufs file system over RPC with the rpc surface of [types.FS]
+// and of the optional interfaces of drivers/types that can cross a wire: the
+// read surface of [types.ReadFS] — metadata lookup, directory listing, symbolic
+// link resolution and streaming file content — whole-file upload, directory
+// creation and deletion, rename, copy, mode, owner and time changes, symbolic
+// and hard links, the closest existing parent of a path, a stream of changes,
+// and one metadata read covering the file system itself.
 //
 // Each rpc maps one-to-one onto a Go method: the rpc name is the method name,
 // the request message carries that method's arguments, the first argument is
 // bound into the URL and the rest travel in the request body. The verbs
-// (":readLink", ":mkdirAll", ":removeAll") mirror the Go names instead of
+// (":readLink", ":mkdirAll", ":removeAll", ...) mirror the Go names instead of
 // following an AIP-133 resource model, so the rpc-to-method mapping stays
-// auditable line by line; designing collection-shaped URLs is a separate
-// decision from this file. A method whose Go signature returns only an error
-// returns [google.protobuf.Empty].
+// auditable line by line. A method whose Go signature returns only an error
+// returns [google.protobuf.Empty]. A method several interfaces carry is
+// exposed once, which is why there is one GetFile rather than one for
+// [fs.StatFS] and one for [types.ReadFS], and one Chown whose
+// symlink_handling chooses between [types.ChownFS] and [types.LchownFS].
+//
+// The rpc surface is the same whatever file system a server stands on. An rpc
+// of an optional interface is answered the way drivers/polyfills answers the
+// method in the server's own process: by the served file system's own method
+// when it has one, by an emulation on the server when one keeps the method's
+// contract (a rename or a copy moves content inside the server, never over
+// the network), and otherwise with UNIMPLEMENTED, which a Go client reports
+// as errors.ErrUnsupported. Watch has no emulation and is answered only by a
+// file system that watches.
 //
 // The rule bends in one place, deliberately: [GetMetadata] answers three Go
-// methods in one rpc. Each of the three is still answered exactly once, but in
-// one round trip rather than three, which is what separates a method call from a
-// network call. [types.URIGet.URI], [fmt.Stringer.String] and
-// [types.DeviceInfoGet.DeviceInfo] are three cheap calls in Go that say the same
-// thing about a file system whichever path they are asked about, so they are
-// answered by one [FileSystemInfo] that a client reads once and caches. An
-// answer that changes from path to path is not folded in, because caching it
-// once would make it wrong for the next path.
+// methods in one rpc. [types.URIGet.URI], [fmt.Stringer.String] and
+// [types.DeviceInfoGet.DeviceInfo] are three cheap calls in Go that say the
+// same thing about a file system whichever path they are asked about, so they
+// are answered by one [FileSystemInfo] that a client reads once and caches.
 // [types.CreateFileFS.Create] is the other way round: it takes nothing but a
 // name and returns a live [types.File] handle, which is not a value that can
-// cross the wire, and what a client wants after it is the content in the file —
-// so it has no rpc of its own and is answered by [WriteFile], which creates the
-// file and carries its content in one request rather than two.
+// cross the wire, so it has no rpc of its own and is answered by [WriteFile],
+// which creates the file and carries its content in one request rather than
+// two. [types.OpenFileFS.OpenFile] is answered the same way, by a client
+// building the handle from [ReadFile] and [WriteFile].
 //
 // Errors follow the standard gRPC canonical codes: a path the file
 // system does not hold returns NOT_FOUND (wrapping fs.ErrNotExist), a path
 // that already exists where the call needs it not to returns ALREADY_EXISTS
 // (wrapping fs.ErrExist), an operation the backend refuses returns
-// PERMISSION_DENIED (wrapping fs.ErrPermission), and a path that
-// [fs.ValidPath] rejects returns INVALID_ARGUMENT (wrapping fs.ErrInvalid).
+// PERMISSION_DENIED (wrapping fs.ErrPermission), a path that [fs.ValidPath]
+// rejects returns INVALID_ARGUMENT (wrapping fs.ErrInvalid), and an operation
+// the served file system cannot perform at all returns UNIMPLEMENTED
+// (wrapping errors.ErrUnsupported).
 //
-// Two Go methods reachable from [types.WriteFS] are deliberately not rpcs.
+// Some Go methods are deliberately not rpcs.
 //
-// [io.Closer.Close] is left out because it tears down the entire underlying
-// file system rather than acting on a single request, and a server cannot decide
-// when every client it serves is done with a file system it was handed.
+// [io.Closer.Close] and [types.ReleaseFS.Release] act on the entire underlying
+// file system rather than on a single request, and a server cannot decide when
+// every client it serves is done with the file system it was handed.
 //
 // [types.ComparableFS.IsSame] asks whether two file systems hold one set of
 // data. All a client can name on the wire is a location, and ComparableFS
 // states that it answers a different question from the one that compares
-// locations: an "other uri" argument would implement location comparison under
-// the name IsSame and report the wrong answer for a cache or a mount point.
-// What a client can compare instead is the uri field of [GetMetadata].
+// locations. What a client can compare instead is the uri field of
+// [GetMetadata].
 //
-// What [types.WriteFS] does not reach has no rpc either. [types.OpenFileFS],
-// [types.RenameFS], [types.MkdirFS], [types.CopyFileFS], [types.LinkFS],
-// [types.ChmodFS], [types.ChownFS], [types.LchownFS], [types.ChtimesFS],
-// [types.BatchCreateFS], [types.Watcher], [types.ClosestParentFS],
-// [types.MountedArchiveDirFS], [types.ReleaseFS], [types.WrapperFS] and
-// [types.ExternalPathGetFS] are interfaces a file system may or may not carry,
-// so an rpc for each of them would make the surface a server offers depend on
-// the file system standing behind it, and a request for something that file
-// system cannot do would have to be refused or answered with an emulation the
-// file system never promised. The same reasoning keeps [types.WrapperFS.InnerFS]
-// out: it hands back an [fs.FS] value rather than data.
-// [types.ExternalPathGetFS.ExternalPath] is kept out for a further reason: a
-// client already has that address, since it reaches the file system through a
-// grpc:// address that names the server and the path inside it, and constructs
-// that address itself rather than asking for it.
+// [types.BatchCreateFS.BatchCreate] promises all or none. Whether the served
+// file system keeps that promise is not something a client can know when it
+// is built, so a client writes a batch one file at a time, as ufs.BatchCreate
+// does for any file system without the interface.
 //
-// Three of the cuts need a word, because a read and a write of the same thing
-// fall on different sides of the line. Reading a symbolic link is
-// [fs.ReadLinkFS.ReadLink], which [types.ReadFS] carries, so [ReadLink] stays
-// while creating one does not. A node's mode and timestamps are answers
-// [fs.StatFS.Stat] gives, so [File] still reports them even though changing
-// them has no rpc. [types.MkdirAllFS.MkdirAll] is part of [types.WriteFS]
-// whereas [types.MkdirFS.Mkdir] is not, so a client that wants a directory
-// creates the chain.
+// [types.WrapperFS.InnerFS] hands back an [fs.FS] value rather than data,
+// [types.MountedArchiveDirFS] describes how a file system lays out its own
+// mounts, and [types.ExternalPathGetFS.ExternalPath] names a location a client
+// already holds: it reaches the file system through a grpc:// address that
+// names the server.
 type FSServer interface {
 	// GetFile returns metadata for the node at name. Equivalent to
 	// [types.ReadFS.Stat], or [types.ReadFS.Lstat] when symlink_handling is
@@ -473,6 +596,44 @@ type FSServer interface {
 	// RemoveAll deletes name and everything below it, as
 	// [types.RemoveAllFS.RemoveAll] does. A name that does not exist succeeds.
 	RemoveAll(context.Context, *RemoveAllRequest) (*emptypb.Empty, error)
+	// Rename moves the file or directory at old_name to new_name, as
+	// [types.RenameFS.Rename] does: through the served file system's own rename
+	// when it has one, and otherwise by copying and removing on the server,
+	// which never moves the content over the network.
+	Rename(context.Context, *RenameRequest) (*emptypb.Empty, error)
+	// Mkdir creates one directory whose parent exists, as [types.MkdirFS.Mkdir]
+	// does.
+	Mkdir(context.Context, *MkdirRequest) (*emptypb.Empty, error)
+	// Chmod changes the mode of name, as [types.ChmodFS.Chmod] does.
+	Chmod(context.Context, *ChmodRequest) (*emptypb.Empty, error)
+	// Chown changes the owner of name, as [types.ChownFS.Chown] does, or of a
+	// symbolic link itself, as [types.LchownFS.Lchown] does.
+	Chown(context.Context, *ChownRequest) (*emptypb.Empty, error)
+	// Chtimes changes the access and modification times of name, as
+	// [types.ChtimesFS.Chtimes] does.
+	Chtimes(context.Context, *ChtimesRequest) (*emptypb.Empty, error)
+	// Symlink creates name as a symbolic link to target, as
+	// [types.SymlinkFS.Symlink] does.
+	Symlink(context.Context, *SymlinkRequest) (*emptypb.Empty, error)
+	// Link creates new_name as a hard link to old_name, as [types.LinkFS.Link]
+	// does.
+	Link(context.Context, *LinkRequest) (*emptypb.Empty, error)
+	// CopyFile copies source_name to destination_name on the server, as
+	// [types.CopyFileFS.CopyFile] does, so the content never crosses the
+	// network.
+	CopyFile(context.Context, *CopyFileRequest) (*emptypb.Empty, error)
+	// ClosestParent returns the closest node at or above name that exists, as
+	// [types.ClosestParentFS.ClosestParent] does, which is one round trip where
+	// walking up with [GetFile] would be one per missing level.
+	ClosestParent(context.Context, *ClosestParentRequest) (*ClosestParentResponse, error)
+	// Watch streams the changes below the directory name, as
+	// [types.Watcher.Watch] does, until the client cancels the call. The first
+	// response is empty and says the watch is in place. Changes that arrive
+	// while a response is being sent are batched into the next one, so a burst
+	// of changes costs a few messages rather than one per change. A client that
+	// falls so far behind that the server would have to hold an unbounded
+	// backlog has the stream ended with RESOURCE_EXHAUSTED.
+	Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error
 	mustEmbedUnimplementedFSServer()
 }
 
@@ -509,6 +670,36 @@ func (UnimplementedFSServer) Remove(context.Context, *RemoveRequest) (*emptypb.E
 }
 func (UnimplementedFSServer) RemoveAll(context.Context, *RemoveAllRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveAll not implemented")
+}
+func (UnimplementedFSServer) Rename(context.Context, *RenameRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Rename not implemented")
+}
+func (UnimplementedFSServer) Mkdir(context.Context, *MkdirRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Mkdir not implemented")
+}
+func (UnimplementedFSServer) Chmod(context.Context, *ChmodRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Chmod not implemented")
+}
+func (UnimplementedFSServer) Chown(context.Context, *ChownRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Chown not implemented")
+}
+func (UnimplementedFSServer) Chtimes(context.Context, *ChtimesRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Chtimes not implemented")
+}
+func (UnimplementedFSServer) Symlink(context.Context, *SymlinkRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Symlink not implemented")
+}
+func (UnimplementedFSServer) Link(context.Context, *LinkRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Link not implemented")
+}
+func (UnimplementedFSServer) CopyFile(context.Context, *CopyFileRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CopyFile not implemented")
+}
+func (UnimplementedFSServer) ClosestParent(context.Context, *ClosestParentRequest) (*ClosestParentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClosestParent not implemented")
+}
+func (UnimplementedFSServer) Watch(*WatchRequest, grpc.ServerStreamingServer[WatchResponse]) error {
+	return status.Error(codes.Unimplemented, "method Watch not implemented")
 }
 func (UnimplementedFSServer) mustEmbedUnimplementedFSServer() {}
 func (UnimplementedFSServer) testEmbeddedByValue()            {}
@@ -675,6 +866,179 @@ func _FS_RemoveAll_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _FS_Rename_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).Rename(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_Rename_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).Rename(ctx, req.(*RenameRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_Mkdir_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MkdirRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).Mkdir(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_Mkdir_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).Mkdir(ctx, req.(*MkdirRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_Chmod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChmodRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).Chmod(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_Chmod_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).Chmod(ctx, req.(*ChmodRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_Chown_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChownRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).Chown(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_Chown_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).Chown(ctx, req.(*ChownRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_Chtimes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChtimesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).Chtimes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_Chtimes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).Chtimes(ctx, req.(*ChtimesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_Symlink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SymlinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).Symlink(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_Symlink_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).Symlink(ctx, req.(*SymlinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_Link_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LinkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).Link(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_Link_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).Link(ctx, req.(*LinkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_CopyFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CopyFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).CopyFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_CopyFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).CopyFile(ctx, req.(*CopyFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_ClosestParent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClosestParentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FSServer).ClosestParent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FS_ClosestParent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FSServer).ClosestParent(ctx, req.(*ClosestParentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _FS_Watch_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(FSServer).Watch(m, &grpc.GenericServerStream[WatchRequest, WatchResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type FS_WatchServer = grpc.ServerStreamingServer[WatchResponse]
+
 // FS_ServiceDesc is the grpc.ServiceDesc for FS service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -710,6 +1074,42 @@ var FS_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "RemoveAll",
 			Handler:    _FS_RemoveAll_Handler,
 		},
+		{
+			MethodName: "Rename",
+			Handler:    _FS_Rename_Handler,
+		},
+		{
+			MethodName: "Mkdir",
+			Handler:    _FS_Mkdir_Handler,
+		},
+		{
+			MethodName: "Chmod",
+			Handler:    _FS_Chmod_Handler,
+		},
+		{
+			MethodName: "Chown",
+			Handler:    _FS_Chown_Handler,
+		},
+		{
+			MethodName: "Chtimes",
+			Handler:    _FS_Chtimes_Handler,
+		},
+		{
+			MethodName: "Symlink",
+			Handler:    _FS_Symlink_Handler,
+		},
+		{
+			MethodName: "Link",
+			Handler:    _FS_Link_Handler,
+		},
+		{
+			MethodName: "CopyFile",
+			Handler:    _FS_CopyFile_Handler,
+		},
+		{
+			MethodName: "ClosestParent",
+			Handler:    _FS_ClosestParent_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -721,6 +1121,11 @@ var FS_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "WriteFile",
 			Handler:       _FS_WriteFile_Handler,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "Watch",
+			Handler:       _FS_Watch_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "proto/ufs.proto",

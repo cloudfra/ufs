@@ -43,6 +43,10 @@ func (s *Server) ListFiles(_ context.Context, req *proto.ListFilesRequest) (*pro
 	if limit <= 0 {
 		limit = defaultListPageSize
 	}
+	// However many a request asks for, a page stays well inside the message
+	// ceiling, so asking for more than the client could receive costs a page
+	// boundary rather than a failed call.
+	limit = min(limit, maxListPageSize)
 	if offset > len(entries) {
 		offset = len(entries)
 	}

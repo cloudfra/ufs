@@ -17,22 +17,32 @@
 // file system the process already holds, and a driver that turns an address
 // running the service into a file system of its own.
 //
-// The service maps one rpc onto each method reachable from the types.WriteFS
-// interface of drivers/types, so both directions are a translation of one
-// interface rather than an invention: the server calls methods on a
-// types.WriteFS and answers what it gets back, and the driver spends its calls
-// on rpcs whose answer is the value the Go method would have returned. What that
-// keeps off the wire is every method of an optional interface a served file
-// system might not carry, plus Close, Release, IsSame, InnerFS and ExternalPath,
-// which are not questions about locations — neither direction reaches any of
-// them, which is what keeps the two sides symmetric.
+// The service maps one rpc onto each method of types.FS and of the optional
+// interfaces of drivers/types that can cross a wire — rename, copy, mkdir,
+// chmod, chown and lchown, chtimes, symlink, link, closest parent and watch —
+// so both directions are a translation of the interfaces rather than an
+// invention. The server answers each optional rpc through drivers/polyfills:
+// the served file system's own method, an emulation on the server that keeps
+// the method's contract, or errors.ErrUnsupported, which a client receives
+// back as that same sentinel. What stays off the wire is what a client cannot
+// hold or cannot be promised: Close and Release, which act on the server's
+// file system for every client at once; IsSame, InnerFS and ExternalPath,
+// which are not questions about locations; and BatchCreate, whose all-or-none
+// promise a client cannot know the served file system keeps when it is built.
+// OpenFile has no rpc because the service holds no handle open: the client
+// answers it from Open and Create.
 //
 // The two directions share the constants here, because they are the numbers the
 // service documents rather than the numbers one side chose: the ceiling a frame
 // may reach is the ceiling a client may send and the ceiling a server may accept.
 package grpcfs
 
-import "google.golang.org/grpc"
+import (
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
+)
 
 const (
 	// readChunkSize is how much file content one ReadFileResponse carries. How
@@ -51,6 +61,37 @@ const (
 	// defaultListPageSize is how many children ListFiles answers when the
 	// request asks for no maximum of its own.
 	defaultListPageSize = 1000
+
+	// maxListPageSize is the most children one ListFiles page carries, however
+	// many the request asks for, and what this package's client asks for. A
+	// child is about a hundred bytes on the wire, so a full page is about a
+	// megabyte: well inside [maxMessageSize], and a tenth of the round trips
+	// the default page would cost for a large directory. The server re-reads
+	// the directory for every page (see listOffset), so fewer pages is also
+	// less work there.
+	maxListPageSize = 10000
+
+	// maxReadAhead is the largest window a run of ranged reads walking forward
+	// through a file grows to. Each window is one round trip, so on a link with
+	// latency the window bounds throughput: 4 MiB a round trip is 80 MB/s at
+	// 50 ms. It is also what one open handle may hold, which is why it stops
+	// here rather than growing with the file.
+	maxReadAhead = 4 << 20
+
+	// maxPreallocate is the most a client allocates up front on the strength
+	// of a size the server announced, so a size that turns out to be wrong
+	// costs at most this much before the content itself decides.
+	maxPreallocate = 256 << 20
+
+	// keepaliveTime is how long a client lets a connection with an rpc in
+	// progress sit silent before it pings the server, and keepaliveTimeout how
+	// long it waits for the answer before treating the connection as dead.
+	// A Watch stream can sit silent for as long as nothing changes, and a
+	// peer that disappeared without closing the connection would otherwise
+	// leave it waiting forever. The server's enforcement policy in
+	// [ServerOptions] permits pings this often.
+	keepaliveTime    = time.Minute
+	keepaliveTimeout = 20 * time.Second
 
 	// maxMessageSize is the largest single message the service carries in either
 	// direction. The number is the one the rpc comment already chooses: the
@@ -110,6 +151,37 @@ const (
 //
 // The other direction needs no option: a read response carries at most
 // [readChunkSize] of content, well under any default.
+//
+// It also permits the keepalive pings this package's client sends (grpc-go's
+// default policy refuses a ping more often than every five minutes and ends
+// the connection of a client that sends them), and pings idle clients itself so
+// a connection to a client that vanished is let go.
 func ServerOptions() []grpc.ServerOption {
-	return []grpc.ServerOption{grpc.MaxRecvMsgSize(maxMessageSize)}
+	return []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(maxMessageSize),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime: keepaliveTime / 2,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    2 * keepaliveTime,
+			Timeout: keepaliveTimeout,
+		}),
+	}
+}
+
+// DialOptions returns the grpc.DialOption values [New] dials with, for a
+// caller of [NewWithClient] that dials its own connection: keepalive pings
+// while an rpc is in progress, so a Watch stream to a server that vanished
+// ends rather than waiting forever, and a receive ceiling matching the
+// server's own, so a full listing page is accepted. Pair it
+// with a server built with [ServerOptions], whose keepalive policy permits the
+// pings.
+func DialOptions() []grpc.DialOption {
+	return []grpc.DialOption{
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:    keepaliveTime,
+			Timeout: keepaliveTimeout,
+		}),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxMessageSize)),
+	}
 }

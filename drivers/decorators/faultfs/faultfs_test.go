@@ -222,6 +222,10 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 	if !ok {
 		t.Fatalf("%T does not satisfy types.OpenFileFS, want the faulted file system to", fsys)
 	}
+	chtimesFS, ok := fsys.(types.ChtimesFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.ChtimesFS, want the faulted file system to", fsys)
+	}
 
 	tests := []struct {
 		name string
@@ -239,6 +243,7 @@ func TestFaultInjectorAlwaysErrors(t *testing.T) {
 		{"Remove", func() error { return fsys.Remove("a.txt") }},
 		{"RemoveAll", func() error { return fsys.RemoveAll("subdir") }},
 		{"Rename", func() error { return ops.Rename(fsys, "a.txt", "b.txt") }},
+		{"Chtimes", func() error { return chtimesFS.Chtimes("a.txt", time.Time{}, time.Now()) }},
 	}
 
 	for _, tc := range tests {
@@ -484,6 +489,10 @@ func TestFaultInjectorInvalidPaths(t *testing.T) {
 	if !ok {
 		t.Fatalf("%T does not satisfy types.OpenFileFS, want the faulted file system to", fsys)
 	}
+	chtimesFS, ok := fsys.(types.ChtimesFS)
+	if !ok {
+		t.Fatalf("%T does not satisfy types.ChtimesFS, want the faulted file system to", fsys)
+	}
 
 	for _, badPath := range []string{"/absolute", "../parent", "bad/../path"} {
 		t.Run(badPath, func(t *testing.T) {
@@ -526,6 +535,9 @@ func TestFaultInjectorInvalidPaths(t *testing.T) {
 			}
 			if err := ops.Rename(fsys, "a.txt", badPath); err == nil {
 				t.Errorf("Rename(a.txt, %q) returned nil error, want error", badPath)
+			}
+			if err := chtimesFS.Chtimes(badPath, time.Time{}, time.Now()); err == nil {
+				t.Errorf("Chtimes(%q) returned nil error, want error", badPath)
 			}
 		})
 	}

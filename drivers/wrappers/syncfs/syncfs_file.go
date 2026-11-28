@@ -129,7 +129,7 @@ func (f *File) readAtLocked(p []byte, off int64) (int, error) {
 		// Without a seek the cursor is the only place a read can start, so a
 		// read there continues the handle and moves its cursor along.
 		if off != f.pos {
-			return 0, ufserrors.NewPathError("read", f.name(), errors.ErrUnsupported)
+			return 0, ufserrors.NewPathError("read", f.nameLocked(), errors.ErrUnsupported)
 		}
 		n, err := readFull(f.f, p)
 		f.pos += int64(n)
@@ -174,7 +174,7 @@ func (f *File) WriteAt(p []byte, off int64) (int, error) {
 func (f *File) writeAtLocked(w io.Writer, p []byte, off int64) (int, error) {
 	inOrder := func() (int, error) {
 		if off != f.pos {
-			return 0, ufserrors.NewPathError("write", f.name(), errors.ErrUnsupported)
+			return 0, ufserrors.NewPathError("write", f.nameLocked(), errors.ErrUnsupported)
 		}
 		n, err := w.Write(p)
 		f.pos += int64(n)
@@ -225,8 +225,17 @@ func (f *File) Close() error {
 }
 
 // name is the name reported in an error. Asking the handle costs a Stat, so it
-// is only done once there is an error to report.
+// is only done once there is an error to report, and the Stat is a call on the
+// handle like any other, so it takes the lock that keeps calls apart.
 func (f *File) name() string {
+	f.mu.Lock()
+	name := f.nameLocked()
+	f.mu.Unlock()
+	return name
+}
+
+// nameLocked is name for a caller that already holds f.mu for writing.
+func (f *File) nameLocked() string {
 	if info, err := f.f.Stat(); err == nil {
 		return info.Name()
 	}

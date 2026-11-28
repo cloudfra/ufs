@@ -268,9 +268,10 @@ system that is still in use is the caller's to avoid. Drivers do not guard
 handle cursors or wait out in-flight operations in Close; they only keep Close
 from racing: fields every operation reads stay immutable after construction,
 and closedness is an `atomic.Bool` claimed with CompareAndSwap, so an
-operation that starts afterwards reports `fs.ErrClosed`. The code that serves a
+operation that starts afterwards reports `fs.ErrClosed`; `CloseDuringOperations`
+in `drivers/testing` checks both for every driver. The code that serves a
 file system concurrently pays for the guarantees once, with
-`drivers/common/syncfs`: the FUSE mount wraps its handles with
+`drivers/wrappers/syncfs`: the FUSE mount wraps its handles with
 `syncfs.NewFile`, and `grpcfs.Server` admits each rpc through a
 `syncfs.Lifetime` so `Server.Shutdown` waits for them. nestFS is the exception:
 it closes archive mounts it opened itself (on Release, or when the archive

@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudfra/ufs"
@@ -81,6 +82,11 @@ type memFS struct {
 	mu    sync.RWMutex
 	name  string
 	nodes map[string]*memNode
+	// closed is claimed by Close. The node map stays in place after Close,
+	// because an operation that checked closed just before may still be
+	// using it: what it then sees is the last tree rather than a nil map that
+	// a lookup would crash on or a write would panic on.
+	closed atomic.Bool
 
 	notifyBus *notify.Bus
 }
@@ -290,10 +296,7 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) isClosed() bool {
-	fsys.mu.RLock()
-	closed := fsys.nodes == nil
-	fsys.mu.RUnlock()
-	return closed
+	return fsys.closed.Load()
 }
 
 func (fsys *memFS) Open(name string) (fs.File, error) {
@@ -383,12 +386,10 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	err := fsys.notifyBus.Close()
-
-	fsys.mu.Lock()
-	fsys.nodes = nil
-	fsys.mu.Unlock()
-	return err
+	if !fsys.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	return fsys.notifyBus.Close()
 }
 
 // checkDirsLocked verifies that name and each of its ancestors, where they

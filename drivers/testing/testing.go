@@ -144,6 +144,7 @@ func FS(t *testing.T, args Args, createFSFunc func(t *testing.T) types.SimpleFS)
 	stringerFS(t, args, createFSFunc)
 	deviceInfoGet(t, args, createFSFunc)
 	chtimesFS(t, args, createFSFunc)
+	closeDuringOperations(t, args, createFSFunc)
 
 	// Which suite family a file system is judged by comes from what it is,
 	// except that Args.ReadOnly settles it first for a read-only file system.

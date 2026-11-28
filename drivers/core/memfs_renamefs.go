@@ -33,11 +33,10 @@ func (fsys *memFS) Rename(oldPath, newPath string) error {
 	if err := pathutil.ValidateRename(oldPath, newPath); err != nil {
 		return err
 	}
-	fsys.mu.Lock()
-	if fsys.nodes == nil {
-		fsys.mu.Unlock()
+	if fsys.isClosed() {
 		return ufserrors.NewLinkError("rename", oldPath, newPath, fs.ErrClosed)
 	}
+	fsys.mu.Lock()
 	moved, err := fsys.renameLocked(oldPath, newPath)
 	fsys.mu.Unlock()
 	if err != nil {

@@ -87,6 +87,7 @@ import (
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	bolt "go.etcd.io/bbolt"
+	bolterrors "go.etcd.io/bbolt/errors"
 )
 
 var (
@@ -457,7 +458,7 @@ func (fsys *boltFS) view(fn func(tx *bolt.Tx) error) error {
 	if err != nil {
 		return err
 	}
-	return db.View(fn)
+	return closedErr(db.View(fn))
 }
 
 // update runs fn in a read-write transaction against the live bolt
@@ -471,7 +472,17 @@ func (fsys *boltFS) update(fn func(tx *bolt.Tx) error) error {
 	if fsys.opts.readOnly {
 		return fmt.Errorf("opened with %s=true, %w", readOnlyParam, fs.ErrPermission)
 	}
-	return db.Update(fn)
+	return closedErr(db.Update(fn))
+}
+
+// closedErr reports a transaction that bolt refused because Close closed the
+// database after liveDB handed it out as [fs.ErrClosed], which is what the same
+// operation would have reported had it started a moment later.
+func closedErr(err error) error {
+	if errors.Is(err, bolterrors.ErrDatabaseNotOpen) {
+		return fs.ErrClosed
+	}
+	return err
 }
 
 func (fsys *boltFS) Open(name string) (fs.File, error) {

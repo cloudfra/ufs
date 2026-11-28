@@ -32,6 +32,7 @@ writes added.
 | Google Cloud Storage | `gs://bucket/prefix`                                        |
 | Git repositories     | `https://host/repo.git`                                     |
 | BoltDB               | `bolt:/path/to/file.db`                                     |
+| YAML document        | `yaml:///path/to/config.yaml`                               |
 | Go `embed.FS`        | `embedfs.New(name, fsys)`                                   |
 | Null                 | `null://`                                                   |
 
@@ -136,6 +137,7 @@ More runnable examples are in [example_test.go](example_test.go) and on
 | GCS            | `gs://bucket/prefix`                                        | read-write | `drivers/gcsfs`   | Uses Application Default Credentials and falls back to anonymous access for public buckets.          |
 | Git            | any URI ending in `.git`                                    | read-write | `drivers/gitfs`   | Shallow-cloned into a temporary directory that is removed on `Close`; writes change only that clone. |
 | BoltDB         | `bolt:/path/to/file.db`                                     | read-write | `drivers/boltfs`  | A whole file system in a single [bbolt](https://github.com/etcd-io/bbolt) file.                      |
+| YAML           | `yaml:///path/to/config.yaml`                               | read-only  | `drivers/yamlfs`  | A YAML or JSON document as a tree; mapping keys become directories and files.                        |
 | `embed.FS`     | none, use `embedfs.New`                                     | read-only  | `drivers/embedfs` | Wraps files compiled into your binary.                                                               |
 
 Any backend can be made read-only with the `readOnly` [decorator](#decorators).

@@ -191,7 +191,6 @@ enable its scheme. They may use `internal/` packages.
 | :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | drivers/boltfs/            | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)                                                                                           |
 | drivers/common/buffile/    | Exported fully-buffered file handle for drivers (depends on ufs)                                                                                        |
-| drivers/common/syncfs/     | Concurrency guards for code that serves an FS: syncfs.NewFile shares one handle between goroutines, syncfs.Lifetime drains rpcs before Close            |
 | drivers/core/              | Built-in backends; registers file://, archive://, http(s):// archives, memory:, null: and angry: on import. The base package registers no driver itself |
 | drivers/embedfs/           | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration)                                                      |
 | drivers/gcsfs/             | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient                                                                     |
@@ -200,6 +199,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/polyfills/         | Best-effort standins for optional interfaces a file system lacks; used by the base package, so it must not import ufs                                   |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it                                                                 |
 | drivers/uri/               | Byte-preserving URI query-parameter add/remove helpers and the decorator option list, used by the base package and by drivers                           |
+| drivers/wrappers/syncfs/   | Concurrency guards for code that serves an FS: syncfs.NewFile shares one handle between goroutines, syncfs.Lifetime drains rpcs before Close            |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
 code with no `ufs` dependency goes in `internal/`. `drivers/polyfills/` and

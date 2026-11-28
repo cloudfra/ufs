@@ -18,8 +18,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/cloudfra/ufs/drivers/common/syncfs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/wrappers/syncfs"
 	"github.com/cloudfra/ufs/proto"
 )
 

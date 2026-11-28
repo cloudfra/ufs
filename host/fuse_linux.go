@@ -32,8 +32,8 @@ import (
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
-	"github.com/cloudfra/ufs/drivers/common/syncfs"
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/wrappers/syncfs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/ops"

@@ -153,7 +153,10 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 
 FUSE file handles go through `syncfs.NewFile`, because go-fuse reads and
 writes one handle from several goroutines; `Unmount` waits for the requests
-in flight, so the caller may close the FS once `MountServer.Close` returns.
+in flight, so the caller may close the FS once `MountServer.Close` returns. ProjFS
+opens a handle per callback, guards each directory enumeration's cursor with
+its own mutex (callbacks run on a thread pool), and `PrjStopVirtualizing`
+waits for running callbacks.
 
 Writes are enabled when the mounted FS is a `types.WriteFS` (not `ufs.FS`, so
 drivers without a native Rename stay writable). Renames go through
@@ -259,6 +262,24 @@ database transaction; implementations may commit concurrent batches together.
 MkdirAll + Create (not atomic, Perm ignored). Writing one file this way is the
 single-operation WriteFile. New drivers are covered by `BatchCreate` in
 `drivers/testing`.
+
+### Concurrency
+
+A file system is safe for concurrent operations, but an open handle belongs to
+one goroutine at a time (`fs.File` promises nothing more), and closing a file
+system that is still in use is the caller's to avoid. Drivers do not guard
+handle cursors or wait out in-flight operations in Close; they only keep Close
+from racing: fields every operation reads stay immutable after construction,
+and closedness is an `atomic.Bool` claimed with CompareAndSwap, so an
+operation that starts afterwards reports `fs.ErrClosed`; `CloseDuringOperations`
+in `drivers/testing` checks both for every driver. The code that serves a
+file system concurrently pays for the guarantees once, with
+`drivers/wrappers/syncfs`: the FUSE mount wraps its handles with
+`syncfs.NewFile`, and `grpcfs.Server` admits each rpc through a
+`syncfs.Lifetime` so `Server.Shutdown` waits for them. nestFS is the exception:
+it closes archive mounts it opened itself (on Release, or when the archive
+disappears) while a request may be using them, so it keeps a per-nest RWMutex
+that each use of a base FS holds for reading and Close holds for writing.
 
 ### Conventions
 

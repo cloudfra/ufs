@@ -24,10 +24,7 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-// ReadFile reads through Open, which makes the closed decision and the calls
-// into the client under its own read lock. This method deliberately takes no
-// lock of its own: RWMutex blocks a new reader while Close waits for the write
-// lock, so a read lock held across the delegation would deadlock the pair.
+// ReadFile reads through Open, which refuses a closed file system.
 func (fsys *gcsFS) ReadFile(name string) ([]byte, error) {
 	if err := pathutil.Validate("readfile", name); err != nil {
 		return nil, err

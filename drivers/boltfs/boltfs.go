@@ -87,6 +87,7 @@ import (
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	bolt "go.etcd.io/bbolt"
+	bolterrors "go.etcd.io/bbolt/errors"
 )
 
 var (
@@ -262,15 +263,7 @@ func (fsys *boltFS) writeFileContent(name string, mode fs.FileMode, modTime time
 // boltDirFile is an open directory handle. It snapshots the directory entries
 // at Open time so that paginated ReadDir calls are stable even if the
 // filesystem is modified concurrently.
-//
-// openDirBucket fixes path, entries, mode and modTime, so those are read-only
-// once the handle exists and need no guard. offset is not: Open hands one handle
-// to every caller that opens the directory, so two goroutines walking it would
-// advance one position between them and each would be handed part of what the
-// other was owed. mu keeps that position moving one call at a time, which is what
-// makes the pair collectively see every snapshot entry exactly once, in order.
 type boltDirFile struct {
-	mu      sync.Mutex
 	path    string
 	entries []fs.DirEntry
 	offset  int
@@ -291,21 +284,17 @@ func (d *boltDirFile) Close() error {
 }
 
 func (d *boltDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
-	d.mu.Lock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)
-		d.mu.Unlock()
 		return batch, nil
 	}
 	if d.offset >= len(d.entries) {
-		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := min(d.offset+n, len(d.entries))
 	batch := d.entries[d.offset:end]
 	d.offset = end
-	d.mu.Unlock()
 	return batch, nil
 }
 
@@ -469,7 +458,7 @@ func (fsys *boltFS) view(fn func(tx *bolt.Tx) error) error {
 	if err != nil {
 		return err
 	}
-	return db.View(fn)
+	return closedErr(db.View(fn))
 }
 
 // update runs fn in a read-write transaction against the live bolt
@@ -483,7 +472,17 @@ func (fsys *boltFS) update(fn func(tx *bolt.Tx) error) error {
 	if fsys.opts.readOnly {
 		return fmt.Errorf("opened with %s=true, %w", readOnlyParam, fs.ErrPermission)
 	}
-	return db.Update(fn)
+	return closedErr(db.Update(fn))
+}
+
+// closedErr reports a transaction that bolt refused because Close closed the
+// database after liveDB handed it out as [fs.ErrClosed], which is what the same
+// operation would have reported had it started a moment later.
+func closedErr(err error) error {
+	if errors.Is(err, bolterrors.ErrDatabaseNotOpen) {
+		return fs.ErrClosed
+	}
+	return err
 }
 
 func (fsys *boltFS) Open(name string) (fs.File, error) {

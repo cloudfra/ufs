@@ -27,31 +27,23 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// RemoveAll deletes an object and everything under its prefix. The closed check
-// and the whole delete loop are one read-lock section: the loop keeps asking
-// the same client for pages, so a client given up underneath it would answer
-// the middle of the walk rather than its start. The path validation stays
-// outside it. RemoveAll does the deleting itself rather than calling Remove, so
-// it never re-enters the lock.
+// RemoveAll deletes an object and everything under its prefix. A closed file
+// system reports [fs.ErrClosed].
 func (fsys *gcsFS) RemoveAll(name string) error {
 	if name != pathutil.CwdPath {
 		if err := pathutil.Validate("removeall", name); err != nil {
 			return err
 		}
 	}
-	fsys.mu.RLock()
 	if fsys.closed.Load() {
-		fsys.mu.RUnlock()
 		return ufserrors.NewPathError("removeall", name, fs.ErrClosed)
 	}
-	err := fsys.removeAllLocked(name)
-	fsys.mu.RUnlock()
-	return err
+	return fsys.removeTree(name)
 }
 
-// removeAllLocked is the bucket work behind RemoveAll. Its caller holds the read
-// lock for the whole of it.
-func (fsys *gcsFS) removeAllLocked(name string) error {
+// removeTree is the bucket work behind RemoveAll, once RemoveAll has refused a
+// closed file system.
+func (fsys *gcsFS) removeTree(name string) error {
 	bkt := fsys.client.Bucket(fsys.bucket)
 
 	var listPrefix string

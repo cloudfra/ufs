@@ -18,9 +18,9 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/cloudfra/ufs"
@@ -180,36 +180,23 @@ type grpcFS struct {
 	ctx context.Context
 
 	// closed says Close has been called, after which this file system refuses
-	// everything it would have put on the wire. It is claimed with
-	// CompareAndSwap, so only the first Close reaches the connection. The flag
-	// on its own is a check and not a decision: what makes it a decision is
-	// [grpcFS.mu], which keeps the check and the rpc it guards together.
+	// everything it would have put on the wire.
 	closed atomic.Bool
-
-	// mu is the lifetime guard that makes closed enough. An operation that
-	// reaches the server holds RLock across its closed check and every rpc it
-	// makes — all the pages of a listing, every frame of an upload — and Close
-	// holds Lock while it gives the connection up. After the CAS, Close cannot
-	// reach the teardown until every operation that had already decided to use
-	// the connection has finished the calls it started, and an operation that
-	// begins afterwards takes the read lock on either side of the teardown and
-	// is refused by the check in both cases, so there is no schedule on which
-	// an operation decides "use the connection" and then works through a
-	// connection Close has let go. Readers stay concurrent with each other and
-	// only Close waits, and Close stays synchronous and still reports what the
-	// connection answered. No method may hold the lock and then reach another
-	// method of this file system that takes it again — a pending Close would
-	// deadlock the pair — so a delegating method (Stat, Lstat, ReadFile, ReadDir
-	// of a handle, Remove, RemoveAll, MkdirAll) stays out of it and lets the
-	// delegate decide at its own use site, and the work that belongs inside one
-	// section sits in a locked helper (statLocked, readDirLocked,
-	// writeFileLocked, readRangeLocked, checkAboveLocked) that never takes the
-	// lock itself.
-	mu sync.RWMutex
 }
 
 func newGrpcFS(ctx context.Context, client proto.FSClient, conn *grpc.ClientConn, address, scheme string) *grpcFS {
 	return &grpcFS{client: client, conn: conn, address: address, scheme: scheme, ctx: ctx}
+}
+
+// closedErr answers why a call cannot be made because the file system has been
+// closed, or nil when it can. A file system that gave its connection up has no
+// way to answer anything else, so every method that reaches the server asks here
+// rather than letting the transport report a connection that is gone.
+func (fsys *grpcFS) closedErr(op, name string) error {
+	if fsys.closed.Load() {
+		return ufserrors.NewPathError(op, name, fs.ErrClosed)
+	}
+	return nil
 }
 
 // Close makes this file system unusable and gives up the connection that came
@@ -217,28 +204,11 @@ func newGrpcFS(ctx context.Context, client proto.FSClient, conn *grpc.ClientConn
 // reports [fs.ErrClosed] for every call afterwards, whether it had a connection
 // of its own or not: what Close answers for is the file system, and a file system
 // built by [NewWithClient] leaves its connection to the caller that made it.
-//
-// The flag is claimed first, so every operation that starts from here on is
-// refused by the check it makes under its own read lock. The teardown then waits
-// on mu.Lock for every operation that had already decided to use the connection
-// to finish the rpcs it started, so Close returns only once nothing is on the wire
-// any more, and it stays synchronous and still reports what the connection
-// answered.
 func (fsys *grpcFS) Close() error {
-	if !fsys.closed.CompareAndSwap(false, true) {
+	if !fsys.closed.CompareAndSwap(false, true) || fsys.conn == nil {
 		return nil
 	}
-	// A file system built by [NewWithClient] never owned a connection, so there
-	// is no teardown here for an operation to be waiting behind: the guard is
-	// what refuses its calls from here on, and the write lock would be taken for
-	// nothing.
-	if fsys.conn == nil {
-		return nil
-	}
-	fsys.mu.Lock()
-	err := fsys.conn.Close()
-	fsys.mu.Unlock()
-	return err
+	return fsys.conn.Close()
 }
 
 // Release does nothing. The service has no rpc for it: what it lets go of is

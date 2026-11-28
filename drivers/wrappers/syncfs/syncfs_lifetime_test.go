@@ -16,6 +16,7 @@ package syncfs
 
 import (
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -81,4 +82,68 @@ func BenchmarkLifetime(b *testing.B) {
 			}
 		}
 	})
+}
+
+// TestLifetimeConcurrentShutdown runs operations, some of which enter again
+// from inside, from several goroutines while several Shutdown calls race each
+// other. No admitted operation may still be running, or start, once any
+// Shutdown has returned.
+func TestLifetimeConcurrentShutdown(t *testing.T) {
+	t.Parallel()
+	var (
+		l        Lifetime
+		inFlight atomic.Int32
+		shutDown atomic.Bool
+		started  sync.WaitGroup
+		workers  sync.WaitGroup
+	)
+	const goroutines = 8
+	started.Add(goroutines)
+	for g := range goroutines {
+		workers.Go(func() {
+			first := true
+			for i := 0; ; i++ {
+				if !l.Enter() {
+					if first {
+						started.Done()
+					}
+					return
+				}
+				inFlight.Add(1)
+				if shutDown.Load() {
+					t.Error("an operation was admitted after Shutdown returned")
+				}
+				if (g+i)%4 == 0 && l.Enter() {
+					// A nested Enter may be admitted or refused, but
+					// must not deadlock against a waiting Shutdown.
+					runtime.Gosched()
+					l.Exit()
+				}
+				runtime.Gosched()
+				inFlight.Add(-1)
+				l.Exit()
+				if first {
+					started.Done()
+					first = false
+				}
+			}
+		})
+	}
+	started.Wait()
+
+	var shutdowns sync.WaitGroup
+	for range 3 {
+		shutdowns.Go(func() {
+			l.Shutdown()
+			if n := inFlight.Load(); n != 0 {
+				t.Errorf("Shutdown returned with %d operations in progress", n)
+			}
+			shutDown.Store(true)
+		})
+	}
+	shutdowns.Wait()
+	workers.Wait()
+	if l.Enter() {
+		t.Error("Enter() after Shutdown = true, want false")
+	}
 }

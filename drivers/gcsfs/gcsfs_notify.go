@@ -43,12 +43,9 @@ var _ types.Watcher = (*gcsFS)(nil)
 // GCS API) to publish object-change events to the Pub/Sub topic that the
 // subscription is attached to.
 //
-// Watch holds no lifetime lock and needs none: it builds a Pub/Sub client of
-// its own and reads only subscription, bucket and baseDir, which stay exactly
-// as constructed, so it never reaches the storage client that Close gives up.
-// The watcher goroutine reads the same fields and calls the caller's hook, which
-// is free to use the file system — including closing it — because no lock is
-// held here.
+// Watch builds a Pub/Sub client of its own and reads only subscription, bucket
+// and baseDir, which stay exactly as constructed, so it never reaches the
+// storage client that Close gives up.
 func (fsys *gcsFS) Watch(ctx context.Context, name string, hook types.NotifyHook) (io.Closer, error) {
 	if err := pathutil.Validate("watch", name); err != nil {
 		return nil, err

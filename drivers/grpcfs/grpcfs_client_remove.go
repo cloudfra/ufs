@@ -16,16 +16,10 @@ package grpcfs
 
 // Remove and RemoveAll are the [types.RemoveFS] and [types.RemoveAllFS]
 // halves of [types.WriteFS]. The call helper is shared by the three rpcs that
-// answer only whether they worked, which is why it sits here. The three verbs
-// name the operation they are doing rather than sharing one name, which is why the
-// helper takes the op as an argument; none of them is a wrapper around another,
-// and none of them takes the lifetime lock — the section is the helper's.
+// answer only whether they worked, which is why it sits here.
 
 import (
-	"io/fs"
-
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/proto"
 )
 
@@ -46,26 +40,15 @@ func (fsys *grpcFS) RemoveAll(name string) error {
 }
 
 // call runs one rpc that answers only whether it worked, naming op and name in
-// the error it returns. The closed check and the rpc are one read-lock section;
-// the path validation stays outside it.
-//
-// Remove, RemoveAll and [grpcFS.MkdirAll] are thin verbs over it and take no lock
-// of their own — a read lock held across a call into a sibling that takes the lock
-// again deadlocks the pair against a Close waiting between them. What each passes
-// as rpc is therefore a call on the connection and never a call back into this
-// file system, which is what lets the section hold the lock across it.
+// the error it returns.
 func (fsys *grpcFS) call(op, name string, rpc func() error) error {
+	if err := fsys.closedErr(op, name); err != nil {
+		return err
+	}
 	if err := pathutil.Validate(op, name); err != nil {
 		return err
 	}
-	fsys.mu.RLock()
-	if fsys.closed.Load() {
-		fsys.mu.RUnlock()
-		return ufserrors.NewPathError(op, name, fs.ErrClosed)
-	}
-	err := rpc()
-	fsys.mu.RUnlock()
-	if err != nil {
+	if err := rpc(); err != nil {
 		return pathError(op, name, err)
 	}
 	return nil

@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudfra/ufs"
@@ -81,6 +82,11 @@ type memFS struct {
 	mu    sync.RWMutex
 	name  string
 	nodes map[string]*memNode
+	// closed is claimed by Close. The node map stays in place after Close,
+	// because an operation that checked closed just before may still be
+	// using it: what it then sees is the last tree rather than a nil map that
+	// a lookup would crash on or a write would panic on.
+	closed atomic.Bool
 
 	notifyBus *notify.Bus
 }
@@ -251,16 +257,7 @@ func (f *memOpenFile) Close() error {
 // memDirFile is an open directory handle. It snapshots the directory entries at
 // Open time so that paginated ReadDir calls are stable even if the filesystem is
 // modified concurrently.
-//
-// A caller is free to keep one handle and serve more than one reader from it, so
-// where a reader has reached in the snapshot is per-handle state that mu guards.
-// Two walkers over one handle then divide the snapshot between them: each entry
-// is handed to exactly one of them, in order, and neither sees it twice. The
-// other fields are written once at Open and only read after that, so they need
-// no guard, and ReadDir holds mu over no work the handle did not already own —
-// the snapshot is built by openDir before the handle exists.
 type memDirFile struct {
-	mu      sync.Mutex
 	path    string
 	entries []fs.DirEntry
 	offset  int
@@ -281,15 +278,12 @@ func (d *memDirFile) Close() error {
 }
 
 func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
-	d.mu.Lock()
 	if n <= 0 {
 		batch := d.entries[d.offset:]
 		d.offset = len(d.entries)
-		d.mu.Unlock()
 		return batch, nil
 	}
 	if d.offset >= len(d.entries) {
-		d.mu.Unlock()
 		return nil, io.EOF
 	}
 	end := d.offset + n
@@ -298,15 +292,11 @@ func (d *memDirFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	}
 	batch := d.entries[d.offset:end]
 	d.offset = end
-	d.mu.Unlock()
 	return batch, nil
 }
 
 func (fsys *memFS) isClosed() bool {
-	fsys.mu.RLock()
-	closed := fsys.nodes == nil
-	fsys.mu.RUnlock()
-	return closed
+	return fsys.closed.Load()
 }
 
 func (fsys *memFS) Open(name string) (fs.File, error) {
@@ -396,12 +386,10 @@ func (fsys *memFS) listDir(dir string) ([]fs.DirEntry, error) {
 }
 
 func (fsys *memFS) Close() error {
-	err := fsys.notifyBus.Close()
-
-	fsys.mu.Lock()
-	fsys.nodes = nil
-	fsys.mu.Unlock()
-	return err
+	if !fsys.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	return fsys.notifyBus.Close()
 }
 
 // checkDirsLocked verifies that name and each of its ancestors, where they

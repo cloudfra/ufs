@@ -39,8 +39,7 @@ var extList = []string{".tar", ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.lz4", ".t
 
 // FS is a read-only file system over the contents of an archive. Close
 // releases the archive file, after which the operations report
-// [fs.ErrClosed]; Close waits for the operations that are already using the
-// archive before it releases it.
+// [fs.ErrClosed].
 //
 // Stat and ReadDir are part of the interface because the archive library
 // answers both from entry metadata, which is much cheaper than the io/fs
@@ -128,16 +127,12 @@ type archiveFS struct {
 	isIndexed atomic.Bool
 	// closed is set by the first Close. fsys and closer are never changed
 	// after makeArchiveFS, so an operation can never meet a nil archive
-	// because another goroutine called Close.
+	// because another goroutine called Close. Closing a file system that is
+	// still in use is the caller's to avoid: an operation that was already
+	// under way may meet the released archive and report its error, and a
+	// caller that serves the file system concurrently (a host mount or a grpc
+	// server) drains its own operations before it closes it.
 	closed atomic.Bool
-	// mu is what makes closed more than a hint: an operation holds RLock across
-	// the closed check and every call into fsys and into the handles taken from
-	// it, and Close takes Lock before releasing the archive. The check and the
-	// use are therefore one critical section with respect to Close, so no
-	// operation can be decided "open" and then work through an archive whose
-	// file Close has already released. Readers stay concurrent with each
-	// other; only Close waits.
-	mu sync.RWMutex
 }
 
 func makeArchiveFS(fsys fs.FS, name string, closer io.Closer) *archiveFS {
@@ -170,10 +165,7 @@ func (fsys *archiveFS) ensureIndexed() {
 	})
 }
 
-// isClosed reports whether Close has already released the archive. Every
-// decision to use the archive goes through this check while holding
-// [archiveFS.mu], so the check and the use that follows it cannot be split by
-// Close.
+// isClosed reports whether Close has already released the archive.
 func (fsys *archiveFS) isClosed() bool {
 	return fsys.closed.Load()
 }
@@ -185,44 +177,29 @@ func (fsys *archiveFS) isClosed() bool {
 // skip the detect-and-retry dance entirely. A closed file system reports
 // [fs.ErrClosed].
 func (fsys *archiveFS) Open(name string) (fs.File, error) {
-	fsys.mu.RLock()
 	if fsys.isClosed() {
-		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
 	}
 	if fsys.isIndexed.Load() {
-		file, err := fsys.fsys.Open(name)
-		fsys.mu.RUnlock()
-		return snapshotDir(file, err)
+		return snapshotDir(fsys.fsys.Open(name))
 	}
 
 	f, err := fsys.fsys.Open(name)
 	if err != nil {
-		fsys.mu.RUnlock()
 		return nil, err
 	}
 	if name == "." {
-		fsys.mu.RUnlock()
 		return snapshotDirFile(f), nil
 	}
-	// The library's own handle is a view onto the archive Close releases, so
-	// its Stat and the close of the wrong entry also stay inside the section.
 	info, statErr := f.Stat()
 	if statErr != nil || info.Name() == path.Base(name) {
-		fsys.mu.RUnlock()
 		return snapshotDirFile(f), nil
 	}
 	if err := f.Close(); err != nil {
-		fsys.mu.RUnlock()
 		return nil, fmt.Errorf("cannot close %q, %w", name, err)
 	}
-	// ensureIndexed walks every entry of the archive and the retry opens name
-	// again, so both belong to the same section as the check above. Neither
-	// calls back into archiveFS, so holding the lock across them cannot nest.
 	fsys.ensureIndexed()
-	file, err := fsys.fsys.Open(name)
-	fsys.mu.RUnlock()
-	return snapshotDir(file, err)
+	return snapshotDir(fsys.fsys.Open(name))
 }
 
 // snapshotDir adapts an archive library handle for a directory so that it
@@ -244,31 +221,18 @@ func snapshotDirFile(file fs.File) fs.File {
 }
 
 // snapshotDirFileHandle answers ReadDir from one snapshot of the directory
-// listing, tracking the position the library's handle does not. mu guards that
-// snapshot and the position: a host can hand the one handle Open returned to two
-// goroutines, and an unguarded position lets them be handed the same entries
-// twice and skip others. The snapshot is taken once under the same lock, so the
-// walker that gets there second reads what the first stored rather than listing
-// the archive again.
+// listing, tracking the position the library's handle does not.
 type snapshotDirFileHandle struct {
 	fs.ReadDirFile
-	mu      sync.Mutex
 	entries []fs.DirEntry
 	off     int
 	listed  bool
 }
 
-// ReadDir returns the next n entries of the listing, all the rest when n is not
-// positive, and io.EOF once the listing is spent. The entries a call returns are
-// a read-only window of the snapshot, so they stay valid after the lock is
-// released.
 func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
-	dir.mu.Lock()
-
 	if !dir.listed {
 		entries, err := dir.ReadDirFile.ReadDir(-1)
 		if err != nil {
-			dir.mu.Unlock()
 			return nil, err
 		}
 		dir.entries = entries
@@ -277,18 +241,15 @@ func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
 	rest := dir.entries[dir.off:]
 	if n <= 0 {
 		dir.off = len(dir.entries)
-		dir.mu.Unlock()
 		return rest, nil
 	}
 	if len(rest) == 0 {
-		dir.mu.Unlock()
 		return nil, io.EOF
 	}
 	if n < len(rest) {
 		rest = rest[:n]
 	}
 	dir.off += len(rest)
-	dir.mu.Unlock()
 	return rest, nil
 }
 
@@ -299,17 +260,10 @@ func (dir *snapshotDirFileHandle) ReadDir(n int) ([]fs.DirEntry, error) {
 // ensureIndexed, and it avoids opening (and decompressing into) a content
 // stream just to read metadata. A closed file system reports [fs.ErrClosed].
 func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
-	fsys.mu.RLock()
 	if fsys.isClosed() {
-		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("stat", name, fs.ErrClosed)
 	}
-	// fs.Stat uses the library's own Stat (archives.ArchiveFS implements
-	// fs.StatFS); its fallback is the library's Open, never archiveFS.Open, so
-	// this cannot re-enter the guard above.
-	info, err := fs.Stat(fsys.fsys, name)
-	fsys.mu.RUnlock()
-	return info, err
+	return fs.Stat(fsys.fsys, name)
 }
 
 // ReadDir forwards to the library's own ReadDir, which builds and then reuses
@@ -323,21 +277,14 @@ func (fsys *archiveFS) Stat(name string) (fs.FileInfo, error) {
 // archive does not store at all reports [fs.ErrNotExist]. A closed file
 // system reports [fs.ErrClosed].
 func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	fsys.mu.RLock()
 	if fsys.isClosed() {
-		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("readdir", name, fs.ErrClosed)
 	}
 	entries, err := fs.ReadDir(fsys.fsys, name)
-	fsys.mu.RUnlock()
 	if err != nil {
 		return nil, err
 	}
 	if len(entries) == 0 {
-		// The confirming Stat takes the read lock itself, so it has to stay
-		// outside the section above: sync.RWMutex refuses a new reader while a
-		// writer waits, so a reader that re-entered the guard here would block
-		// forever against a Close that is waiting for this very section.
 		if _, err := fsys.Stat(name); err != nil {
 			return nil, ufserrors.NewPathError("readdir", name, fs.ErrNotExist)
 		}
@@ -348,25 +295,14 @@ func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 // Close releases the archive file. It is idempotent: only the first call
 // closes the underlying reader and every later call reports nil, and it never
 // changes fsys or closer, so an operation that was already running keeps the
-// archive it is using instead of meeting a nil one.
-//
-// Close waits for the operations that had already passed their closed check to
-// finish using the archive before it releases the archive file, and every
-// operation that starts after this call sets closed takes the read lock either
-// before or after the teardown and is refused either way. There is no schedule
-// on which an operation decides to use the archive and then works through a
-// file Close has released — which for an indexed archive would mean answering
-// entries and metadata from the library's index with no open file behind it.
+// archive it is using instead of meeting a nil one, and an operation that
+// starts afterwards reports [fs.ErrClosed].
 func (fsys *archiveFS) Close() error {
 	if !fsys.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	fsys.mu.Lock()
-	if fsys.closer == nil {
-		fsys.mu.Unlock()
-		return nil
+	if fsys.closer != nil {
+		return fsys.closer.Close()
 	}
-	err := fsys.closer.Close()
-	fsys.mu.Unlock()
-	return err
+	return nil
 }

@@ -29,6 +29,10 @@ import (
 // MkdirAll answers [types.MkdirAllFS.MkdirAll], with the same pass-through of the
 // requested mode as the upload.
 func (s *Server) MkdirAll(_ context.Context, req *proto.MkdirAllRequest) (*emptypb.Empty, error) {
+	if !s.life.Enter() {
+		return nil, errShutdown
+	}
+	defer s.life.Exit()
 	if err := s.inner.MkdirAll(req.GetName(), fs.FileMode(req.GetMode())); err != nil {
 		return nil, toStatus(err)
 	}
@@ -37,6 +41,10 @@ func (s *Server) MkdirAll(_ context.Context, req *proto.MkdirAllRequest) (*empty
 
 // Remove answers [types.RemoveFS.Remove].
 func (s *Server) Remove(_ context.Context, req *proto.RemoveRequest) (*emptypb.Empty, error) {
+	if !s.life.Enter() {
+		return nil, errShutdown
+	}
+	defer s.life.Exit()
 	if err := s.inner.Remove(req.GetName()); err != nil {
 		return nil, toStatus(err)
 	}
@@ -47,6 +55,10 @@ func (s *Server) Remove(_ context.Context, req *proto.RemoveRequest) (*emptypb.E
 // an error, which is what the rpc documents and what the file system already
 // answers.
 func (s *Server) RemoveAll(_ context.Context, req *proto.RemoveAllRequest) (*emptypb.Empty, error) {
+	if !s.life.Enter() {
+		return nil, errShutdown
+	}
+	defer s.life.Exit()
 	if err := s.inner.RemoveAll(req.GetName()); err != nil {
 		return nil, toStatus(err)
 	}

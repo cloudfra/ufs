@@ -29,6 +29,10 @@ import (
 // GetFile answers [types.ReadFS.Stat], or [types.ReadFS.Lstat] when the request
 // asks that a trailing symbolic link not be followed.
 func (s *Server) GetFile(_ context.Context, req *proto.GetFileRequest) (*proto.File, error) {
+	if !s.life.Enter() {
+		return nil, errShutdown
+	}
+	defer s.life.Exit()
 	var (
 		info fs.FileInfo
 		err  error
@@ -46,6 +50,10 @@ func (s *Server) GetFile(_ context.Context, req *proto.GetFileRequest) (*proto.F
 
 // ReadLink answers [types.ReadFS.ReadLink].
 func (s *Server) ReadLink(_ context.Context, req *proto.ReadLinkRequest) (*proto.ReadLinkResponse, error) {
+	if !s.life.Enter() {
+		return nil, errShutdown
+	}
+	defer s.life.Exit()
 	target, err := s.inner.ReadLink(req.GetName())
 	if err != nil {
 		return nil, toStatus(err)
@@ -56,6 +64,10 @@ func (s *Server) ReadLink(_ context.Context, req *proto.ReadLinkRequest) (*proto
 // GetMetadata answers the three methods that say something about the file system
 // rather than about a path in it, in the one response the rpc exists to give.
 func (s *Server) GetMetadata(_ context.Context, _ *proto.GetMetadataRequest) (*proto.FileSystemInfo, error) {
+	if !s.life.Enter() {
+		return nil, errShutdown
+	}
+	defer s.life.Exit()
 	uri, err := s.inner.URI()
 	if err != nil {
 		return nil, toStatus(err)

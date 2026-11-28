@@ -151,6 +151,10 @@ file system. On Linux this uses FUSE via go-fuse/v2; on Windows it uses ProjFS.
 Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 (never the reverse) and only uses its exported API (e.g. `ufs.CwdPath`).
 
+FUSE file handles go through `syncfs.NewFile`, because go-fuse reads and
+writes one handle from several goroutines; `Unmount` waits for the requests
+in flight, so the caller may close the FS once `MountServer.Close` returns.
+
 Writes are enabled when the mounted FS is a `types.WriteFS` (not `ufs.FS`, so
 drivers without a native Rename stay writable). Renames go through
 `ops.Rename`: FUSE replaces an existing destination as rename(2) does (moving
@@ -187,6 +191,7 @@ enable its scheme. They may use `internal/` packages.
 | :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | drivers/boltfs/            | bolt: driver backed by go.etcd.io/bbolt (stub on GOARCH=wasm)                                                                                           |
 | drivers/common/buffile/    | Exported fully-buffered file handle for drivers (depends on ufs)                                                                                        |
+| drivers/common/syncfs/     | Concurrency guards for code that serves an FS: syncfs.NewFile shares one handle between goroutines, syncfs.Lifetime drains rpcs before Close            |
 | drivers/core/              | Built-in backends; registers file://, archive://, http(s):// archives, memory:, null: and angry: on import. The base package registers no driver itself |
 | drivers/embedfs/           | Wraps a Go embed.FS as a read-only FS via embedfs.New; not URI-dispatched (no scheme registration)                                                      |
 | drivers/gcsfs/             | Google Cloud Storage FS; registers gs:// on import. gcsfs.New / gcsfs.NewWithClient                                                                     |

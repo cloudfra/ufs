@@ -181,7 +181,12 @@ func serve(ctx context.Context, fsys types.WriteFS, lis net.Listener) error {
 	// the WriteFile rpc documents, so a server built without them refuses an
 	// upload at a number nothing in this command chose.
 	grpcServer := grpc.NewServer(grpcfs.ServerOptions()...)
-	proto.RegisterFSServer(grpcServer, grpcfs.NewServer(fsys))
+	fsServer := grpcfs.NewServer(fsys)
+	proto.RegisterFSServer(grpcServer, fsServer)
+	// Whichever way serving ends, no handler is still using fsys when this
+	// returns and the caller closes it: Shutdown waits for the ones in progress,
+	// which a failed Serve leaves behind as surely as Stop would.
+	defer fsServer.Shutdown()
 
 	address := lis.Addr().String()
 	slog.Info("serving file system", "address", address)

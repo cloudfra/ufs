@@ -45,6 +45,10 @@ import (
 // are not created, and [Server.writeParent] is how that is kept regardless of
 // which file system the server was handed.
 func (s *Server) WriteFile(stream proto.FS_WriteFileServer) error {
+	if !s.life.Enter() {
+		return errShutdown
+	}
+	defer s.life.Exit()
 	first, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {

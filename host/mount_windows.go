@@ -165,7 +165,13 @@ func projfsHRESULT(err error) uintptr {
 
 // projfsEnumSession holds state for an in-progress directory enumeration.
 type projfsEnumSession struct {
-	path    string
+	path string
+
+	// mu guards the cursor. ProjFS calls back on its own thread pool, and
+	// nothing serializes the GetDirEnum calls of one enumeration: a directory
+	// handle opened for overlapped I/O can have two queries in flight, which
+	// would otherwise hand out an entry twice or skip one.
+	mu      sync.Mutex
 	entries []fs.DirEntry
 	index   int
 }
@@ -305,6 +311,8 @@ func getDirEnumCB(callbackData *prjCallbackData, enumerationID *windows.GUID, se
 		return hresultFail
 	}
 	session := v.(*projfsEnumSession)
+	session.mu.Lock()
+	defer session.mu.Unlock()
 
 	searchStr := ""
 	if searchExpression != nil {

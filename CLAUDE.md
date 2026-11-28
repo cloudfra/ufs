@@ -153,7 +153,10 @@ Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 
 FUSE file handles go through `syncfs.NewFile`, because go-fuse reads and
 writes one handle from several goroutines; `Unmount` waits for the requests
-in flight, so the caller may close the FS once `MountServer.Close` returns.
+in flight, so the caller may close the FS once `MountServer.Close` returns. ProjFS
+opens a handle per callback, guards each directory enumeration's cursor with
+its own mutex (callbacks run on a thread pool), and `PrjStopVirtualizing`
+waits for running callbacks.
 
 Writes are enabled when the mounted FS is a `types.WriteFS` (not `ufs.FS`, so
 drivers without a native Rename stay writable). Renames go through

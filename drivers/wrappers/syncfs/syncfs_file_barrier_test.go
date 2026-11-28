@@ -30,9 +30,9 @@ import (
 
 // These tests check the exclusion File promises by counting, inside the
 // handle it wraps, how many calls are in progress at once, rather than
-// relying on the race detector to notice an overlap: the cursor methods, Stat
-// and Close must each be alone in the handle, and the native positional calls
-// may overlap one another but nothing else.
+// relying on the race detector to notice an overlap: every call must be alone
+// in the handle except a native ReadAt, which may overlap other ReadAt calls
+// but nothing else.
 
 // probe counts the calls in progress on a handle and records any overlap that
 // File should have prevented. Every call yields a few times while inside, so
@@ -66,8 +66,8 @@ func (p *probe) enterExclusive(op string) {
 
 func (p *probe) exitExclusive() { p.exclusive.Add(-1) }
 
-// enterPositional marks a native ReadAt or WriteAt, which may overlap others of
-// its kind but not an exclusive call.
+// enterPositional marks a native ReadAt, which may overlap other ReadAt calls
+// but not an exclusive call.
 func (p *probe) enterPositional(op string) {
 	p.positional.Add(1)
 	if n := p.exclusive.Load(); n != 0 {
@@ -171,8 +171,8 @@ func (f *probeFile) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (f *probeFile) WriteAt(p []byte, _ int64) (int, error) {
-	f.enterPositional("WriteAt")
-	defer f.exitPositional()
+	f.enterExclusive("WriteAt")
+	defer f.exitExclusive()
 	return len(p), nil
 }
 
@@ -219,8 +219,8 @@ func hammer(t *testing.T, f *File) {
 }
 
 // TestFileExclusion calls every method of a handle that has every method,
-// from several goroutines at once, and checks that only native positional
-// calls ever overlapped, and that they did overlap.
+// from several goroutines at once, and checks that only native ReadAt calls
+// ever overlapped.
 func TestFileExclusion(t *testing.T) {
 	t.Parallel()
 	inner := &probeFile{probe: &probe{}}

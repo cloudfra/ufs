@@ -36,15 +36,18 @@ var (
 // The cursor methods (Read, Write, Seek, ReadDir) and Stat and Close run one
 // at a time, so callers sharing the handle share one position and each byte or
 // entry is handed to exactly one of them. ReadAt and WriteAt use the handle's
-// own positional methods when it has them and run in parallel with each other,
-// as [io.ReaderAt] and [io.WriterAt] allow, while still excluding Close. A
-// handle without them gets an emulation that runs one at a time: a seek, the
+// own positional methods when it has them. A native ReadAt runs in parallel
+// with other ReadAt calls, as [io.ReaderAt] allows, but with nothing else; a
+// native WriteAt runs alone, because neither interface lets a write overlap a
+// read, and [io.WriterAt] allows parallel writes only to disjoint ranges, which
+// the wrapper cannot see. A handle without them gets an emulation that runs
+// one at a time: a seek, the
 // transfer and a seek back for a handle that can seek, or the transfer at the
 // cursor for one that cannot, in which case an offset anywhere else reports
 // [errors.ErrUnsupported].
 type File struct {
-	// mu is held for reading by the native positional calls and for writing by
-	// everything that moves the cursor or ends the handle.
+	// mu is held for reading by a native ReadAt and for writing by every
+	// other call.
 	mu sync.RWMutex
 	f  fs.File
 	// pos is the cursor of f as this wrapper last left it. Every call that
@@ -155,9 +158,9 @@ func (f *File) readAtLocked(p []byte, off int64) (int, error) {
 // any other offset rather than putting the bytes in the wrong place.
 func (f *File) WriteAt(p []byte, off int64) (int, error) {
 	if wa, ok := f.f.(io.WriterAt); ok {
-		f.mu.RLock()
+		f.mu.Lock()
 		n, err := wa.WriteAt(p, off)
-		f.mu.RUnlock()
+		f.mu.Unlock()
 		return n, err
 	}
 	w, ok := f.f.(io.Writer)

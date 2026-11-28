@@ -44,6 +44,7 @@ var (
 	_ types.File       = (*memOpenFile)(nil)
 	_ types.WriteFS    = (*memFS)(nil)
 	_ types.OpenFileFS = (*memFS)(nil)
+	_ types.ChtimesFS  = (*memFS)(nil)
 	_ fs.GlobFS        = (*memFS)(nil)
 	_ fs.ReadDirFile   = (*memDirFile)(nil)
 	_ types.Watcher    = (*memFS)(nil)

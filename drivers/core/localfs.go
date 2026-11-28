@@ -37,6 +37,7 @@ var (
 
 	// TODO: Fold these into localFSInterface
 	_ types.ChmodFS     = (*localFS)(nil)
+	_ types.ChtimesFS   = (*localFS)(nil)
 	_ types.LinkFS      = (*localFS)(nil)
 	_ types.WriteFileFS = (*localFS)(nil)
 )

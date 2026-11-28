@@ -22,7 +22,6 @@ import (
 	"io/fs"
 
 	"github.com/cloudfra/ufs/internal/pathutil"
-	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/proto"
 )
 
@@ -39,29 +38,17 @@ import (
 // rather than one; the alternative is a handle that only learns it is a directory
 // when something asks it for a listing. It is also where a handle's size comes
 // from, so it can be seeked from its end before it has read anything.
-//
-// The closed check and that GetFile are one read-lock section; the path
-// validation stays outside it. Open calls the lookup through statLocked rather
-// than through stat, which takes the lock itself and would deadlock this section
-// against a Close waiting between the two.
 func (fsys *grpcFS) Open(name string) (fs.File, error) {
+	if err := fsys.closedErr("open", name); err != nil {
+		return nil, err
+	}
 	if err := pathutil.Validate("open", name); err != nil {
 		return nil, err
 	}
-	fsys.mu.RLock()
-	if fsys.closed.Load() {
-		fsys.mu.RUnlock()
-		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
-	}
-	info, err := fsys.statLocked("open", name, proto.SymlinkHandling_SYMLINK_HANDLING_FOLLOW)
-	fsys.mu.RUnlock()
+	info, err := fsys.stat("open", name, proto.SymlinkHandling_SYMLINK_HANDLING_FOLLOW)
 	if err != nil {
 		return nil, err
 	}
-	// The handle is built outside the section: it is a view over the connection
-	// rather than a call on it, and what it asks the server for later — a page of
-	// a listing, a range of content — decides about closedness at its own use
-	// site, under its own read lock.
 	if info.IsDir() {
 		return &grpcDir{name: name, fsys: fsys, info: info}, nil
 	}

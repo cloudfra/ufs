@@ -28,13 +28,10 @@ func (fsys *archiveFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err := pathutil.Validate("readdir", name); err != nil {
 		return nil, err
 	}
-	fsys.mu.RLock()
 	if fsys.closed.Load() {
-		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("readdir", name, fs.ErrClosed)
 	}
 	entries, err := fsys.fsys.ReadDir(name)
-	fsys.mu.RUnlock()
 	if err != nil {
 		return nil, err
 	}

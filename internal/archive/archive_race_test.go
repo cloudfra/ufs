@@ -21,37 +21,18 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"slices"
 	"sync"
 	"testing"
 )
 
-// This package has two unsynchronized windows, and both are exposed here
-// because they belong to this component (issue #748 keeps one exposure file per
-// component).
-//
-// The first is the archive handle itself. Close (archive.go:270-278) makes
-// itself idempotent by writing nil into fsys.fsys at :271 and into fsys.closer
-// at :274 - TestCloseIdempotent (archive_test.go:305) is what that nil write is
-// for - while every operation reads fsys.fsys unlocked: Open at :166 and :169,
-// Stat at :245, ReadDir at :258. Nothing checks for nil on the way in, so the
-// operation that loses the race does not get an error, it gets a method call on
-// a nil archive and the process dies. The recover in the operation counts those
-// crashes and reports them rather than hiding them, because an unrecovered
-// panic would take the rest of the package's tests with it.
-//
-// The second is the directory handle snapshotDirFileHandle returns for a
-// directory (archive.go:207-236): the listing is filled in lazily at :220-221
-// and the position is a plain int read at :223 and advanced at :225 and :234,
-// with nothing guarding either. Two readers on the one handle a host gets from
-// Open are handed the same entries twice and skip others.
-//
-// Both tests are red on purpose. The fixes they turn green are the same two the
-// other rows of #748 need: guard the inner handle (open question 3), and guard
-// the pagination position or narrow the doc for one handle (open question 1).
+// Close used to make itself idempotent by writing nil into the fields every
+// operation reads unlocked, so an operation racing it met a nil archive and
+// panicked. Close now leaves them set and records closedness in an atomic flag;
+// TestArchiveFSOperationsDuringClose checks that an operation racing Close
+// either succeeds or reports fs.ErrClosed, never a panic or a data race.
 
-// raceArchiveDir and raceArchiveEntries name the directory and files the two
-// tests work on. The zip is built here rather than taken from
+// raceArchiveDir and raceArchiveEntries name the directory and files the test
+// works on. The zip is built here rather than taken from
 // testing/testassets so that the file needs nothing generated to run.
 const raceArchiveDir = "box"
 
@@ -140,67 +121,5 @@ func TestArchiveFSOperationsDuringClose(t *testing.T) {
 	if len(crashes) > 0 {
 		t.Errorf("%d operations met an archive that Close had already let go and panicked instead of returning fs.ErrClosed: %v",
 			len(crashes), crashes)
-	}
-}
-
-// TestConcurrentReadDirOnOneHandle walks one directory handle from two
-// goroutines. Between them they must be handed every entry of the listing
-// exactly once: none skipped, none twice.
-func TestConcurrentReadDirOnOneHandle(t *testing.T) {
-	t.Parallel()
-
-	fsys, err := New(t.Context(), raceArchiveZip(t))
-	if err != nil {
-		t.Fatalf("New = %v, want nil", err)
-	}
-	defer func() {
-		if err := fsys.Close(); err != nil {
-			t.Errorf("Close = %v, want nil", err)
-		}
-	}()
-
-	dir, err := fsys.Open(raceArchiveDir)
-	if err != nil {
-		t.Fatalf("Open(%q) = %v, want nil", raceArchiveDir, err)
-	}
-	defer func() {
-		if err := dir.Close(); err != nil {
-			t.Errorf("Close of %q = %v, want nil", raceArchiveDir, err)
-		}
-	}()
-	walker, ok := dir.(fs.ReadDirFile)
-	if !ok {
-		t.Fatalf("Open(%q) = %T, want an io/fs.ReadDirFile", raceArchiveDir, dir)
-	}
-
-	const pages = 100
-
-	var mu sync.Mutex
-	var seen []string
-	var running sync.WaitGroup
-	for range 2 {
-		running.Go(func() {
-			for range pages {
-				entries, err := walker.ReadDir(2)
-				if err != nil && !errors.Is(err, io.EOF) {
-					t.Errorf("ReadDir(2) = %v, want nil or io.EOF", err)
-					return
-				}
-				mu.Lock()
-				for _, entry := range entries {
-					seen = append(seen, entry.Name())
-				}
-				mu.Unlock()
-			}
-		})
-	}
-	running.Wait()
-
-	slices.Sort(seen)
-	want := slices.Clone(raceArchiveEntries)
-	slices.Sort(want)
-	if !slices.Equal(seen, want) {
-		t.Errorf("one handle walked by two goroutines returned %d entries %v, want each of %v exactly once",
-			len(seen), seen, want)
 	}
 }

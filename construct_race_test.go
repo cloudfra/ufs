@@ -22,24 +22,17 @@ import (
 	"testing"
 )
 
-// FSBuilder (construct.go:304-306) keeps its mounts in one slice, and every
-// mount method appends to it without a guard: Mount at :324 and MountFS at :331.
-// Build reads that slice at :346 and BuildURI reads it at :371 and :372, also
-// unguarded. The "Safe for concurrent use" sentence in the package doc at :151
-// describes the FS that New returns, not the builder, so nothing in the
-// documented contract promises a builder can be filled from more than one
-// goroutine - but nothing says it cannot either, and this is the one component
-// in #748 whose window is reachable purely in-process.
+// FSBuilder keeps its mounts in one slice that every mount method appends to and
+// Build and BuildURI read, so a builder filled from more than one goroutine is
+// guarded by its own mutex. Unlike a file handle, a builder is configuration a
+// program may well assemble from several goroutines, and the guard costs nothing
+// on any file system path.
 //
 // Two things can go wrong and the tests below separate them. Two appends racing
 // each other lose one of the mounts: the slice header is written twice, so a
 // caller can add a mount and have it vanish. A Build or BuildURI that runs while
 // an append is in flight can read past the elements that were actually written,
 // which serializes a mount that nobody asked for.
-//
-// The tests are red on purpose. The fix that turns them green is an owner call:
-// guard the slice, or state on FSBuilder that a builder belongs to one
-// goroutine. That decision is open question 1 in #748.
 
 // raceBuilderRoot and raceBuilderMountURI are URI strings, not file systems:
 // BuildURI only serializes, so no driver is opened by these tests.

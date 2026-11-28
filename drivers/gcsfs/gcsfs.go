@@ -34,7 +34,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -82,47 +81,23 @@ type gcsFS struct {
 
 	// closed says Close has been called, after which this file system refuses
 	// everything it would have put on the wire. It is claimed with
-	// CompareAndSwap so that only the first Close reaches the client.
+	// CompareAndSwap so that only the first Close reaches the client. Closing
+	// the file system while it is still in use is the caller's to avoid: a
+	// request already under way may meet the closed client and report its
+	// error, and a caller that serves the file system concurrently (a host
+	// mount or a grpc server) drains its own requests before it closes it.
 	closed atomic.Bool
-
-	// mu is the lifetime guard that makes closed enough. An operation that
-	// reaches the bucket holds mu.RLock across the closed check and the calls
-	// it makes into client, and Close holds mu.Lock while it gives the client
-	// up. After the CAS, Close cannot reach the teardown until every operation
-	// that had already decided to use the client has finished using it, and an
-	// operation that starts later takes the read lock on either side of the
-	// teardown and is refused by the check in both cases, so there is no
-	// schedule on which an operation decides "use the client" and then works
-	// through a client Close has given up. Readers stay concurrent with each
-	// other and only Close waits, and Close stays synchronous. No method may
-	// hold the lock and then reach another method of this file system that
-	// takes it again — a pending Close would deadlock the pair — so a
-	// delegating method (ReadFile, ReadDir, Lstat) stays out of the lock and
-	// lets the delegate check at its own use site.
-	mu sync.RWMutex
 }
 
 // gcsFile represents an opened GCS object for reading, a virtual directory, or
 // a GCS writer for an in-progress Create.
-//
-// mu guards the sequential cursor of the handle, so one handle handed to two
-// callers gives them one position rather than two callers racing one counter.
 type gcsFile struct {
-	name    string
-	content []byte
-
-	// mu guards the sequential cursor of the handle: offset, which is where the
-	// next Read continues from, and dirOffset below, which is where the next
-	// ReadDir continues from. A handle is an object or a directory for its whole
-	// life — isDir is fixed at Open — so one mutex covers both cursors.
-	mu     sync.Mutex
-	offset int64
-
-	isDir   bool
-	size    int64
-	modTime time.Time
-	// dirEntries is fixed when Open hands the handle back and nothing writes it
-	// afterwards; dirOffset is the position into it that ReadDir continues from.
+	name       string
+	content    []byte
+	offset     int64
+	isDir      bool
+	size       int64
+	modTime    time.Time
 	dirEntries []fs.DirEntry
 	dirOffset  int
 	fsys       *gcsFS
@@ -144,22 +119,14 @@ func (f *gcsFile) Read(p []byte) (int, error) {
 	if len(f.content) == 0 {
 		return 0, io.EOF
 	}
-	f.mu.Lock()
 	if f.offset >= int64(len(f.content)) {
-		f.mu.Unlock()
 		return 0, io.EOF
 	}
 	n := copy(p, f.content[f.offset:])
 	f.offset += int64(n)
-	f.mu.Unlock()
 	return n, nil
 }
 
-// ReadAt reads from off without moving offset, so it needs no lock: content is
-// fixed when the handle is opened and this method touches no state of its own.
-// Two ReadAt calls, or a ReadAt and a Read, therefore never cost each other a
-// byte — only the sequential cursor of Read is shared, and only Read and Seek
-// move it.
 func (f *gcsFile) ReadAt(p []byte, off int64) (int, error) {
 	if f.isDir {
 		return 0, ufserrors.NewPathError("readat", f.name, fs.ErrInvalid)
@@ -189,7 +156,6 @@ func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 	if f.isDir {
 		return 0, ufserrors.NewPathError("seek", f.name, fs.ErrInvalid)
 	}
-	f.mu.Lock()
 	switch whence {
 	case io.SeekStart:
 		f.offset = offset
@@ -198,18 +164,14 @@ func (f *gcsFile) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		f.offset = int64(len(f.content)) + offset
 	default:
-		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: invalid whence: %w", offset, whence, fs.ErrInvalid))
 	}
 	if f.offset < 0 {
 		computed := f.offset
 		f.offset = 0
-		f.mu.Unlock()
 		return 0, ufserrors.NewPathError("seek", f.name, fmt.Errorf("offset=%d whence=%d: position %d is before start of file: %w", offset, whence, computed, fs.ErrInvalid))
 	}
-	position := f.offset
-	f.mu.Unlock()
-	return position, nil
+	return f.offset, nil
 }
 
 func (f *gcsFile) Close() error {
@@ -221,21 +183,12 @@ func (f *gcsFile) Close() error {
 	return nil
 }
 
-// ReadDir returns the next n children of the directory, or every remaining
-// child when n is not positive, and moves the position the next call continues
-// from. That position is guarded, so one directory handle handed to two walkers
-// gives them one cursor: between them they are handed every child exactly once,
-// rather than one child twice and another skipped. The children themselves were
-// fixed when Open returned the handle, so the slices handed back share one
-// read-only array and one caller's result cannot change another's.
 func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	if !f.isDir {
 		return nil, ufserrors.NewPathError("readdirent", f.name, fs.ErrInvalid)
 	}
-	f.mu.Lock()
 	all := f.dirEntries
 	if f.dirOffset >= len(all) {
-		f.mu.Unlock()
 		if n > 0 {
 			return nil, io.EOF
 		}
@@ -244,19 +197,14 @@ func (f *gcsFile) ReadDir(n int) ([]fs.DirEntry, error) {
 	if n <= 0 {
 		result := all[f.dirOffset:]
 		f.dirOffset = len(all)
-		f.mu.Unlock()
 		return result, nil
 	}
 	end := min(f.dirOffset+n, len(all))
 	result := all[f.dirOffset:end]
 	f.dirOffset = end
-	f.mu.Unlock()
 	return result, nil
 }
 
-// Readdir is the legacy io/fs form of the same walk. It leaves the cursor guard
-// to ReadDir rather than taking it here, so the two forms cannot hold it at the
-// same time and always continue from one position.
 func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 	if !f.isDir {
 		return nil, ufserrors.NewPathError("readdir", f.name, fs.ErrInvalid)
@@ -277,31 +225,22 @@ func (f *gcsFile) Readdir(n int) ([]fs.FileInfo, error) {
 }
 
 // Open answers a handle on an object, or on the virtual directory in front of
-// the objects under a prefix. The closed check and every call this makes into
-// the client sit in one read-lock section; the path validation, which needs no
-// client, stays outside it.
+// the objects under a prefix. A closed file system reports [fs.ErrClosed].
 func (fsys *gcsFS) Open(name string) (fs.File, error) {
 	if name != pathutil.CwdPath {
 		if err := pathutil.Validate("open", name); err != nil {
 			return nil, err
 		}
 	}
-	fsys.mu.RLock()
 	if fsys.closed.Load() {
-		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("open", name, fs.ErrClosed)
 	}
-	file, err := fsys.openLocked(name)
-	fsys.mu.RUnlock()
-	if err != nil {
-		return nil, err
-	}
-	return file, nil
+	return fsys.openObject(name)
 }
 
-// openLocked is the bucket work Open was asked for. Its caller holds the read
-// lock for the whole of it, which is what keeps the client alive underneath it.
-func (fsys *gcsFS) openLocked(name string) (fs.File, error) {
+// openObject is the bucket work Open was asked for, once Open has refused a
+// closed file system.
+func (fsys *gcsFS) openObject(name string) (fs.File, error) {
 	if name == pathutil.CwdPath {
 		entries, err := fsys.listDir("")
 		if err != nil {
@@ -363,9 +302,8 @@ func (fsys *gcsFS) openLocked(name string) (fs.File, error) {
 
 // listDir lists the immediate children of a virtual GCS directory.
 // name is the FS-relative path; pass "" or CwdPath for the root. Every caller
-// of it — openLocked, statLocked and removeLocked — holds the read lock and has
-// already refused a closed file system, so this one never sees a client that
-// Close has given up, and it must never take the lock itself.
+// of it — openObject, statObject and removeObject — has already refused a
+// closed file system.
 func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 	var listPrefix string
 	if name == "" || name == pathutil.CwdPath {
@@ -416,19 +354,12 @@ func (fsys *gcsFS) listDir(name string) ([]fs.DirEntry, error) {
 // here is what handed a nil context to a caller that had already read the field
 // and was mid-request.
 //
-// The flag is claimed first, so an operation that starts from here on is
-// refused by the check it makes under its own read lock; the teardown then
-// waits on mu.Lock for every operation that had already decided to use the
-// client to finish the calls it is making into it. Close stays synchronous and
-// still returns what the client answered.
+// An operation that starts after Close reports [fs.ErrClosed].
 func (fsys *gcsFS) Close() error {
 	if !fsys.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	fsys.mu.Lock()
-	err := fsys.client.Close()
-	fsys.mu.Unlock()
-	return err
+	return fsys.client.Close()
 }
 
 // New returns a file system for the gs://bucket/dir URI name, authenticating

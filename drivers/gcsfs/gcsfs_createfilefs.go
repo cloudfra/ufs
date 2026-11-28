@@ -25,24 +25,18 @@ import (
 	"github.com/cloudfra/ufs/internal/ufserrors"
 )
 
-// Create hands back a writer bound to the client. The closed check and the call
-// that binds it are one read-lock section; the path validation stays outside
-// it. The writer itself belongs to the handle that Create returned: closing the
-// file system afterwards is a separate question from the one this section
-// settles, and is left alone here.
+// Create hands back a writer bound to the client. A closed file system reports
+// [fs.ErrClosed]; the writer itself belongs to the handle that Create returned.
 func (fsys *gcsFS) Create(name string) (types.File, error) {
 	if err := pathutil.Validate("create", name); err != nil {
 		return nil, err
 	}
-	fsys.mu.RLock()
 	if fsys.closed.Load() {
-		fsys.mu.RUnlock()
 		return nil, ufserrors.NewPathError("create", name, fs.ErrClosed)
 	}
 	objPath := path.Join(fsys.baseDir, name)
 	w := fsys.client.Bucket(fsys.bucket).Object(objPath).NewWriter(fsys.ctx)
 	w.ChunkSize = minChunkSize
-	fsys.mu.RUnlock()
 
 	return &gcsFile{
 		name:   name,

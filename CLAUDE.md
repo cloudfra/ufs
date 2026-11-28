@@ -260,6 +260,23 @@ MkdirAll + Create (not atomic, Perm ignored). Writing one file this way is the
 single-operation WriteFile. New drivers are covered by `BatchCreate` in
 `drivers/testing`.
 
+### Concurrency
+
+A file system is safe for concurrent operations, but an open handle belongs to
+one goroutine at a time (`fs.File` promises nothing more), and closing a file
+system that is still in use is the caller's to avoid. Drivers do not guard
+handle cursors or wait out in-flight operations in Close; they only keep Close
+from racing: fields every operation reads stay immutable after construction,
+and closedness is an `atomic.Bool` claimed with CompareAndSwap, so an
+operation that starts afterwards reports `fs.ErrClosed`. The code that serves a
+file system concurrently pays for the guarantees once, with
+`drivers/common/syncfs`: the FUSE mount wraps its handles with
+`syncfs.NewFile`, and `grpcfs.Server` admits each rpc through a
+`syncfs.Lifetime` so `Server.Shutdown` waits for them. nestFS is the exception:
+it closes archive mounts it opened itself (on Release, or when the archive
+disappears) while a request may be using them, so it keeps a per-nest RWMutex
+that each use of a base FS holds for reading and Close holds for writing.
+
 ### Conventions
 
 * Keep structs private; expose construction via the public New() factory.

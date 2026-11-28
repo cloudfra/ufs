@@ -22,29 +22,11 @@ import (
 	"testing"
 )
 
-// archiveFS keeps the archive it mounted in a plain field
-// (drivers/core/archivefs.go:56-58) and makes Close idempotent by writing nil
-// into it: Close reads fsys.fsys at :69, writes nil at :70 and closes what it
-// kept at :74, holding no lock. Open reads the same field at :65, and unlike
-// nestFS there is no closed check in front of it at all, so the two faces of
-// this window are not a close call: an operation whose read lands while Close
-// writes is a data race, and one whose read lands after the write calls Open on
-// a nil archive, which crashes the process instead of answering fs.ErrClosed.
-//
-// Nothing here needs an exotic caller. Close arrives on its own whenever the
-// archive is let go - a volume released, a host path unmounted, a file system
-// closed while a request that already holds it is still running - and Open is
-// the ordinary path a request takes.
-//
-// The recover in the operation counts crashes rather than hiding them: a panic
-// would take the rest of the package's tests with it and bury the report that is
-// the point of the file.
-//
-// It is red on purpose, and red either way: without -race the crash alone fails
-// it (ten runs out of ten met the nil dereference), and under -race the access
-// pair is reported as well. That leaves the fix - a mutex around the inner
-// handle, or a sync.Once close plus a closed flag that Open answers with
-// fs.ErrClosed - with something to turn green.
+// archiveFS used to make Close idempotent by writing nil over the archive every
+// operation reads unlocked, so an operation racing Close either raced the write
+// or called Open on a nil archive and crashed. The recover in the operation
+// counts crashes rather than hiding them, so a regression reports itself instead
+// of taking the rest of the package's tests with it.
 
 // raceArchiveName is the entry the operations open while the archive closes.
 const raceArchiveName = "alpha.txt"

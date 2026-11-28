@@ -19,8 +19,10 @@ import (
 	"errors"
 	"io"
 	"strconv"
+	"sync"
 	"testing"
 
+	"github.com/cloudfra/ufs"
 	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
 	"github.com/cloudfra/ufs/proto"
 	"google.golang.org/grpc/codes"
@@ -110,4 +112,49 @@ func TestServerListFilesCapsThePage(t *testing.T) {
 	if err != nil || len(entries) != children {
 		t.Errorf("ReadDir(.) through the client = %d entries, %v, want %d", len(entries), err, children)
 	}
+}
+
+// TestServerRewriteIsNeverEmpty rewrites one file through the client from
+// several goroutines while others read it, over the nestFS-on-memFS stack
+// ufs.New builds. The WriteFile rpc promises a reader never sees the empty
+// file that creating it and then writing it would show, so every read must
+// return a whole version.
+func TestServerRewriteIsNeverEmpty(t *testing.T) {
+	t.Parallel()
+	inner, err := ufs.New(t.Context(), "memory://")
+	if err != nil {
+		t.Fatalf("ufs.New(memory://): %v", err)
+	}
+	t.Cleanup(func() { mustClose(t, inner) })
+	client := clientOver(t, inner)
+	const version = "a whole version"
+	ufsdriversTesting.WriteFile(t, client, "shared.txt", version)
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 200 {
+				ufsdriversTesting.WriteFile(t, client, "shared.txt", version)
+			}
+		})
+	}
+	for range 2 {
+		wg.Go(func() {
+			buf := make([]byte, 4096)
+			for range 400 {
+				f, err := client.Open("shared.txt")
+				if err != nil {
+					t.Errorf("Open(shared.txt) while it is rewritten = %v", err)
+					return
+				}
+				n, err := f.(io.ReaderAt).ReadAt(buf, 0)
+				mustClose(t, f)
+				if string(buf[:n]) != version || (err != nil && !errors.Is(err, io.EOF)) {
+					t.Errorf("read shared.txt while it is rewritten = %q, %v, want %q", buf[:n], err, version)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }

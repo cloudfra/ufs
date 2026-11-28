@@ -29,6 +29,10 @@ import (
 // only when the file is small enough for that to be a bounded read; anything larger
 // is read through a handle, a frame at a time.
 func (s *Server) ReadFile(req *proto.ReadFileRequest, stream proto.FS_ReadFileServer) error {
+	if !s.life.Enter() {
+		return errShutdown
+	}
+	defer s.life.Exit()
 	if req.GetOffset() != 0 || req.GetLimit() != 0 || !s.wholeFileFits(req.GetName()) {
 		return s.sendRange(req, stream)
 	}

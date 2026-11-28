@@ -26,7 +26,6 @@ import (
 	"math/rand/v2"
 	"path"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -34,6 +33,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 
 	"github.com/cloudfra/ufs/drivers/types"
+	"github.com/cloudfra/ufs/drivers/wrappers/syncfs"
 	"github.com/cloudfra/ufs/internal/pathutil"
 	"github.com/cloudfra/ufs/internal/ufserrors"
 	"github.com/cloudfra/ufs/ops"
@@ -245,13 +245,13 @@ func (n *fuseNode) Open(_ context.Context, flags uint32) (fusefs.FileHandle, uin
 		if err != nil {
 			return nil, 0, fuseErrno(err)
 		}
-		return &fuseFileHandle{file: f}, 0, 0
+		return newFuseFileHandle(f), 0, 0
 	}
 	f, err := n.fsys.Open(n.fsPath())
 	if err != nil {
 		return nil, 0, fuseErrno(err)
 	}
-	return &fuseFileHandle{file: f}, 0, 0
+	return newFuseFileHandle(f), 0, 0
 }
 
 func (n *fuseNode) Readlink(_ context.Context) ([]byte, syscall.Errno) {
@@ -290,7 +290,7 @@ func (n *fuseNode) Create(ctx context.Context, name string, mode uint32, _ uint3
 	}
 	child := n.newChild(ctx, fi)
 	fuseAttrFromFileInfo(fi, &out.Attr)
-	return child, &fuseFileHandle{file: f}, 0, 0
+	return child, newFuseFileHandle(f), 0, 0
 }
 
 func (n *fuseNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fusefs.Inode, syscall.Errno) {
@@ -416,67 +416,41 @@ func renameReplacing(ctx context.Context, fsys types.WriteFS, oldPath, newPath s
 	return nil
 }
 
-// fuseFileHandle wraps a ufs file for go-fuse.
+// fuseFileHandle wraps a ufs file for go-fuse. go-fuse hands the reads and
+// writes of one handle to several goroutines at once, and an [fs.File] belongs
+// to one goroutine at a time, so the file is shared through a [syncfs.File]: a
+// read or write at an offset is one call there however the driver's handle
+// carries it out, never a seek and a transfer that another request can split.
 type fuseFileHandle struct {
-	file fs.File
-	// taken counts the bytes this handle wrote, which is where a handle with no
-	// position of its own takes the next write. go-fuse can hand two writes of one
-	// handle to two goroutines, so the count is atomic.
-	taken atomic.Int64
+	file *syncfs.File
+}
+
+func newFuseFileHandle(f fs.File) *fuseFileHandle {
+	return &fuseFileHandle{file: syncfs.NewFile(f)}
 }
 
 func (fh *fuseFileHandle) Read(_ context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	if ra, ok := fh.file.(io.ReaderAt); ok {
-		n, err := ra.ReadAt(dest, off)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, fuseErrno(err)
-		}
-		return fuse.ReadResultData(dest[:n]), 0
-	}
-	if s, ok := fh.file.(io.Seeker); ok {
-		if _, err := s.Seek(off, io.SeekStart); err != nil {
-			return nil, fuseErrno(err)
-		}
-		n, err := fh.file.Read(dest)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, fuseErrno(err)
-		}
-		return fuse.ReadResultData(dest[:n]), 0
-	}
-	if off != 0 {
-		return nil, syscall.ENOTSUP
-	}
-	n, err := fh.file.Read(dest)
+	n, err := fh.file.ReadAt(dest, off)
 	if err != nil && !errors.Is(err, io.EOF) {
+		if errors.Is(err, errors.ErrUnsupported) {
+			// A handle that can neither seek nor read at an offset was asked for
+			// a place other than where it stands.
+			return nil, syscall.ENOTSUP
+		}
 		return nil, fuseErrno(err)
 	}
 	return fuse.ReadResultData(dest[:n]), 0
 }
 
+// Write writes data at off. A handle that takes its bytes only in order, which
+// is what a whole-file upload (github.com/cloudfra/ufs/drivers/grpcfs) hands
+// back, accepts the write that continues where it stands and refuses one out of
+// order rather than quietly landing it somewhere else in the file.
 func (fh *fuseFileHandle) Write(_ context.Context, data []byte, off int64) (uint32, syscall.Errno) {
-	if wa, ok := fh.file.(io.WriterAt); ok {
-		n, err := wa.WriteAt(data, off)
-		return clampToUint32(n), fuseErrno(err)
+	n, err := fh.file.WriteAt(data, off)
+	if errors.Is(err, errors.ErrUnsupported) {
+		return clampToUint32(n), syscall.EINVAL
 	}
-	if s, ok := fh.file.(io.Seeker); ok {
-		if _, err := s.Seek(off, io.SeekStart); err != nil {
-			// A handle that refuses to be sought has no position to move to and takes
-			// its bytes in the order they come, which is what a whole-file upload
-			// (github.com/cloudfra/ufs/drivers/grpcfs) hands back. A write the kernel
-			// asks for where such a handle already stands is still placeable, so it
-			// goes in; one out of order has nowhere to go and is refused rather than
-			// quietly landing somewhere else in the file.
-			if !errors.Is(err, fs.ErrInvalid) || off != fh.taken.Load() {
-				return 0, fuseErrno(err)
-			}
-		}
-	}
-	w, ok := fh.file.(io.Writer)
-	if !ok {
-		return 0, syscall.EBADF
-	}
-	n, err := w.Write(data)
-	fh.taken.Add(int64(n))
 	return clampToUint32(n), fuseErrno(err)
 }
 

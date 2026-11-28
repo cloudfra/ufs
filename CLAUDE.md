@@ -151,6 +151,10 @@ file system. On Linux this uses FUSE via go-fuse/v2; on Windows it uses ProjFS.
 Returns an unimplemented error on other platforms. The subpackage imports `ufs`
 (never the reverse) and only uses its exported API (e.g. `ufs.CwdPath`).
 
+FUSE file handles go through `syncfs.NewFile`, because go-fuse reads and
+writes one handle from several goroutines; `Unmount` waits for the requests
+in flight, so the caller may close the FS once `MountServer.Close` returns.
+
 Writes are enabled when the mounted FS is a `types.WriteFS` (not `ufs.FS`, so
 drivers without a native Rename stay writable). Renames go through
 `ops.Rename`: FUSE replaces an existing destination as rename(2) does (moving
@@ -195,6 +199,7 @@ enable its scheme. They may use `internal/` packages.
 | drivers/polyfills/         | Best-effort standins for optional interfaces a file system lacks; used by the base package, so it must not import ufs                                   |
 | drivers/testing/eventtest/ | Generic EventCollector for Watcher tests; stdlib-only so core's own tests can import it                                                                 |
 | drivers/uri/               | Byte-preserving URI query-parameter add/remove helpers and the decorator option list, used by the base package and by drivers                           |
+| drivers/wrappers/syncfs/   | Concurrency guards for code that serves an FS: syncfs.NewFile shares one handle between goroutines, syncfs.Lifetime drains rpcs before Close            |
 
 Shared driver code that depends on `ufs` types goes in `drivers/common/`;
 code with no `ufs` dependency goes in `internal/`. `drivers/polyfills/` and

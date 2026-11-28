@@ -27,6 +27,10 @@ import (
 
 // ListFiles answers one page of [types.ReadFS.ReadDir].
 func (s *Server) ListFiles(_ context.Context, req *proto.ListFilesRequest) (*proto.ListFilesResponse, error) {
+	if !s.life.Enter() {
+		return nil, errShutdown
+	}
+	defer s.life.Exit()
 	entries, err := s.inner.ReadDir(req.GetParent())
 	if err != nil {
 		return nil, toStatus(err)

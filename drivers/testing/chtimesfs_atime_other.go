@@ -12,19 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package yamlfs
+//go:build !(linux || android || openbsd || dragonfly || solaris || illumos || darwin || freebsd || netbsd)
+
+package testing
 
 import (
-	"testing"
-
-	ufsdriversTesting "github.com/cloudfra/ufs/drivers/testing"
-	"github.com/cloudfra/ufs/drivers/types"
+	"io/fs"
+	"time"
 )
 
-// TestYamlFSDriver runs the shared conformance suites over a read-only
-// document tree.
-func TestYamlFSDriver(t *testing.T) {
-	ufsdriversTesting.FS(t, ufsdriversTesting.Args{ReadOnly: true}, func(t *testing.T) types.SimpleFS {
-		return newTestFS(t, "document.yaml", []byte(document))
-	})
+// fileAtime reports that these suites cannot read an access time back on this
+// platform, so chtimesAccessTime says so rather than judging a file system it
+// cannot see. Windows keeps its times in a structure of its own that holds no
+// access time to read, and the platforms with no file system behind them have no
+// access time at all.
+func fileAtime(fs.FileInfo) (time.Time, bool) {
+	return time.Time{}, false
 }

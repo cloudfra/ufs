@@ -26,6 +26,7 @@
 //   - gs:// from [github.com/cloudfra/ufs/drivers/gcsfs]
 //   - URIs ending in .git from [github.com/cloudfra/ufs/drivers/gitfs]
 //   - grpc:// and grpcs:// from [github.com/cloudfra/ufs/drivers/grpcfs]
+//   - yaml: from [github.com/cloudfra/ufs/drivers/yamlfs]
 //
 // and these decorators, which a mount selects by name in its options:
 //
@@ -54,4 +55,5 @@ import (
 	_ "github.com/cloudfra/ufs/drivers/gcsfs"                  // registers gs://
 	_ "github.com/cloudfra/ufs/drivers/gitfs"                  // registers git repository URIs
 	_ "github.com/cloudfra/ufs/drivers/grpcfs"                 // registers grpc:// and grpcs://
+	_ "github.com/cloudfra/ufs/drivers/yamlfs"                 // registers yaml:
 )

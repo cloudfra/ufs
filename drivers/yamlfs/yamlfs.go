@@ -13,13 +13,19 @@
 // limitations under the License.
 
 // Package yamlfs presents a YAML or JSON document as a read-only file system.
+// Importing it registers the yaml: scheme with [ufs.New], which opens the
+// document at the absolute host path the URI names:
+//
+//	import _ "github.com/cloudfra/ufs/drivers/yamlfs"
+//
 // A mapping key becomes a file or a directory, and the content of a file is
 // the text of the value it holds. A sequence becomes a directory whose entries
 // are numbered from zero, so the first item of a sequence is at "0". A null
 // value becomes an empty file, a !!binary value becomes the file it encodes,
 // and a document that holds neither a mapping nor a sequence is rejected.
 //
-// The document is parsed once by [New], so the tree never changes and every
+// The document is parsed once, by [New] or by the yaml: driver that reads the
+// file the URI names and calls it, so the tree never changes and every
 // operation is safe for concurrent use. Entries report no modification time
 // and the read-only modes of an embedded file. Every write operation fails
 // with [fs.ErrPermission].
@@ -28,7 +34,8 @@
 // per interface: this one holds the file-system value, the handles and what
 // [types.SimpleFS] asks for, and the siblings named yamlfs_<interface>.go hold
 // the rest. document.go, which is not part of the split, holds the tree those
-// files walk.
+// files walk, and yamlfs_driver.go holds the driver that registers the yaml:
+// scheme.
 package yamlfs
 
 import (
